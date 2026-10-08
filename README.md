@@ -63,3 +63,11 @@ cd playground && npm install && npm run dev
 ## Release
 
 Un cambio de UI se versiona aquí, se etiqueta `vX.Y.Z` y el workflow `publish` lo sube a GitHub Packages. Cada producto actualiza el rango con un PR propio.
+
+El repo remoto es https://github.com/felipechandiadev/kai-ui. El tag local `v1.3.0` ya está creado. Para subirlo, el token de `gh` tiene que incluir `workflow` y `write:packages`:
+
+```bash
+gh auth refresh -s workflow,write:packages,repo
+git push -u origin main
+git push origin v1.3.0
+```
