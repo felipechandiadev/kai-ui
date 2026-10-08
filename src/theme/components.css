@@ -1,0 +1,25 @@
+/**
+ * Barrel of colocated component styles for @felipechandiadev/ui.
+ * Apps should `@import` this from globals.css after tokens.css so structural
+ * `.fs-*` rules load even if a component CSS side-effect is missed.
+ *
+ * CSS Modules (DataGrid / PrintDialog) are intentionally excluded — they load
+ * with their components via CSS module imports.
+ */
+
+@import '../components/Alert/alert.css';
+@import '../components/Badge/badge.css';
+@import '../components/Button/button.css';
+@import '../components/Cards/cards.css';
+@import '../components/Dialog/dialog.css';
+@import '../components/DotProgress/dot-progress.css';
+@import '../components/DropdownList/dropdown.css';
+@import '../components/IconButton/icon-button.css';
+@import '../components/NumberStepper/number-stepper.css';
+@import '../components/RangeSlider/range-slider.css';
+@import '../components/Skeleton/skeleton.css';
+@import '../components/Stepper/stepper.css';
+@import '../components/Switch/switch.css';
+@import '../components/Tabs/tabs.css';
+@import '../components/TextField/textfield.css';
+@import '../components/DataGrid/components/toolbar.css';

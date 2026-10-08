@@ -1,0 +1,46 @@
+@keyframes fs-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.fs-skeleton {
+  --fs-skeleton-base: color-mix(in srgb, var(--fs-foreground) 4%, var(--fs-background));
+  --fs-skeleton-mid: color-mix(in srgb, var(--fs-foreground) 7%, var(--fs-background));
+  --fs-skeleton-highlight: color-mix(in srgb, var(--fs-background) 55%, white 45%);
+
+  position: relative;
+  overflow: hidden;
+  background-color: var(--fs-skeleton-base);
+  background-image: linear-gradient(
+    105deg,
+    var(--fs-skeleton-base) 0%,
+    var(--fs-skeleton-base) 38%,
+    var(--fs-skeleton-highlight) 50%,
+    var(--fs-skeleton-mid) 62%,
+    var(--fs-skeleton-base) 100%
+  );
+  background-size: 220% 100%;
+  animation: fs-skeleton-shimmer 1.75s ease-in-out infinite;
+  opacity: 0.92;
+}
+
+@media (prefers-color-scheme: dark) {
+  .fs-skeleton {
+    --fs-skeleton-base: color-mix(in srgb, var(--fs-foreground) 6%, var(--fs-surface));
+    --fs-skeleton-mid: color-mix(in srgb, var(--fs-foreground) 10%, var(--fs-surface));
+    --fs-skeleton-highlight: color-mix(in srgb, var(--fs-surface) 40%, white 12%);
+    opacity: 0.88;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-skeleton {
+    animation: none;
+    background-image: none;
+    background-color: var(--fs-skeleton-base);
+  }
+}

@@ -1,0 +1,52 @@
+.desktopGrid {
+  display: none;
+  width: 100%;
+  column-gap: 0.5rem;
+  row-gap: 0.5rem;
+}
+
+.toolbarZoneDesktop {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  align-self: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.mobileStack {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.toolbarZoneMobile {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+.mobileActions {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .desktopGrid {
+    display: grid;
+  }
+
+  .mobileStack {
+    display: none;
+  }
+}

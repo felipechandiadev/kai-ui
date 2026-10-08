@@ -1,0 +1,170 @@
+/**
+ * Módulo Cards: estilos viven junto a los componentes (no en app/globals.css).
+ * Colores: variables --color-* del tema (mismas que tailwind.config.ts / :root de la app).
+ */
+.fs-card {
+  background-color: var(--color-background, #fff);
+  border: 1px solid
+    color-mix(in srgb, var(--color-border, #a5c2c2) 70%, transparent);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  overflow: hidden;
+}
+
+/* Modo legado: cuerpo con padding */
+.fs-card--legacy {
+  padding: 1rem;
+  overflow: visible;
+}
+
+.fs-card--clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.fs-card--clickable:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--color-neutral, #f3f4f6) 45%,
+    var(--color-background, #fff)
+  );
+}
+
+/** Centro / ítem seleccionado (p. ej. tesorería · centros de efectivo). */
+.fs-card.fs-card--border-secondary {
+  border-color: var(--color-secondary, #00deef);
+}
+
+.fs-card__header {
+  padding: 1rem 1rem 0.75rem 1rem;
+}
+
+.fs-card__title {
+  color: var(--color-foreground);
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+.fs-card__subtitle {
+  margin-top: 0.125rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.fs-card__header-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.fs-card__header-end {
+  flex-shrink: 0;
+}
+
+.fs-card__content {
+  padding: 1rem;
+}
+
+.fs-card__actions {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid
+    color-mix(in srgb, var(--color-border, #a5c2c2) 70%, transparent);
+  padding: 0.75rem 1rem 1rem 1rem;
+  flex-shrink: 0;
+}
+
+/** Pie de acciones integrado (p. ej. tesorería): sin separador superior, icono al inicio. */
+.fs-card__actions.fs-card__actions--embedded {
+  border-top: none;
+  justify-content: flex-start;
+  padding-top: 0.25rem;
+}
+
+/** Card que llena la celda de una grilla: el cuerpo crece y el pie de acciones queda abajo. */
+.fs-card.fs-card--fill-height {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.fs-card.fs-card--fill-height .fs-card__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fs-statistics-card__label {
+  margin-bottom: 0.5rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.fs-statistics-card__value {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 700;
+}
+.fs-statistics-card__value--primary { color: var(--color-primary); }
+.fs-statistics-card__value--success { color: var(--color-success); }
+.fs-statistics-card__value--info { color: var(--color-info); }
+.fs-statistics-card__value--warning { color: var(--color-warning); }
+
+.fs-statistics-card__hint {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--color-muted-foreground);
+  opacity: 0.9;
+}
+
+/** Métrica compacta (p. ej. fila de tesorería). */
+.fs-card.fs-card--legacy.fs-statistics-card--compact {
+  padding: 0.5rem 0.625rem;
+}
+.fs-statistics-card--compact .fs-statistics-card__label {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.fs-statistics-card--compact .fs-statistics-card__value {
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+}
+.fs-statistics-card--compact .fs-statistics-card__hint {
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+}
+
+/**
+ * Tarjeta seleccionable en tesorería (centro de efectivo, cuenta bancaria, etc.).
+ * Selección: fondo celeste claro vía color-mix (Tailwind bg-secondary/10 no aplica sobre var CSS).
+ */
+.fs-treasury-pick-card,
+.fs-cash-hub-card {
+  border: 1px solid color-mix(in srgb, var(--color-border, #a5c2c2) 70%, transparent);
+  background-color: var(--color-background, #fff);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.fs-treasury-pick-card:not(.fs-treasury-pick-card--selected):hover,
+.fs-cash-hub-card:not(.fs-cash-hub-card--selected):hover {
+  border-color: color-mix(in srgb, var(--color-secondary, #00deef) 60%, var(--color-border, #a5c2c2));
+}
+
+.fs-treasury-pick-card--selected,
+.fs-cash-hub-card--selected {
+  border-color: color-mix(in srgb, var(--color-secondary, #00deef) 40%, var(--color-border, #a5c2c2));
+  background-color: color-mix(
+    in srgb,
+    var(--color-secondary, #00deef) 10%,
+    var(--color-background, #fff)
+  );
+}

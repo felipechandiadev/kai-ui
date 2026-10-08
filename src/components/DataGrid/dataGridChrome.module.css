@@ -1,0 +1,8 @@
+/** Borde sutil compartido: col headers (bottom), filas (bottom), footer (top). */
+.subtleLineBottom {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+}
+
+.subtleLineTop {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+}

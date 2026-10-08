@@ -1,0 +1,190 @@
+/**
+ * IconButton: estados hover/active con --color-* (misma idea que Button: sin depender
+ * de utilidades / opacity de Tailwind sobre variables hexa).
+ */
+.fs-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fs-icon-button:focus-visible {
+  outline: 2px solid var(--color-accent, #02578b);
+  outline-offset: 2px;
+}
+
+.fs-icon-button:disabled,
+.fs-icon-button:disabled:hover,
+.fs-icon-button:disabled:active {
+  cursor: not-allowed;
+}
+
+/* Primary (relleno) */
+.fs-icon-button--primary {
+  background-color: var(--color-primary, #1e73ae);
+  color: var(--color-background, #ffffff);
+  border-color: transparent;
+}
+.fs-icon-button--primary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+.fs-icon-button--primary:active:not(:disabled) {
+  background-color: var(--color-primary, #1e73ae);
+  filter: brightness(0.92);
+}
+
+/* Secondary (relleno) */
+.fs-icon-button--secondary {
+  background-color: var(--color-secondary, #00deef);
+  color: var(--color-background, #ffffff);
+  border-color: transparent;
+}
+.fs-icon-button--secondary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+.fs-icon-button--secondary:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* Primary circle (relleno, circular) */
+.fs-icon-button--primary-circle {
+  border-radius: 9999px;
+  background-color: var(--color-primary, #1e73ae);
+  color: var(--color-background, #ffffff);
+  border-color: transparent;
+}
+.fs-icon-button--primary-circle:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+.fs-icon-button--primary-circle:active:not(:disabled) {
+  background-color: var(--color-primary, #1e73ae);
+  filter: brightness(0.92);
+}
+
+/* Secondary circle (relleno, circular) */
+.fs-icon-button--secondary-circle {
+  border-radius: 9999px;
+  background-color: var(--color-secondary, #00deef);
+  color: var(--color-background, #ffffff);
+  border-color: transparent;
+}
+.fs-icon-button--secondary-circle:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+.fs-icon-button--secondary-circle:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* Text: icono primary, sin borde; hover solo cambia color a active */
+.fs-icon-button--text {
+  background-color: transparent;
+  color: var(--color-primary, #1e73ae);
+  border-color: transparent;
+}
+.fs-icon-button--text:hover:not(:disabled) {
+  background-color: transparent;
+  color: var(--color-active, #02578b);
+}
+.fs-icon-button--text:active:not(:disabled) {
+  background-color: transparent;
+  color: var(--color-active, #02578b);
+  opacity: 0.88;
+}
+
+/* Action (toolbars, grids, cards): normal primary, hover accent; activo (ruta) secondary */
+.fs-icon-button--action {
+  background-color: transparent;
+  color: var(--color-primary, #1e73ae);
+  border-color: transparent;
+}
+.fs-icon-button--action:hover:not(:disabled) {
+  color: var(--color-accent, #02578b);
+  background-color: transparent;
+}
+.fs-icon-button--action:active:not(:disabled) {
+  color: var(--color-accent, #02578b);
+  background-color: transparent;
+  opacity: 0.88;
+}
+/* Activo: elemento que representa la ruta/estado actual (aria-current). */
+.fs-icon-button--action[aria-current="page"],
+.fs-icon-button--action[aria-current="true"],
+.fs-icon-button--action[data-active="true"] {
+  color: var(--color-secondary, #00deef);
+}
+.fs-icon-button--action[aria-current="page"]:hover:not(:disabled),
+.fs-icon-button--action[aria-current="true"]:hover:not(:disabled),
+.fs-icon-button--action[data-active="true"]:hover:not(:disabled) {
+  color: var(--color-secondary, #00deef);
+}
+
+/* Neutral: icono foreground, hover suave */
+.fs-icon-button--neutral {
+  background-color: transparent;
+  color: var(--color-foreground, #131615);
+  border-color: transparent;
+}
+.fs-icon-button--neutral:hover:not(:disabled) {
+  background-color: var(--color-hover, #f1f1f1);
+}
+.fs-icon-button--neutral:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-foreground, #131615) 8%,
+    var(--color-background, #ffffff) 92%
+  );
+}
+
+/* Outlined */
+.fs-icon-button--outlined {
+  background-color: transparent;
+  color: var(--color-primary, #1e73ae);
+  border-color: var(--color-primary, #1e73ae);
+}
+.fs-icon-button--outlined:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary, #1e73ae) 10%,
+    var(--color-background, #ffffff) 90%
+  );
+}
+.fs-icon-button--outlined:active:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary, #1e73ae) 18%,
+    var(--color-background, #ffffff) 82%
+  );
+}
+
+/** Sin resalte hover/active (p. ej. top bar POS). */
+.fs-icon-button--no-hover:hover:not(:disabled),
+.fs-icon-button--no-hover:active:not(:disabled) {
+  background-color: transparent;
+  filter: none;
+  opacity: 1;
+}
+.fs-icon-button--text.fs-icon-button--no-hover:hover:not(:disabled),
+.fs-icon-button--text.fs-icon-button--no-hover:active:not(:disabled) {
+  color: var(--color-primary, #1e73ae);
+}
+
+@keyframes fs-icon-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fs-icon-button__icon--loading {
+  animation: fs-icon-button-spin 0.8s linear infinite;
+}

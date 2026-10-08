@@ -1,0 +1,51 @@
+/**
+ * RangeSlider (dual thumb). Colores: --color-border, --color-primary, --color-background.
+ */
+.fs-range-slider {
+  position: relative;
+  display: flex;
+  height: 2rem;
+  width: 100%;
+  align-items: center;
+}
+
+.fs-range-slider__track {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: var(--color-border, #a5c2c2);
+}
+
+.fs-range-slider__fill {
+  position: absolute;
+  top: 0;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary, #1e73ae) 45%,
+    transparent
+  );
+}
+
+.fs-range-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--color-primary, #1e73ae);
+  background-color: var(--color-background, #fff);
+  border-radius: 9999px;
+  cursor: grab;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  appearance: none;
+}
+
+.fs-range-slider__thumb:focus-visible {
+  outline: 2px solid var(--color-primary, #1e73ae);
+  outline-offset: 2px;
+}

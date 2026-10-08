@@ -1,0 +1,27 @@
+/* Ocultar spin nativo; coherente con TextField (tema en Tailwind) */
+input.fs-number-stepper__input[type='number']::-webkit-inner-spin-button,
+input.fs-number-stepper__input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input.fs-number-stepper__input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Misma altura que TextField compact (2rem) cuando no hay label/icono (tablas, filas densas). */
+[data-stepper-single-row='true'] .fs-number-stepper__input {
+  box-sizing: border-box;
+  height: 2rem;
+  min-height: 2rem;
+  max-height: 2rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  line-height: 1.25rem;
+}
+
+[data-stepper-single-row='true'] button {
+  align-self: stretch;
+  padding-top: 0;
+  padding-bottom: 0;
+}

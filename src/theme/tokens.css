@@ -1,0 +1,71 @@
+/**
+ * Contrato de tokens visuales para @kai/ui.
+ * Cada PWA define estos valores en :root (globals.css).
+ * Los componentes usan var(--color-*) y CSS colocalizado.
+ */
+:root {
+  /* Tipografía — familias (cada PWA puede sobrescribir con next/font) */
+  --font-sans-fallback:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+  --font-mono-fallback:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --font-sans: var(--font-sans-fallback);
+  --font-mono: var(--font-mono-fallback);
+  --font-display: var(--font-sans);
+
+  /* Tipografía — pesos */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Tipografía — interlineado */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+
+  /* Tipografía — tracking */
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0em;
+  --letter-spacing-wide: 0.05em;
+
+  /* Colores base */
+  --color-primary: #1e73ae;
+  --color-background: #ffffff;
+  --color-surface: #fcfffe;
+  --color-foreground: #131615;
+  --color-border: #a5c2c2;
+  --color-active: #02578b;
+  --color-accent: #02578b;
+  --color-secondary: #00deef;
+  --color-muted: #cfeef0;
+  --color-muted-foreground: #7a8280;
+  --color-success: #2e9e5b;
+  --color-info: #1e73ae;
+  --color-warning: #e6a100;
+  --color-error: #d64545;
+  --color-neutral: #f3f4f6;
+  --color-hover: color-mix(in srgb, var(--color-neutral) 65%, var(--color-background));
+
+  /* Colores de texto semánticos */
+  --color-link: var(--color-primary);
+  --color-text-primary: var(--color-foreground);
+  --color-text-secondary: var(--color-muted-foreground);
+  --color-text-link: var(--color-link);
+  --color-text-disabled: color-mix(in srgb, var(--color-muted-foreground) 72%, transparent);
+  --color-text-on-primary: #ffffff;
+  --color-text-on-success: #ffffff;
+  --color-text-on-warning: #ffffff;
+  --color-text-on-error: #ffffff;
+  --color-text-positive: var(--color-success);
+  --color-text-negative: var(--color-error);
+  --color-text-info: var(--color-info);
+  --color-text-warning: var(--color-warning);
+  --color-text-error: var(--color-error);
+
+  /* Controles (TextField, Select, Button md): altura alineada ~36px */
+  --control-height-md: 2.25rem;
+  --control-padding-y-md: 0.5rem;
+}

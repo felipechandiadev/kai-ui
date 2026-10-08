@@ -1,0 +1,8 @@
+.fs-data-grid-toolbar__icon--active {
+  color: var(--color-primary, #1e73ae) !important;
+}
+
+.fs-data-grid-toolbar__icon--inactive {
+  color: var(--color-secondary, #00deef) !important;
+}
+

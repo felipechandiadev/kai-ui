@@ -1,0 +1,30 @@
+/**
+ * Tabs (navegación por enlaces). Inactivo: muted + borde hover con --color-border.
+ */
+.fs-tabs__link {
+  display: inline-flex;
+  align-items: center;
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.fs-tabs__link--inactive {
+  border-bottom-color: transparent;
+  color: var(--color-muted-foreground, #7a8280);
+}
+.fs-tabs__link--inactive:hover {
+  border-bottom-color: var(--color-border, #a5c2c2);
+  color: var(--color-foreground, #131615);
+}
+
+.fs-tabs__link--active {
+  border-bottom-color: var(--color-primary, #1e73ae);
+  color: var(--color-primary, #1e73ae);
+}

@@ -1,0 +1,400 @@
+/**
+ * TextField y agrupación de formulario. Colores: --color-* (tema en globals :root).
+ */
+.fs-text-field {
+  --tf-surface: var(--color-background, #fff);
+  position: relative;
+  width: 100%;
+}
+
+.fs-text-field__control {
+  --tf-surface: var(--color-background, #fff);
+  --tf-label-border: var(--color-border, #a5c2c2);
+}
+
+.fs-text-field__control:focus-within {
+  --tf-label-border: var(--color-primary, #1e73ae);
+}
+
+/* Variante contrast: el campo vive sobre una barra primary. */
+.fs-text-field__control--contrast {
+  --tf-surface: var(--color-primary, #1e73ae);
+  --tf-label-border: var(--color-background, #fff);
+}
+
+/* Deshabilitado / solo lectura: el label comparte el fondo muted del input. */
+.fs-text-field__control--muted {
+  --tf-surface: color-mix(in srgb, var(--color-muted, #cfeef0) 50%, var(--color-background, #fff));
+}
+
+/* Label flotante uniforme: máscara con la superficie real del control (--tf-surface). */
+.fs-text-field__floating-label {
+  background-color: var(--tf-surface, var(--color-background, #fff));
+}
+
+/* Shell de Select/AutoComplete: mismo fondo y superficie del label que TextField. */
+.fs-text-field__combo-shell {
+  --tf-surface: var(--color-background, #fff);
+  --tf-label-border: var(--color-border, #a5c2c2);
+  box-sizing: border-box;
+  background-color: var(--tf-surface);
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fs-text-field__combo-shell:focus-within {
+  --tf-label-border: var(--color-primary, #1e73ae);
+}
+
+.fs-text-field__combo-shell:has(.fs-text-field__control--muted),
+.fs-text-field__combo-shell.fs-text-field__combo-shell--muted {
+  --tf-surface: color-mix(in srgb, var(--color-muted, #cfeef0) 50%, var(--color-background, #fff));
+  background-color: var(--tf-surface);
+}
+
+.fs-text-field__combo-shell .fs-text-field__control:not(.fs-text-field__control--muted) {
+  --tf-surface: inherit;
+  --tf-label-border: inherit;
+}
+
+/* Altura estándar alineada con Button md (~36px). Labels flotantes sin cambios. */
+.fs-control-height-md {
+  box-sizing: border-box;
+  height: var(--control-height-md, 2.25rem);
+  min-height: var(--control-height-md, 2.25rem);
+}
+
+.fs-control-min-height-md {
+  box-sizing: border-box;
+  min-height: var(--control-height-md, 2.25rem);
+}
+
+/* Sin shorthand `padding` aquí: si no, pisa el padding-left de Tailwind (pl-9) y el texto tapa al icono. */
+.fs-text-field__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--control-height-md, 2.25rem);
+  min-width: 180px;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border, #a5c2c2);
+  background-color: var(--color-background, #fff);
+  color: var(--color-foreground, #131615);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding-top: var(--control-padding-y-md, 0.5rem);
+  padding-bottom: var(--control-padding-y-md, 0.5rem);
+  padding-right: 0.75rem;
+  /* padding-left: clases pl-* en el componente */
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/**
+ * Compact: misma altura visual que NumberStepper (input `py-1` + `text-sm` → ~h-8 / 2rem).
+ * border-box: altura total del control incluye borde 1px.
+ */
+.fs-text-field__input.fs-text-field__input--compact {
+  box-sizing: border-box;
+  height: 2rem;
+  min-height: 2rem;
+  max-height: 2rem;
+  min-width: 0;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.fs-text-field__input.fs-text-field__input--compact::placeholder,
+.fs-text-field__input.fs-text-field__input--compact::-webkit-input-placeholder,
+.fs-text-field__input.fs-text-field__input--compact::-moz-placeholder {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.fs-text-field__input:focus {
+  outline: none;
+  border-color: var(--color-primary, #1e73ae);
+  box-shadow: none;
+}
+
+/* Comboboxes (Select/AutoComplete): el borde va en el contenedor; el input no debe duplicar marco. */
+.fs-text-field__input.fs-text-field__input--borderless {
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+}
+
+.fs-text-field__input.fs-text-field__input--borderless:focus {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+/**
+ * Trigger de Select compact: el borde del contenedor padre (`h-8`).
+ * Quita altura fija 2rem del input compact para que no rompa border-box ni el centrado vertical.
+ */
+.fs-text-field__input.fs-text-field__input--compact.fs-text-field__input--borderless.fs-text-field__input--autocomplete-trigger {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.25rem;
+}
+
+/* Mismo aspecto de placeholder en input y textarea (incl. Firefox opacity). */
+.fs-text-field__input::placeholder {
+  color: var(--color-muted-foreground, #7a8280);
+  opacity: 1;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.fs-text-field__input::-webkit-input-placeholder {
+  color: var(--color-muted-foreground, #7a8280);
+  line-height: 1.25rem;
+}
+.fs-text-field__input::-moz-placeholder {
+  color: var(--color-muted-foreground, #7a8280);
+  opacity: 1;
+  line-height: 1.25rem;
+}
+
+/**
+ * Icono nativo del calendario (type=date): en dark el SO suele pintarlo negro.
+ * Usamos máscara + --color-secondary (mismo criterio que adornos text-secondary).
+ */
+.fs-text-field__input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-inline-end: 0.125rem;
+  background-color: var(--color-secondary, #00deef);
+  background-image: none;
+  color: transparent;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.fs-text-field__input[type="date"]:disabled::-webkit-calendar-picker-indicator {
+  background-color: var(--color-muted, #cfeef0);
+  cursor: not-allowed;
+}
+
+.fs-text-field__icon {
+  pointer-events: none;
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+}
+
+.fs-text-field__icon--end {
+  pointer-events: none;
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+}
+
+.fs-text-field__password-toggle {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+}
+
+/** Contenedor de acciones al final del input (p. ej. limpiar monto); `pointer-events: auto` para poder clicar. */
+.fs-text-field__end-adornment {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  pointer-events: auto;
+}
+
+/* Campo o grupo con margen inferior (formularios base) */
+.fs-form-group {
+  margin-bottom: 1rem;
+}
+
+/**
+ * CompactInsetField (`density="compact"` + `labelLayout="inline"`):
+ * label + input dentro del mismo borde, ancho completo.
+ */
+.fs-text-field.fs-text-field--inline {
+  width: 100%;
+  min-width: 0;
+}
+
+.fs-text-field__inline-shell {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 2rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border, #a5c2c2);
+  background-color: var(--color-background, #fff);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fs-text-field__inline-shell:focus-within {
+  outline: none;
+  border-color: var(--color-primary, #1e73ae);
+  box-shadow: none;
+}
+
+.fs-text-field__inline-shell .fs-text-field__input:focus,
+.fs-text-field__inline-shell .fs-text-field__input:focus-visible {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.fs-text-field__inline-shell.fs-text-field__inline-shell--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fs-text-field__inline-leading {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 0.375rem 0 0.5rem;
+}
+
+.fs-text-field__inline-body {
+  display: flex;
+  flex: 1 1 0%;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.fs-text-field__inline-body--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.fs-text-field__inline-label {
+  flex: 0 0 auto;
+  align-self: center;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  letter-spacing: 0.01em;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--color-muted-foreground, #7a8280);
+  border-right: 1px solid var(--color-border, #a5c2c2);
+}
+
+.fs-text-field--inline .fs-text-field__control {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.fs-text-field--inline .fs-text-field__input.fs-text-field__input--inline-inset,
+:has(> .fs-text-field__inline-label) .fs-text-field__input.fs-text-field__input--compact {
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  color: var(--color-foreground, #131615);
+}
+
+.fs-text-field--inline .fs-text-field__input.fs-text-field__input--inline-inset::placeholder,
+:has(> .fs-text-field__inline-label) .fs-text-field__input.fs-text-field__input--compact::placeholder {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted-foreground, #7a8280);
+}
+
+.fs-text-field--inline .fs-text-field__input.fs-text-field__input--inline-inset:read-only:not(:disabled) {
+  color: var(--color-foreground, #131615);
+  -webkit-text-fill-color: var(--color-foreground, #131615);
+  opacity: 1;
+}
+
+.fs-text-field--inline .fs-text-field__input.fs-text-field__input--inline-inset:focus,
+.fs-text-field--inline .fs-text-field__input.fs-text-field__input--inline-inset:focus-visible {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.fs-text-field--inline .fs-text-field__end-adornment {
+  right: 0.375rem;
+  z-index: 20;
+  gap: 0;
+}
+
+.fs-inline-combo-shell:focus-within {
+  outline: none;
+  border-color: var(--color-primary, #1e73ae);
+  box-shadow: none;
+}
+
+.fs-inline-combo-shell .fs-text-field__input:focus,
+.fs-inline-combo-shell .fs-text-field__input:focus-visible {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+/** Select inline con altura default, alineado con TextField estándar. */
+.fs-inline-combo-shell--default .fs-text-field__input.fs-text-field__input--borderless {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding-top: var(--control-padding-y-md, 0.5rem);
+  padding-bottom: var(--control-padding-y-md, 0.5rem);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.fs-inline-combo-shell--default
+  .fs-text-field__input.fs-text-field__input--borderless.fs-text-field__input--autocomplete-trigger {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding-top: var(--control-padding-y-md, 0.5rem);
+  padding-bottom: var(--control-padding-y-md, 0.5rem);
+}
+
+.fs-text-field__inline-label--default {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}

@@ -1,0 +1,37 @@
+/**
+ * Puntos de progreso; colores vía props o --color-primary / --color-neutral.
+ */
+@keyframes fs-dot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.fs-dot-progress__dot {
+  transform: translateY(0);
+}
+
+.fs-dot-progress__dot--pulse {
+  animation: fs-dot-pulse 1s infinite ease-in-out;
+}
+
+@keyframes fs-dot-wave {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-70%);
+  }
+}
+
+.fs-dot-progress__dot--wave {
+  animation: fs-dot-wave 1.05s infinite ease-in-out;
+}

@@ -1,0 +1,44 @@
+/**
+ * Superficie del diálogo: usa --color-background (no blanco fijo).
+ */
+.fs-dialog__paper {
+  background-color: var(--color-background, #fff);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/** Encabezado fijo en columna flex: no se encoge y queda por encima del scroll (mapas, z-index). */
+.fs-dialog__header {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  background-color: var(--color-background, #fff);
+}
+
+.fs-dialog__header.fs-dialog__header--transparent {
+  background-color: transparent;
+}
+
+/** Cuerpo con scroll en paper: min-height 0 evita el bug de flex+overflow. */
+.fs-dialog__body--paper {
+  min-height: 0;
+}
+
+/**
+ * Fila de botones: bloque independiente del cuerpo y de la franja de alertas.
+ * No anidar `alertArea` aquí; en el DOM son hermanos bajo `.fs-dialog__paper`.
+ */
+.fs-dialog__actions {
+  flex-shrink: 0;
+  width: 100%;
+  background-color: var(--color-background, #fff);
+}
+
+/** Avisos/errores fijos entre cuerpo y la fila de acciones (no scroll con `paper`). */
+.fs-dialog__alert-area {
+  flex-shrink: 0;
+  width: 100%;
+  background-color: var(--color-background, #fff);
+}

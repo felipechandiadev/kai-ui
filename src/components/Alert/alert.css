@@ -1,0 +1,67 @@
+/**
+ * Alert. Colores y fondos: --color-* (tema en :root).
+ */
+.fs-alert {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 300;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  color: var(--color-foreground, #131615);
+}
+
+.fs-alert--success {
+  border-color: var(--color-success, #2e9e5b);
+  background-color: color-mix(
+    in srgb,
+    var(--color-success, #2e9e5b) 30%,
+    transparent
+  );
+}
+
+.fs-alert--info {
+  border-color: var(--color-info, #1e73ae);
+  background-color: color-mix(
+    in srgb,
+    var(--color-info, #1e73ae) 30%,
+    transparent
+  );
+}
+
+.fs-alert--warning {
+  border-color: var(--color-warning, #e6a100);
+  background-color: color-mix(
+    in srgb,
+    var(--color-warning, #e6a100) 30%,
+    transparent
+  );
+}
+
+.fs-alert--error {
+  border-color: var(--color-error, #d64545);
+  background-color: color-mix(
+    in srgb,
+    var(--color-error, #d64545) 30%,
+    transparent
+  );
+}
+
+/* Velo bajo el contenido; mismo radio que el contenedor .relative padre */
+.fs-alert__scrim {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.25rem;
+  z-index: 0;
+  pointer-events: none;
+  background-color: color-mix(
+    in srgb,
+    var(--color-background, #fff) 70%,
+    transparent
+  );
+}

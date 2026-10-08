@@ -1,0 +1,215 @@
+/**
+ * Button / ButtonPill: estilos colocalizados. Colores vía --color-* (globals :root o tema futuro).
+ */
+.fs-button {
+  display: inline-block;
+  box-sizing: border-box;
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.375rem;
+  text-align: center;
+  min-width: max-content;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+  cursor: pointer;
+}
+
+.fs-button:disabled,
+.fs-button:disabled:hover,
+.fs-button:disabled:active {
+  cursor: not-allowed;
+}
+
+.fs-button:active:not(:disabled) {
+  transform: scale(0.9);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.12);
+}
+
+.fs-button--size-md {
+  min-height: var(--control-height-md, 2.25rem);
+}
+
+/* Contained */
+.fs-button--contained-primary {
+  background-color: var(--color-primary, #1e73ae);
+  color: var(--color-background, #ffffff);
+}
+.fs-button--contained-primary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+
+.fs-button--contained-secondary {
+  background-color: var(--color-secondary, #00deef);
+  color: var(--color-background, #ffffff);
+}
+.fs-button--contained-secondary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+
+.fs-button--contained-danger {
+  background-color: var(--color-error, #d64545);
+  color: var(--color-background, #ffffff);
+}
+.fs-button--contained-danger:hover:not(:disabled) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-error, #d64545) 80%,
+    var(--color-background, #ffffff) 20%
+  );
+}
+
+/* Outlined & text */
+.fs-button--outlined {
+  background-color: transparent;
+  color: var(--color-foreground, #131615);
+  border-color: var(--color-foreground, #131615);
+}
+.fs-button--outlined:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+  color: var(--color-background, #ffffff);
+  border-color: var(--color-accent, #02578b);
+}
+
+.fs-button--outlined-secondary {
+  background-color: transparent;
+  color: var(--color-secondary, #00deef);
+  border-color: var(--color-secondary, #00deef);
+}
+.fs-button--outlined-secondary:hover:not(:disabled) {
+  background-color: var(--color-secondary, #00deef);
+  color: var(--color-background, #ffffff);
+  border-color: var(--color-secondary, #00deef);
+}
+
+.fs-button--text {
+  background-color: transparent;
+  color: var(--color-primary, #1e73ae);
+  border-color: transparent;
+}
+.fs-button--text:hover:not(:disabled) {
+  transform: scale(1.1);
+}
+.fs-button--text:active:not(:disabled) {
+  transform: scale(0.9);
+  box-shadow: none;
+}
+
+/* Button group (segmented) */
+.fs-button-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  max-width: 100%;
+}
+
+.fs-button-group .fs-button-group__item {
+  position: relative;
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.fs-button-group .fs-button-group__item:first-child {
+  margin-left: 0;
+  border-top-left-radius: 0.375rem;
+  border-bottom-left-radius: 0.375rem;
+}
+
+.fs-button-group .fs-button-group__item:last-child {
+  border-top-right-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
+}
+
+.fs-button-group .fs-button-group__item:focus-visible {
+  z-index: 1;
+}
+
+.fs-button-group .fs-button-group__item--selected {
+  z-index: 1;
+}
+
+.fs-button-group.fs-button-group--compact .fs-button-group__item.fs-button {
+  box-sizing: border-box;
+  height: 1.375rem;
+  min-height: 1.375rem;
+  max-height: 1.375rem;
+  padding: 0 0.4375rem;
+  font-size: 0.625rem;
+  line-height: 1.375rem;
+  font-weight: 500;
+}
+
+.fs-button-group.fs-button-group--compact .fs-button-group__item.fs-button svg {
+  height: 0.6875rem;
+  width: 0.6875rem;
+}
+
+.fs-button-group.fs-button-group--compact .fs-button-group__item:first-child {
+  border-top-left-radius: 0.1875rem;
+  border-bottom-left-radius: 0.1875rem;
+}
+
+.fs-button-group.fs-button-group--compact .fs-button-group__item:last-child {
+  border-top-right-radius: 0.1875rem;
+  border-bottom-right-radius: 0.1875rem;
+}
+
+/* Pills: incluyen padding (ButtonPill no aplica clases de tamaño) */
+.fs-pill {
+  display: inline-block;
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 9999px;
+  text-align: center;
+  min-width: max-content;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  padding: 0.5rem 1rem;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+  cursor: pointer;
+}
+
+.fs-pill:active:not(:disabled) {
+  transform: scale(0.9);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.12);
+}
+
+.fs-pill--primary {
+  background-color: var(--color-primary, #1e73ae);
+  color: var(--color-background, #ffffff);
+}
+.fs-pill--primary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+
+.fs-pill--secondary {
+  background-color: var(--color-secondary, #00deef);
+  color: var(--color-background, #ffffff);
+}
+.fs-pill--secondary:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+}
+
+/* Antes faltaba en globals: variante pill outlined (alineada a .fs-button--outlined) */
+.fs-pill--outlined {
+  background-color: transparent;
+  color: var(--color-foreground, #131615);
+  border-color: var(--color-foreground, #131615);
+}
+.fs-pill--outlined:hover:not(:disabled) {
+  background-color: var(--color-accent, #02578b);
+  color: var(--color-background, #ffffff);
+  border-color: var(--color-accent, #02578b);
+}
