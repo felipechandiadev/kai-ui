@@ -13,7 +13,7 @@
 
 /* Modo legado: cuerpo con padding */
 .fs-card--legacy {
-  padding: 1rem;
+  padding: var(--card-padding, 1rem);
   overflow: visible;
 }
 
@@ -35,19 +35,20 @@
 }
 
 .fs-card__header {
-  padding: 1rem 1rem 0.75rem 1rem;
+  padding: var(--card-padding, 1rem) var(--card-padding, 1rem)
+    var(--card-padding-header-bottom, 0.75rem) var(--card-padding, 1rem);
 }
 
 .fs-card__title {
   color: var(--color-foreground);
-  font-size: 1.125rem;
-  line-height: 1.75rem;
+  font-size: var(--card-title-size, 1.125rem);
+  line-height: 1.4;
   font-weight: 600;
 }
 .fs-card__subtitle {
   margin-top: 0.125rem;
   color: var(--color-muted-foreground);
-  font-size: 0.875rem;
+  font-size: var(--card-subtitle-size, 0.875rem);
   line-height: 1.25rem;
 }
 .fs-card__header-text {
@@ -59,7 +60,7 @@
 }
 
 .fs-card__content {
-  padding: 1rem;
+  padding: var(--card-padding, 1rem);
 }
 
 .fs-card__actions {
@@ -68,10 +69,11 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2, 0.5rem);
   border-top: 1px solid
     color-mix(in srgb, var(--color-border, #a5c2c2) 70%, transparent);
-  padding: 0.75rem 1rem 1rem 1rem;
+  padding: var(--card-padding-header-bottom, 0.75rem) var(--card-padding, 1rem)
+    var(--card-padding, 1rem) var(--card-padding, 1rem);
   flex-shrink: 0;
 }
 

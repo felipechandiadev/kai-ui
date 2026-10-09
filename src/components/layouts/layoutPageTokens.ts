@@ -14,11 +14,11 @@ export const DATA_GRID_TAB_LAYOUT_FALLBACK_EXTRA_PX = 52;
  * (`px-6 pb-6 md:px-10`). Usar `gap-*` entre bloques internos, no `p-*`/`m-*` en la raíz.
  */
 export const layoutPageRootClassName =
-  "flex w-full min-w-0 max-w-full flex-col gap-4";
+  "flex w-full min-w-0 max-w-full flex-col gap-[var(--page-gap,1rem)]";
 
 /** Misma raíz que {@link layoutPageRootClassName} con menos espacio entre cabecera y contenido (p. ej. pestañas). */
 export const layoutPageRootClassNameCompact =
-  "flex w-full min-w-0 max-w-full flex-col gap-2";
+  "flex w-full min-w-0 max-w-full flex-col gap-[var(--section-gap,0.5rem)]";
 
 /** Bloque de cabecera (título / subtítulo / toolbar). */
 export const layoutPageHeaderClassName = "w-full min-w-0";

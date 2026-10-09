@@ -81,7 +81,7 @@
   border: 1px solid var(--color-border, #a5c2c2);
   background-color: var(--color-background, #fff);
   color: var(--color-foreground, #131615);
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm, 0.875rem);
   line-height: 1.25rem;
   padding-top: var(--control-padding-y-md, 0.5rem);
   padding-bottom: var(--control-padding-y-md, 0.5rem);
@@ -98,20 +98,20 @@
  */
 .fs-text-field__input.fs-text-field__input--compact {
   box-sizing: border-box;
-  height: 2rem;
-  min-height: 2rem;
-  max-height: 2rem;
+  height: var(--control-height-compact, 2rem);
+  min-height: var(--control-height-compact, 2rem);
+  max-height: var(--control-height-compact, 2rem);
   min-width: 0;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  font-size: 0.8125rem;
+  padding-top: var(--control-padding-y-compact, 0.25rem);
+  padding-bottom: var(--control-padding-y-compact, 0.25rem);
+  font-size: var(--font-size-sm, 0.8125rem);
   line-height: 1.25rem;
 }
 
 .fs-text-field__input.fs-text-field__input--compact::placeholder,
 .fs-text-field__input.fs-text-field__input--compact::-webkit-input-placeholder,
 .fs-text-field__input.fs-text-field__input--compact::-moz-placeholder {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm, 0.8125rem);
   line-height: 1.125rem;
 }
 

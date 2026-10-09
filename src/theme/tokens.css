@@ -1,7 +1,11 @@
 /**
  * Contrato de tokens visuales para @kai/ui.
  * Cada PWA define estos valores en :root (globals.css).
- * Los componentes usan var(--color-*) y CSS colocalizado.
+ * Los componentes usan var(--color-*) / var(--space-*) / var(--control-*) y CSS colocalizado.
+ *
+ * Densidad: default = comfortable. Activar compact en la PWA con
+ *   <html data-density="compact">
+ * Ver theme/README.md.
  */
 :root {
   /* Tipografía — familias (cada PWA puede sobrescribir con next/font) */
@@ -30,6 +34,36 @@
   --letter-spacing-tight: -0.02em;
   --letter-spacing-normal: 0em;
   --letter-spacing-wide: 0.05em;
+
+  /* Tipografía — escala (comfortable) */
+  --font-size-body: 1rem;
+  --font-size-sm: 0.875rem;
+  --font-size-xs: 0.75rem;
+
+  /* Spacing (comfortable) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+
+  /* Layout / superficies */
+  --page-gap: 1rem;
+  --section-gap: 0.75rem;
+  --card-padding: 1rem;
+  --card-padding-header-bottom: 0.75rem;
+  --card-title-size: 1.125rem;
+  --card-subtitle-size: 0.875rem;
+
+  /* Controles (TextField, Select, Button md): altura alineada ~36px */
+  --control-height-md: 2.25rem;
+  --control-padding-y-md: 0.5rem;
+  /* Prop density="compact" en un control (más denso que md) */
+  --control-height-compact: 2rem;
+  --control-padding-y-compact: 0.25rem;
+
+  /* DataGrid cells */
+  --datagrid-cell-padding-x: 0.75rem;
+  --datagrid-cell-padding-y: 0.25rem;
 
   /* Colores base */
   --color-primary: #1e73ae;
@@ -64,8 +98,36 @@
   --color-text-info: var(--color-info);
   --color-text-warning: var(--color-warning);
   --color-text-error: var(--color-error);
+}
 
-  /* Controles (TextField, Select, Button md): altura alineada ~36px */
-  --control-height-md: 2.25rem;
-  --control-padding-y-md: 0.5rem;
+/**
+ * Densidad compacta — activar en la PWA:
+ *   <html data-density="compact">
+ * También aplica si el atributo está en un ancestro (`[data-density="compact"]`).
+ */
+:root[data-density="compact"],
+[data-density="compact"] {
+  --font-size-body: 0.875rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-xs: 0.6875rem;
+
+  --space-1: 0.1875rem;
+  --space-2: 0.375rem;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+
+  --page-gap: 0.75rem;
+  --section-gap: 0.5rem;
+  --card-padding: 0.75rem;
+  --card-padding-header-bottom: 0.5rem;
+  --card-title-size: 1rem;
+  --card-subtitle-size: 0.8125rem;
+
+  --control-height-md: 2rem;
+  --control-padding-y-md: 0.375rem;
+  --control-height-compact: 1.75rem;
+  --control-padding-y-compact: 0.1875rem;
+
+  --datagrid-cell-padding-x: 0.5rem;
+  --datagrid-cell-padding-y: 0.125rem;
 }

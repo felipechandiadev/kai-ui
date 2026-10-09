@@ -1,6 +1,6 @@
 {
   "name": "@felipechandiadev/ui",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": false,
   "description": "Design system compartido. Se publica en GitHub Packages.",
   "type": "module",
@@ -33,6 +33,7 @@
     "build": "tsc -p tsconfig.build.json && node scripts/copy-css.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "docs:check": "node scripts/check-component-docs.mjs",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {

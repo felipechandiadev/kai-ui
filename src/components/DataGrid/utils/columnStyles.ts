@@ -58,9 +58,10 @@ export function resolveColumnCellOverflow(
 
 export type DataGridColumnAlign = 'left' | 'center' | 'right';
 
-/** Padding horizontal compartido entre header y body. */
+/** Padding horizontal compartido entre header y body (tokens de densidad). */
 export const DataGridCellMetrics = {
-  paddingX: 'px-3',
+  paddingX: 'px-[var(--datagrid-cell-padding-x,0.75rem)]',
+  paddingY: 'py-[var(--datagrid-cell-padding-y,0.25rem)]',
 } as const;
 
 export function resolveColumnAlign(

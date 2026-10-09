@@ -177,7 +177,7 @@ export const ColHeader: React.FC<ColHeaderProps> = ({
 
   return (
     <div
-      className={`${dataGridChrome.subtleLineBottom} ${DataGridCellMetrics.paddingX} box-border min-w-0 font-semibold text-xs text-foreground flex items-center ${headerAlignClasses.cell}`}
+      className={`${dataGridChrome.subtleLineBottom} ${DataGridCellMetrics.paddingX} ${DataGridCellMetrics.paddingY} box-border min-w-0 font-semibold text-xs text-foreground flex items-center ${headerAlignClasses.cell}`}
       style={{
         height: '56px',
         minHeight: '56px',

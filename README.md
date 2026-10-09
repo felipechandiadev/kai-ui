@@ -15,6 +15,14 @@ Tokens y CSS colocalizado:
 @import "@felipechandiadev/ui/theme/components.css";
 ```
 
+Densidad (default comfortable). Compacto en toda la PWA:
+
+```html
+<html data-density="compact">
+```
+
+Detalle: [`src/theme/README.md`](./src/theme/README.md).
+
 En Tailwind v4, escanear las clases del paquete:
 
 ```css

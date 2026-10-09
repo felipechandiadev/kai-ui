@@ -53,7 +53,7 @@ export function PageLayoutHeader({
   const titleRow =
     showTitle || showActions ? (
       <div
-        className="flex w-full min-w-0 items-center gap-3"
+        className="flex w-full min-w-0 items-center gap-[var(--section-gap,0.75rem)]"
         data-test-id={headerRowTestId}
       >
         {showTitle ? (

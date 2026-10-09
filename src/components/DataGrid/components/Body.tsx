@@ -21,7 +21,7 @@ import IconButton from '../../IconButton';
 import dataGridChrome from '../dataGridChrome.module.css';
 
 const CELL_BASE_CLASS =
-  `${DataGridCellMetrics.paddingX} py-1 ${dataGridChrome.subtleLineBottom} text-xs flex min-w-0 box-border items-center`;
+  `${DataGridCellMetrics.paddingX} ${DataGridCellMetrics.paddingY} ${dataGridChrome.subtleLineBottom} text-xs flex min-w-0 box-border items-center`;
 
 function cellOverflowClasses(column: DataGridColumn) {
   return getCellOverflowClassNames(resolveColumnCellOverflow(column));
