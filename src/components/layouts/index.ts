@@ -1,6 +1,15 @@
 export { BasicPageLayout, type BasicPageLayoutProps } from "./BasicPageLayout";
 export { TabPageLayout, type TabPageLayoutProps } from "./TabPageLayout";
 export {
+  EntityDetailLayout,
+  type EntityDetailLayoutProps,
+} from "./EntityDetailLayout";
+export {
+  EntityDetailSectionNav,
+  type EntityDetailSectionNavProps,
+  type EntityDetailSectionTab,
+} from "./EntityDetailSectionNav";
+export {
   PageLayoutHeader,
   type PageLayoutHeaderProps,
 } from "./PageLayoutHeader";
