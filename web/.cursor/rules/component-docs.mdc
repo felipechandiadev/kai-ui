@@ -1,0 +1,13 @@
+---
+description: Al cambiar un componente, actualizar su README en el mismo cambio.
+globs: src/components/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Documentación de componentes
+
+Cada carpeta directa de `src/components/` tiene un `README.md` con estas secciones: qué es, import desde `@felipechandiadev/ui`, props que cambian el uso, si pinta en el HTML o solo en el cliente, y un ejemplo mínimo.
+
+Si editás archivos de `src/components/<Nombre>/` que no sean solo el readme, actualizá `src/components/<Nombre>/README.md` en el mismo cambio. Un componente nuevo no está terminado sin ese archivo.
+
+El check `npm run docs:check` falla si falta un readme o si el diff cambia código de una carpeta sin incluir su `README.md`.
