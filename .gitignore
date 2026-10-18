@@ -2,6 +2,6 @@ node_modules
 dist
 *.tgz
 .DS_Store
-web/playground/node_modules
-web/playground/.next
-web/playground/out
+kai-ui-web/playground/node_modules
+kai-ui-web/playground/.next
+kai-ui-web/playground/out

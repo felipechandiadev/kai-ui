@@ -1,0 +1,424 @@
+//! Backend-independent draw operations.
+//!
+//! Paint code produces a [`DrawList`] in logical window coordinates and in
+//! painter's order (later ops cover earlier ones, text included); a backend
+//! (currently [`wgpu_backend::WgpuRenderer`]) turns it into GPU work.
+//! [`resolve`] splits the list into alternating quad and text [`Batch`]es
+//! that keep that order and carries each op's effective clip.
+
+pub mod icons;
+pub mod paint;
+pub mod text;
+pub mod wgpu_backend;
+
+use crate::element::WidgetId;
+use crate::geometry::{Point, Rect};
+use crate::icons::Icon;
+
+/// Straight-alpha color in the sRGB color space, as authored in design tokens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+impl Color {
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b, a: 255 }
+    }
+
+    pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub const fn hex(value: u32) -> Self {
+        Self::rgb((value >> 16) as u8, (value >> 8) as u8, value as u8)
+    }
+
+    pub const fn with_alpha(self, a: u8) -> Self {
+        Self { a, ..self }
+    }
+
+    /// CSS `color-mix(in srgb, self weight, other)` for opaque colors.
+    pub fn mix(self, other: Self, weight: f32) -> Self {
+        let channel =
+            |a: u8, b: u8| (f32::from(a) * weight + f32::from(b) * (1.0 - weight)).round() as u8;
+        Self {
+            r: channel(self.r, other.r),
+            g: channel(self.g, other.g),
+            b: channel(self.b, other.b),
+            a: channel(self.a, other.a),
+        }
+    }
+
+    /// Components in linear light, for blending on an sRGB render target.
+    pub fn to_linear(self) -> [f32; 4] {
+        [
+            srgb_to_linear(self.r),
+            srgb_to_linear(self.g),
+            srgb_to_linear(self.b),
+            f32::from(self.a) / 255.0,
+        ]
+    }
+
+    /// Components still sRGB-encoded, for non-sRGB render targets.
+    pub fn to_srgb(self) -> [f32; 4] {
+        [
+            f32::from(self.r) / 255.0,
+            f32::from(self.g) / 255.0,
+            f32::from(self.b) / 255.0,
+            f32::from(self.a) / 255.0,
+        ]
+    }
+}
+
+pub fn srgb_to_linear(component: u8) -> f32 {
+    let c = f32::from(component) / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Which text of a widget a buffer holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TextPart {
+    /// Text element content.
+    Content,
+    /// Input value, including IME preedit.
+    Value,
+    Placeholder,
+}
+
+/// Text buffer key in the renderer's text store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TextId {
+    pub widget: WidgetId,
+    pub part: TextPart,
+}
+
+impl TextId {
+    pub const fn content(widget: WidgetId) -> Self {
+        Self {
+            widget,
+            part: TextPart::Content,
+        }
+    }
+
+    pub const fn value(widget: WidgetId) -> Self {
+        Self {
+            widget,
+            part: TextPart::Value,
+        }
+    }
+
+    pub const fn placeholder(widget: WidgetId) -> Self {
+        Self {
+            widget,
+            part: TextPart::Placeholder,
+        }
+    }
+}
+
+/// Coverage mask that shapes a quad: the quad's fill shows only where the
+/// icon is drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mask {
+    pub icon: Icon,
+    /// In units of the icon's 24×24 view box.
+    pub stroke_width: f32,
+}
+
+/// A rounded rectangle with optional border, a blurred shape (shadow), or
+/// an icon filled with one color.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quad {
+    pub rect: Rect,
+    pub fill: Color,
+    pub border: Color,
+    /// Inside `rect`, as CSS borders with `box-sizing: border-box`.
+    pub border_width: f32,
+    pub radius: f32,
+    /// Edge softness in logical points; `> 0` draws a shadow and ignores the
+    /// border.
+    pub blur: f32,
+    /// Draw only the icon's coverage; radius, border and blur are ignored.
+    pub mask: Option<Mask>,
+}
+
+impl Quad {
+    pub const fn fill(rect: Rect, fill: Color) -> Self {
+        Self {
+            rect,
+            fill,
+            border: TRANSPARENT,
+            border_width: 0.0,
+            radius: 0.0,
+            blur: 0.0,
+            mask: None,
+        }
+    }
+
+    pub const fn icon(rect: Rect, fill: Color, mask: Mask) -> Self {
+        Self {
+            mask: Some(mask),
+            ..Self::fill(rect, fill)
+        }
+    }
+
+    /// Area the quad can touch, including blur.
+    pub fn extent(&self) -> Rect {
+        let grow = self.blur;
+        Rect {
+            x: self.rect.x - grow,
+            y: self.rect.y - grow,
+            width: self.rect.width + grow * 2.0,
+            height: self.rect.height + grow * 2.0,
+        }
+    }
+}
+
+pub const TRANSPARENT: Color = Color::rgba(0, 0, 0, 0);
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DrawOp {
+    Quad(Quad),
+    /// Intersect the current clip with `rect` until the matching `PopClip`.
+    PushClip(Rect),
+    PopClip,
+    Text {
+        id: TextId,
+        origin: Point,
+        color: Color,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawList {
+    pub clear: Color,
+    pub ops: Vec<DrawOp>,
+}
+
+impl DrawList {
+    pub fn new(clear: Color) -> Self {
+        Self {
+            clear,
+            ops: Vec::new(),
+        }
+    }
+
+    pub fn quad(&mut self, quad: Quad) {
+        self.ops.push(DrawOp::Quad(quad));
+    }
+
+    pub fn fill_rect(&mut self, rect: Rect, color: Color) {
+        self.quad(Quad::fill(rect, color));
+    }
+
+    pub fn push_clip(&mut self, rect: Rect) {
+        self.ops.push(DrawOp::PushClip(rect));
+    }
+
+    pub fn pop_clip(&mut self) {
+        self.ops.push(DrawOp::PopClip);
+    }
+
+    pub fn text(&mut self, id: TextId, origin: Point, color: Color) {
+        self.ops.push(DrawOp::Text { id, origin, color });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClippedQuad {
+    pub quad: Quad,
+    /// Effective clip; `None` means unclipped (whole surface).
+    pub clip: Option<Rect>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextDraw {
+    pub id: TextId,
+    pub origin: Point,
+    pub color: Color,
+    /// Effective clip; `None` means unclipped (whole surface).
+    pub clip: Option<Rect>,
+}
+
+/// Consecutive ops of one kind; batches are drawn in order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Batch {
+    Quads(Vec<ClippedQuad>),
+    Texts(Vec<TextDraw>),
+}
+
+#[derive(Clone, Copy)]
+enum Clip {
+    Unclipped,
+    Visible(Rect),
+    Empty,
+}
+
+impl Clip {
+    fn rect(self) -> Option<Option<Rect>> {
+        match self {
+            Self::Unclipped => Some(None),
+            Self::Visible(rect) => Some(Some(rect)),
+            Self::Empty => None,
+        }
+    }
+}
+
+/// Resolve clips and group ops into ordered batches. Fully clipped and
+/// fully transparent ops are dropped.
+pub fn resolve(list: &DrawList) -> Vec<Batch> {
+    let mut batches: Vec<Batch> = Vec::new();
+    let mut stack = vec![Clip::Unclipped];
+    for op in &list.ops {
+        let current = *stack.last().unwrap_or(&Clip::Unclipped);
+        match op {
+            DrawOp::PushClip(rect) => stack.push(match current {
+                Clip::Unclipped => Clip::Visible(*rect),
+                Clip::Visible(clip) => clip.intersection(*rect).map_or(Clip::Empty, Clip::Visible),
+                Clip::Empty => Clip::Empty,
+            }),
+            DrawOp::PopClip => {
+                if stack.len() > 1 {
+                    stack.pop();
+                }
+            }
+            DrawOp::Quad(quad) => {
+                let Some(clip) = current.rect() else {
+                    continue;
+                };
+                let invisible =
+                    quad.fill.a == 0 && (quad.border.a == 0 || quad.border_width <= 0.0);
+                let clipped_out =
+                    clip.is_some_and(|clip| quad.extent().intersection(clip).is_none());
+                if invisible || clipped_out {
+                    continue;
+                }
+                let item = ClippedQuad { quad: *quad, clip };
+                match batches.last_mut() {
+                    Some(Batch::Quads(quads)) => quads.push(item),
+                    _ => batches.push(Batch::Quads(vec![item])),
+                }
+            }
+            DrawOp::Text { id, origin, color } => {
+                let Some(clip) = current.rect() else {
+                    continue;
+                };
+                if color.a == 0 {
+                    continue;
+                }
+                let item = TextDraw {
+                    id: *id,
+                    origin: *origin,
+                    color: *color,
+                    clip,
+                };
+                match batches.last_mut() {
+                    Some(Batch::Texts(texts)) => texts.push(item),
+                    _ => batches.push(Batch::Texts(vec![item])),
+                }
+            }
+        }
+    }
+    batches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Batch, Color, DrawList, Quad, TextId, resolve, srgb_to_linear};
+    use crate::element::WidgetId;
+    use crate::geometry::{Point, Rect};
+
+    const TEXT: TextId = TextId::content(WidgetId(1));
+
+    const fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn srgb_conversion_matches_reference_points() {
+        assert_eq!(srgb_to_linear(0), 0.0);
+        assert_eq!(srgb_to_linear(255), 1.0);
+        assert!((srgb_to_linear(128) - 0.2158).abs() < 0.001);
+        assert!((srgb_to_linear(10) - 0.003035).abs() < 0.0001);
+        assert_eq!(Color::hex(0x1e73ae), Color::rgb(0x1e, 0x73, 0xae));
+        assert_eq!(Color::rgba(0, 0, 0, 51).to_linear()[3], 0.2);
+        assert_eq!(Color::rgb(255, 0, 0).to_srgb(), [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn batches_keep_painter_order_between_quads_and_text() {
+        let red = Color::rgb(255, 0, 0);
+        let mut list = DrawList::new(Color::rgb(0, 0, 0));
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+        list.fill_rect(rect(5.0, 0.0, 10.0, 10.0), red);
+        list.text(TEXT, Point::default(), red);
+        list.text(TEXT, Point::default(), red);
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+        list.text(TEXT, Point::default(), red);
+        let batches = resolve(&list);
+        let shape: Vec<(bool, usize)> = batches
+            .iter()
+            .map(|batch| match batch {
+                Batch::Quads(quads) => (true, quads.len()),
+                Batch::Texts(texts) => (false, texts.len()),
+            })
+            .collect();
+        assert_eq!(shape, vec![(true, 2), (false, 2), (true, 1), (false, 1)]);
+    }
+
+    #[test]
+    fn nested_clips_intersect_restore_and_drop_hidden_ops() {
+        let red = Color::rgb(255, 0, 0);
+        let mut list = DrawList::new(Color::rgb(0, 0, 0));
+        list.push_clip(rect(0.0, 0.0, 100.0, 100.0));
+        list.push_clip(rect(50.0, 50.0, 100.0, 100.0));
+        list.fill_rect(rect(0.0, 0.0, 80.0, 80.0), red);
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+        list.text(TEXT, Point { x: 1.0, y: 2.0 }, red);
+        list.push_clip(rect(200.0, 200.0, 10.0, 10.0));
+        list.text(TEXT, Point::default(), red);
+        list.pop_clip();
+        list.pop_clip();
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), Color::rgba(0, 0, 0, 0));
+        list.pop_clip();
+        list.pop_clip();
+        list.quad(Quad {
+            blur: 4.0,
+            ..Quad::fill(rect(200.0, 200.0, 5.0, 5.0), red)
+        });
+
+        let batches = resolve(&list);
+        assert_eq!(batches.len(), 3);
+        let Batch::Quads(quads) = &batches[0] else {
+            panic!("quads first");
+        };
+        assert_eq!(quads.len(), 1, "quad outside the clip is dropped");
+        assert_eq!(quads[0].clip, Some(rect(50.0, 50.0, 50.0, 50.0)));
+        assert_eq!(
+            quads[0].quad.rect,
+            rect(0.0, 0.0, 80.0, 80.0),
+            "clip is per instance"
+        );
+        let Batch::Texts(texts) = &batches[1] else {
+            panic!("then text");
+        };
+        assert_eq!(texts.len(), 1, "text inside an empty clip is dropped");
+        let Batch::Quads(last) = &batches[2] else {
+            panic!("transparent quad dropped, shadow kept");
+        };
+        assert_eq!(last[0].clip, None);
+        assert_eq!(last[0].quad.extent(), rect(196.0, 196.0, 13.0, 13.0));
+    }
+}
