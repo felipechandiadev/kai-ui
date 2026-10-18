@@ -31,28 +31,36 @@ Definir coordenadas coherentes entre ventana, layout, hit-testing y renderer; de
 
 El layout calcula cajas; no dibuja ni procesa eventos. El renderer consume las cajas. El sistema de interacción pregunta a esas mismas cajas qué nodo está bajo el puntero. Así se evita que la apariencia y los clics diverjan.
 
-## Comportamiento responsive del modelo de cajas
+## Modelo de cajas (tipo DOM/CSS)
 
-- La raíz `WindowRootLayout` mide exactamente el viewport lógico de la ventana; es el padre de `MainContentLayout`, que contiene un `ScrollViewportLayout`, y este contiene las cajas de los controles.
-- Cada contenedor define una caja visible y un área de contenido con padding. Los hijos reciben el ancho disponible dentro de esa área.
-- CSS Grid es el modelo de composición principal: los hijos se colocan en filas/columnas, los tracks distribuyen espacio disponible, y el auto-placement avanza en orden de fila. No se usa una regla horizontal manual tipo flex como contrato principal.
-- El tamaño de un hijo sin dimensión explícita se resuelve por las tracks y alineación del grid padre; las restricciones mínimas y la medición intrínseca del widget son parte del contrato, no valores adivinados por el renderer.
-- El texto se compone al ancho de su caja: al reducir el ancho, `cosmic-text` lo envuelve en más líneas y el layout usa la altura medida para colocar los siguientes hijos.
-- La reducción de altura no escala ni comprime controles, tipografía ni gaps. El panel mantiene un viewport; si el contenido natural lo excede, `scroll_range` habilita desplazamiento vertical.
-- La rueda/trackpad desplaza el contenido dentro de ese viewport. Render, hit-testing, selección, caret e IME comparten el mismo `scroll_offset` y las mismas cajas.
-- El prototipo establece un mínimo de ventana de **420×340 puntos lógicos**. Kai implementa el subconjunto explícito de CSS requerido; el objetivo no es incorporar un parser/renderer web.
+- La vista es un árbol `Element<Msg>` (`element.rs`) con tres tipos de nodo: `div`, `text` e `input`. Cada nodo lleva una cadena de clases tipo Tailwind; `tw.rs` la convierte en un `Style` tipo CSS (`style.rs`) y `Style::to_taffy` en un `taffy::Style`.
+- **La raíz es la ventana.** `Layout::compute` fuerza el tamaño de la raíz al viewport lógico, sin importar sus clases: el elemento `main` ocupa siempre toda la ventana y todo lo demás vive dentro de él.
+- `display` admite `block` (por defecto, como en CSS), `flex`, `grid` (`grid-cols-N` = `repeat(N, 1fr)`) y `none`. Taffy calcula flex, grid y block con la semántica CSS: `box-sizing: border-box`, padding, borde, márgenes (incluidos negativos y `mx-auto`), `gap`, `min-*`/`max-*`, fracciones y `position: absolute` con `inset`.
+- Medida intrínseca: el texto se mide con cosmic-text (`TextMeasure`), con salto de línea solo entre palabras (`overflow-wrap: normal`). El tamaño medido se redondea hacia arriba para que el redondeo a píxel de Taffy no recorte el último glifo. Un `input` tiene un ancho intrínseco de 180 pt y su línea de texto se centra verticalmente en la caja de contenido.
+- Tras el layout, cada texto se vuelve a envolver al ancho final, así que paint dibuja exactamente lo medido.
+- **Scroll por nodo.** `overflow-auto`/`overflow-y-auto` se traduce a `Overflow::Scroll` con `scrollbar_width = 0`, porque la barra se pinta superpuesta. `Layout::scroll_height()` da el desplazamiento máximo; los offsets viven en `ScrollOffsets` (`HashMap<WidgetId, f32>`), propiedad del runtime, y se acotan en cada frame.
+- **Clip por nodo.** Solo los contenedores con `overflow` distinto de `visible` recortan, y lo hacen a su *padding box*, como CSS. Por eso los bordes, anillos de foco y sombras de los hijos no se cortan salvo que un ancestro con overflow lo exija.
+- **Orden de pintura.** Los hermanos se ordenan por `z-index` de forma estable (orden de documento a igualdad). `paint_order` y `hit_path` usan el mismo orden, así que lo que se ve encima es lo que recibe el clic.
+- La reducción de altura no comprime controles, tipografía ni gaps: el contenedor con `overflow-y-auto` se desplaza. El mínimo de ventana es **420×340 puntos lógicos**.
 
 ```text
-WindowRootLayout (bounds = tamaño lógico completo de la ventana)
-└── MainContentLayout (panel y padding)
-	└── ScrollViewportLayout (área visible + content_size + scroll_range)
-		└── ContentChildrenLayout
-			├── heading_box
-			├── description_box
-			├── button / button_label_box
-			├── status_box
-			└── input
+Layout (por frame)
+└── main (raíz = ventana, flex col)
+    ├── header (h-14, shadow-md, z-10)
+    └── div.flex-1.overflow-y-auto       ← scroll + clip a su padding box
+        └── div.items-center.gap-6.p-6
+            ├── card (rounded-lg border shadow-sm)
+            │   ├── card_header → text …
+            │   └── card_actions → button …
+            └── div.grid.grid-cols-3 → stat …
 ```
+
+## API de `Layout`
+
+- `Layout::compute(&root, &LayoutInput { viewport, theme, interaction, scroll }, &mut StyleCache, &mut dyn TextMeasure)` resuelve el estilo de cada nodo según su estado (hover sobre toda la ruta, foco, `focus-within`, presión, deshabilitado y las variantes `group-*`), hereda las propiedades de texto (`ComputedText`) y multiplica la opacidad hacia abajo en el árbol.
+- `LayoutNode` expone `bounds`, `padding_box`, `content_box`, `clip`, `scroll`, `text_box`, el `Style` resuelto, `ComputedText`, la opacidad efectiva y `hidden` (`display: none` o un ancestro oculto).
+- `hit_path(point)` devuelve la ruta raíz → nodo más interno bajo el puntero, respetando clips, z-index y `pointer-events-none`. `ancestors`, `reveal(id, margen, offsets)` y `scroll_target(path, delta)` sirven a foco y rueda.
+- `StyleCache` memoiza el `ClassList` parseado por cadena de clases y reúne las clases desconocidas.
 
 ## Criterios de aceptación
 
@@ -61,28 +69,19 @@ WindowRootLayout (bounds = tamaño lógico completo de la ventana)
 - Resize actualiza layout y hit-testing de forma consistente.
 - No hay promesa de latencia fija sin benchmark documentado.
 - L0 no depende de `winit` ni de `wgpu`; la conversión de plataforma ocurre en límites explícitos.
-- La ruta con caché produce los mismos bounds que el layout completo para los casos de prueba.
 
 ## Estado actual de L4
 
-- [x] `desktop/src/layout.rs` implementa `DemoLayout::compute` como cálculo completo y determinista sobre un viewport en unidades lógicas; las cajas del contenido se colocan usando CSS Grid vía Taffy.
-- [x] El resultado centraliza bounds del panel, botón y campo, además de orígenes de texto y caret; hit-testing, dibujo, selección e IME usan el mismo resultado.
-- [x] El viewport de referencia conserva las coordenadas visuales originales; viewports más estrechos reducen los anchos disponibles.
-- [x] Texto de título, descripción y estado se mide con `cosmic-text` al ancho de su caja; sus buffers envuelven líneas y el flujo vertical usa alturas medidas.
-- [x] El panel crece con el contenido envuelto cuando hay espacio disponible; los tracks de fila del Grid reciben las alturas medidas y los gaps existentes. Si el viewport vertical es menor, conserva los tracks de controles/gaps y expone rango de scroll.
-- [x] El scroll vertical actualiza dibujo, clipping, hit-testing, selección y caret/IME; hay indicador visual de scrollbar cuando existe overflow.
-- [x] Tamaño mínimo de ventana: 420×340 puntos lógicos. Las pruebas cubren reflow por altura medida, scroll range, límites y conversión viewport/contenido.
-- [x] La raíz de ventana queda representada explícitamente en el layout; el contenido principal, viewport y cajas de hijos se anidan como nodos estructurales, no solo como coordenadas planas.
-- [x] Consumer spike de `taffy` 0.15 con solo `std`, `taffy_tree` y `grid`: tracks `fr`, auto-placement por filas, gap y cálculo en unidades lógicas comprobados con tests.
-- [x] Migración inicial de `DemoLayout` a una columna CSS Grid con filas explícitas; las alturas de texto medidas por `cosmic-text` y las alturas/gaps de controles alimentan tracks lógicos.
-- [ ] Evolucionar a definición declarativa de tracks/áreas y medida intrínseca por nodo; esta migración inicial mantiene las medidas preferidas existentes para conservar el comportamiento observable.
-- [ ] Evaluar restricciones intrínsecas/min-content, áreas nombradas y política de overflow frente a los casos requeridos por Kai antes de estabilizar una API propia.
-- [x] Verificación visual manual del primer layout compartido reportada correcta por el usuario.
-- [ ] Revisar visualmente el reflow de texto al reducir ancho y el scroll al reducir altura hasta el mínimo admitido.
-- [ ] Repetir la comprobación específica de mover la ventana a una segunda pantalla; no se realizó en esta ronda de pruebas L4.
-- [ ] Completar el consumer spike con medidas intrínsecas, restricciones mínimas, áreas y overflow antes de declarar cerrada la evaluación/adopción de `taffy`.
-- [ ] No hay caché ni invalidación incremental todavía; medir antes de añadirlas.
+- [x] `layout.rs` traduce el árbol `Element` a un `TaffyTree` con flex, grid y block, y calcula el layout completo y determinista en unidades lógicas.
+- [x] Raíz = ventana, scroll y clip por nodo con `overflow`, z-index en pintura y hit-test, `position: absolute` (etiqueta flotante del campo).
+- [x] Hit-testing, paint, AccessKit, caret/IME y mapeo del puntero usan los mismos `LayoutNode`.
+- [x] Tests (con `testing::FixedMeasure`): raíz que llena la ventana aunque no tenga clases de tamaño, columna flex con padding, gap y botones `inline-flex`, scroll de `overflow-auto` con clip al padding box, bordes de hijos sin clip que nunca se cortan, `hit_path` con z-index, clip, `display: none` y `pointer-events-none`, variantes de estado y `group-*` en descendientes, y `reveal`. `style.rs` prueba la conversión a Taffy y la herencia de texto.
+- [x] `grid_layout.rs` conserva el helper de grid uniforme como referencia probada de la API Grid de Taffy.
+- [ ] Scroll horizontal, `position: fixed`/`sticky` y áreas de grid nombradas.
+- [ ] Sin caché ni invalidación incremental: la vista y el layout se recalculan completos en cada frame, y el benchmark muestra que hoy no hace falta.
 
-Este es un incremento inicial de L4, no el motor general de layout completo del framework. `DemoLayout` ahora obtiene las posiciones y cajas principales de una columna CSS Grid con filas explícitas; el panel exterior y su viewport siguen siendo responsabilidad del adaptador de demo. La integración aún fija tracks de controles y gaps desde las medidas actuales, por lo que no equivale a una API declarativa CSS completa ni cierra la evaluación de `taffy`. El layout se recalcula íntegramente cuando se solicita; no se reclama una mejora de rendimiento.
+### Benchmark de vista + layout + paint
 
-La revisión manual del primer incremento L4 queda aprobada para las pruebas ejecutadas. El modelo responsive con wrapping y scroll vertical está implementado y automatizado; requiere inspección visual manual. La validación de segunda pantalla queda pendiente para esta ronda.
+`cargo test --manifest-path desktop/Cargo.toml --release -- --ignored --nocapture bench_layout_and_paint` ejecuta 400 iteraciones de `view` + `Layout::compute` + `paint` sobre la demo, con medida real de cosmic-text y alternando cuatro anchos (1024, 800, 600 y 420 pt) para forzar el re-envolvido del texto.
+
+Resultado de referencia (Apple M4, macOS 15, release, 18-10-2026): media ≈ 196 µs, p50 ≈ 114 µs, p95 ≈ 132 µs, 142 operaciones de dibujo por frame. El máximo (≈ 32 ms) es la primera iteración, en frío, cuando cosmic-text carga las fuentes. Un frame a 120 Hz dispone de 8,3 ms, así que un caché de layout todavía no se justifica.

@@ -1,13 +1,11 @@
-//! CSS Grid layout spike for Kai's logical desktop coordinate space.
+//! Uniform CSS Grid helper over Taffy for Kai's logical desktop coordinate space.
 //!
-//! This module establishes Taffy Grid as the layout algorithm candidate. It is
-//! intentionally separate from `DemoLayout` until cell placement, measurement,
-//! and overflow are ready to replace the prototype's hand-authored composition.
+//! The widget tree (`layout::TreeLayout`) builds its own Taffy tree; this
+//! helper and its tests pin the Grid behavior (`fr` tracks, gaps, auto
+//! placement) that a future `Grid` widget will rely on.
 
 use crate::geometry::Rect;
-use taffy::prelude::{
-    AvailableSpace, Dimension, Display, Size, Style, TaffyTree, fr, length, line,
-};
+use taffy::prelude::{AvailableSpace, Dimension, Display, Size, Style, TaffyTree, fr, length};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridCell {
@@ -16,124 +14,16 @@ pub struct GridCell {
     pub bounds: Rect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GridItemSpec {
-    /// Zero-based explicit row index in the supplied row track list.
-    pub row: u16,
-    /// Preferred item width, constrained to the grid's available width.
-    pub preferred_width: f32,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ExplicitRowGrid {
-    pub content_size: crate::geometry::Size,
-    pub items: Vec<Rect>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridLayoutError {
     InvalidGrid,
     EngineFailure,
 }
 
-/// Compute children assigned to explicit rows in a one-column CSS Grid.
-///
-/// Row sizes are logical points, and each item is positioned through an
-/// explicit CSS Grid row line. This supports content-driven rows and distinct
-/// row spacing without manually accumulating child coordinates.
-pub fn compute_explicit_row_grid(
-    width: f32,
-    row_heights: &[f32],
-    items: &[GridItemSpec],
-) -> Result<ExplicitRowGrid, GridLayoutError> {
-    if !width.is_finite()
-        || width <= 0.0
-        || row_heights.is_empty()
-        || row_heights
-            .iter()
-            .any(|height| !height.is_finite() || *height < 0.0)
-        || row_heights.len() > i16::MAX as usize
-        || items.iter().any(|item| {
-            usize::from(item.row) >= row_heights.len()
-                || !item.preferred_width.is_finite()
-                || item.preferred_width < 0.0
-        })
-    {
-        return Err(GridLayoutError::InvalidGrid);
-    }
-
-    let mut tree: TaffyTree<()> = TaffyTree::new();
-    let children = items
-        .iter()
-        .map(|item| {
-            tree.new_leaf(Style {
-                size: Size {
-                    width: Dimension::length(item.preferred_width.min(width)),
-                    ..Size::auto()
-                },
-                grid_row: line(i16::try_from(item.row).unwrap_or_default() + 1),
-                ..Style::default()
-            })
-            .map_err(|_| GridLayoutError::EngineFailure)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let root = tree
-        .new_with_children(
-            Style {
-                display: Display::Grid,
-                size: Size {
-                    width: Dimension::length(width),
-                    height: Dimension::auto(),
-                },
-                grid_template_columns: vec![fr(1.0)],
-                grid_template_rows: row_heights.iter().copied().map(length).collect(),
-                ..Style::default()
-            },
-            &children,
-        )
-        .map_err(|_| GridLayoutError::EngineFailure)?;
-    tree.compute_layout(
-        root,
-        Size {
-            width: AvailableSpace::Definite(width),
-            height: AvailableSpace::MaxContent,
-        },
-    )
-    .map_err(|_| GridLayoutError::EngineFailure)?;
-
-    let root_layout = tree
-        .layout(root)
-        .map_err(|_| GridLayoutError::EngineFailure)?;
-    let item_bounds = children
-        .into_iter()
-        .map(|node| {
-            let layout = tree
-                .layout(node)
-                .map_err(|_| GridLayoutError::EngineFailure)?;
-            Ok(Rect {
-                x: layout.location.x,
-                y: layout.location.y,
-                width: layout.size.width,
-                height: layout.size.height,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(ExplicitRowGrid {
-        content_size: crate::geometry::Size {
-            width: root_layout.size.width,
-            height: root_layout.size.height,
-        },
-        items: item_bounds,
-    })
-}
-
 /// Compute an explicitly sized, uniform CSS Grid in logical window units.
 ///
 /// Grid items are auto-placed in row order and stretch to fill their `fr` tracks,
-/// as ordinary CSS Grid items do. Intrinsic widget measurement and min-content
-/// constraints will be connected when the existing demo tree migrates to Grid.
+/// as ordinary CSS Grid items do.
 pub fn compute_uniform_grid(
     width: f32,
     height: f32,
@@ -216,7 +106,7 @@ pub fn compute_uniform_grid(
 mod tests {
     use crate::geometry::Rect;
 
-    use super::{GridItemSpec, GridLayoutError, compute_explicit_row_grid, compute_uniform_grid};
+    use super::{GridLayoutError, compute_uniform_grid};
 
     fn close(actual: f32, expected: f32) {
         assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
@@ -281,79 +171,6 @@ mod tests {
         );
         assert_eq!(
             compute_uniform_grid(100.0, 100.0, 1, 1, -1.0, 0.0),
-            Err(GridLayoutError::InvalidGrid)
-        );
-    }
-
-    #[test]
-    fn explicit_rows_place_items_without_manual_coordinate_accumulation() {
-        let grid = compute_explicit_row_grid(
-            300.0,
-            &[36.0, 16.0, 22.0, 32.0, 48.0],
-            &[
-                GridItemSpec {
-                    row: 0,
-                    preferred_width: 300.0,
-                },
-                GridItemSpec {
-                    row: 2,
-                    preferred_width: 300.0,
-                },
-                GridItemSpec {
-                    row: 4,
-                    preferred_width: 220.0,
-                },
-            ],
-        )
-        .unwrap();
-
-        assert_eq!(
-            grid.content_size,
-            crate::geometry::Size {
-                width: 300.0,
-                height: 154.0
-            }
-        );
-        assert_eq!(
-            grid.items[0],
-            Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 300.0,
-                height: 36.0
-            }
-        );
-        assert_eq!(
-            grid.items[1],
-            Rect {
-                x: 0.0,
-                y: 52.0,
-                width: 300.0,
-                height: 22.0
-            }
-        );
-        assert_eq!(
-            grid.items[2],
-            Rect {
-                x: 0.0,
-                y: 106.0,
-                width: 220.0,
-                height: 48.0
-            }
-        );
-    }
-
-    #[test]
-    fn explicit_grid_rejects_children_outside_declared_rows() {
-        assert_eq!(
-            compute_explicit_row_grid(
-                200.0,
-                &[48.0],
-                &[GridItemSpec {
-                    row: 1,
-                    preferred_width: 100.0,
-                }],
-            ),
             Err(GridLayoutError::InvalidGrid)
         );
     }

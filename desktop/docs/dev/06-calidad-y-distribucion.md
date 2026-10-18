@@ -17,6 +17,27 @@ Ejecutar los gates en cada fase L0–L6; ningún resultado manual pendiente se m
 7. Medir inicio, frame time, CPU/GPU, fuentes y memoria antes de optimizar; documentar hardware, macOS y método.
 8. Auditar VoiceOver/roles/etiquetas/foco/acciones y revisar dependencias, licencias y comportamiento sin GPU antes del hito de distribución.
 
+## Estado actual
+
+- [x] CI: el job `desktop` de `.github/workflows/ci.yml` corre en `macos-latest` con Rust estable: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings` y `cargo test --locked`. Los tests son puros (sin ventana, superficie GPU ni portapapeles del sistema), así que funcionan en el runner.
+- [x] CI: el job `desktop-msrv` comprueba `cargo check --locked --all-targets` con Rust 1.89, el MSRV declarado (impuesto por `cosmic-text` 0.19).
+- [x] 81 tests unitarios cubren geometría, señales, dispatch y orden de foco, adaptador de plataforma, tema, parser de clases, estilo, árbol `Element`, layout, paint, lotes de dibujo, backend (partes puras), text store, campo de texto, árbol AccessKit, componentes, runtime y la demo (`update`/`view`, clases soportadas, raíz que llena la ventana).
+- [x] Dos tests `#[ignore]` que se ejecutan a mano: el benchmark (abajo) y `snapshot_demo`, que renderiza la demo offscreen en la GPU local y deja capturas BMP en `desktop/target/snapshots/` ([04](04-renderer-y-texto.md#capturas)).
+- [ ] Comparación automática de capturas: requiere un runner con GPU; queda fuera de CI.
+- [ ] Auditoría VoiceOver completa, bundle `.app`, firma y notarización.
+
+### Benchmark de vista + layout + paint
+
+```sh
+cargo test --manifest-path desktop/Cargo.toml --release -- --ignored --nocapture bench_layout_and_paint
+```
+
+Ejecuta 400 iteraciones de `view` + `Layout::compute` + `paint` sobre la demo, con medida real de cosmic-text y alternando anchos (1024, 800, 600 y 420 pt) para forzar el re-envolvido del texto. Referencia (Apple M4, macOS 15, release, 18-10-2026): media ≈ 196 µs, p50 ≈ 114 µs, p95 ≈ 132 µs, 142 operaciones de dibujo por frame; el máximo (≈ 32 ms) es la primera iteración, en frío. Con este árbol un caché no se justifica; repetir la medición cuando el árbol crezca y antes de proponer invalidación incremental.
+
+### Nota sobre el binario
+
+Si `CARGO_TARGET_DIR` está definido, el binario no está en `desktop/target/debug/`: ejecutar con `cargo run` o desde `"$CARGO_TARGET_DIR/debug/kai-ui-desktop-prototype"`. Un binario antiguo en `desktop/target/debug/` no refleja los cambios.
+
 ## Integración de capacidades de aplicación
 
 Impresión, PDF, preferencias persistentes, escritura atómica, CMS y funciones de IA se modelan como crates/adaptadores opcionales consumidos por las apps. No deben ser dependencia obligatoria de `ui-render` ni del núcleo de widgets salvo que un requisito del framework lo exija.

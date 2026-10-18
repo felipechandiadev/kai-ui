@@ -12,6 +12,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 6. [Widgets y tema Kai](05-widgets-y-tema.md)
 7. [Calidad y distribución](06-calidad-y-distribucion.md)
 8. [Evaluación de craft-libs](07-integracion-craft-libs.md)
+9. [Accesibilidad (AccessKit)](08-accesibilidad.md)
 
 ## Orden recomendado
 
@@ -31,8 +32,31 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **L0 — Completada:** tipos geométricos y conversión lógica/física extraídos a `desktop/src/geometry.rs`; 7 pruebas unitarias pasan y el usuario confirmó que la revisión visual está correcta.
 - **L1 — Completada para el alcance actual:** `Signal<T>` local está implementada y usada por pressed/foco; 4 pruebas de señal pasan. El usuario confirmó pressed, hover y foco correctos.
 - **L2–L3 — Gate básico aprobado:** intents/dispatcher puros y adaptador de plataforma implementados; tests automáticos y regresión manual básica reportados correctos. IME/portapapeles siguen siendo verificaciones específicas independientes.
-- **L4 — En curso:** `DemoLayout` comparte cajas entre render e interacción; el texto se envuelve según el ancho medido y el overflow vertical usa scroll sin reducir controles. Mínimo 420×340 pt. 27 tests y Clippy pasan. Falta inspección visual de reflow/scroll y mover la ventana a una segunda pantalla. No hay caché ni dependencia `taffy`.
-- **L5–L6 — Pendientes:** renderer desacoplado y árbol de widgets. MCP/IA seguirá siendo un adaptador opcional de aplicación con validación/autorización previa.
+- **L4 — Completada para el alcance actual:** modelo de cajas tipo CSS sobre Taffy (flex, grid, block, `position: absolute`). La raíz es siempre la ventana; scroll y clip por nodo con `overflow` (clip al padding box); z-index en pintura y hit-test. Sin caché: vista + layout + paint cuestan ≈ 130 µs (p95) en Apple M4 ([02](02-geometria-y-layout.md)).
+- **L5 — Completada:** `DrawList` independiente del backend, `paint` puro en orden de pintor, quads SDF instanciados con radio, borde, blur y clip por instancia, lotes alternos de cajas y texto, y render offscreen para capturas ([04](04-renderer-y-texto.md)).
+- **L6 — Completada para el alcance actual:** arquitectura Elm (`App` con `update`/`view`, runtime en `runtime.rs`), árbol tipo DOM `Element<Msg>`, estilos con clases tipo Tailwind resueltas contra el tema Kai, y componentes Button, TextInput/TextField, Card y Stat con las clases de Kai web ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
+- **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
+- **Calidad:** 81 tests, Clippy `-D warnings`, job de CI en macOS (más un job de MSRV 1.89), benchmark y capturas offscreen como tests `#[ignore]` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+
+## Mapa de módulos
+
+```text
+desktop/src/
+├── main.rs            demo (App: Model/Msg/update/view)
+├── runtime.rs         runtime Elm: ventana, eventos → mensajes, frame
+├── element.rs         árbol tipo DOM Element<Msg>, ids, FocusOrder
+├── components.rs      Button, TextField, Card… con clases de Kai web
+├── tw.rs              parser de clases tipo Tailwind → Style
+├── style.rs           Style tipo CSS → taffy::Style, texto heredable
+├── theme.rs           tokens de web/src/theme/tokens.css
+├── layout.rs          Layout: Taffy, scroll, clip, z-index, hit-test
+├── render/            DrawList, paint, texto, backend wgpu (quad.wgsl)
+├── text_field.rs      edición, IME y portapapeles de los inputs
+├── ui_engine.rs       intents y dispatch de foco/activación/texto
+├── platform_adapter.rs  winit → intents Kai
+├── a11y.rs            árbol AccessKit desde el layout
+└── geometry.rs, signal.rs, grid_layout.rs
+```
 
 Las librerías mencionadas son **candidatas a evaluar**, no decisiones irreversibles. Antes de adoptarlas, verificar compatibilidad con la versión de Rust elegida, macOS, licencias, mantenimiento e integración entre sí.
 
@@ -42,5 +66,5 @@ La guía de [craft-libs](07-integracion-craft-libs.md) distingue los crates de u
 
 - Widgets nativos de AppKit o SwiftUI para el dibujo de controles.
 - Android, iOS, Windows y Linux.
-- Un bus global de señales, reactividad automática entre widgets, caché incremental sin mediciones y comandos serializables con undo/redo.
+- Un bus global de señales, componentes con estado local oculto, efectos asíncronos (`Cmd`/`Sub`), caché incremental sin mediciones y comandos serializables con undo/redo.
 - Integraciones de aplicación como PDF, impresión, CMS, ajustes persistentes o agentes de IA dentro del renderer.

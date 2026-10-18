@@ -1,0 +1,95 @@
+// Instanced rounded rectangles drawn with a signed distance field.
+// All coordinates are physical pixels; colors are premultiplied in the
+// fragment stage and blended with premultiplied alpha.
+
+struct Uniforms {
+    surface: vec2<f32>,
+    _pad: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct Instance {
+    // x, y, width, height
+    @location(0) rect: vec4<f32>,
+    @location(1) fill: vec4<f32>,
+    @location(2) border: vec4<f32>,
+    // left, top, right, bottom
+    @location(3) clip: vec4<f32>,
+    // radius, border width, blur, unused
+    @location(4) params: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) local: vec2<f32>,
+    @location(1) half_size: vec2<f32>,
+    @location(2) fill: vec4<f32>,
+    @location(3) border: vec4<f32>,
+    @location(4) clip: vec4<f32>,
+    @location(5) params: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32, instance: Instance) -> VertexOutput {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+    );
+    // Room for blur and one pixel of anti-aliasing.
+    let pad = instance.params.z + 1.0;
+    let origin = instance.rect.xy - vec2<f32>(pad);
+    let size = instance.rect.zw + vec2<f32>(pad * 2.0);
+    let pixel = origin + corners[index] * size;
+
+    var output: VertexOutput;
+    output.position = vec4<f32>(
+        pixel.x / uniforms.surface.x * 2.0 - 1.0,
+        1.0 - pixel.y / uniforms.surface.y * 2.0,
+        0.0,
+        1.0,
+    );
+    output.half_size = instance.rect.zw * 0.5;
+    output.local = pixel - (instance.rect.xy + output.half_size);
+    output.fill = instance.fill;
+    output.border = instance.border;
+    output.clip = instance.clip;
+    output.params = instance.params;
+    return output;
+}
+
+fn rounded_box(p: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
+    let q = abs(p) - half_size + vec2<f32>(radius);
+    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+fn premultiply(color: vec4<f32>) -> vec4<f32> {
+    return vec4<f32>(color.rgb * color.a, color.a);
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let pixel = input.position.xy;
+    if (pixel.x < input.clip.x || pixel.y < input.clip.y || pixel.x > input.clip.z || pixel.y > input.clip.w) {
+        discard;
+    }
+    let radius = min(input.params.x, min(input.half_size.x, input.half_size.y));
+    let distance = rounded_box(input.local, input.half_size, radius);
+    let blur = input.params.z;
+    if (blur > 0.0) {
+        let alpha = 1.0 - smoothstep(-blur, blur, distance);
+        return premultiply(input.fill) * alpha;
+    }
+    let coverage = clamp(0.5 - distance, 0.0, 1.0);
+    let border_width = input.params.y;
+    var color = premultiply(input.fill);
+    if (border_width > 0.0) {
+        let inside = clamp(0.5 - (distance + border_width), 0.0, 1.0);
+        color = mix(premultiply(input.border), color, inside);
+    }
+    return color * coverage;
+}

@@ -1,541 +1,955 @@
-//! Deterministic logical layout for the current desktop prototype.
+//! Layout of the element tree over Taffy, in logical window coordinates.
 //!
-//! This is the first L4 slice: it computes the demo's boxes from a logical
-//! viewport. It deliberately recalculates the complete result and has no cache.
+//! The root element is the window: it always gets exactly the viewport size,
+//! whatever its classes say, and everything else lives inside it. Each
+//! element's classes are resolved to a [`Style`] for its interaction state
+//! (hover, focus, active, disabled, group) and translated to Taffy, so
+//! block, flex and grid behave as in CSS. Elements with `overflow-hidden` or
+//! `overflow-auto` clip their descendants to their padding box; `overflow-auto`
+//! elements also scroll vertically with their own offset ([`ScrollOffsets`]).
+//!
+//! Every call lays the whole tree out from scratch; there is no cache or
+//! incremental invalidation besides the parsed-class cache ([`StyleCache`]).
 
-use crate::geometry::{Point, Rect, Size};
-use crate::grid_layout::{GridItemSpec, compute_explicit_row_grid};
+use std::collections::HashMap;
 
-const OUTER_MARGIN: f32 = 40.0;
-const CONTENT_INSET: f32 = 8.0;
-const MIN_PANEL_SIZE: Size = Size {
-    width: 340.0,
-    height: 260.0,
-};
-const PANEL_REFERENCE_SIZE: Size = Size {
-    width: 540.0,
-    height: 330.0,
-};
-const BUTTON_SIZE: Size = Size {
-    width: 220.0,
-    height: 48.0,
-};
-const INPUT_SIZE: Size = Size {
-    width: 480.0,
-    height: 48.0,
-};
-const REFERENCE_GAPS: [f32; 4] = [16.0, 32.0, 24.0, 46.0];
-const REFERENCE_BOTTOM_INSET: f32 = 22.0;
+use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TextBlockHeights {
-    pub heading: f32,
-    pub description: f32,
-    pub status: f32,
+use crate::element::{Element, Kind, Role, WidgetId};
+use crate::geometry::{Insets, Point, Rect, Size};
+use crate::render::TextId;
+use crate::render::text::TextStyle;
+use crate::style::{ComputedText, Display, Overflow, Style};
+use crate::theme::Theme;
+use crate::tw::{ClassList, State};
+
+/// Default width of an input without an explicit width (`min-width: 180px`
+/// in the web `textfield.css`).
+const INPUT_INTRINSIC_WIDTH: f32 = 180.0;
+
+pub trait TextMeasure {
+    /// Size of `text` laid out at `max_width` (`None` = unconstrained),
+    /// keeping the shaped buffer under `id` ready to draw.
+    fn measure(&mut self, id: TextId, text: &str, style: TextStyle, max_width: Option<f32>)
+    -> Size;
 }
 
-impl Default for TextBlockHeights {
-    fn default() -> Self {
-        Self {
-            heading: 36.0,
-            description: 22.0,
-            status: 20.0,
+/// Pointer and keyboard state that selects class variants.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Interaction {
+    /// Hit-test path under the pointer, root first.
+    pub hovered: Vec<WidgetId>,
+    pub focused: Option<WidgetId>,
+    pub pressed: Option<WidgetId>,
+}
+
+/// Vertical scroll offset of each `overflow-auto` element.
+pub type ScrollOffsets = HashMap<WidgetId, f32>;
+
+/// Parsed class strings, reused across frames. Clear it when the theme
+/// changes.
+#[derive(Default)]
+pub struct StyleCache {
+    lists: HashMap<String, ClassList>,
+}
+
+impl StyleCache {
+    pub fn get(&mut self, classes: &str, theme: &Theme) -> &ClassList {
+        if !self.lists.contains_key(classes) {
+            self.lists
+                .insert(classes.to_owned(), ClassList::parse(classes, theme));
         }
+        &self.lists[classes]
+    }
+
+    pub fn clear(&mut self) {
+        self.lists.clear();
+    }
+
+    /// Unknown classes seen so far, for diagnostics.
+    pub fn unknown(&self) -> Vec<&str> {
+        let mut unknown: Vec<&str> = self
+            .lists
+            .values()
+            .flat_map(|list| list.unknown.iter().map(String::as_str))
+            .collect();
+        unknown.sort_unstable();
+        unknown.dedup();
+        unknown
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct WindowRootLayout {
+#[derive(Clone, Debug, PartialEq)]
+pub enum Content {
+    Box,
+    Text(String),
+    Input { placeholder: String },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScrollState {
+    pub offset: f32,
+    pub max: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayoutNode {
+    pub id: WidgetId,
+    pub parent: Option<usize>,
+    pub children: Vec<usize>,
+    pub content: Content,
+    pub role: Option<Role>,
+    pub label: Option<String>,
+    pub disabled: bool,
+    /// Clickable or editable (see [`Element::is_control`]).
+    pub control: bool,
+    pub style: Style,
+    pub text: ComputedText,
+    /// Product of the opacities of this node and its ancestors.
+    pub opacity: f32,
+    /// Hidden by `display: none` on itself or an ancestor.
+    pub hidden: bool,
+    pub pointer_events: bool,
+    /// Border box, window coordinates, ancestor scroll applied.
     pub bounds: Rect,
-    pub main_content: MainContentLayout,
+    pub padding_box: Rect,
+    pub content_box: Rect,
+    /// Clip inherited from overflow ancestors; `None` = the whole window.
+    pub clip: Option<Rect>,
+    pub scroll: Option<ScrollState>,
+    /// Text area: the text box, or the vertically centered input line.
+    pub text_box: Option<Rect>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MainContentLayout {
-    pub bounds: Rect,
-    pub scroll: ScrollViewportLayout,
+impl LayoutNode {
+    /// Visible part of the border box, or `None` when fully clipped.
+    pub fn visible_bounds(&self) -> Option<Rect> {
+        match self.clip {
+            None => Some(self.bounds),
+            Some(clip) => self.bounds.intersection(clip),
+        }
+    }
+
+    fn accepts_point(&self, point: Point) -> bool {
+        !self.hidden
+            && self.pointer_events
+            && self.bounds.contains(point)
+            && self.clip.is_none_or(|clip| clip.contains(point))
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ScrollViewportLayout {
-    pub bounds: Rect,
-    pub content_size: Size,
-    pub scroll_range: f32,
-    pub children: ContentChildrenLayout,
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Layout {
+    pub viewport: Size,
+    /// Pre-order (document order).
+    nodes: Vec<LayoutNode>,
+    index: HashMap<WidgetId, usize>,
+    /// Back-to-front: document order with siblings stably sorted by z-index.
+    paint_order: Vec<usize>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ContentChildrenLayout {
-    pub heading_box: Rect,
-    pub description_box: Rect,
-    pub button: Rect,
-    pub button_label_box: Rect,
-    pub status_box: Rect,
-    pub input: Rect,
+pub struct LayoutInput<'a> {
+    pub viewport: Size,
+    pub theme: &'a Theme,
+    pub interaction: &'a Interaction,
+    pub scroll: &'a ScrollOffsets,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DemoLayout {
-    pub root: WindowRootLayout,
-    pub heading_origin: Point,
-    pub description_origin: Point,
-    pub button_label_origin: Point,
-    pub status_origin: Point,
-    pub input_text_origin: Point,
-    pub input_caret_origin: Point,
+#[derive(Clone, Copy, Debug)]
+enum Leaf {
+    Text(usize),
+    Input(usize),
 }
 
-impl DemoLayout {
-    /// Smallest logical window supported by the prototype. Content may still
-    /// overflow this viewport and be reached through vertical scrolling.
-    pub const MINIMUM_VIEWPORT: Size = Size {
-        width: OUTER_MARGIN * 2.0 + MIN_PANEL_SIZE.width,
-        height: OUTER_MARGIN * 2.0 + MIN_PANEL_SIZE.height,
+pub fn text_style(text: &ComputedText) -> TextStyle {
+    TextStyle {
+        font_size: text.font_size,
+        line_height: text.line_height,
+        weight: text.weight,
+        wrap: !text.nowrap,
+    }
+}
+
+struct Builder<'a> {
+    theme: &'a Theme,
+    interaction: &'a Interaction,
+    focus_path: Vec<WidgetId>,
+    styles: &'a mut StyleCache,
+    taffy: TaffyTree<Leaf>,
+    nodes: Vec<LayoutNode>,
+    handles: Vec<Option<NodeId>>,
+}
+
+#[derive(Clone, Copy)]
+struct Inherited {
+    text: ComputedText,
+    opacity: f32,
+    hidden: bool,
+    pointer_events: bool,
+    group_hover: bool,
+    group_focus_within: bool,
+}
+
+impl Builder<'_> {
+    fn build<Msg>(
+        &mut self,
+        element: &Element<Msg>,
+        parent: Option<usize>,
+        inherited: Inherited,
+    ) -> taffy::TaffyResult<NodeId> {
+        let id = element.id;
+        let interaction = self.interaction;
+        let hover = interaction.hovered.contains(&id);
+        let focus_within = self.focus_path.contains(&id);
+        let state = State {
+            hover,
+            focus: interaction.focused == Some(id),
+            focus_within,
+            active: interaction.pressed == Some(id),
+            disabled: element.disabled,
+            group_hover: inherited.group_hover,
+            group_focus_within: inherited.group_focus_within,
+        };
+        let classes = self.styles.get(&element.class, self.theme);
+        let is_group = classes.group;
+        let style = classes.resolve(state);
+        let mut text = inherited.text.inherit(&style.text);
+        let content = match &element.kind {
+            Kind::Div => Content::Box,
+            Kind::Text(content) => Content::Text(content.clone()),
+            Kind::Input { placeholder, .. } => {
+                text.nowrap = true;
+                Content::Input {
+                    placeholder: placeholder.clone(),
+                }
+            }
+        };
+        let index = self.nodes.len();
+        let node = LayoutNode {
+            id,
+            parent,
+            children: Vec::new(),
+            content,
+            role: element.role,
+            label: element.label.clone(),
+            disabled: element.disabled,
+            control: element.is_control(),
+            opacity: inherited.opacity * style.opacity,
+            hidden: inherited.hidden || style.display == Display::None,
+            pointer_events: inherited.pointer_events && style.pointer_events,
+            style,
+            text,
+            bounds: Rect::default(),
+            padding_box: Rect::default(),
+            content_box: Rect::default(),
+            clip: None,
+            scroll: None,
+            text_box: None,
+        };
+        let child_inherited = Inherited {
+            text,
+            opacity: node.opacity,
+            hidden: node.hidden,
+            pointer_events: node.pointer_events,
+            group_hover: if is_group {
+                hover
+            } else {
+                inherited.group_hover
+            },
+            group_focus_within: if is_group {
+                focus_within
+            } else {
+                inherited.group_focus_within
+            },
+        };
+        let taffy_style = node.style.to_taffy();
+        self.nodes.push(node);
+        self.handles.push(None);
+        if let Some(parent) = parent {
+            self.nodes[parent].children.push(index);
+        }
+
+        let handle = match element.kind {
+            Kind::Div => {
+                let mut children = Vec::with_capacity(element.children.len());
+                for child in &element.children {
+                    children.push(self.build(child, Some(index), child_inherited)?);
+                }
+                self.taffy.new_with_children(taffy_style, &children)?
+            }
+            Kind::Text(_) => self
+                .taffy
+                .new_leaf_with_context(taffy_style, Leaf::Text(index))?,
+            Kind::Input { .. } => self
+                .taffy
+                .new_leaf_with_context(taffy_style, Leaf::Input(index))?,
+        };
+        self.handles[index] = Some(handle);
+        Ok(handle)
+    }
+}
+
+fn measure_leaf(
+    leaf: Option<Leaf>,
+    known: TaffySize<Option<f32>>,
+    available: TaffySize<AvailableSpace>,
+    nodes: &[LayoutNode],
+    text: &mut dyn TextMeasure,
+) -> TaffySize<f32> {
+    let measured = match leaf {
+        None => Size::default(),
+        Some(Leaf::Text(index)) => {
+            let node = &nodes[index];
+            let Content::Text(content) = &node.content else {
+                return TaffySize::ZERO;
+            };
+            let max_width = if node.text.nowrap {
+                None
+            } else {
+                known.width.or(match available.width {
+                    AvailableSpace::Definite(width) => Some(width),
+                    AvailableSpace::MinContent => Some(0.0),
+                    AvailableSpace::MaxContent => None,
+                })
+            };
+            text.measure(
+                TextId::content(node.id),
+                content,
+                text_style(&node.text),
+                max_width,
+            )
+        }
+        Some(Leaf::Input(index)) => {
+            let available_width = match available.width {
+                AvailableSpace::Definite(width) => width,
+                _ => INPUT_INTRINSIC_WIDTH,
+            };
+            Size {
+                width: INPUT_INTRINSIC_WIDTH.min(available_width),
+                height: nodes[index].text.line_height,
+            }
+        }
     };
-
-    pub fn content_width_for_viewport(viewport: Size) -> f32 {
-        let panel_width = PANEL_REFERENCE_SIZE
-            .width
-            .min((viewport.width - OUTER_MARGIN * 2.0).max(0.0));
-        (panel_width - CONTENT_INSET * 2.0).max(0.0)
+    // Rounded up so pixel-snapped layout never trims the last glyph.
+    TaffySize {
+        width: known.width.unwrap_or(measured.width.ceil()),
+        height: known.height.unwrap_or(measured.height.ceil()),
     }
+}
 
-    /// Compute all prototype bounds in logical window units.
-    ///
-    /// The layout is anchored at the original 40pt margin, preserving the
-    /// 1024x720 prototype appearance. Panel and control widths shrink when the
-    /// available viewport is narrower than the reference size.
-    pub fn compute(viewport: Size) -> Self {
-        Self::compute_with_text_heights(viewport, TextBlockHeights::default())
+fn clip_to(clip: Option<Rect>, rect: Rect) -> Option<Rect> {
+    let empty = Rect {
+        width: 0.0,
+        height: 0.0,
+        ..rect
+    };
+    Some(match clip {
+        None => rect,
+        Some(clip) => clip.intersection(rect).unwrap_or(empty),
+    })
+}
+
+fn insets(rect: taffy::Rect<f32>) -> Insets {
+    Insets {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
     }
+}
 
-    /// Compute a content-driven vertical flow. Wrapped text increases its box
-    /// height and moves following children down; short viewports expose a
-    /// scroll range instead of shrinking controls or vertical gaps.
-    pub fn compute_with_text_heights(viewport: Size, text: TextBlockHeights) -> Self {
-        let available_width = (viewport.width - OUTER_MARGIN * 2.0).max(0.0);
-        let available_height = (viewport.height - OUTER_MARGIN * 2.0).max(0.0);
-        let text = TextBlockHeights {
-            heading: text.heading.max(0.0),
-            description: text.description.max(0.0),
-            status: text.status.max(0.0),
+impl Layout {
+    /// Lay out `root` (with ids assigned) for the given viewport.
+    pub fn compute<Msg>(
+        root: &Element<Msg>,
+        input: &LayoutInput<'_>,
+        styles: &mut StyleCache,
+        text: &mut dyn TextMeasure,
+    ) -> Self {
+        let focus_path = input
+            .interaction
+            .focused
+            .and_then(|id| root.path_to(id))
+            .unwrap_or_default();
+        let mut builder = Builder {
+            theme: input.theme,
+            interaction: input.interaction,
+            focus_path,
+            styles,
+            taffy: TaffyTree::new(),
+            nodes: Vec::new(),
+            handles: Vec::new(),
         };
-        let panel_width = PANEL_REFERENCE_SIZE.width.min(available_width);
-        let content_width = (panel_width - CONTENT_INSET * 2.0).max(0.0);
-        let row_heights = [
-            text.heading,
-            REFERENCE_GAPS[0],
-            text.description,
-            REFERENCE_GAPS[1],
-            BUTTON_SIZE.height,
-            REFERENCE_GAPS[2],
-            text.status,
-            REFERENCE_GAPS[3],
-            INPUT_SIZE.height,
-            REFERENCE_BOTTOM_INSET,
-        ];
-        let grid = compute_explicit_row_grid(
-            content_width,
-            &row_heights,
-            &[
-                GridItemSpec {
-                    row: 0,
-                    preferred_width: content_width,
-                },
-                GridItemSpec {
-                    row: 2,
-                    preferred_width: content_width,
-                },
-                GridItemSpec {
-                    row: 4,
-                    preferred_width: BUTTON_SIZE.width,
-                },
-                GridItemSpec {
-                    row: 6,
-                    preferred_width: content_width,
-                },
-                GridItemSpec {
-                    row: 8,
-                    preferred_width: INPUT_SIZE.width,
-                },
-            ],
-        )
-        .expect("demo grid dimensions and tracks are valid");
-        let content_height = grid.content_size.height;
-        let preferred_panel_height =
-            (CONTENT_INSET * 2.0 + content_height).max(MIN_PANEL_SIZE.height);
-        let panel = Rect {
-            x: OUTER_MARGIN,
-            y: OUTER_MARGIN,
-            width: panel_width,
-            height: preferred_panel_height.min(available_height),
+        let inherited = Inherited {
+            text: input.theme.base_text(),
+            opacity: 1.0,
+            hidden: false,
+            pointer_events: true,
+            group_hover: false,
+            group_focus_within: false,
         };
-        let content_x = panel.x + CONTENT_INSET;
-        let content_viewport = Rect {
-            x: content_x,
-            y: panel.y + CONTENT_INSET,
-            width: content_width,
-            height: (panel.height - CONTENT_INSET * 2.0).max(0.0),
-        };
+        let root_handle = builder
+            .build(root, None, inherited)
+            .expect("element styles are valid Taffy input");
+        let Builder {
+            mut taffy,
+            mut nodes,
+            handles,
+            ..
+        } = builder;
 
-        let translate_content = |rect: Rect| {
-            rect.translated(Point {
-                x: content_x,
-                y: content_viewport.y,
-            })
+        let viewport = input.viewport;
+        let mut root_style = taffy.style(root_handle).cloned().unwrap_or_default();
+        root_style.size = TaffySize {
+            width: taffy::prelude::length(viewport.width),
+            height: taffy::prelude::length(viewport.height),
         };
-        let heading_box = translate_content(grid.items[0]);
-        let description_box = translate_content(grid.items[1]);
-        let button = translate_content(grid.items[2]);
-        let status_box = translate_content(grid.items[3]);
-        let input = translate_content(grid.items[4]);
-        let button_label_box = Rect {
-            x: button.x + 20.0,
-            y: button.y + 14.0,
-            width: (button.width - 40.0).max(1.0),
-            height: 20.0,
-        };
-        let scroll_range = (content_height - content_viewport.height).max(0.0);
+        root_style.position = taffy::Position::Relative;
+        root_style.margin = taffy::Rect::zero();
+        taffy
+            .set_style(root_handle, root_style)
+            .expect("root style is valid");
+        if nodes[0].style.display == Display::None {
+            nodes[0].hidden = false;
+            nodes[0].style.display = Display::Block;
+        }
 
-        Self {
-            root: WindowRootLayout {
-                bounds: Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: viewport.width,
-                    height: viewport.height,
-                },
-                main_content: MainContentLayout {
-                    bounds: panel,
-                    scroll: ScrollViewportLayout {
-                        bounds: content_viewport,
-                        content_size: Size {
-                            width: content_width,
-                            height: content_height,
-                        },
-                        scroll_range,
-                        children: ContentChildrenLayout {
-                            heading_box,
-                            description_box,
-                            button,
-                            button_label_box,
-                            status_box,
-                            input,
-                        },
+        {
+            let nodes_ref = &nodes;
+            taffy
+                .compute_layout_with_measure(
+                    root_handle,
+                    TaffySize {
+                        width: AvailableSpace::Definite(viewport.width),
+                        height: AvailableSpace::Definite(viewport.height),
                     },
+                    |inputs, _node, context, style| {
+                        let leaf = context.map(|leaf| *leaf);
+                        taffy::compute_leaf_layout(
+                            inputs,
+                            style,
+                            |_, _| 0.0,
+                            |known, available| {
+                                measure_leaf(leaf, known, available, nodes_ref, text)
+                            },
+                        )
+                    },
+                )
+                .expect("Taffy layout of a valid tree");
+        }
+
+        place(
+            &mut nodes,
+            &handles,
+            &taffy,
+            0,
+            Point::default(),
+            None,
+            input.scroll,
+            text,
+        );
+
+        let mut paint_order = Vec::with_capacity(nodes.len());
+        push_paint_order(&nodes, 0, &mut paint_order);
+        let index = nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.id, index))
+            .collect();
+        Self {
+            viewport,
+            nodes,
+            index,
+            paint_order,
+        }
+    }
+
+    pub fn nodes(&self) -> &[LayoutNode] {
+        &self.nodes
+    }
+
+    pub fn root(&self) -> Option<&LayoutNode> {
+        self.nodes.first()
+    }
+
+    pub fn node(&self, id: WidgetId) -> Option<&LayoutNode> {
+        self.index.get(&id).map(|index| &self.nodes[*index])
+    }
+
+    pub fn get(&self, index: usize) -> &LayoutNode {
+        &self.nodes[index]
+    }
+
+    pub fn bounds(&self, id: WidgetId) -> Option<Rect> {
+        self.node(id).map(|node| node.bounds)
+    }
+
+    pub fn text_box(&self, id: WidgetId) -> Option<Rect> {
+        self.node(id).and_then(|node| node.text_box)
+    }
+
+    /// Node indices back-to-front.
+    pub fn paint_order(&self) -> &[usize] {
+        &self.paint_order
+    }
+
+    /// Path (root first) to the topmost node under `point`, honoring
+    /// clipping, z-order, `display: none` and `pointer-events-none`.
+    pub fn hit_path(&self, point: Point) -> Vec<WidgetId> {
+        let Some(mut index) = self
+            .paint_order
+            .iter()
+            .rev()
+            .copied()
+            .find(|index| self.nodes[*index].accepts_point(point))
+        else {
+            return Vec::new();
+        };
+        let mut path = vec![self.nodes[index].id];
+        while let Some(parent) = self.nodes[index].parent {
+            path.push(self.nodes[parent].id);
+            index = parent;
+        }
+        path.reverse();
+        path
+    }
+
+    /// Ancestors of `id` (nearest first), excluding itself.
+    pub fn ancestors(&self, id: WidgetId) -> impl Iterator<Item = &LayoutNode> {
+        let mut parent = self
+            .index
+            .get(&id)
+            .and_then(|index| self.nodes[*index].parent);
+        std::iter::from_fn(move || {
+            let node = &self.nodes[parent?];
+            parent = node.parent;
+            Some(node)
+        })
+    }
+
+    /// `point` relative to the node's text box origin.
+    pub fn text_local_position(&self, id: WidgetId, point: Point) -> Option<Point> {
+        self.text_box(id).map(|text_box| Point {
+            x: point.x - text_box.x,
+            y: point.y - text_box.y,
+        })
+    }
+
+    /// Adjust the offsets of the scroll containers around `id`, innermost
+    /// first, so its border box plus `margin` becomes visible. Returns
+    /// whether any offset changed.
+    pub fn reveal(&self, id: WidgetId, margin: f32, offsets: &mut ScrollOffsets) -> bool {
+        let Some(node) = self.node(id) else {
+            return false;
+        };
+        let mut top = node.bounds.y - margin;
+        let mut bottom = node.bounds.y + node.bounds.height + margin;
+        let mut changed = false;
+        for ancestor in self.ancestors(id) {
+            let Some(scroll) = ancestor.scroll else {
+                continue;
+            };
+            let view = ancestor.padding_box;
+            let delta = if top < view.y {
+                top - view.y
+            } else if bottom > view.y + view.height {
+                (bottom - (view.y + view.height)).min(top - view.y)
+            } else {
+                0.0
+            };
+            let next = (scroll.offset + delta).clamp(0.0, scroll.max);
+            if next != scroll.offset {
+                offsets.insert(ancestor.id, next);
+                changed = true;
+            }
+            let moved = next - scroll.offset;
+            top = (top - moved).max(view.y);
+            bottom = (bottom - moved).min(view.y + view.height);
+        }
+        changed
+    }
+
+    /// Innermost scroll container on `path` (root first) that can move by
+    /// `delta` (positive = toward the end of the content).
+    pub fn scroll_target(&self, path: &[WidgetId], delta: f32) -> Option<(WidgetId, ScrollState)> {
+        path.iter().rev().find_map(|id| {
+            let scroll = self.node(*id)?.scroll?;
+            let can_move = if delta > 0.0 {
+                scroll.offset < scroll.max
+            } else {
+                scroll.offset > 0.0
+            };
+            can_move.then_some((*id, scroll))
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place(
+    nodes: &mut [LayoutNode],
+    handles: &[Option<NodeId>],
+    taffy: &TaffyTree<Leaf>,
+    index: usize,
+    parent_origin: Point,
+    clip: Option<Rect>,
+    offsets: &ScrollOffsets,
+    text: &mut dyn TextMeasure,
+) {
+    let Some(layout) = handles[index].and_then(|handle| taffy.layout(handle).ok()) else {
+        return;
+    };
+    let bounds = Rect {
+        x: parent_origin.x + layout.location.x,
+        y: parent_origin.y + layout.location.y,
+        width: layout.size.width,
+        height: layout.size.height,
+    };
+    let padding_box = bounds.inset(insets(layout.border));
+    let content_box = padding_box.inset(insets(layout.padding));
+    let node = &mut nodes[index];
+    node.bounds = bounds;
+    node.padding_box = padding_box;
+    node.content_box = content_box;
+    node.clip = clip;
+    node.scroll = (node.style.overflow == Overflow::Auto).then(|| {
+        let max = layout.scroll_height();
+        ScrollState {
+            offset: offsets
+                .get(&node.id)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, max),
+            max,
+        }
+    });
+    if !node.hidden {
+        match &node.content {
+            Content::Box => {}
+            Content::Text(content) => {
+                // Re-wrap at the final width so the buffer is ready to draw.
+                if !node.text.nowrap {
+                    text.measure(
+                        TextId::content(node.id),
+                        content,
+                        text_style(&node.text),
+                        Some(content_box.width),
+                    );
+                }
+                node.text_box = Some(content_box);
+            }
+            Content::Input { placeholder } => {
+                let line_height = node.text.line_height;
+                text.measure(
+                    TextId::placeholder(node.id),
+                    placeholder,
+                    text_style(&node.text),
+                    None,
+                );
+                node.text_box = Some(Rect {
+                    x: content_box.x,
+                    y: content_box.y + ((content_box.height - line_height) / 2.0).max(0.0),
+                    width: content_box.width.max(0.0),
+                    height: line_height,
+                });
+            }
+        }
+    }
+    let child_clip = if node.style.overflow == Overflow::Visible {
+        clip
+    } else {
+        clip_to(clip, padding_box)
+    };
+    let scroll_offset = node.scroll.map_or(0.0, |scroll| scroll.offset);
+    let origin = Point {
+        x: bounds.x,
+        y: bounds.y - scroll_offset,
+    };
+    let children = node.children.clone();
+    for child in children {
+        place(
+            nodes, handles, taffy, child, origin, child_clip, offsets, text,
+        );
+    }
+}
+
+fn push_paint_order(nodes: &[LayoutNode], index: usize, order: &mut Vec<usize>) {
+    let node = &nodes[index];
+    if node.hidden {
+        return;
+    }
+    order.push(index);
+    let mut children = node.children.clone();
+    children.sort_by_key(|child| nodes[*child].style.z_index);
+    for child in children {
+        push_paint_order(nodes, child, order);
+    }
+}
+
+#[cfg(test)]
+pub mod testing {
+    use super::TextMeasure;
+    use crate::geometry::Size;
+    use crate::render::TextId;
+    use crate::render::text::TextStyle;
+
+    /// Deterministic measurement: every character is half the font size wide
+    /// and wrapping breaks at any character.
+    #[derive(Default)]
+    pub struct FixedMeasure;
+
+    impl TextMeasure for FixedMeasure {
+        fn measure(
+            &mut self,
+            _id: TextId,
+            text: &str,
+            style: TextStyle,
+            max_width: Option<f32>,
+        ) -> Size {
+            let char_width = style.font_size / 2.0;
+            let full = text.chars().count() as f32 * char_width;
+            match max_width.filter(|_| style.wrap) {
+                Some(max) if full > max => {
+                    let per_line = (max / char_width).floor().max(1.0);
+                    let lines = (text.chars().count() as f32 / per_line).ceil();
+                    Size {
+                        width: per_line * char_width,
+                        height: lines * style.line_height,
+                    }
+                }
+                _ => Size {
+                    width: full,
+                    height: style.line_height,
                 },
-            },
-            heading_origin: Point {
-                x: heading_box.x,
-                y: heading_box.y,
-            },
-            description_origin: Point {
-                x: description_box.x,
-                y: description_box.y,
-            },
-            button_label_origin: Point {
-                x: button.x + 20.0,
-                y: button.y + 14.0,
-            },
-            status_origin: Point {
-                x: status_box.x,
-                y: status_box.y,
-            },
-            input_text_origin: Point {
-                x: input.x + 12.0,
-                y: input.y + 13.0,
-            },
-            input_caret_origin: Point {
-                x: input.x + 12.0,
-                y: input.y + 10.0,
-            },
+            }
         }
-    }
-
-    pub fn input_content_width(self) -> f32 {
-        (self.root.main_content.scroll.children.input.width - 24.0).max(1.0)
-    }
-
-    pub fn window_size(self) -> Size {
-        Size {
-            width: self.root.bounds.width,
-            height: self.root.bounds.height,
-        }
-    }
-
-    pub fn panel(self) -> Rect {
-        self.root.main_content.bounds
-    }
-
-    pub fn content_viewport(self) -> Rect {
-        self.root.main_content.scroll.bounds
-    }
-
-    pub fn content_height(self) -> f32 {
-        self.root.main_content.scroll.content_size.height
-    }
-
-    pub fn scroll_range(self) -> f32 {
-        self.root.main_content.scroll.scroll_range
-    }
-
-    pub fn heading_box(self) -> Rect {
-        self.root.main_content.scroll.children.heading_box
-    }
-
-    pub fn description_box(self) -> Rect {
-        self.root.main_content.scroll.children.description_box
-    }
-
-    pub fn button(self) -> Rect {
-        self.root.main_content.scroll.children.button
-    }
-
-    pub fn button_label_box(self) -> Rect {
-        self.root.main_content.scroll.children.button_label_box
-    }
-
-    pub fn status_box(self) -> Rect {
-        self.root.main_content.scroll.children.status_box
-    }
-
-    pub fn input(self) -> Rect {
-        self.root.main_content.scroll.children.input
-    }
-
-    pub fn input_local_position(self, point: Point) -> Point {
-        Point {
-            x: point.x - self.input_caret_origin.x,
-            y: point.y - self.input_caret_origin.y,
-        }
-    }
-
-    pub fn viewport_to_content(self, point: Point, scroll_y: f32) -> Option<Point> {
-        self.content_viewport().contains(point).then_some(Point {
-            x: point.x,
-            y: point.y + scroll_y,
-        })
-    }
-
-    pub fn content_to_viewport(self, rect: Rect, scroll_y: f32) -> Option<Rect> {
-        rect.translated(Point {
-            x: 0.0,
-            y: -scroll_y,
-        })
-        .intersection(self.content_viewport())
-    }
-
-    /// Update a logical vertical scroll offset. Positive `delta_y` means the
-    /// user scrolls toward the content's start (wheel-up).
-    pub fn scroll_by(self, current: f32, delta_y: f32) -> f32 {
-        (current - delta_y).clamp(0.0, self.scroll_range())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::testing::FixedMeasure;
+    use super::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use crate::element::sample::{self, Msg};
+    use crate::element::{Element, WidgetId, div, text};
     use crate::geometry::{Point, Rect, Size};
+    use crate::theme::{Density, Theme};
 
-    use super::DemoLayout;
+    const WINDOW: Size = Size {
+        width: 800.0,
+        height: 600.0,
+    };
 
-    #[test]
-    fn reference_viewport_preserves_prototype_layout() {
-        let layout = DemoLayout::compute(Size {
-            width: 1024.0,
-            height: 720.0,
-        });
-
-        assert_eq!(
-            layout.panel(),
-            Rect {
-                x: 40.0,
-                y: 40.0,
-                width: 540.0,
-                height: 330.0,
-            }
-        );
-        assert_eq!(
-            layout.button(),
-            Rect {
-                x: 48.0,
-                y: 154.0,
-                width: 220.0,
-                height: 48.0,
-            }
-        );
-        assert_eq!(
-            layout.input(),
-            Rect {
-                x: 48.0,
-                y: 292.0,
-                width: 480.0,
-                height: 48.0,
-            }
-        );
-        assert_eq!(layout.heading_origin, Point { x: 48.0, y: 48.0 });
-        assert_eq!(layout.description_origin, Point { x: 48.0, y: 100.0 });
-        assert_eq!(layout.status_origin, Point { x: 48.0, y: 226.0 });
-        assert_eq!(layout.input_content_width(), 456.0);
-    }
-
-    #[test]
-    fn narrower_viewport_shrinks_panel_and_control_widths_deterministically() {
-        let layout = DemoLayout::compute(Size {
-            width: 400.0,
-            height: 600.0,
-        });
-
-        assert_eq!(layout.panel().width, 320.0);
-        assert_eq!(layout.button().width, 220.0);
-        assert_eq!(layout.input().width, 304.0);
-        assert!(layout.panel().x + layout.panel().width <= layout.window_size().width);
-        assert!(
-            layout.button().x + layout.button().width <= layout.panel().x + layout.panel().width
-        );
-        assert!(layout.input().x + layout.input().width <= layout.panel().x + layout.panel().width);
-    }
-
-    #[test]
-    fn resized_viewport_updates_full_layout_and_input_local_coordinates() {
-        let layout = DemoLayout::compute(Size {
-            width: 800.0,
-            height: 600.0,
-        });
-
-        assert_eq!(layout.panel().width, 540.0);
-        assert_eq!(layout.panel().height, 330.0);
-        assert_eq!(
-            layout.input_local_position(Point { x: 70.0, y: 315.0 }),
-            Point { x: 10.0, y: 13.0 }
-        );
-    }
-
-    #[test]
-    fn minimum_viewport_preserves_component_sizes_and_exposes_scroll_range() {
-        let layout = DemoLayout::compute(DemoLayout::MINIMUM_VIEWPORT);
-
-        assert_eq!(layout.button().height, super::BUTTON_SIZE.height);
-        assert_eq!(layout.input().height, super::INPUT_SIZE.height);
-        assert_eq!(
-            layout.description_box().y,
-            layout.heading_box().y + layout.heading_box().height + super::REFERENCE_GAPS[0]
-        );
-        assert_eq!(
-            layout.button().y,
-            layout.description_box().y + layout.description_box().height + super::REFERENCE_GAPS[1]
-        );
-        assert!(layout.scroll_range() > 0.0);
-        assert!(
-            layout.input().x + layout.input().width
-                <= layout.panel().x + layout.panel().width - 8.0
-        );
-    }
-
-    #[test]
-    fn shorter_viewport_scrolls_instead_of_compressing_controls_or_gaps() {
-        let layout = DemoLayout::compute(Size {
-            width: 800.0,
-            height: 350.0,
-        });
-
-        assert!(layout.panel().height < super::PANEL_REFERENCE_SIZE.height);
-        assert_eq!(layout.description_box().y, 100.0);
-        assert_eq!(layout.button().y, 154.0);
-        assert_eq!(layout.button().height, super::BUTTON_SIZE.height);
-        assert_eq!(layout.input().height, super::INPUT_SIZE.height);
-        assert!(layout.scroll_range() > 0.0);
-    }
-
-    #[test]
-    fn wrapped_description_pushes_following_children_down_by_added_height() {
-        let viewport = Size {
-            width: 1024.0,
-            height: 720.0,
-        };
-        let normal = DemoLayout::compute(viewport);
-        let wrapped = DemoLayout::compute_with_text_heights(
-            viewport,
-            super::TextBlockHeights {
-                description: 44.0,
-                ..super::TextBlockHeights::default()
+    fn layout_with(
+        root: &Element<Msg>,
+        viewport: Size,
+        interaction: &Interaction,
+        scroll: &ScrollOffsets,
+    ) -> Layout {
+        let theme = Theme::kai(Density::Comfortable);
+        Layout::compute(
+            root,
+            &LayoutInput {
+                viewport,
+                theme: &theme,
+                interaction,
+                scroll,
             },
-        );
+            &mut StyleCache::default(),
+            &mut FixedMeasure,
+        )
+    }
 
-        assert_eq!(wrapped.description_box().height, 44.0);
-        assert_eq!(wrapped.button().y, normal.button().y + 22.0);
-        assert_eq!(wrapped.status_box().y, normal.status_box().y + 22.0);
-        assert_eq!(wrapped.input().y, normal.input().y + 22.0);
-        assert_eq!(wrapped.panel().height, normal.panel().height + 22.0);
-        assert_eq!(wrapped.scroll_range(), 0.0);
+    fn layout(root: &Element<Msg>, viewport: Size) -> Layout {
+        layout_with(
+            root,
+            viewport,
+            &Interaction::default(),
+            &ScrollOffsets::new(),
+        )
+    }
+
+    fn tree(mut root: Element<Msg>) -> Element<Msg> {
+        root.assign_ids();
+        root
     }
 
     #[test]
-    fn scrolling_maps_viewport_points_back_into_content_coordinates() {
-        let layout = DemoLayout::compute(DemoLayout::MINIMUM_VIEWPORT);
-        let viewport_point = Point {
-            x: layout.content_viewport().x + 12.0,
-            y: layout.content_viewport().y + 10.0,
-        };
-        let content_point = layout.viewport_to_content(viewport_point, 40.0).unwrap();
-
-        assert_eq!(content_point.y, viewport_point.y + 40.0);
-        assert!(
-            layout
-                .viewport_to_content(Point { x: 1.0, y: 1.0 }, 40.0)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn scroll_offset_is_clamped_and_wheel_direction_is_consistent() {
-        let layout = DemoLayout::compute(DemoLayout::MINIMUM_VIEWPORT);
-        assert!(layout.scroll_range() > 0.0);
-        assert_eq!(layout.scroll_by(0.0, 30.0), 0.0);
-        assert_eq!(layout.scroll_by(0.0, -30.0), 30.0);
+    fn root_always_fills_the_window_even_without_size_classes() {
+        let root = tree(div().class("w-10 h-10 m-8").child(text("hola")));
+        let layout = layout(&root, WINDOW);
         assert_eq!(
-            layout.scroll_by(layout.scroll_range(), -30.0),
-            layout.scroll_range()
-        );
-    }
-
-    #[test]
-    fn window_root_contains_main_content_and_scroll_viewport_in_nested_bounds() {
-        let layout = DemoLayout::compute(Size {
-            width: 1024.0,
-            height: 720.0,
-        });
-        let root = layout.root;
-        let main = root.main_content;
-        let scroll = main.scroll;
-
-        assert_eq!(
-            root.bounds,
+            layout.root().unwrap().bounds,
             Rect {
                 x: 0.0,
                 y: 0.0,
-                width: 1024.0,
-                height: 720.0
+                width: 800.0,
+                height: 600.0
             }
         );
-        assert!(root.bounds.contains(Point {
-            x: main.bounds.x,
-            y: main.bounds.y
-        }));
-        assert!(main.bounds.contains(Point {
-            x: scroll.bounds.x,
-            y: scroll.bounds.y
-        }));
-        assert!(scroll.bounds.contains(Point {
-            x: scroll.children.button.x,
-            y: scroll.children.button.y,
-        }));
-        assert!(scroll.content_size.height >= scroll.bounds.height);
+        let sample = sample::tree();
+        let filled = layout_with(
+            &sample,
+            WINDOW,
+            &Interaction::default(),
+            &ScrollOffsets::new(),
+        );
+        assert_eq!(filled.root().unwrap().bounds.width, 800.0);
+        assert_eq!(filled.root().unwrap().bounds.height, 600.0);
+    }
+
+    #[test]
+    fn flex_column_places_children_with_padding_gap_and_inline_buttons() {
+        let sample = sample::tree();
+        let layout = layout(&sample, WINDOW);
+        let heading = layout.bounds(sample::heading()).unwrap();
+        assert_eq!((heading.x, heading.y), (16.0, 16.0));
+        assert_eq!(heading.width, 800.0 - 32.0, "block children stretch");
+        let description = layout.bounds(sample::description()).unwrap();
+        assert_eq!(description.y, heading.y + heading.height + 16.0);
+
+        let button = layout.bounds(sample::button()).unwrap();
+        assert_eq!(button.height, 36.0, "h-control");
+        let label = layout.bounds(sample::button_label()).unwrap();
         assert_eq!(
-            layout.window_size(),
-            Size {
-                width: 1024.0,
-                height: 720.0
-            }
+            button.width,
+            label.width + 32.0,
+            "inline-flex shrinks to px-4 + label"
+        );
+        let label_box = layout.text_box(sample::button_label()).unwrap();
+        assert_eq!(label_box.y - button.y, (36.0 - label_box.height) / 2.0);
+
+        let field = layout.node(sample::field()).unwrap();
+        assert_eq!(field.bounds.width, 800.0 - 32.0, "w-full");
+        let line = field.text_box.unwrap();
+        assert_eq!(line.x, field.bounds.x + 1.0 + 12.0, "border + px-3");
+        assert_eq!(line.height, 24.0);
+        assert_eq!(line.y, field.bounds.y + (36.0 - 24.0) / 2.0);
+    }
+
+    #[test]
+    fn overflow_auto_scrolls_children_and_clips_to_padding_box() {
+        let sample = sample::tree();
+        let short = Size {
+            width: 420.0,
+            height: 120.0,
+        };
+        let layout = layout(&sample, short);
+        let root = layout.root().unwrap();
+        let scroll = root.scroll.unwrap();
+        assert!(scroll.max > 0.0);
+        assert_eq!(scroll.offset, 0.0);
+        let field = layout.node(sample::field()).unwrap();
+        assert_eq!(field.clip, Some(root.padding_box));
+        assert!(field.visible_bounds().is_none());
+
+        let mut offsets = ScrollOffsets::new();
+        offsets.insert(sample::root(), 10_000.0);
+        let scrolled = layout_with(&sample, short, &Interaction::default(), &offsets);
+        let root = scrolled.root().unwrap();
+        assert_eq!(root.scroll.unwrap().offset, scroll.max, "offset is clamped");
+        let moved = scrolled.bounds(sample::field()).unwrap();
+        assert_eq!(moved.y, field.bounds.y - scroll.max);
+        assert!(
+            scrolled
+                .node(sample::field())
+                .unwrap()
+                .visible_bounds()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn borders_of_unclipped_children_are_never_cut() {
+        let root = tree(
+            div()
+                .class("p-0")
+                .child(div().class("border-2 border-primary w-20 h-20")),
+        );
+        let layout = layout(&root, WINDOW);
+        let child = layout.get(1);
+        assert_eq!(child.clip, None);
+        assert_eq!((child.bounds.x, child.bounds.y), (0.0, 0.0));
+        assert_eq!(child.padding_box.x, 2.0);
+    }
+
+    #[test]
+    fn hit_path_respects_z_index_clip_hidden_and_pointer_events() {
+        let root = tree(div().class("relative").children([
+            div().class("absolute inset-0 z-10 pointer-events-none"),
+            div().class("absolute top-0 left-0 w-20 h-20 z-20"),
+            div().class("absolute top-0 left-0 w-20 h-20"),
+            div().class("hidden w-full h-full"),
+        ]));
+        let layout = layout(&root, WINDOW);
+        let ids: Vec<WidgetId> = root.children.iter().map(|child| child.id).collect();
+        let point = Point { x: 10.0, y: 10.0 };
+        assert_eq!(layout.hit_path(point), vec![root.id, ids[1]]);
+        let order: Vec<WidgetId> = layout
+            .paint_order()
+            .iter()
+            .map(|index| layout.get(*index).id)
+            .collect();
+        assert_eq!(order, vec![root.id, ids[2], ids[0], ids[1]]);
+        assert_eq!(layout.hit_path(Point { x: 500.0, y: 500.0 }), vec![root.id]);
+    }
+
+    #[test]
+    fn interaction_state_selects_variants_and_group_state_reaches_descendants() {
+        let root = tree(
+            div().child(
+                div()
+                    .class("group bg-background hover:bg-hover")
+                    .child(text("x").class("text-foreground group-hover:text-primary")),
+            ),
+        );
+        let theme = Theme::kai(Density::Comfortable);
+        let card = root.children[0].id;
+        let label = root.children[0].children[0].id;
+        let idle = layout(&root, WINDOW);
+        assert_eq!(
+            idle.node(card).unwrap().style.background,
+            Some(theme.colors.background)
+        );
+        let hovered = layout_with(
+            &root,
+            WINDOW,
+            &Interaction {
+                hovered: vec![root.id, card],
+                ..Interaction::default()
+            },
+            &ScrollOffsets::new(),
+        );
+        assert_eq!(
+            hovered.node(card).unwrap().style.background,
+            Some(theme.colors.hover)
+        );
+        assert_eq!(
+            hovered.node(label).unwrap().text.color,
+            theme.colors.primary
+        );
+    }
+
+    #[test]
+    fn reveal_scrolls_the_container_to_show_the_focused_node() {
+        let sample = sample::tree();
+        let short = Size {
+            width: 420.0,
+            height: 120.0,
+        };
+        let layout = layout(&sample, short);
+        let mut offsets = ScrollOffsets::new();
+        assert!(layout.reveal(sample::field(), 4.0, &mut offsets));
+        let revealed = layout_with(&sample, short, &Interaction::default(), &offsets);
+        let root = revealed.root().unwrap();
+        let field = revealed.bounds(sample::field()).unwrap();
+        assert!(field.y + field.height + 4.0 <= root.padding_box.y + root.padding_box.height + 0.5);
+        assert!(!revealed.reveal(sample::field(), 4.0, &mut offsets));
+
+        let target = revealed.scroll_target(&[sample::root(), sample::field()], -10.0);
+        assert_eq!(target.map(|(id, _)| id), Some(sample::root()));
+        assert!(
+            layout.scroll_target(&[sample::root()], -10.0).is_none(),
+            "already at the top"
         );
     }
 }

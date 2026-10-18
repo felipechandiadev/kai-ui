@@ -40,10 +40,11 @@ pub fn adapt_key_input(
         repeat,
     })];
 
-    if !modifiers.command && !modifiers.control {
-        if let Some(text) = committed_text.filter(|text| !text.is_empty()) {
-            intents.push(Intent::Text(TextIntent::InsertText(text.to_owned())));
-        }
+    if !modifiers.command
+        && !modifiers.control
+        && let Some(text) = committed_text.filter(|text| !text.is_empty())
+    {
+        intents.push(Intent::Text(TextIntent::InsertText(text.to_owned())));
     }
 
     intents
