@@ -6,10 +6,10 @@
 use std::ops::Range;
 
 use cosmic_text::{
-    Action, Attrs, Buffer, Cursor, Edit, Editor, Family, FontSystem, Metrics, Motion, Selection,
-    Shaping, Wrap,
+    Action, Buffer, Cursor, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping, Wrap,
 };
 
+use crate::fonts::ui_font_attrs;
 use crate::geometry::{Point, Rect};
 use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
 
@@ -97,6 +97,8 @@ pub struct TextFieldState {
     masked: bool,
     /// Allow navigation, selection and copy but no edits.
     read_only: bool,
+    /// Avoid reshaping a cloned editor multiple times per frame.
+    display_cache: Option<DisplayState>,
 }
 
 struct DisplayState {
@@ -120,7 +122,7 @@ impl TextFieldState {
         buffer.set_size(None, Some(metrics.line_height));
         buffer.set_text(
             "",
-            &Attrs::new().family(Family::SansSerif),
+            &ui_font_attrs(),
             Shaping::Advanced,
             None,
         );
@@ -132,7 +134,12 @@ impl TextFieldState {
             line_height: metrics.line_height,
             masked: false,
             read_only: false,
+            display_cache: None,
         }
+    }
+
+    fn invalidate_display_cache(&mut self) {
+        self.display_cache = None;
     }
 
     pub fn editor(&self) -> &Editor<'static> {
@@ -142,6 +149,7 @@ impl TextFieldState {
     pub fn set_masked(&mut self, font_system: &mut FontSystem, masked: bool) {
         if masked != self.masked {
             self.masked = masked;
+            self.invalidate_display_cache();
             self.reveal_caret(font_system);
         }
     }
@@ -302,21 +310,18 @@ impl TextFieldState {
     /// the end. Returns whether the text changed.
     pub fn set_text(&mut self, font_system: &mut FontSystem, text: &str) -> bool {
         let text = single_line(text);
-        if text == self.text() {
+        let current = self.text();
+        if text == current {
             return false;
         }
+        let cursor = self.editor.cursor();
+        let caret_byte = cursor.index.min(current.len());
         self.editor.with_buffer_mut(|buffer| {
-            buffer.set_text(
-                &text,
-                &Attrs::new().family(Family::SansSerif),
-                Shaping::Advanced,
-                None,
-            );
+            buffer.set_text(&text, &ui_font_attrs(), Shaping::Advanced, None);
         });
+        let clamped = caret_byte.min(text.len());
+        self.editor.set_cursor(Cursor::new(0, clamped));
         self.editor.set_selection(Selection::None);
-        self.editor.set_cursor(Cursor::new(0, 0));
-        self.editor
-            .action(font_system, Action::Motion(Motion::BufferEnd));
         self.after_edit(font_system);
         true
     }
@@ -355,6 +360,7 @@ impl TextFieldState {
 
     pub fn set_preedit(&mut self, font_system: &mut FontSystem, preedit: Option<Preedit>) {
         self.preedit = preedit.filter(|preedit| !preedit.text.is_empty());
+        self.invalidate_display_cache();
         self.reveal_caret(font_system);
     }
 
@@ -424,32 +430,36 @@ impl TextFieldState {
     }
 
     /// Hit-test the bullets actually on screen and map back to the real text.
-    fn masked_hit(&self, font_system: &mut FontSystem, local: Point) -> Option<Cursor> {
-        let display = self.display(font_system);
-        let hit = display.buffer.hit(local.x + self.scroll_x, local.y)?;
+    fn masked_hit(&mut self, font_system: &mut FontSystem, local: Point) -> Option<Cursor> {
+        let scroll_x = self.scroll_x;
+        let display = self.cached_display(font_system);
+        let hit = display.buffer.hit(local.x + scroll_x, local.y)?;
         let text = self.text();
         Some(Cursor::new(0, unmasked_index(&text, hit.index)))
     }
 
     fn after_edit(&mut self, font_system: &mut FontSystem) {
+        self.invalidate_display_cache();
         self.editor.shape_as_needed(font_system, false);
         self.reveal_caret(font_system);
     }
 
-    pub fn view(&self, font_system: &mut FontSystem) -> TextFieldView {
-        let display = self.display(font_system);
-        let metrics = self.measure(&display);
+    pub fn view(&mut self, font_system: &mut FontSystem) -> TextFieldView {
+        let scroll_x = self.scroll_x;
+        let line_height = self.line_height;
+        let display = self.cached_display(font_system);
+        let metrics = measure_display(display, line_height);
         let has_content = display
             .buffer
             .lines
             .iter()
             .any(|line| !line.text().is_empty());
         let scroll = |rect: Rect| Rect {
-            x: rect.x - self.scroll_x,
+            x: rect.x - scroll_x,
             ..rect
         };
         TextFieldView {
-            buffer: display.buffer,
+            buffer: display.buffer.clone(),
             decorations: TextFieldDecorations {
                 has_content,
                 scroll_x: self.scroll_x,
@@ -461,13 +471,21 @@ impl TextFieldState {
     }
 
     fn reveal_caret(&mut self, font_system: &mut FontSystem) {
-        let display = self.display(font_system);
-        let metrics = self.measure(&display);
+        let line_height = self.line_height;
+        let display = self.cached_display(font_system);
+        let metrics = measure_display(display, line_height);
         let caret_x = metrics.caret.map_or(0.0, |caret| caret.x);
         self.scroll_x = scroll_to_reveal(self.scroll_x, caret_x, self.width, metrics.content_width);
     }
 
-    fn display(&self, font_system: &mut FontSystem) -> DisplayState {
+    fn cached_display(&mut self, font_system: &mut FontSystem) -> &DisplayState {
+        if self.display_cache.is_none() {
+            self.display_cache = Some(self.build_display(font_system));
+        }
+        self.display_cache.as_ref().expect("display cache")
+    }
+
+    fn build_display(&self, font_system: &mut FontSystem) -> DisplayState {
         let mut display = self.editor.clone();
         let mut caret = Some(display.cursor());
         let mut selection = display.selection_bounds();
@@ -497,12 +515,7 @@ impl TextFieldState {
             preedit_range = preedit_range.map(|(start, end)| (mask(start), mask(end)));
             let bullets: String = text.chars().map(|_| BULLET).collect();
             display.with_buffer_mut(|buffer| {
-                buffer.set_text(
-                    &bullets,
-                    &Attrs::new().family(Family::SansSerif),
-                    Shaping::Advanced,
-                    None,
-                );
+                buffer.set_text(&bullets, &ui_font_attrs(), Shaping::Advanced, None);
             });
         }
         display.shape_as_needed(font_system, false);
@@ -514,7 +527,9 @@ impl TextFieldState {
         }
     }
 
-    fn measure(&self, display: &DisplayState) -> DisplayMetrics {
+}
+
+fn measure_display(display: &DisplayState, line_height: f32) -> DisplayMetrics {
         let mut metrics = DisplayMetrics {
             caret: None,
             selection: Vec::new(),
@@ -530,7 +545,7 @@ impl TextFieldState {
                     x,
                     y: run.line_top,
                     width: CARET_WIDTH,
-                    height: self.line_height,
+                    height: line_height,
                 });
             }
             if let Some((start, end)) = display.selection {
@@ -555,17 +570,25 @@ impl TextFieldState {
             }
         }
         metrics
-    }
 }
 
 fn single_line(text: &str) -> String {
-    text.chars()
-        .map(|character| match character {
-            '\r' | '\n' => ' ',
-            other => other,
-        })
-        .filter(|character| !character.is_control())
-        .collect()
+    let mut out = String::new();
+    let mut pending_space = false;
+    for character in text.chars() {
+        match character {
+            '\r' | '\n' => pending_space = !out.is_empty(),
+            c if c.is_control() => {}
+            other => {
+                if pending_space {
+                    out.push(' ');
+                    pending_space = false;
+                }
+                out.push(other);
+            }
+        }
+    }
+    out
 }
 
 /// Byte index in the bullet string for byte `index` of `text`.
@@ -660,7 +683,7 @@ mod tests {
         assert!(!field.set_text(&mut fonts, "hola"));
         assert!(field.set_text(&mut fonts, "chau\nmundo"));
         assert_eq!(field.text(), "chau mundo");
-        assert_eq!(field.editor().cursor().index, "chau mundo".len());
+        assert_eq!(field.editor().cursor().index, "hola".len());
         assert!(field.set_text(&mut fonts, ""));
         assert!(!field.view(&mut fonts).decorations.has_content);
 
@@ -837,8 +860,22 @@ mod tests {
         let mut font_system = FontSystem::new();
         let mut field = field(&mut font_system, 300.0);
         field.insert_text(&mut font_system, "uno\ndos\r\ntres");
-        assert_eq!(field.text(), "uno dos  tres");
+        assert_eq!(field.text(), "uno dos tres");
         assert!(!field.insert_text(&mut font_system, "\u{7}"));
+        assert!(!field.insert_text(&mut font_system, "\r"));
+    }
+
+    #[test]
+    fn set_text_keeps_caret_when_value_is_transformed_externally() {
+        let mut font_system = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut font_system, 300.0);
+        field.insert_text(&mut font_system, "ab");
+        field.apply(key(Key::ArrowLeft, false), &mut font_system, &mut clipboard);
+
+        assert!(field.set_text(&mut font_system, "AB"));
+        assert_eq!(field.text(), "AB");
+        assert_eq!(field.editor().cursor().index, 1);
     }
 
     #[test]

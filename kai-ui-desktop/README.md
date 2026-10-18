@@ -4,6 +4,8 @@ Prototipo inicial del framework de interfaz de escritorio de Kai en Rust.
 
 El proyecto web existente está en `../kai-ui-web`. Esta carpeta se reserva para la implementación desktop con renderizador propio, comenzando por macOS.
 
+Versión del crate: `Cargo.toml` (sincronizado desde `../version.json`). Historial en [`CHANGELOG.md`](CHANGELOG.md). Release con tag `desktop-vX.Y.Z` — ver [`../docs/versioning.md`](../docs/versioning.md).
+
 La [guía de desarrollo](docs/dev/README.md) contiene la visión arquitectónica y el recorrido paso a paso.
 
 ## Estado actual

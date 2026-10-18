@@ -57,6 +57,17 @@ Si partes de un monorepo sin la carpeta y el repo subtree ya existe:
 git log --oneline subtree/web -5
 ```
 
+## Versionado y release
+
+Tras subir versión (`node scripts/version/bump.mjs …`) y publicar tags, sincroniza los repos subtree:
+
+```bash
+./scripts/subtree/push.sh web
+./scripts/subtree/push.sh desktop
+```
+
+Ver [`versioning.md`](versioning.md).
+
 ## Notas
 
 - El historial del subtree solo incluye commits que tocaron el prefijo actual (`kai-ui-web/` o `kai-ui-desktop/`). Commits antiguos bajo `web/` o `desktop/` no se reescriben automáticamente en el repo publicado.

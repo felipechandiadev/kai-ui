@@ -2,9 +2,10 @@
 
 use std::collections::HashMap;
 
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap};
+use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, Weight, Wrap};
 
 use super::TextId;
+use crate::fonts::ui_font_family;
 use crate::geometry::Size;
 use crate::layout::TextMeasure;
 
@@ -18,7 +19,7 @@ pub struct TextStyle {
 
 impl TextStyle {
     fn attrs(self) -> Attrs<'static> {
-        Attrs::new().family(Family::SansSerif).weight(self.weight)
+        Attrs::new().family(ui_font_family()).weight(self.weight)
     }
 }
 

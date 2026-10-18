@@ -1,0 +1,31 @@
+name: publish-web
+
+on:
+  push:
+    tags: ["web-v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: kai-ui-web/package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@felipechandiadev"
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#web-v}"
+          PKG="$(node -p "require('./kai-ui-web/package.json').version")"
+          test "$TAG" = "$PKG" || { echo "tag web-v$TAG != package.json $PKG"; exit 1; }
+      - run: node scripts/version/check.mjs
+      - run: npm ci --prefix kai-ui-web
+      - run: npm publish --prefix kai-ui-web
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

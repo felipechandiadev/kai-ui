@@ -342,7 +342,7 @@ impl<A: App> WindowState<A> {
         let Some(id) = self.focused_text_field() else {
             return;
         };
-        let (Some(line), Some(field)) = (self.layout.text_box(id), self.text_fields.get(&id))
+        let (Some(line), Some(field)) = (self.layout.text_box(id), self.text_fields.get_mut(&id))
         else {
             return;
         };
@@ -484,7 +484,7 @@ impl<A: App> WindowState<A> {
         });
 
         let mut decorations: Vec<(WidgetId, TextFieldDecorations)> = Vec::new();
-        for (id, field) in &self.text_fields {
+        for (id, field) in &mut self.text_fields {
             let Some(node) = self.layout.node(*id) else {
                 continue;
             };

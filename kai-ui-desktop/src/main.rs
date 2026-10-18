@@ -1,6 +1,7 @@
 pub mod a11y;
 pub mod components;
-pub mod element;
+pub mod fonts;
+mod element;
 pub mod geometry;
 pub mod grid_layout;
 pub mod icons;
@@ -14,6 +15,7 @@ pub mod text_field;
 pub mod theme;
 pub mod tw;
 pub mod ui_engine;
+pub mod version;
 
 use components::{
     ButtonVariant, FieldDensity, FieldVariant, LabelLayout, TextField, button, caption, card,
@@ -73,10 +75,11 @@ impl App for Demo {
     type Msg = Msg;
 
     fn title(&self) -> String {
+        let base = format!("Kai UI Desktop v{}", version::VERSION);
         if self.clicks == 0 {
-            "Kai UI Desktop".to_owned()
+            base
         } else {
-            format!("Kai UI Desktop — {} clics", self.clicks)
+            format!("{base} — {} clics", self.clicks)
         }
     }
 
@@ -346,7 +349,10 @@ mod tests {
         demo.update(Msg::Increment);
         demo.update(Msg::Increment);
         assert_eq!(demo.clicks, 2);
-        assert_eq!(demo.title(), "Kai UI Desktop — 2 clics");
+        assert_eq!(
+            demo.title(),
+            format!("Kai UI Desktop v{} — 2 clics", crate::version::VERSION)
+        );
         demo.update(Msg::Submit);
         assert!(demo.submissions.is_empty(), "empty names are not submitted");
         demo.update(Msg::NameChanged("  Ana ".to_owned()));

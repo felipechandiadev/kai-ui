@@ -43,6 +43,7 @@ pub fn adapt_key_input(
     if !modifiers.command
         && !modifiers.control
         && let Some(text) = committed_text.filter(|text| !text.is_empty())
+        && should_emit_committed_text(key, text)
     {
         intents.push(Intent::Text(TextIntent::InsertText(text.to_owned())));
     }
@@ -61,6 +62,16 @@ pub fn adapt_ime_event(event: Ime) -> Intent {
         Ime::Disabled => ImeIntent::Disabled,
     };
     Intent::Text(TextIntent::Ime(ime))
+}
+
+/// winit often attaches `"\r"` to Enter; that must not become field text.
+fn should_emit_committed_text(key: Key, text: &str) -> bool {
+    if matches!(key, Key::Enter) {
+        return false;
+    }
+    !text.chars().all(|character| {
+        matches!(character, '\r' | '\n') || character.is_control()
+    })
 }
 
 fn map_key(key: KeyCode) -> Key {
@@ -105,6 +116,20 @@ mod tests {
                 Intent::Text(TextIntent::InsertText("á".to_owned())),
             ]
         );
+    }
+
+    #[test]
+    fn enter_does_not_emit_carriage_return_as_text() {
+        let intents = adapt_key_input(Key::Enter, Modifiers::default(), false, Some("\r"));
+
+        assert_eq!(intents.len(), 1);
+        assert!(matches!(
+            intents[0],
+            Intent::Text(TextIntent::KeyDown {
+                key: Key::Enter,
+                ..
+            })
+        ));
     }
 
     #[test]

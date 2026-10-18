@@ -70,12 +70,14 @@ cd playground && npm install && npm run dev
 
 ## Release
 
-Un cambio de UI se versiona aquí, se etiqueta `vX.Y.Z` y el workflow `publish` lo sube a GitHub Packages. Cada producto actualiza el rango con un PR propio.
+1. En la raíz del monorepo: `node scripts/version/bump.mjs web patch` (o `minor` / `major`).
+2. Actualizar `CHANGELOG.md` en esta carpeta.
+3. Commit, tag: `node scripts/version/tag.mjs web` → crea `web-vX.Y.Z`.
+4. Push: `git push origin main web-vX.Y.Z` — el workflow `publish-web.yml` publica en GitHub Packages.
+5. `./scripts/subtree/push.sh web` para el repo standalone.
 
-El repo remoto es https://github.com/felipechandiadev/kai-ui. El tag local `v1.3.0` ya está creado. Para subirlo, el token de `gh` tiene que incluir `workflow` y `write:packages`:
+Los tags legados `vX.Y.Z` siguen disparando `publish.yml`. Detalle: [`../docs/versioning.md`](../docs/versioning.md).
 
 ```bash
 gh auth refresh -s workflow,write:packages,repo
-git push -u origin main
-git push origin v1.3.0
 ```

@@ -1,0 +1,16 @@
+{
+  "packages": {
+    "web": {
+      "version": "1.4.3",
+      "tagPrefix": "web-v",
+      "path": "kai-ui-web",
+      "manifest": "kai-ui-web/package.json"
+    },
+    "desktop": {
+      "version": "0.1.0",
+      "tagPrefix": "desktop-v",
+      "path": "kai-ui-desktop",
+      "manifest": "kai-ui-desktop/Cargo.toml"
+    }
+  }
+}
