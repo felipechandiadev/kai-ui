@@ -11,6 +11,8 @@ pub mod components;
 pub mod demo;
 pub mod element;
 pub mod fonts;
+#[doc(hidden)]
+pub mod gallery;
 pub mod geometry;
 pub mod grid_layout;
 pub mod icons;

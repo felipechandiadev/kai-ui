@@ -64,6 +64,18 @@ pub trait App: 'static {
     fn background(&self) -> BackgroundEffect {
         BackgroundEffect::NONE
     }
+
+    /// Theme the app asks for, read after every `update`; `None` keeps the
+    /// one given to [`run`].
+    fn theme(&self) -> Option<Theme> {
+        None
+    }
+
+    /// Forced key/main state (gallery and captures); `None` follows the
+    /// real window.
+    fn window_override(&self) -> Option<WindowActivity> {
+        None
+    }
 }
 
 /// Whether an animated background should get frames now: the effect moves,
@@ -277,6 +289,12 @@ impl<A: App> WindowState<A> {
     fn rebuild(&mut self) {
         self.tree = build_view(&self.app);
         self.background = self.app.background();
+        if let Some(theme) = self.app.theme()
+            && theme != self.theme
+        {
+            self.theme = theme;
+            self.window.set_theme(window_theme(&theme));
+        }
         self.focus_order = FocusOrder::from_tree(&self.tree);
         sync_focus(&mut self.ui, &self.focus_order);
         self.handlers = self.tree.collect_handlers().into_iter().collect();
@@ -315,12 +333,17 @@ impl<A: App> WindowState<A> {
         }
     }
 
+    /// The real key/main state unless the app forces one.
+    fn activity(&self) -> WindowActivity {
+        self.app.window_override().unwrap_or(self.activity)
+    }
+
     fn relayout(&mut self) {
         let interaction = Interaction {
             hovered: self.hover_path.clone(),
             focused: *self.ui.focused.get(),
             pressed: *self.ui.pressed.get(),
-            window: self.activity,
+            window: self.activity(),
             focus_visible: *self.ui.focus_visible.get(),
         };
         self.layout = Layout::compute(
@@ -362,7 +385,7 @@ impl<A: App> WindowState<A> {
             &self.background,
             self.theme.prefs.reduce_motion,
             self.occluded,
-            self.activity,
+            self.activity(),
         )
     }
 
@@ -635,7 +658,7 @@ impl<A: App> WindowState<A> {
             layout: &self.layout,
             theme: &self.theme,
             focused: *self.ui.focused.get(),
-            window: self.activity,
+            window: self.activity(),
             text_fields: &text_fields,
             background: self.background,
         });
