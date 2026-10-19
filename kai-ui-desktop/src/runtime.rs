@@ -723,38 +723,44 @@ mod tests {
             div()
                 .class("flex h-10 px-3 border")
                 .delegates_focus()
+                .test_id("contorno")
                 .children([
-                    icon(Icon::Search).class("size-5"),
-                    input("", "Buscar").class("flex-1"),
+                    icon(Icon::Search).class("size-5").test_id("lupa"),
+                    input("", "Buscar").class("flex-1").test_id("buscar"),
                 ]),
             div()
                 .class("flex h-10")
                 .delegates_focus()
+                .test_id("inactivo")
                 .child(input("", "Inactivo").disabled(true)),
-            input("abc", "Rápido").select_on_focus(true),
+            input("abc", "Rápido")
+                .select_on_focus(true)
+                .test_id("rapido"),
         ]);
         tree.assign_ids();
-        let (outline, idle, quick) = (&tree.children[0], &tree.children[1], &tree.children[2]);
+        let id = |test_id| tree.find_test_id(test_id).unwrap().id;
+        let (outline, glyph, search) = (id("contorno"), id("lupa"), id("buscar"));
         let layout = compute(&tree);
-        let glyph = layout.bounds(outline.children[0].id).unwrap();
+        let bounds = layout.bounds(glyph).unwrap();
         let path = layout.hit_path(Point {
-            x: glyph.x + 1.0,
-            y: glyph.y + 1.0,
+            x: bounds.x + 1.0,
+            y: bounds.y + 1.0,
         });
-        assert_eq!(path.last(), Some(&outline.children[0].id));
-        assert_eq!(pointer_target(&layout, &path), Some(outline.children[1].id));
+        assert_eq!(path.last(), Some(&glyph));
+        assert_eq!(pointer_target(&layout, &path), Some(search));
 
-        let bounds = layout.bounds(idle.id).unwrap();
+        let idle = id("inactivo");
+        let bounds = layout.bounds(idle).unwrap();
         let path = layout.hit_path(Point {
             x: bounds.x + bounds.width - 1.0,
             y: bounds.y + 1.0,
         });
-        assert_eq!(path.last(), Some(&idle.id));
+        assert_eq!(path.last(), Some(&idle));
         assert_eq!(pointer_target(&layout, &path), None, "no enabled input");
 
-        assert!(selects_on_focus(&tree, quick.id));
-        assert!(!selects_on_focus(&tree, outline.children[1].id));
-        assert!(!selects_on_focus(&tree, outline.id));
+        assert!(selects_on_focus(&tree, id("rapido")));
+        assert!(!selects_on_focus(&tree, search));
+        assert!(!selects_on_focus(&tree, outline));
     }
 
     #[test]

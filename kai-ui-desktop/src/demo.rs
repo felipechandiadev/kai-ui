@@ -407,21 +407,24 @@ impl SimpleApp for Demo {
             .role(Role::Main)
             .children([
                 header,
-                div().class("flex-1 overflow-y-auto").child(
-                    div()
-                        .class("flex flex-col items-center gap-6 p-6")
-                        .children([
-                            self.background_panel(),
-                            div().class("w-full max-w-3xl").child(alert_banner),
-                            counter,
-                            form,
-                            self.fields(),
-                            badges_and_alerts,
-                            buttons_section,
-                            self.control_sizes(),
-                            stats,
-                        ]),
-                ),
+                div()
+                    .class("flex-1 overflow-y-auto")
+                    .test_id("contenido")
+                    .child(
+                        div()
+                            .class("flex flex-col items-center gap-6 p-6")
+                            .children([
+                                self.background_panel(),
+                                div().class("w-full max-w-3xl").child(alert_banner),
+                                counter,
+                                form,
+                                self.fields(),
+                                badges_and_alerts,
+                                buttons_section,
+                                self.control_sizes(),
+                                stats,
+                            ]),
+                    ),
             ])
     }
 }
@@ -813,8 +816,13 @@ mod tests {
                 ] {
                     let mut tree: Element<Msg> = div().class("w-full h-full p-4").child(
                         div().class("flex items-end gap-2").children([
-                            TextField::new("Campo", "x").density(density).build(),
-                            button("Enviar", ButtonVariant::Primary).control_size(size),
+                            TextField::new("Campo", "x")
+                                .test_id("campo")
+                                .density(density)
+                                .build(),
+                            button("Enviar", ButtonVariant::Primary)
+                                .control_size(size)
+                                .test_id("enviar"),
                         ]),
                     );
                     tree.assign_ids();
@@ -832,15 +840,9 @@ mod tests {
                         &mut StyleCache::default(),
                         &mut FixedMeasure,
                     );
-                    let row = &tree.children[0];
-                    let mut shell = None;
-                    row.children[0].walk(&mut |e| {
-                        if shell.is_none() && e.class.contains("appkit:h-field") {
-                            shell = Some(e.id);
-                        }
-                    });
-                    let field = layout.bounds(shell.unwrap()).unwrap();
-                    let button = layout.bounds(row.children[1].id).unwrap();
+                    let screen = Screen::new(&layout);
+                    let field = screen.get_by_test_id("campo.shell").bounds();
+                    let button = screen.get_by_test_id("enviar").bounds();
                     let at = format!("{generation:?} {appearance:?} {size:?}");
                     assert_eq!(field.height, height, "{at}");
                     assert_eq!(button.height, height, "{at}");
@@ -1102,10 +1104,11 @@ mod tests {
         assert!(styles.unknown().is_empty(), "{:?}", styles.unknown());
         let root = layout.root().unwrap();
         assert_eq!((root.bounds.width, root.bounds.height), (420.0, 340.0));
-        let content = layout.get(root.children[1]);
+        let screen = Screen::new(&layout);
+        let content = screen.get_by_test_id("contenido").node();
         let scroll = content.scroll.expect("content scrolls");
         assert!(scroll.max > 0.0, "the small window overflows");
-        let header = layout.get(root.children[0]);
+        let header = screen.get(By::role(Role::Header)).node();
         assert_eq!(header.bounds.y, 0.0, "header stays fixed");
         assert_eq!(content.clip, None);
     }
@@ -1306,7 +1309,7 @@ mod tests {
             &mut StyleCache::default(),
             &mut text,
         );
-        let content = tree.children[1].id;
+        let content = Screen::new(&layout).get_by_test_id("contenido").id();
         let card = card_header_of(demo, title);
         let top = layout.bounds(card).unwrap().y - layout.bounds(content).unwrap().y;
         ScrollOffsets::from([(content, top - 40.0)])
@@ -1446,7 +1449,8 @@ mod tests {
                 &mut StyleCache::default(),
                 &mut text,
             );
-            let top = layout.bounds(tree.children[1].id).unwrap().y + 28.0;
+            let content = Screen::new(&layout).get_by_test_id("contenido");
+            let top = content.bounds().y + 28.0;
             crop(&full, (top * SCALE) as u32, (height * SCALE) as u32)
         };
         let label = |caption: &str| -> Image {
@@ -1859,7 +1863,7 @@ mod tests {
             &mut text,
         );
         // 28 pt above the title: the card's top edge plus a margin.
-        let header = layout.bounds(tree.children[0].id).unwrap();
+        let header = Screen::new(&layout).get(By::role(Role::Header)).bounds();
         let title = layout.bounds(card_header_of(demo, title)).unwrap().y - 28.0;
         let top = title.max(header.y + header.height);
         crop(&full, (top * 2.0) as u32, (height * 2.0) as u32)

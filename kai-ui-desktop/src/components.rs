@@ -448,6 +448,7 @@ impl<Msg> TextField<Msg> {
 
     /// Test id of the field; its parts get `<id>.input`, `.label` (static
     /// label), `.floating` (label on the border), `.shell` (bordered box),
+    /// `.placeholder` (two-color placeholder of an empty required field),
     /// `.helper`, `.start`, `.end` and `.toggle` (password eye).
     pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
         self.test_id = Some(test_id.into());
@@ -986,6 +987,7 @@ impl<Msg> TextField<Msg> {
                             "hidden".to_owned()
                         },
                     ))
+                    .part("placeholder")
                     .children(label_texts(
                         &placeholder,
                         true,
@@ -1197,11 +1199,13 @@ pub fn card_actions<Msg>() -> Element<Msg> {
 /// `NSBox` with its title: in AppKit the title sits above the box, outside
 /// it; with the Kai theme this is a card with a `card_header`. `content` goes
 /// inside the box, in a `card_content`.
+/// Parts: `label` (the AppKit title above), `box`, and the card's `header`,
+/// `title` and `content`.
 pub fn group_box<Msg>(
     title: Option<&str>,
     content: impl IntoIterator<Item = Element<Msg>>,
 ) -> Element<Msg> {
-    let mut boxed = card();
+    let mut boxed = card().part("box");
     boxed.parts_root = false;
     let mut root = div()
         .class(&themed("flex flex-col", "flex flex-col gap-1"))
@@ -1210,7 +1214,8 @@ pub fn group_box<Msg>(
         root = root.child(
             text(title)
                 .class(&themed("hidden", &format!("block px-1 {APPKIT_BOX_TITLE}")))
-                .role(Role::Heading),
+                .role(Role::Heading)
+                .part("label"),
         );
         boxed = boxed
             .label(title)
@@ -1657,6 +1662,12 @@ mod tests {
         found
     }
 
+    /// `field` with test id `campo` and its ids assigned, so its parts are
+    /// found as `campo.shell`, `campo.floating`, ...
+    fn campo(field: TextField<Msg>) -> Element<Msg> {
+        assigned(field.test_id("campo").build())
+    }
+
     fn field_input(element: &Element<Msg>) -> &Element<Msg> {
         find(element, |e| matches!(e.kind, Kind::Input { .. })).expect("input")
     }
@@ -2056,10 +2067,9 @@ mod tests {
 
     /// Focus ring quads (3 pt wide) painted for `field` focused.
     fn appkit_rings(window: WindowActivity) -> (Rect, Vec<crate::render::Quad>) {
-        let mut field: Element<Msg> = TextField::new("Nombre", "").on_input(Msg::Edited).build();
-        field.assign_ids();
-        let input = field_input(&field).id;
-        let shell = field.children[1].id;
+        let field = campo(TextField::new("Nombre", "").on_input(Msg::Edited));
+        let input = part(&field, "campo.input").id;
+        let shell = part(&field, "campo.shell").id;
         let theme = appkit();
         let layout = laid_out(
             &theme,
@@ -2091,9 +2101,9 @@ mod tests {
 
     #[test]
     fn appkit_text_field_has_no_floating_label() {
-        let field: Element<Msg> = TextField::new("Nombre", "Ana").required(true).build();
-        let floating = field.children[1].children.last().unwrap();
-        let static_label = &field.children[0];
+        let field = campo(TextField::new("Nombre", "Ana").required(true));
+        let floating = part(&field, "campo.floating");
+        let static_label = part(&field, "campo.label");
         let kai_display = |classes: &str| display(classes, group_focused());
         let appkit_display = |classes: &str| {
             ClassList::parse(classes, &appkit())
@@ -2154,11 +2164,12 @@ mod tests {
             ]
             .into_iter()
             .map(|size| {
-                let mut root: Element<Msg> = div()
-                    .control_size(size)
-                    .child(TextField::new("Campo", "").bezel(bezel).build());
-                root.assign_ids();
-                let shell = root.children[0].children[1].id;
+                let root: Element<Msg> = assigned(
+                    div()
+                        .control_size(size)
+                        .child(campo(TextField::new("Campo", "").bezel(bezel))),
+                );
+                let shell = part(&root, "campo.shell").id;
                 let layout = laid_out(&theme, &root, &Interaction::default());
                 layout.node(shell).unwrap().bounds.height
             })
@@ -2187,14 +2198,15 @@ mod tests {
 
     #[test]
     fn group_box_title_outside_in_appkit() {
-        let group: Element<Msg> = group_box(Some("Opciones"), [text("Contenido")]);
-        let outside = &group.children[0];
-        let boxed = &group.children[1];
+        let group = assigned(group_box(Some("Opciones"), [text("Contenido")]).test_id("g"));
+        let outside = part(&group, "g.label");
+        let boxed = part(&group, "g.box");
         assert_eq!(boxed.role, Some(Role::Group));
         assert_eq!(boxed.label.as_deref(), Some("Opciones"));
-        let inside = &boxed.children[0];
+        let inside = part(&group, "g.header");
+        assert!(boxed.find_test_id("g.header").is_some());
         assert!(text_node(inside, "Opciones").is_some());
-        assert!(text_node(&boxed.children[1], "Contenido").is_some());
+        assert_eq!(part(&group, "g.content").text_content(), "Contenido");
         let kai_display = |classes: &str| display(classes, State::default());
         let appkit_display = |classes: &str| appkit_style(classes, State::default()).display;
         assert_eq!(kai_display(&outside.class), Display::None);
@@ -2301,15 +2313,8 @@ mod tests {
                         icon_button_sized::<Msg>(Icon::Search, "x", variant, IconButtonSize::Md);
                     style(&button.class)
                 };
-                let mut shell = None;
-                TextField::<Msg>::new("Campo", "x")
-                    .build()
-                    .walk(&mut |element| {
-                        if element.class.contains("h-field") {
-                            shell = Some(style(&element.class));
-                        }
-                    });
-                let shell = shell.expect("field shell");
+                let field = campo(TextField::new("Campo", "x"));
+                let shell = style(&part(&field, "campo.shell").class);
                 assert_eq!(
                     shell.height,
                     Length::Px(theme.controls.field_square_height[2])
@@ -2387,7 +2392,9 @@ mod tests {
                         buttons += 1;
                         assert!(changes(&element.class), "{}", element.class);
                     }
-                    if element.class.contains("h-field") {
+                    // Autocomplete shells have no outline.
+                    let outlined = resolve(&element.class, State::default()).border_width.top > 0.0;
+                    if element.part == Some("shell") && outlined {
                         shells += 1;
                         let border = resolve(&element.class, hovered()).border_color;
                         assert_eq!(border, Some(theme.semantic.tertiary_label));
@@ -2472,20 +2479,20 @@ mod tests {
         );
     }
 
-    // Default-density fields: `children[0]` is the AppKit static label
-    // (hidden with the Kai theme), `children[1]` the outline.
     #[test]
     fn text_field_floats_its_label_only_with_value_or_focus() {
-        let empty: Element<Msg> = TextField::new("Nombre", "")
-            .on_input(Msg::Edited)
-            .on_submit(Msg::Submit)
-            .build();
+        let empty = campo(
+            TextField::new("Nombre", "")
+                .on_input(Msg::Edited)
+                .on_submit(Msg::Submit),
+        );
         assert!(empty.delegates_focus, "clicks anywhere focus the input");
-        let shell = &empty.children[1];
-        let label = shell.children.last().unwrap();
+        let shell = part(&empty, "campo.shell");
+        let label = part(&empty, "campo.floating");
+        assert!(shell.find_test_id("campo.floating").is_some());
         assert_eq!(display(&label.class, State::default()), Display::None);
         assert_eq!(display(&label.class, group_focused()), Display::Flex);
-        let input = field_input(&empty);
+        let input = part(&empty, "campo.input");
         assert!(matches!(
             &input.kind,
             Kind::Input { placeholder, .. } if placeholder == "Nombre"
@@ -2502,10 +2509,8 @@ mod tests {
         });
         assert_eq!(shell_style.border_color, Some(theme().colors.primary));
 
-        let filled: Element<Msg> = TextField::new("Nombre", "Ana")
-            .placeholder("Tu nombre")
-            .build();
-        let label = filled.children[1].children.last().unwrap();
+        let filled = campo(TextField::new("Nombre", "Ana").placeholder("Tu nombre"));
+        let label = part(&filled, "campo.floating");
         assert_eq!(display(&label.class, State::default()), Display::Flex);
         assert!(matches!(
             &field_input(&filled).kind,
@@ -2518,11 +2523,11 @@ mod tests {
     #[test]
     fn label_experiments_place_appkit_field_labels() {
         use crate::theme::{FieldLabels, MixStyle};
-        let field: Element<Msg> = TextField::new("Correo", "a@b.cl").build();
-        let floating = find(&field, |e| e.class.contains("label-top:-top-2")).unwrap();
-        let fixed = find(&field, |e| e.class.contains("label-top:hidden")).unwrap();
-        let mask = find(&field, |e| e.class.contains("h-[9px]")).unwrap();
-        let filler = find(&field, |e| e.class.contains("h-[7px]")).unwrap();
+        let field = campo(TextField::new("Correo", "a@b.cl"));
+        let floating = part(&field, "campo.floating");
+        let fixed = part(&field, "campo.label");
+        let mask = find(floating, |e| e.class.contains("h-[9px]")).unwrap();
+        let filler = find(floating, |e| e.class.contains("h-[7px]")).unwrap();
         fn style(element: &Element<Msg>, theme: &Theme, state: State) -> crate::style::Style {
             ClassList::parse(&element.class, theme).resolve(state)
         }
@@ -2605,16 +2610,14 @@ mod tests {
         assert_eq!(filler.inset.bottom, crate::style::Length::Px(-1.0));
 
         // Contrast fields keep the AppKit label in every experiment.
-        let contrast: Element<Msg> = TextField::new("Buscar", "x")
-            .variant(FieldVariant::Contrast)
-            .build();
+        let contrast = campo(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
         let mut experimental = false;
         contrast.walk(&mut |e| {
             experimental |= e.class.contains("label-top:") || e.class.contains("label-tab:");
             experimental |= e.class.contains("label-near:");
         });
         // Only the hidden mask and filler (inside the hidden border label).
-        let label = find(&contrast, |e| e.class.contains("-top-2")).unwrap();
+        let label = part(&contrast, "campo.floating");
         for labels in [FieldLabels::Top, FieldLabels::Near, FieldLabels::Tab] {
             assert!(!shown(label, &with(labels)));
         }
@@ -2623,11 +2626,12 @@ mod tests {
 
     #[test]
     fn required_fields_mark_label_and_placeholder_with_an_asterisk() {
-        let field: Element<Msg> = TextField::new("Correo", "")
-            .required(true)
-            .helper_text("Usaremos este correo para avisarte")
-            .build();
-        let input = field_input(&field);
+        let field = campo(
+            TextField::new("Correo", "")
+                .required(true)
+                .helper_text("Usaremos este correo para avisarte"),
+        );
+        let input = part(&field, "campo.input");
         assert!(input.required);
         assert_eq!(
             input.description.as_deref(),
@@ -2649,85 +2653,104 @@ mod tests {
             .iter()
             .filter(|class| class.contains("text-error"));
         assert_eq!(kai.count(), 2);
-        let overlay = find(&field, |e| e.class.contains("group-focus-within:hidden")).unwrap();
+        let overlay = part(&field, "campo.placeholder");
         assert_eq!(display(&overlay.class, group_focused()), Display::None);
-        let helper = text_node(&field, "Usaremos este correo para avisarte").unwrap();
+        let helper = part(&field, "campo.helper");
+        assert_eq!(helper.text_content(), "Usaremos este correo para avisarte");
         assert!(helper.class.contains("text-muted-foreground"));
 
-        let filled: Element<Msg> = TextField::new("Correo", "a@b.cl").required(true).build();
-        assert!(find(&filled, |e| e.class.contains("group-focus-within:hidden")).is_none());
+        let filled = campo(TextField::new("Correo", "a@b.cl").required(true));
+        assert!(filled.find_test_id("campo.placeholder").is_none());
     }
 
     #[test]
     fn password_fields_mask_the_value_and_toggle_without_stealing_focus() {
-        let hidden: Element<Msg> = TextField::new("Contraseña", "secreto")
-            .password(false, Msg::Toggle)
-            .start_icon(Icon::User)
-            .build();
+        let hidden = campo(
+            TextField::new("Contraseña", "secreto")
+                .password(false, Msg::Toggle)
+                .start_icon(Icon::User),
+        );
         assert!(matches!(
-            field_input(&hidden).kind,
+            part(&hidden, "campo.input").kind,
             Kind::Input { masked: true, .. }
         ));
-        let toggle = find(&hidden, |e| e.role == Some(Role::Button)).unwrap();
+        let toggle = part(&hidden, "campo.toggle");
+        assert_eq!(toggle.role, Some(Role::Button));
         assert_eq!(toggle.label.as_deref(), Some("Mostrar contraseña"));
         assert!(!toggle.focus_on_press);
         assert_eq!(toggle.handlers.on_click, Some(Msg::Toggle));
-        assert_eq!(toggle.children[0].kind, Kind::Icon(Icon::Eye));
-        let shell = &hidden.children[1];
-        assert_eq!(shell.children[0].kind, Kind::Icon(Icon::User));
-        assert!(shell.children[0].class.contains("size-5"));
+        let icon = |e: &Element<Msg>| {
+            find(e, |e| matches!(e.kind, Kind::Icon(_)))
+                .unwrap()
+                .kind
+                .clone()
+        };
+        assert_eq!(icon(toggle), Kind::Icon(Icon::Eye));
+        let start = part(&hidden, "campo.start");
+        assert!(
+            part(&hidden, "campo.shell")
+                .find_test_id("campo.start")
+                .is_some()
+        );
+        assert_eq!(start.kind, Kind::Icon(Icon::User));
+        assert!(start.class.contains("size-5"));
 
-        let mut shown: Element<Msg> = TextField::new("Contraseña", "secreto")
-            .password(true, Msg::Toggle)
-            .build();
+        let shown = campo(TextField::new("Contraseña", "secreto").password(true, Msg::Toggle));
         assert!(matches!(
-            field_input(&shown).kind,
+            part(&shown, "campo.input").kind,
             Kind::Input { masked: false, .. }
         ));
-        let toggle = find(&shown, |e| e.role == Some(Role::Button)).unwrap();
+        let toggle = part(&shown, "campo.toggle");
         assert_eq!(toggle.label.as_deref(), Some("Ocultar contraseña"));
-        assert_eq!(toggle.children[0].kind, Kind::Icon(Icon::EyeOff));
-        shown.assign_ids();
+        assert_eq!(icon(toggle), Kind::Icon(Icon::EyeOff));
         let order = FocusOrder::from_tree(&shown);
         assert_eq!(order.ids().count(), 2, "input and toggle are tabbable");
-        let toggle = find(&shown, |e| e.role == Some(Role::Button)).unwrap();
         assert!(!order.focus_on_press(toggle.id));
     }
 
     #[test]
     fn compact_and_inline_layouts_move_the_label() {
-        let compact: Element<Msg> = TextField::new("Código", "")
-            .density(FieldDensity::Compact)
-            .required(true)
-            .start_symbol("$")
-            .build();
-        let label = text_node(&compact, "Código").unwrap();
+        let compact = campo(
+            TextField::new("Código", "")
+                .density(FieldDensity::Compact)
+                .required(true)
+                .start_symbol("$"),
+        );
+        let label = text_node(part(&compact, "campo.label"), "Código").unwrap();
         assert!(label.class.contains("text-[11px]"));
-        let shell = &compact.children[1];
+        let shell = part(&compact, "campo.shell");
         assert!(shell.class.contains("h-control-compact"));
         assert!(
-            find(shell, |e| e.class.contains("-top-2")).is_none(),
+            compact.find_test_id("campo.floating").is_none(),
             "no floating label"
         );
-        assert!(shell.children[0].class.contains("text-[15px]"));
+        assert!(part(&compact, "campo.start").class.contains("text-[15px]"));
 
-        let inline: Element<Msg> = TextField::new("RUT", "")
-            .density(FieldDensity::Compact)
-            .label_layout(LabelLayout::Inline)
-            .inline_leading(text("#"))
-            .build();
-        let shell = &inline.children[0];
-        assert!(text_node(&shell.children[0], "#").is_some());
-        let body = &shell.children[1];
-        assert!(body.children[0].class.contains("border-r"));
-        assert!(text_node(&body.children[0], "RUT").is_some());
-        assert!(find(&body.children[1], |e| matches!(e.kind, Kind::Input { .. })).is_some());
+        let inline = campo(
+            TextField::new("RUT", "")
+                .density(FieldDensity::Compact)
+                .label_layout(LabelLayout::Inline)
+                .inline_leading(text("#")),
+        );
+        let shell = part(&inline, "campo.shell");
+        let leading = text_node(shell, "#").unwrap();
+        let label = part(&inline, "campo.label");
+        assert!(shell.find_test_id("campo.label").is_some());
+        assert!(label.class.contains("border-r"));
+        assert_eq!(label.text_content(), "RUT");
+        assert!(shell.find_test_id("campo.input").is_some());
+        let mut order = Vec::new();
+        shell.walk(&mut |e| {
+            if std::ptr::eq(e, leading) {
+                order.push("#".to_owned());
+            }
+            order.extend(e.test_id.clone());
+        });
+        assert_eq!(order, ["campo.shell", "#", "campo.label", "campo.input"]);
 
-        let ignored: Element<Msg> = TextField::new("Nombre", "")
-            .label_layout(LabelLayout::Inline)
-            .build();
+        let ignored = campo(TextField::new("Nombre", "").label_layout(LabelLayout::Inline));
         assert!(
-            find(&ignored, |e| e.class.contains("border-r")).is_none(),
+            !part(&ignored, "campo.label").class.contains("border-r"),
             "inline needs compact density"
         );
     }
@@ -2735,11 +2758,12 @@ mod tests {
     #[test]
     fn read_only_and_disabled_fields_use_the_muted_surface() {
         let theme = theme();
-        let read_only: Element<Msg> = TextField::new("Folio", "123")
-            .read_only(true)
-            .select_on_focus(true)
-            .build();
-        let input = field_input(&read_only);
+        let read_only = campo(
+            TextField::new("Folio", "123")
+                .read_only(true)
+                .select_on_focus(true),
+        );
+        let input = part(&read_only, "campo.input");
         assert!(matches!(
             input.kind,
             Kind::Input {
@@ -2749,18 +2773,19 @@ mod tests {
             }
         ));
         assert!(!input.disabled);
-        let shell = &read_only.children[1];
+        let shell = part(&read_only, "campo.shell");
         let surface = ClassList::parse(&shell.class, &theme).resolve(State::default());
         assert_eq!(surface.background, theme.color("field-muted"));
-        let label = shell.children.last().unwrap();
+        let label = part(&read_only, "campo.floating");
         assert!(label.class.contains("bg-field-muted"));
 
-        let disabled: Element<Msg> = TextField::new("Folio", "123")
-            .disabled(true)
-            .select_on_focus(true)
-            .password(false, Msg::Toggle)
-            .build();
-        let input = field_input(&disabled);
+        let disabled = campo(
+            TextField::new("Folio", "123")
+                .disabled(true)
+                .select_on_focus(true)
+                .password(false, Msg::Toggle),
+        );
+        let input = part(&disabled, "campo.input");
         assert!(input.disabled);
         assert!(matches!(
             input.kind,
@@ -2769,25 +2794,24 @@ mod tests {
                 ..
             }
         ));
+        assert!(part(&disabled, "campo.toggle").disabled);
         assert!(
-            find(&disabled, |e| e.role == Some(Role::Button))
-                .unwrap()
-                .disabled
+            part(&disabled, "campo.shell")
+                .class
+                .contains("cursor-not-allowed")
         );
-        assert!(disabled.children[1].class.contains("cursor-not-allowed"));
         assert_eq!(FocusOrder::from_tree(&disabled).ids().count(), 0);
 
-        let contrast: Element<Msg> = TextField::new("Buscar", "x")
-            .variant(FieldVariant::Contrast)
-            .build();
-        let label = contrast.children[1].children.last().unwrap();
+        let contrast = campo(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
+        let label = part(&contrast, "campo.floating");
         assert!(label.class.contains("bg-primary"));
-        let autocomplete: Element<Msg> = TextField::new("Buscar", "")
-            .variant(FieldVariant::Autocomplete)
-            .read_only(true)
-            .build();
-        let shell =
-            ClassList::parse(&autocomplete.children[1].class, &theme).resolve(State::default());
+        let autocomplete = campo(
+            TextField::new("Buscar", "")
+                .variant(FieldVariant::Autocomplete)
+                .read_only(true),
+        );
+        let shell = ClassList::parse(&part(&autocomplete, "campo.shell").class, &theme)
+            .resolve(State::default());
         assert_eq!(shell.border_width.top, 0.0);
         assert_eq!(shell.background, theme.color("transparent"));
     }
