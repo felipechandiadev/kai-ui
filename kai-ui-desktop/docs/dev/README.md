@@ -18,6 +18,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 12. [Tema AppKit para macOS](11-tema-appkit.md)
 13. [Guía: modelo AppKit como estándar de Kai](12-modelo-appkit.md)
 14. [Hoja de ruta: de Kai UI a plataforma de desarrollo de apps](13-hoja-de-ruta-plataforma.md)
+15. [MCP experimental: cómo probarlo](14-mcp.md)
 
 ## Orden recomendado
 
@@ -49,8 +50,9 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **Comandos (Pasos 7 y 8 de 13):** registro tipado de acciones y consultas (`kai::commands`) con disponibilidad tras cada `update` y validación en debug. Lo consumen los atajos, `on_command` en los botones, el menú nativo de macOS (`kai::menu`, con muda) y la paleta ⇧⌘P; una acción deshabilitada se ve atenuada en los tres ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
 - **Comandos en pruebas y demo migrada (Pasos 9 y 10 de 13):** `TestApp::invoke`, `query`, `available` y `perform`; cada acción de la demo hace lo mismo desde botón, atajo, menú, paleta y código. Con esto se cierra la Etapa 2.
 - **Esquemas (Paso 11 de 13):** cada comando es su propia entrada, deserializable con serde y descrita en JSON Schema 2020-12 con schemars. `Session::call` y `TestApp::call` ejecutan un comando desde JSON, y el registro se publica en `mcp-schema.json`, comparado en un test, y con `cargo run -- --describe-commands`.
+- **MCP experimental (Paso 12 de 13):** con `--features mcp`, la demo lanzada con `--mcp` es un servidor MCP por stdio (`rmcp`). Las herramientas son los comandos marcados con `.expose()`, y cada llamada corre en el hilo de UI como `Session::call`. Una acción puede responder con una consulta (`.returns::<Q>()`). `TestApp::mcp_client()` lo prueba en proceso. Falta la prueba a mano con Cursor o Claude Desktop ([14](14-mcp.md)).
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 278 tests (271 normales y 7 `#[ignore]` de benchmark y capturas) más 5 doctests (uno ignorado), Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 279 tests (272 normales y 7 `#[ignore]` de benchmark y capturas; con `--features mcp` son 275 normales) más 5 doctests (uno ignorado), Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -68,6 +70,7 @@ kai-ui-desktop/
 │   ├── responder.rs       acciones, cadena de responders, equivalentes y atajos de comandos
 │   ├── commands/          registro de comandos: Action, Query, disponibilidad, validación,
 │   │                      entrada JSON y esquemas (schema.rs: describe, mcp-schema.json)
+│   ├── mcp/               servidor MCP por stdio con rmcp (feature `mcp`): Tools, Invocation, serve
 │   ├── menu.rs            barra de menús desde el registro (menu_model; muda en macOS)
 │   ├── tw.rs              parser de clases tipo Tailwind → Style
 │   ├── style.rs           Style tipo CSS → taffy::Style, texto heredable
@@ -81,7 +84,8 @@ kai-ui-desktop/
 │   ├── ui_engine.rs       intents y dispatch de foco/activación/texto
 │   ├── platform_adapter.rs  winit → intents Kai
 │   ├── a11y.rs            árbol AccessKit desde el layout; rol y nombre accesible compartidos
-│   ├── testing/           layout_of, consultas Screen/By (query.rs) y TestApp (app.rs)
+│   ├── testing/           layout_of, consultas Screen/By (query.rs), TestApp (app.rs) y
+│   │                      McpClient (mcp.rs, feature `mcp`)
 │   └── geometry.rs, signal.rs, grid_layout.rs, fonts.rs, version.rs
 ├── examples/              demo.rs y gallery.rs, binarios finos sobre `kai`
 ├── fixtures/external-app/ app mínima que usa solo la API pública (compilada en CI)

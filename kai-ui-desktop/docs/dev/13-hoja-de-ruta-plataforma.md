@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas, y los Pasos 0 a 11 están hechos, salvo el 1b. Los comandos ya se describen en JSON Schema 2020-12 (`mcp-schema.json`, `--describe-commands`) y se ejecutan desde JSON con `Session::call`. Sigue el Paso 12 (MCP experimental por stdio). Antes de escribir código hay que evaluar `rmcp` frente a una implementación propia (§12), y en ese paso se suman el `output` de las acciones y `registry.expose`. El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas, y los Pasos 0 a 12 están hechos, salvo el 1b. La demo ya es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`), y solo falta probarla a mano con Cursor o Claude Desktop ([14](14-mcp.md)). Sigue el Paso 13 (confirmación y auditoría), que necesita el widget `Dialog`. El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -269,6 +269,7 @@ invocación (MCP, script, test) ──► Invocation { id, command, input, origi
 - El `Msg` sigue siendo dato puro: se puede imprimir, comparar y reproducir.
 - El runtime guarda las invocaciones pendientes por `InvocationId`; si no se responden en el plazo, el cliente recibe error de tiempo agotado.
 - Para comandos async, la app marca qué `Msg` cierra la invocación: `Effects::perform(fut, Msg::Creado).completes(invocation)` (API propuesta, Paso 15).
+- **Como quedó en el Paso 12:** las acciones no tienen `type Output` ni `output()`. Una acción que debe responder algo lo declara al registrarse con `.returns::<Consulta>()`, y la consulta corre sobre el modelo ya actualizado. Las demás responden `null`. El plazo es de 30 s (`kai::mcp::TIMEOUT`).
 
 ### 7.4 Exposición a agentes
 
@@ -281,7 +282,7 @@ invocación (MCP, script, test) ──► Invocation { id, command, input, origi
 | `[mcp] require-confirmation` | `["destructive"]` | Categorías que abren el diálogo. |
 | `[mcp] transports` | `["stdio"]` | HTTP solo si se pide explícitamente. |
 
-Hasta que exista `kai.toml` (Pasos 12–16), la exposición se declara en código (`registry.expose::<T>()`).
+Hasta que exista `kai.toml` (Pasos 12–16), la exposición se declara en código: `.expose()` al registrar el comando (`registry.action::<T>().expose()`). Lo no expuesto no se lista, y si un agente lo llama igual recibe «herramienta desconocida».
 
 ## 8. Dos pistas y puntos de sincronización
 
@@ -663,7 +664,7 @@ Reglas de la pista C:
     - `mcp-schema.json`, en la raíz del crate, es el snapshot de la demo: `mcp_schema_matches_snapshot` muestra las líneas distintas y `KAI_UPDATE_SCHEMA=1 cargo test mcp_schema` lo reescribe.
     - `cargo run -- --describe-commands` imprime lo mismo, y la fixture externa también acepta el flag.
   - **Demo**: la acción `contador.sumar { cantidad: u32 }` no tiene botón ni menú; solo la llaman scripts y agentes.
-  - **Diferido al Paso 12**: el `type Output` y `output()` de las acciones (§7.3), y `registry.expose` (§7.4). Por ahora el documento lista todos los comandos de la app.
+  - **Diferido al Paso 12**: la respuesta de las acciones (§7.3) y la exposición (§7.4). Quedaron como `.returns::<Q>()` y `.expose()`; ver el Paso 12.
   - **Tests**:
     - en `schema.rs`: unitarios como objeto cerrado, errores legibles, esquemas sin `$schema` ni `title`, y la convención de RUT, montos y enum con `tag`, en línea;
     - en el registro: acciones con entrada (`needs_input`, `message_from`, `run_query`) y la validación de atajo o menú;
@@ -685,6 +686,18 @@ Reglas de la pista C:
 - **Tests**: cliente MCP en proceso (`app.mcp_client()`) que usa el mismo camino salvo el transporte: lista herramientas, llama una acción y comprueba que la UI la refleja.
 - **Hecho cuando**: Cursor o Claude Desktop, configurados con el binario y `--mcp`, listan y llaman herramientas de la demo, y la ventana refleja cada llamada.
 - **Riesgos**: cambios del spec MCP; mantener todo el protocolo dentro de `src/mcp/`, sin filtrar tipos al registro.
+- **Estado**: hecho, salvo la prueba a mano con Cursor o Claude Desktop (guía en [14](14-mcp.md)).
+  - **SDK:** `rmcp` 3.5 (features `server` y `transport-io`, sin macros). Cumple MSRV (pide 1.88), es Apache-2.0, implementa el spec 2025-06-18 y posteriores, y trae stdio de servidor. Tokio entra solo con la feature `mcp` (`rt`, `sync`, `time`, `io-std`, `io-util`).
+  - **Registro:** `.expose()` y `.returns::<Q>()` en `CommandBuilder`, en lugar de `type Output` (§7.3 y §7.4). `validate` reporta un `returns` puesto en algo que no es una acción, o que apunta a un id sin registrar, a algo que no es una consulta o a una consulta que necesita entrada. `describe` publica `exposed` y, en las acciones con `returns`, el `outputSchema` de la consulta. `Session::call` responde con esa consulta tras el `update`.
+  - **Servidor (`src/mcp/`):** `Tools::of::<App>` arma las herramientas desde `describe`, solo con los comandos expuestos. El nombre es el id con punto. Las consultas llevan `readOnlyHint` y las acciones `Destructive`, `destructiveHint`. MCP exige que `outputSchema` y `structuredContent` sean objetos, así que una salida que no lo es va envuelta en `{"result": ...}`.
+    - `serve` corre `rmcp` en un hilo con un runtime Tokio `current_thread`, sobre el par de streams que se le pase; `serve_stdio` usa stdin y stdout.
+    - Cada `tools/call` es una `Invocation { id: InvocationId, command, input }` que llega al hilo de UI como `UserEvent::Mcp` por el `EventLoopProxy`. Ahí corre `Session::call` y la respuesta vuelve por un `oneshot`.
+    - Los errores del comando (`CommandError`: no disponible, entrada inválida) vuelven como resultado con `isError`. Una herramienta no expuesta o inexistente es un error JSON-RPC.
+  - **Runtime:** `kai::runtime::run_with_mcp(app, theme)`. Las llamadas que llegan antes de que exista la ventana esperan en una cola. Cuando el cliente cierra stdin, la app termina (`UserEvent::McpClosed`). Stdout queda para el protocolo; un test revisa que `runtime.rs`, `session.rs` y `mcp/` no impriman ahí.
+  - **Demo:** `--mcp` (con `--features mcp`; sin la feature, error claro). Expone todo menos `form.alternar_contrasena`; `form.enviar` responde con `form.ultimo_envio`.
+  - **Tests:** `TestApp::mcp_client()` conecta un cliente JSON-RPC por un `tokio::io::duplex` al mismo servidor; las llamadas corren en el `TestApp`. En la demo, `mcp_lists_the_exposed_commands_as_tools` compara la lista con `describe`, y `mcp_tool_calls_run_on_the_app` cubre la acción con entrada reflejada en la UI, la acción no disponible, la entrada inválida, la herramienta no expuesta y las respuestas estructuradas. CI suma clippy y tests con `--features mcp`.
+  - **Prueba de humo:** con líneas JSON-RPC por stdin, el binario responde a `initialize`, `tools/list` y `tools/call`, y termina con código 0 al cerrarse stdin.
+  - **Pendiente:** probarlo con Cursor y con Claude Desktop, mirando la ventana. Si algún cliente rechaza los nombres con punto, se agrega el alias `clientes_buscar` (§12).
 
 #### Paso 13 — Confirmación y auditoría
 
@@ -958,8 +971,8 @@ Reglas de la pista C:
 
 | Decisión | Opciones | Recomendación | Cuándo |
 |---|---|---|---|
-| Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Tokio en hilo de servicio**: `rmcp` lo usa y 00 solo excluye Tokio como runtime de la UI | Paso 12 |
-| SDK MCP | `rmcp`, implementación propia | Evaluar `rmcp` con los criterios de 09 §4.8; propia solo si falla en MSRV, licencia o stdio servidor | Paso 12 |
+| Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Decidido en el Paso 12: Tokio `current_thread` en un hilo de servicio**, solo con la feature `mcp`; la UI sigue en winit | Paso 12 |
+| SDK MCP | `rmcp`, implementación propia | **Decidido en el Paso 12: `rmcp` 3.5** (`server` y `transport-io`, sin macros): MSRV 1.88, Apache-2.0, spec 2025-06-18 y posteriores, stdio de servidor | Paso 12 |
 | JSON Schema | `schemars`, manual | **Decidido en el Paso 11: `schemars` 1.2**, dialecto 2020-12, subesquemas en línea, RUT como `string` con `pattern`, montos enteros, enums con `tag`; snapshot en `mcp-schema.json` | Paso 11 |
 | Nombres de herramienta | `clientes.buscar`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
 | Menú nativo | `objc2-app-kit` propio, `muda` | **Decidido en el Paso 8: `muda` 0.19**, que ya usa el mismo objc2 que winit y trae los ítems predefinidos; `objc2-app-kit` propio solo si muda limita (submenús dinámicos, validación por la cadena de responders) | Paso 8 |
@@ -1066,7 +1079,7 @@ Reglas de la pista C:
 
 **Etapa 3 — Agentes**
 - [x] P11 Esquemas y `mcp-schema.json` con snapshot.
-- [ ] P12 MCP stdio experimental; probado con Cursor o Claude Desktop.
+- [x] P12 MCP stdio experimental (falta la prueba a mano con Cursor o Claude Desktop; ver [14](14-mcp.md)).
 - [ ] P13 `Dialog`, confirmación, auditoría, indicador de agente.
 
 **Etapa 4 — App guía**
