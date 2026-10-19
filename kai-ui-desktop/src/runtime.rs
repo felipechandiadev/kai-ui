@@ -2,11 +2,14 @@
 //! become messages, `update` changes the model, and the next frame renders
 //! the new `view`.
 //!
-//! The runtime owns everything that is not app state: window, renderer,
-//! text buffers, focus/hover/pressed state ([`UiModel`]), scroll offsets and
-//! the caret/selection of each input. Inputs are controlled: every frame the
-//! value in the tree is pushed into the editor when it differs, so an input
-//! without `on_input` is effectively read-only.
+//! The runtime owns everything that is not app state. A window-independent
+//! session keeps text buffers, focus/hover/pressed state, scroll offsets
+//! and the caret/selection of each input; the window state around it owns
+//! the window, renderer and accessibility adapter, feeds it events and
+//! applies what it asks of the window (cursor, IME, title, redraw). Inputs
+//! are controlled: every frame the value in the tree is pushed into the
+//! editor when it differs, so an input without `on_input` is effectively
+//! read-only.
 //!
 //! The loop waits for events (`ControlFlow::Wait`): nothing redraws on its
 //! own, except an animated [`App::background`], which asks for frames at
@@ -15,14 +18,13 @@
 //! something else changed (`dirty`).
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Instant;
 
-use cosmic_text::{FontSystem, Metrics};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -31,28 +33,19 @@ use winit::{
     window::{CursorIcon, Window, WindowId},
 };
 
-use crate::a11y;
 use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
-use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
-use crate::geometry::{PhysicalPoint, Point, ScaleFactor, Size};
-use crate::layout::{
-    Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, WindowActivity,
-    text_style,
-};
+use crate::element::{Element, Kind, WidgetId};
+use crate::geometry::{PhysicalPoint, ScaleFactor};
+use crate::layout::{Content, Layout, WindowActivity};
 use crate::platform_adapter::{adapt_ime_event, adapt_keyboard_event, adapt_modifiers};
-use crate::render::TextId;
-use crate::render::paint::{PaintInput, paint};
-use crate::render::text::TextStore;
 use crate::render::wgpu_backend::WgpuRenderer;
 use crate::responder::{self, Action, Responder};
+use crate::session::{Measure, Session};
 use crate::style::Cursor;
-use crate::text_field::{SystemClipboard, TextFieldDecorations, TextFieldState};
+use crate::text_field::SystemClipboard;
 use crate::theme::{Appearance, Theme};
-use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
+use crate::ui_engine::Modifiers;
 
-/// Extra room kept visible around a focused element when scrolling to it
-/// (focus rings are 2px wide with a 2px offset).
-const FOCUS_REVEAL_MARGIN: f32 = 4.0;
 const LINE_SCROLL: f32 = 40.0;
 
 /// What `update` asks the runtime to do, as a value. Opaque and always
@@ -179,8 +172,7 @@ pub fn background_running(
 }
 
 /// Open a window and run `app` until it is closed.
-pub fn run<A: App>(mut app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
-    let _effects = app.init();
+pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::<accesskit_winit::Event>::with_user_event().build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
@@ -307,34 +299,14 @@ struct WindowState<A: App> {
     window: Arc<Window>,
     accessibility: accesskit_winit::Adapter,
     renderer: WgpuRenderer,
-    theme: Theme,
-    app: A,
-    title: String,
-    tree: Element<A::Msg>,
-    handlers: HashMap<WidgetId, Handlers<A::Msg>>,
-    focus_order: FocusOrder,
-    styles: StyleCache,
-    text: TextStore,
-    text_fields: BTreeMap<WidgetId, TextFieldState>,
-    layout: Layout,
-    scroll: ScrollOffsets,
+    session: Session<A>,
     scale_factor: ScaleFactor,
-    cursor: Option<Point>,
-    hover_path: Vec<WidgetId>,
     modifiers: Modifiers,
-    ui: UiModel,
-    dragging: Option<WidgetId>,
-    /// Key/main state, from `WindowEvent::Focused`.
-    activity: WindowActivity,
     /// `WindowEvent::Occluded` (hidden, minimized or fully covered).
     occluded: bool,
-    /// The app's background effect as of the last `view`.
-    background: BackgroundEffect,
     clock: BackgroundClock,
     /// Background of the last full frame, for animation-only frames.
     background_layer: Option<BackgroundLayer>,
-    /// Something besides the background animation needs a full frame.
-    dirty: bool,
     /// When the next animation frame is due.
     next_frame: Option<Instant>,
 }
@@ -349,159 +321,92 @@ impl<A: App> WindowState<A> {
     ) -> Result<Self, String> {
         let scale_factor = ScaleFactor::new(window.scale_factor())
             .ok_or_else(|| "La ventana informó un factor de escala inválido".to_owned())?;
-        let tree = build_view(&app);
+        let size = window.inner_size();
+        let viewport = scale_factor.to_logical_size(size.width, size.height);
+        let session = Session::new(
+            app,
+            theme,
+            viewport,
+            Measure::Real,
+            Box::new(SystemClipboard),
+        );
+        let unknown = session.unknown_classes();
+        if !unknown.is_empty() {
+            eprintln!("Clases no reconocidas: {}", unknown.join(" "));
+        }
         let mut state = Self {
             window,
             accessibility,
             renderer,
-            theme,
-            title: app.title(),
-            app,
-            focus_order: FocusOrder::from_tree(&tree),
-            handlers: HashMap::new(),
-            tree,
-            styles: StyleCache::default(),
-            text: TextStore::new(FontSystem::new()),
-            text_fields: BTreeMap::new(),
-            layout: Layout::default(),
-            scroll: ScrollOffsets::new(),
+            session,
             scale_factor,
-            cursor: None,
-            hover_path: Vec::new(),
             modifiers: Modifiers::default(),
-            ui: UiModel::default(),
-            dragging: None,
-            activity: WindowActivity::default(),
             occluded: false,
-            background: BackgroundEffect::NONE,
             clock: BackgroundClock::default(),
             background_layer: None,
-            dirty: true,
             next_frame: None,
         };
-        state.rebuild();
-        state.relayout();
-        let unknown = state.styles.unknown();
-        if !unknown.is_empty() {
-            eprintln!("Clases no reconocidas: {}", unknown.join(" "));
-        }
+        state.flush();
         Ok(state)
     }
 
-    fn viewport(&self) -> Size {
-        let physical = self.window.inner_size();
-        self.scale_factor
-            .to_logical_size(physical.width, physical.height)
-    }
-
-    /// Run `view`, then reconcile focus and input editors with the new tree.
-    fn rebuild(&mut self) {
-        self.tree = build_view(&self.app);
-        self.background = self.app.background();
-        if let Some(theme) = self.app.theme()
-            && theme != self.theme
-        {
-            self.theme = theme;
+    /// Apply what the session asked of the window since the last flush.
+    fn flush(&mut self) {
+        let outbox = self.session.take_outbox();
+        if let Some(allowed) = outbox.ime_allowed {
+            self.window.set_ime_allowed(allowed);
+        }
+        if let Some(area) = outbox.ime_cursor_area {
+            let scale = self.scale_factor.get();
+            self.window.set_ime_cursor_area(
+                PhysicalPosition::new(
+                    (f64::from(area.x) * scale).round() as i32,
+                    (f64::from(area.y) * scale).round() as i32,
+                ),
+                PhysicalSize::new(
+                    ((f64::from(area.width) * scale).round() as u32).max(1),
+                    (f64::from(area.height) * scale).round() as u32,
+                ),
+            );
+        }
+        if let Some(cursor) = outbox.cursor {
+            self.window.set_cursor(match cursor {
+                Cursor::Default => CursorIcon::Default,
+                Cursor::Pointer => CursorIcon::Pointer,
+                Cursor::Text => CursorIcon::Text,
+                Cursor::NotAllowed => CursorIcon::NotAllowed,
+            });
+        }
+        if let Some(title) = outbox.title {
+            self.window.set_title(&title);
+        }
+        if let Some(theme) = outbox.theme {
             self.window.set_theme(window_theme(&theme));
         }
-        self.focus_order = FocusOrder::from_tree(&self.tree);
-        sync_focus(&mut self.ui, &self.focus_order);
-        self.handlers = self.tree.collect_handlers().into_iter().collect();
-
-        let font_system = &mut self.text.font_system;
-        let fields = &mut self.text_fields;
-        let mut live = Vec::new();
-        self.tree.walk(&mut |element| {
-            if let Kind::Input {
-                value,
-                masked,
-                read_only,
-                ..
-            } = &element.kind
-            {
-                let field = fields
-                    .entry(element.id)
-                    .or_insert_with(|| TextFieldState::new(font_system, Metrics::new(16.0, 24.0)));
-                field.set_masked(font_system, *masked);
-                field.set_read_only(font_system, *read_only);
-                if field.preedit().is_none() {
-                    field.set_text(font_system, value);
-                }
-                live.push(element.id);
-            }
-        });
-        fields.retain(|id, _| live.contains(id));
-        if self.dragging.is_some_and(|id| !live.contains(&id)) {
-            self.dragging = None;
-        }
-
-        let title = self.app.title();
-        if title != self.title {
-            self.window.set_title(&title);
-            self.title = title;
+        if outbox.redraw {
+            self.window.request_redraw();
         }
     }
 
-    /// The real key/main state unless the app forces one.
-    fn activity(&self) -> WindowActivity {
-        self.app.window_override().unwrap_or(self.activity)
-    }
-
-    fn relayout(&mut self) {
-        let interaction = Interaction {
-            hovered: self.hover_path.clone(),
-            focused: *self.ui.focused.get(),
-            pressed: *self.ui.pressed.get(),
-            window: self.activity(),
-            focus_visible: *self.ui.focus_visible.get(),
-        };
-        self.layout = Layout::compute(
-            &self.tree,
-            &LayoutInput {
-                viewport: self.viewport(),
-                theme: &self.theme,
-                interaction: &interaction,
-                scroll: &self.scroll,
-            },
-            &mut self.styles,
-            &mut self.text,
-        );
-        let layout = &self.layout;
-        self.focus_order
-            .retain_visible_equivalents(|id| layout.node(id).is_some_and(|node| !node.hidden));
-        for (id, field) in &mut self.text_fields {
-            if let Some(node) = self.layout.node(*id) {
-                let font_system = &mut self.text.font_system;
-                field.set_metrics(
-                    font_system,
-                    Metrics::new(node.text.font_size, node.text.line_height),
-                );
-                if let Some(line) = node.text_box {
-                    field.set_width(font_system, line.width);
-                }
-            }
-        }
-    }
-
-    /// Ask for a full frame (view, layout, paint).
-    fn invalidate(&mut self) {
-        self.dirty = true;
-        self.window.request_redraw();
+    fn resize(&mut self) {
+        let size = self.window.inner_size();
+        self.session
+            .set_viewport(self.scale_factor.to_logical_size(size.width, size.height));
     }
 
     fn background_running(&self) -> bool {
         background_running(
-            &self.background,
-            self.theme.prefs.reduce_motion,
+            &self.session.background(),
+            self.session.theme().prefs.reduce_motion,
             self.occluded,
-            self.activity(),
+            self.session.activity(),
         )
     }
 
     /// Frame for `RedrawRequested`: a full one, or only the next frame of
     /// the background animation when nothing else changed.
     fn redraw(&mut self) -> Result<(), String> {
-        if !self.dirty && self.background_running() {
+        if !self.session.is_dirty() && self.background_running() {
             let seconds = self.clock.tick(Instant::now(), true);
             let layer = self.background_layer.map(|layer| layer.at(seconds));
             if self.renderer.redraw_background(layer.as_ref())? {
@@ -526,188 +431,20 @@ impl<A: App> WindowState<A> {
         ControlFlow::WaitUntil(self.next_frame.unwrap_or(now + FRAME_INTERVAL))
     }
 
-    fn send(&mut self, msg: A::Msg) {
-        let _effects = self.app.update(msg);
-        self.invalidate();
-    }
-
-    fn handler(&self, id: WidgetId) -> Option<&Handlers<A::Msg>> {
-        self.handlers.get(&id)
-    }
-
     fn update_accessibility(&mut self) {
-        let values: Vec<(WidgetId, String)> = self
-            .text_fields
-            .iter()
-            .map(|(id, field)| (*id, field.text()))
-            .collect();
-        let field_values: Vec<(WidgetId, &str)> = values
-            .iter()
-            .map(|(id, value)| (*id, value.as_str()))
-            .collect();
-        let snapshot = a11y::A11ySnapshot {
-            layout: &self.layout,
-            scale_factor: self.scale_factor.get(),
-            focused: *self.ui.focused.get(),
-            window_title: &self.title,
-            field_values: &field_values,
-        };
+        let session = &self.session;
+        let scale = self.scale_factor.get();
         self.accessibility
-            .update_if_active(|| a11y::a11y_tree(&snapshot));
+            .update_if_active(|| session.a11y_tree(scale));
     }
 
     fn handle_accessibility_event(&mut self, event: accesskit_winit::WindowEvent) {
         match event {
             accesskit_winit::WindowEvent::InitialTreeRequested => self.update_accessibility(),
             accesskit_winit::WindowEvent::ActionRequested(request) => {
-                for intent in a11y::intents_for_action(&request, &self.focus_order) {
-                    self.apply_intent(intent);
-                }
+                self.session.accessibility_action(&request);
             }
             accesskit_winit::WindowEvent::AccessibilityDeactivated => {}
-        }
-    }
-
-    /// Recompute the hover path from the current layout; returns whether it
-    /// changed.
-    fn refresh_hover(&mut self) -> bool {
-        let path = self
-            .cursor
-            .map(|point| self.layout.hit_path(point))
-            .unwrap_or_default();
-        if path == self.hover_path {
-            return false;
-        }
-        self.window
-            .set_cursor(match cursor_for(&self.layout, &path) {
-                Cursor::Default => CursorIcon::Default,
-                Cursor::Pointer => CursorIcon::Pointer,
-                Cursor::Text => CursorIcon::Text,
-                Cursor::NotAllowed => CursorIcon::NotAllowed,
-            });
-        self.hover_path = path;
-        true
-    }
-
-    fn is_text_field(&self, id: Option<WidgetId>) -> bool {
-        id.is_some_and(|id| self.focus_order.kind(id) == Some(FocusKind::TextField))
-    }
-
-    fn focused_text_field(&self) -> Option<WidgetId> {
-        let focused = *self.ui.focused.get();
-        focused.filter(|_| self.is_text_field(focused))
-    }
-
-    fn update_ime_cursor_area(&mut self) {
-        let Some(id) = self.focused_text_field() else {
-            return;
-        };
-        let (Some(line), Some(field)) = (self.layout.text_box(id), self.text_fields.get_mut(&id))
-        else {
-            return;
-        };
-        let caret = field
-            .view(&mut self.text.font_system)
-            .decorations
-            .caret
-            .map_or(Point::default(), |caret| Point {
-                x: caret.x,
-                y: caret.y,
-            });
-        let scale = self.scale_factor.get();
-        self.window.set_ime_cursor_area(
-            PhysicalPosition::new(
-                (f64::from(line.x + caret.x) * scale).round() as i32,
-                (f64::from(line.y + caret.y) * scale).round() as i32,
-            ),
-            PhysicalSize::new(1_u32, (f64::from(line.height) * scale).round() as u32),
-        );
-    }
-
-    fn text_field_local(&self, id: WidgetId) -> Option<Point> {
-        self.cursor
-            .and_then(|point| self.layout.text_local_position(id, point))
-    }
-
-    fn apply_intent(&mut self, intent: Intent) {
-        let previous_focus = *self.ui.focused.get();
-        let previous_text_field = self.focused_text_field();
-        let result = dispatch(&mut self.ui, &self.focus_order, intent);
-        let current_focus = *self.ui.focused.get();
-        if previous_focus != current_focus {
-            if let Some(id) = current_focus {
-                self.layout
-                    .reveal(id, FOCUS_REVEAL_MARGIN, &mut self.scroll);
-            }
-            let text_field = self.focused_text_field();
-            self.window.set_ime_allowed(text_field.is_some());
-            if let Some(id) = text_field {
-                if selects_on_focus(&self.tree, id)
-                    && let Some(field) = self.text_fields.get_mut(&id)
-                {
-                    field.select_all(&mut self.text.font_system);
-                }
-                self.update_ime_cursor_area();
-            }
-            if let Some(previous) = previous_text_field
-                && Some(previous) != text_field
-            {
-                self.dragging = None;
-                if let Some(field) = self.text_fields.get_mut(&previous) {
-                    field.set_preedit(&mut self.text.font_system, None);
-                }
-            }
-        }
-        for (id, action) in result.text_actions {
-            self.apply_text_intent(id, action);
-        }
-        if let Some(activation) = result.activated
-            && let Some(msg) = self
-                .handler(activation.widget)
-                .and_then(|handlers| handlers.on_click.clone())
-        {
-            self.send(msg);
-        }
-        if let Some(action) = result.action
-            && let Some(msg) = action_message(&self.tree, current_focus, action)
-        {
-            self.send(msg);
-        }
-        if result.changed || current_focus != previous_focus {
-            self.invalidate();
-        }
-    }
-
-    fn apply_text_intent(&mut self, id: WidgetId, intent: TextIntent) {
-        let submit = matches!(
-            intent,
-            TextIntent::KeyDown {
-                key: Key::Enter,
-                repeat: false,
-                ..
-            }
-        );
-        let Some(field) = self.text_fields.get_mut(&id) else {
-            return;
-        };
-        let before = field.text();
-        let effect = field.apply(intent, &mut self.text.font_system, &mut SystemClipboard);
-        let after = field.text();
-        if let Some(status) = effect.status {
-            eprintln!("{status}");
-        }
-        if effect.changed {
-            self.update_ime_cursor_area();
-            self.invalidate();
-        }
-        let handlers = self.handler(id).cloned().unwrap_or_default();
-        if after != before
-            && let Some(on_input) = handlers.on_input
-        {
-            self.send(on_input(after));
-        }
-        if submit && let Some(msg) = handlers.on_submit {
-            self.send(msg);
         }
     }
 
@@ -718,94 +455,24 @@ impl<A: App> WindowState<A> {
                 position.y as f32 / self.scale_factor.as_f32()
             }
         };
-        let Some((id, scroll)) = self.layout.scroll_target(&self.hover_path, -delta_y) else {
-            return;
-        };
-        let next = (scroll.offset - delta_y).clamp(0.0, scroll.max);
-        if next != scroll.offset {
-            self.scroll.insert(id, next);
-            self.invalidate();
-        }
+        self.session.scroll_by(delta_y);
     }
 
     fn render(&mut self) -> Result<(), String> {
-        self.dirty = false;
-        self.rebuild();
-        self.relayout();
-        if self.refresh_hover() {
-            self.relayout();
-        }
-        for (id, scroll) in self
-            .layout
-            .nodes()
-            .iter()
-            .filter_map(|n| n.scroll.map(|s| (n.id, s)))
-        {
-            self.scroll.insert(id, scroll.offset);
-        }
-        self.scroll.retain(|id, _| {
-            self.layout
-                .node(*id)
-                .is_some_and(|node| node.scroll.is_some())
-        });
-
-        let mut decorations: Vec<(WidgetId, TextFieldDecorations)> = Vec::new();
-        for (id, field) in &mut self.text_fields {
-            let Some(node) = self.layout.node(*id) else {
-                continue;
-            };
-            let view = field.view(&mut self.text.font_system);
-            self.text
-                .set_buffer(TextId::value(*id), view.buffer, text_style(&node.text));
-            decorations.push((*id, view.decorations));
-        }
-        let text_fields: Vec<(WidgetId, &TextFieldDecorations)> = decorations
-            .iter()
-            .map(|(id, decorations)| (*id, decorations))
-            .collect();
-        let list = paint(&PaintInput {
-            layout: &self.layout,
-            theme: &self.theme,
-            focused: *self.ui.focused.get(),
-            window: self.activity(),
-            text_fields: &text_fields,
-            background: self.background,
-        });
-        let mut list = list;
+        self.session.prepare_frame();
+        let mut list = self.session.paint_list();
         let running = self.background_running();
         let seconds = self.clock.tick(Instant::now(), running);
         list.background = list.background.map(|layer| layer.at(seconds));
         self.background_layer = list.background;
-        let presented = self
-            .renderer
-            .render(&list, &mut self.text, self.scale_factor.as_f32())?;
+        let presented =
+            self.renderer
+                .render(&list, self.session.text_mut(), self.scale_factor.as_f32())?;
         if !presented {
-            self.invalidate();
+            self.session.invalidate();
         }
         self.update_accessibility();
         Ok(())
-    }
-
-    fn pointer_input(&mut self, pressed: bool) {
-        let target = pointer_target(&self.layout, &self.hover_path);
-        if pressed {
-            let previous_focus = *self.ui.focused.get();
-            self.apply_intent(Intent::PointerDown(target));
-            let selected_on_focus = target
-                .is_some_and(|id| previous_focus != Some(id) && selects_on_focus(&self.tree, id));
-            self.dragging = target.filter(|_| self.is_text_field(target) && !selected_on_focus);
-            if let Some(id) = self.dragging
-                && let Some(local) = self.text_field_local(id)
-                && let Some(field) = self.text_fields.get_mut(&id)
-            {
-                field.click(&mut self.text.font_system, local);
-                self.update_ime_cursor_area();
-            }
-        } else {
-            self.apply_intent(Intent::PointerUp(target));
-            self.dragging = None;
-        }
-        self.invalidate();
     }
 }
 
@@ -872,60 +539,24 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.renderer.resize(size.width, size.height);
-                state.invalidate();
+                state.resize();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(scale) = ScaleFactor::new(scale_factor) {
                     state.scale_factor = scale;
-                    state.invalidate();
+                    state.resize();
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => state.scroll_wheel(delta),
             WindowEvent::CursorMoved { position, .. } => {
-                state.cursor = Some(state.scale_factor.to_logical_point(PhysicalPoint {
+                let point = state.scale_factor.to_logical_point(PhysicalPoint {
                     x: position.x,
                     y: position.y,
-                }));
-                let mut redraw = state.refresh_hover();
-                if let Some(id) = state.dragging
-                    && let Some(local) = state.text_field_local(id)
-                    && let Some(field) = state.text_fields.get_mut(&id)
-                {
-                    field.drag(&mut state.text.font_system, local);
-                    state.update_ime_cursor_area();
-                    redraw = true;
-                }
-                if redraw {
-                    state.invalidate();
-                }
+                });
+                state.session.pointer_moved(Some(point));
             }
-            WindowEvent::CursorLeft { .. } => {
-                state.cursor = None;
-                state.refresh_hover();
-                state.apply_intent(Intent::CancelPointer);
-                state.dragging = None;
-                state.invalidate();
-            }
-            WindowEvent::Focused(false) => {
-                state.apply_intent(Intent::CancelPointer);
-                state.dragging = None;
-                for field in state.text_fields.values_mut() {
-                    field.set_preedit(&mut state.text.font_system, None);
-                }
-                state.window.set_ime_allowed(false);
-                // Variants and paint read the activity; no need to re-run
-                // `view`.
-                state.activity = WindowActivity::INACTIVE;
-                state.invalidate();
-            }
-            WindowEvent::Focused(true) => {
-                state
-                    .window
-                    .set_ime_allowed(state.focused_text_field().is_some());
-                state.update_ime_cursor_area();
-                state.activity = WindowActivity::ACTIVE;
-                state.invalidate();
-            }
+            WindowEvent::CursorLeft { .. } => state.session.pointer_moved(None),
+            WindowEvent::Focused(active) => state.session.set_window_active(active),
             WindowEvent::ModifiersChanged(modifiers) => {
                 state.modifiers = adapt_modifiers(modifiers.state());
             }
@@ -933,17 +564,19 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
                 state: button_state,
                 button: MouseButton::Left,
                 ..
-            } => state.pointer_input(button_state == ElementState::Pressed),
-            WindowEvent::Ime(ime) => state.apply_intent(adapt_ime_event(ime)),
+            } => state
+                .session
+                .pointer_button(button_state == ElementState::Pressed),
+            WindowEvent::Ime(ime) => state.session.apply_intent(adapt_ime_event(ime)),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 for intent in adapt_keyboard_event(&event, state.modifiers) {
-                    state.apply_intent(intent);
+                    state.session.apply_intent(intent);
                 }
             }
             WindowEvent::Occluded(occluded) => {
                 state.occluded = occluded;
                 if !occluded {
-                    state.invalidate();
+                    state.session.invalidate();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -954,6 +587,7 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
             }
             _ => {}
         }
+        state.flush();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -967,6 +601,7 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
             && state.window.id() == event.window_id
         {
             state.handle_accessibility_event(event.window_event);
+            state.flush();
         }
     }
 }
