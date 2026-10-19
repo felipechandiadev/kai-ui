@@ -13,7 +13,7 @@ use cosmic_text::{FontSystem, Metrics};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
-use crate::commands::{CommandRegistry, CommandState};
+use crate::commands::{CommandKind, CommandRegistry, CommandState};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -24,8 +24,9 @@ use crate::layout::{
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
+use crate::responder::Action;
 use crate::runtime::{
-    App, action_message, build_view, cursor_for, pointer_target, report_once, selects_on_focus,
+    App, action_message, build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -106,7 +107,8 @@ impl<A: App> Session<A> {
         let _effects = app.init();
         let registry = CommandRegistry::of();
         report_once("Comandos inválidos", registry.validate());
-        let tree = build_view(&app);
+        let commands = registry.states(&app);
+        let tree = build_view_with(&app, &commands);
         let mut session = Self {
             theme,
             title: app.title(),
@@ -131,9 +133,12 @@ impl<A: App> Session<A> {
             clipboard,
             measure,
             log: None,
-            outbox: Outbox::default(),
+            outbox: Outbox {
+                commands: Some(commands.clone()),
+                ..Outbox::default()
+            },
             registry,
-            commands: Vec::new(),
+            commands,
         };
         session.rebuild();
         session.relayout();
@@ -239,7 +244,7 @@ impl<A: App> Session<A> {
             self.outbox.commands = Some(commands.clone());
             self.commands = commands;
         }
-        self.tree = build_view(&self.app);
+        self.tree = build_view_with(&self.app, &self.commands);
         self.background = self.app.background();
         if let Some(theme) = self.app.theme()
             && theme != self.theme
@@ -248,6 +253,15 @@ impl<A: App> Session<A> {
             self.outbox.theme = Some(theme);
         }
         self.focus_order = FocusOrder::from_tree(&self.tree);
+        self.focus_order.set_commands(
+            self.commands
+                .iter()
+                .filter(|command| {
+                    command.kind == CommandKind::Action && command.availability.is_enabled()
+                })
+                .filter_map(|command| command.shortcut.map(|shortcut| (command.id, shortcut)))
+                .collect(),
+        );
         sync_focus(&mut self.ui, &self.focus_order);
         self.handlers = self.tree.collect_handlers().into_iter().collect();
 
@@ -348,6 +362,19 @@ impl<A: App> Session<A> {
         }
         let _effects = self.app.update(msg);
         self.invalidate();
+    }
+
+    /// Run command `id` as a shortcut, the menu bar or the palette do: an
+    /// app action sends its message when it is enabled. Returns whether
+    /// something ran.
+    pub fn perform_command(&mut self, id: &str) -> bool {
+        match self.registry.message(&self.app, id) {
+            Ok(msg) => {
+                self.send(msg);
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     fn handler(&self, id: WidgetId) -> Option<&Handlers<A::Msg>> {
@@ -472,7 +499,9 @@ impl<A: App> Session<A> {
         {
             self.send(msg);
         }
-        if let Some(action) = result.action
+        if let Some(Action::Command(id)) = result.action {
+            self.perform_command(id);
+        } else if let Some(action) = result.action
             && let Some(msg) = action_message(&self.tree, current_focus, action)
         {
             self.send(msg);

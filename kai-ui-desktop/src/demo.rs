@@ -351,9 +351,7 @@ impl SimpleApp for Demo {
                     ),
                 ]),
                 card_actions().children([
-                    button("Reiniciar", ButtonVariant::Outlined)
-                        .on_click(Msg::Reset)
-                        .disabled(self.clicks == 0),
+                    button("Reiniciar", ButtonVariant::Outlined).on_command(Reiniciar),
                     button("Incrementar", ButtonVariant::Primary).on_click(Msg::Increment),
                 ]),
             ]);
@@ -1442,6 +1440,68 @@ mod tests {
         assert!(!availability(&app, "form.enviar").is_enabled());
         app.type_text(By::test_id("form.nombre"), "Ana");
         assert!(availability(&app, "form.enviar").is_enabled());
+    }
+
+    const CMD: Modifiers = Modifiers {
+        command: true,
+        ..Modifiers::NONE
+    };
+
+    #[test]
+    fn command_shortcut_sends_the_same_msg_as_the_button() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('i'), CMD);
+        assert_eq!(app.messages(), [Msg::Increment]);
+        app.click(By::role(Role::Button).name("Incrementar"));
+        assert_eq!(app.messages(), [Msg::Increment, Msg::Increment]);
+        assert_eq!(app.app().clicks, 2);
+    }
+
+    #[test]
+    fn disabled_command_shortcut_sends_nothing() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('0'), CMD);
+        assert_eq!(app.messages(), [], "nothing to reset");
+        app.press(Key::Char('i'), CMD);
+        app.press(Key::Char('0'), CMD);
+        assert_eq!(app.messages(), [Msg::Increment, Msg::Reset]);
+    }
+
+    #[test]
+    fn command_shortcuts_do_not_steal_copy_in_a_field() {
+        let mut app = TestApp::new(Demo::default());
+        app.type_text(By::test_id("form.nombre"), "Ana");
+        let typed = app.messages().len();
+        app.press(Key::A, CMD);
+        app.press(Key::C, CMD);
+        assert_eq!(app.clipboard().text().as_deref(), Some("Ana"));
+        assert_eq!(app.messages().len(), typed, "copying sends nothing");
+        // Cmd shortcuts still work while typing.
+        app.press(Key::Char('i'), CMD);
+        assert_eq!(app.messages().last(), Some(&Msg::Increment));
+    }
+
+    #[test]
+    fn a_button_follows_its_command() {
+        let mut app = TestApp::new(Demo::default());
+        let reset = || By::test_id("contador.reiniciar");
+        assert!(!app.is_enabled(reset()));
+        assert_eq!(
+            app.screen().get(reset()).node().description.as_deref(),
+            Some("El contador ya está en cero")
+        );
+        assert_eq!(
+            app.screen().get(reset()).name().as_deref(),
+            Some("Reiniciar")
+        );
+        app.click(reset());
+        assert_eq!(app.messages(), []);
+        app.click(By::test_id("header.sumar"));
+        assert!(app.is_enabled(reset()));
+        assert_eq!(app.screen().get(reset()).node().description, None);
+        app.click(reset());
+        assert_eq!(app.messages().last(), Some(&Msg::Reset));
+        assert_eq!(app.app().clicks, 0);
     }
 
     #[test]

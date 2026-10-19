@@ -5,9 +5,9 @@
 //! button takes Return, the cancel button Escape (and Cmd+.), and any control
 //! may declare a Cmd shortcut. What no equivalent takes goes to the focused
 //! element; a standard [`Action`] it does not consume travels the responder
-//! [`chain`]: focus, its ancestors, the window and the app. The app end is
-//! the hook for the command registry of `09-framework-y-plataforma.md` (§4.3),
-//! not implemented yet.
+//! [`chain`]: focus, its ancestors, the window and the app. Shortcuts of the
+//! app's commands ([`crate::commands`]) come after the controls' own
+//! equivalents, and the session runs them by id.
 
 use crate::element::{KeyEquivalent, WidgetId};
 use crate::ui_engine::Key;
@@ -28,8 +28,7 @@ pub enum Action {
     Redo,
     /// `delete:`.
     Delete,
-    /// App command by id (registry of 09). `&'static str` until the
-    /// registry exists.
+    /// Command of the app's registry ([`crate::commands`]), by id.
     Command(&'static str),
 }
 
@@ -58,7 +57,7 @@ pub fn chain(path_to_focus: &[WidgetId]) -> Vec<Responder> {
 pub enum KeyRoute {
     /// An enabled control declares this equivalent: activate it.
     Activate(WidgetId),
-    /// App shortcut (future command registry).
+    /// Shortcut of an enabled command of the registry, by id.
     Command(&'static str),
     /// Let the focused element have it.
     PassThrough,
@@ -75,17 +74,21 @@ pub struct FocusContext {
 }
 
 /// Offers `pressed` to the key equivalents (`equivalents`: enabled controls
-/// in document order).
+/// in document order), then to the shortcuts of enabled app commands
+/// (`commands`), as AppKit offers it to the views before the main menu.
 ///
 /// - Return: the default button, unless the focus claims Return.
 /// - Escape and Cmd+.: the control whose equivalent is Escape.
-/// - Anything else: the control with that exact equivalent. Equivalents
-///   without Cmd or Control do not fire while typing in a text field.
+/// - Anything else: the control with that exact equivalent, or else the
+///   command with that shortcut. Neither fires without Cmd or Control
+///   while typing in a text field.
 ///
 /// With two controls on the same equivalent the first in document order
-/// wins (debug builds report the clash).
+/// wins; a control also hides a command with its shortcut (debug builds
+/// report both clashes).
 pub fn key_equivalent_route(
     equivalents: &[(WidgetId, KeyEquivalent)],
+    commands: &[(&'static str, KeyEquivalent)],
     pressed: KeyEquivalent,
     focus: FocusContext,
 ) -> KeyRoute {
@@ -105,14 +108,24 @@ pub fn key_equivalent_route(
         .iter()
         .filter(|(_, equivalent)| *equivalent == wanted)
         .map(|(id, _)| *id);
+    let command = commands
+        .iter()
+        .find(|(_, shortcut)| *shortcut == pressed)
+        .map(|(id, _)| *id);
     let Some(first) = matches.next() else {
-        return KeyRoute::PassThrough;
+        return command.map_or(KeyRoute::PassThrough, KeyRoute::Command);
     };
     if cfg!(debug_assertions) {
         let others: Vec<WidgetId> = matches.collect();
         if !others.is_empty() {
             eprintln!(
                 "Equivalente de teclado {} repetido: gana {first:?}, se ignoran {others:?}",
+                wanted.label()
+            );
+        }
+        if let Some(command) = command {
+            eprintln!(
+                "El equivalente {} de {first:?} tapa el atajo del comando {command}",
                 wanted.label()
             );
         }
@@ -146,12 +159,13 @@ mod tests {
     #[test]
     fn return_activates_default_button_from_text_field_without_submit() {
         assert_eq!(
-            key_equivalent_route(&equivalents(), KeyEquivalent::RETURN, FIELD),
+            key_equivalent_route(&equivalents(), &[], KeyEquivalent::RETURN, FIELD),
             KeyRoute::Activate(SAVE)
         );
         assert_eq!(
             key_equivalent_route(
                 &equivalents(),
+                &[],
                 KeyEquivalent::RETURN,
                 FocusContext::default()
             ),
@@ -166,7 +180,7 @@ mod tests {
             ..FIELD
         };
         assert_eq!(
-            key_equivalent_route(&equivalents(), KeyEquivalent::RETURN, submitting),
+            key_equivalent_route(&equivalents(), &[], KeyEquivalent::RETURN, submitting),
             KeyRoute::PassThrough
         );
     }
@@ -175,12 +189,12 @@ mod tests {
     fn escape_activates_cancel_button() {
         for key in [KeyEquivalent::ESCAPE, KeyEquivalent::cmd(Key::Period)] {
             assert_eq!(
-                key_equivalent_route(&equivalents(), key, FIELD),
+                key_equivalent_route(&equivalents(), &[], key, FIELD),
                 KeyRoute::Activate(CANCEL)
             );
         }
         assert_eq!(
-            key_equivalent_route(&[], KeyEquivalent::ESCAPE, FIELD),
+            key_equivalent_route(&[], &[], KeyEquivalent::ESCAPE, FIELD),
             KeyRoute::PassThrough
         );
     }
@@ -193,7 +207,7 @@ mod tests {
             .filter(|(id, _)| *id != SAVE)
             .collect();
         assert_eq!(
-            key_equivalent_route(&enabled, KeyEquivalent::RETURN, FIELD),
+            key_equivalent_route(&enabled, &[], KeyEquivalent::RETURN, FIELD),
             KeyRoute::PassThrough
         );
     }
@@ -202,7 +216,7 @@ mod tests {
     fn cmd_key_equivalent_activates_control() {
         let cmd_e = KeyEquivalent::cmd(Key::Char('e'));
         assert_eq!(
-            key_equivalent_route(&equivalents(), cmd_e, FIELD),
+            key_equivalent_route(&equivalents(), &[], cmd_e, FIELD),
             KeyRoute::Activate(EXPORT)
         );
         let cmd_shift_e = KeyEquivalent {
@@ -213,7 +227,7 @@ mod tests {
             ..cmd_e
         };
         assert_eq!(
-            key_equivalent_route(&equivalents(), cmd_shift_e, FIELD),
+            key_equivalent_route(&equivalents(), &[], cmd_shift_e, FIELD),
             KeyRoute::PassThrough
         );
         // A plain-letter equivalent never steals typing.
@@ -223,11 +237,11 @@ mod tests {
         };
         let list = [(EXPORT, plain)];
         assert_eq!(
-            key_equivalent_route(&list, plain, FIELD),
+            key_equivalent_route(&list, &[], plain, FIELD),
             KeyRoute::PassThrough
         );
         assert_eq!(
-            key_equivalent_route(&list, plain, FocusContext::default()),
+            key_equivalent_route(&list, &[], plain, FocusContext::default()),
             KeyRoute::Activate(EXPORT)
         );
     }
@@ -239,8 +253,35 @@ mod tests {
             (EXPORT, KeyEquivalent::RETURN),
         ];
         assert_eq!(
-            key_equivalent_route(&list, KeyEquivalent::RETURN, FocusContext::default()),
+            key_equivalent_route(&list, &[], KeyEquivalent::RETURN, FocusContext::default()),
             KeyRoute::Activate(SAVE)
+        );
+    }
+
+    #[test]
+    fn command_shortcuts_come_after_controls() {
+        let cmd_i = KeyEquivalent::cmd(Key::Char('i'));
+        let cmd_e = KeyEquivalent::cmd(Key::Char('e'));
+        let commands = [("contador.incrementar", cmd_i), ("archivo.exportar", cmd_e)];
+        for focus in [FocusContext::default(), FIELD] {
+            assert_eq!(
+                key_equivalent_route(&equivalents(), &commands, cmd_i, focus),
+                KeyRoute::Command("contador.incrementar")
+            );
+        }
+        assert_eq!(
+            key_equivalent_route(&equivalents(), &commands, cmd_e, FIELD),
+            KeyRoute::Activate(EXPORT),
+            "the control's equivalent wins"
+        );
+        let plain = KeyEquivalent {
+            key: Key::Char('i'),
+            modifiers: Modifiers::NONE,
+        };
+        let typing = [("contador.incrementar", plain)];
+        assert_eq!(
+            key_equivalent_route(&[], &typing, plain, FIELD),
+            KeyRoute::PassThrough
         );
     }
 

@@ -289,7 +289,7 @@ fn key_commands(
             claims_return: kind == Some(FocusKind::Button)
                 || focused.is_some_and(|id| order.submits(id)),
         };
-        match key_equivalent_route(order.equivalents(), pressed, focus) {
+        match key_equivalent_route(order.equivalents(), order.commands(), pressed, focus) {
             KeyRoute::Activate(id) => {
                 return vec![UiCommand::Activate(id, ActivationSource::KeyEquivalent)];
             }

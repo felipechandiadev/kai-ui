@@ -271,6 +271,8 @@ pub struct Element<Msg> {
     /// where it was).
     pub focus_on_press: bool,
     pub handlers: Handlers<Msg>,
+    /// App command this control runs ([`Element::on_command`]).
+    pub command: Option<&'static str>,
 }
 
 pub fn div<Msg>() -> Element<Msg> {
@@ -318,6 +320,7 @@ impl<Msg> Element<Msg> {
             delegates_focus: false,
             focus_on_press: true,
             handlers: Handlers::default(),
+            command: None,
         }
     }
 
@@ -492,6 +495,20 @@ impl<Msg> Element<Msg> {
 
     pub fn on_input(mut self, handler: impl Fn(String) -> Msg + 'static) -> Self {
         self.handlers.on_input = Some(Rc::new(handler));
+        self
+    }
+
+    /// Run an app command on click. While the command is not available the
+    /// control is disabled, with the reason as its accessible description;
+    /// its `test_id` defaults to the command id and, without text, its
+    /// accessible name to the command title.
+    pub fn on_command<C>(mut self, command: C) -> Self
+    where
+        C: crate::commands::Action,
+        C::App: crate::runtime::App<Msg = Msg>,
+    {
+        self.command = Some(C::ID);
+        self.handlers.on_click = Some(command.into_msg());
         self
     }
 
@@ -723,6 +740,8 @@ struct FocusEntry {
 pub struct FocusOrder {
     entries: Vec<FocusEntry>,
     equivalents: Vec<(WidgetId, KeyEquivalent)>,
+    /// Shortcuts of enabled app commands, after the controls' equivalents.
+    commands: Vec<(&'static str, KeyEquivalent)>,
 }
 
 impl FocusOrder {
@@ -774,6 +793,16 @@ impl FocusOrder {
     /// Key equivalents of enabled controls, in document order.
     pub fn equivalents(&self) -> &[(WidgetId, KeyEquivalent)] {
         &self.equivalents
+    }
+
+    /// Shortcuts of the enabled commands (by id), offered to keys after
+    /// every control's equivalent.
+    pub fn commands(&self) -> &[(&'static str, KeyEquivalent)] {
+        &self.commands
+    }
+
+    pub fn set_commands(&mut self, commands: Vec<(&'static str, KeyEquivalent)>) {
+        self.commands = commands;
     }
 
     /// Drop the equivalents of controls `visible` rejects (hidden by

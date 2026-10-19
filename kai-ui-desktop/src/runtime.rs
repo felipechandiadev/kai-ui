@@ -34,7 +34,7 @@ use winit::{
 };
 
 use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
-use crate::commands::CommandRegistry;
+use crate::commands::{Availability, CommandRegistry, CommandState};
 use crate::element::{Element, Kind, WidgetId};
 use crate::geometry::{PhysicalPoint, ScaleFactor};
 use crate::layout::{Content, Layout, WindowActivity};
@@ -205,16 +205,53 @@ pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Build the tree for the current model with ids assigned. Debug builds
-/// report duplicate keys and test ids (see [`Element::validate_ids`]), each
-/// problem once per thread.
+/// Build the tree for the current model with ids assigned, its controls
+/// bound to commands ([`Element::on_command`]) following their current
+/// availability. Debug builds report duplicate keys and test ids (see
+/// [`Element::validate_ids`]), each problem once per thread.
 pub fn build_view<A: App>(app: &A) -> Element<A::Msg> {
+    build_view_with(app, &CommandRegistry::<A>::of().states(app))
+}
+
+/// [`build_view`] with the command states the session already computed.
+pub fn build_view_with<A: App>(app: &A, commands: &[CommandState]) -> Element<A::Msg> {
     let mut tree = app.view();
+    bind_commands(&mut tree, commands);
     tree.assign_ids();
     if cfg!(debug_assertions) {
         report_once("Ids inválidos", tree.validate_ids());
     }
     tree
+}
+
+/// Disable controls whose command is not available, and give them the
+/// command's id as default `test_id` and its title as default name.
+fn bind_commands<Msg>(element: &mut Element<Msg>, commands: &[CommandState]) {
+    if let Some(id) = element.command {
+        match commands.iter().find(|command| command.id == id) {
+            Some(command) => {
+                match &command.availability {
+                    Availability::Enabled => {}
+                    Availability::Disabled { reason } => {
+                        element.disabled = true;
+                        element.description.get_or_insert_with(|| reason.clone());
+                    }
+                    Availability::Hidden => element.disabled = true,
+                }
+                element.test_id.get_or_insert_with(|| id.to_owned());
+                if element.label.is_none() && element.text_content().is_empty() {
+                    element.label = Some(command.title.to_owned());
+                }
+            }
+            None => report_once(
+                "Comandos inválidos",
+                vec![format!("on_command con \"{id}\", que no está registrado")],
+            ),
+        }
+    }
+    for child in &mut element.children {
+        bind_commands(child, commands);
+    }
 }
 
 /// Debug builds: print each problem once per thread, after `context`.
@@ -251,8 +288,9 @@ pub fn pointer_target(layout: &Layout, path: &[WidgetId]) -> Option<WidgetId> {
 
 /// Message for a standard action that the focused element did not consume:
 /// the first `on_action` along the responder chain (focus, ancestors) that
-/// returns one. The window handles `CancelOperation` by doing nothing; the
-/// app end is the hook for the command registry of 09 (today a debug log).
+/// returns one. The window handles `CancelOperation` by doing nothing.
+/// `Action::Command` never gets here: the session runs it from the
+/// registry.
 pub fn action_message<Msg>(
     tree: &Element<Msg>,
     focused: Option<WidgetId>,
