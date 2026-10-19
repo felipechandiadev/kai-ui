@@ -841,9 +841,9 @@ mod tests {
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
     };
 
-    use super::{Demo, Field, Msg, Saludo};
+    use super::{Demo, Enviar, Field, Incrementar, Msg, Reiniciar, Saludo};
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-    use crate::commands::{Availability, PALETTE, Query};
+    use crate::commands::{Availability, PALETTE};
     use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
     use crate::geometry::Size;
     use crate::layout::testing::FixedMeasure;
@@ -1409,16 +1409,10 @@ mod tests {
         assert_eq!(app.value(By::test_id("form.password")), "abc");
     }
 
-    fn availability(app: &TestApp<Demo>, id: &str) -> Availability {
-        let commands = app.session().commands();
-        let command = commands.iter().find(|command| command.id == id);
-        command.expect("comando registrado").availability.clone()
-    }
-
     #[test]
     fn availability_follows_update() {
         let mut app = TestApp::new(Demo::default());
-        let ids: Vec<&str> = app.session().commands().iter().map(|c| c.id).collect();
+        let ids: Vec<&str> = app.commands().iter().map(|c| c.id).collect();
         assert_eq!(
             ids,
             [
@@ -1431,22 +1425,40 @@ mod tests {
                 "kai.paleta",
             ]
         );
-        let reset = "contador.reiniciar";
         assert_eq!(
-            availability(&app, reset),
+            app.available::<Reiniciar>(),
             Availability::disabled("El contador ya está en cero")
         );
         app.click(By::test_id("header.sumar"));
-        assert!(availability(&app, reset).is_enabled());
-        assert!(!availability(&app, "form.enviar").is_enabled());
+        assert!(app.available::<Reiniciar>().is_enabled());
+        assert!(!app.available::<Enviar>().is_enabled());
         app.type_text(By::test_id("form.nombre"), "Ana");
-        assert!(availability(&app, "form.enviar").is_enabled());
+        assert!(app.available::<Enviar>().is_enabled());
+    }
+
+    #[test]
+    fn invoke_runs_enabled_actions_and_reports_disabled_ones() {
+        let mut app = TestApp::new(Demo::default());
+        let error = app.invoke(Reiniciar).unwrap_err();
+        assert_eq!(error.message, "El contador ya está en cero");
+        assert_eq!(app.messages(), [], "a disabled action sends nothing");
+
+        app.invoke(Incrementar).unwrap();
+        app.invoke(Incrementar).unwrap();
+        assert_eq!(app.app().clicks, 2);
+        let screen = app.screen();
+        screen
+            .within(screen.get_by_test_id("contador"))
+            .get(By::role(Role::Status).name("2"));
+        app.invoke(Reiniciar).unwrap();
+        assert_eq!(app.messages(), [Msg::Increment, Msg::Increment, Msg::Reset]);
+        assert_eq!(app.app().clicks, 0);
     }
 
     #[test]
     fn menu_bar_follows_the_registry() {
         let app = TestApp::new(Demo::default());
-        let model = menu_model(app.session().commands());
+        let model = menu_model(app.commands());
         let titles: Vec<_> = model.iter().map(|group| group.title).collect();
         assert_eq!(titles, ["Contador", "Formulario", "Ver"]);
         assert_eq!(
@@ -1580,7 +1592,7 @@ mod tests {
             app.screen().get(reset).node().description.as_deref(),
             Some("El contador ya está en cero")
         );
-        let menu = menu_model(app.session().commands());
+        let menu = menu_model(app.commands());
         let entry = menu[0]
             .items
             .iter()
@@ -1684,13 +1696,13 @@ mod tests {
     }
 
     #[test]
-    fn query_runs_without_msg() {
+    fn query_reads_the_model_without_msg() {
         let mut app = TestApp::new(Demo::default());
-        assert_eq!(Saludo::run(app.app(), Saludo), Ok(None));
+        assert_eq!(app.query(Saludo), Ok(None));
         app.type_text(By::test_id("form.nombre"), "Ana");
-        app.press(Key::Enter, Modifiers::NONE);
+        app.invoke(Enviar).unwrap();
         let sent = app.messages().len();
-        assert_eq!(Saludo::run(app.app(), Saludo), Ok(Some("Ana".to_owned())));
+        assert_eq!(app.query(Saludo), Ok(Some("Ana".to_owned())));
         assert_eq!(app.messages().len(), sent, "a query sends nothing");
     }
 

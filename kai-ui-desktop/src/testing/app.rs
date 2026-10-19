@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::{By, Found, Screen, VIEWPORT};
+use crate::commands::{Action, Availability, CommandError, CommandState, Query};
 use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::platform_adapter::adapt_key_input;
@@ -153,6 +154,125 @@ impl<A: App> TestApp<A> {
     #[cfg(test)]
     pub(crate) fn session(&self) -> &Session<A> {
         &self.session
+    }
+
+    /// Run an action as a script or an agent would, without the UI: its
+    /// message goes through `update` if the action is registered and
+    /// available; otherwise the error says why not (the reason of a
+    /// `Disabled` action, for instance).
+    ///
+    /// ```
+    /// use kai::commands::{Action, Availability, CommandRegistry};
+    /// use kai::element::{Element, div};
+    /// use kai::runtime::SimpleApp;
+    /// use kai::testing::TestApp;
+    ///
+    /// #[derive(Default)]
+    /// struct Counter(u32);
+    ///
+    /// #[derive(Clone, Debug)]
+    /// enum Msg {
+    ///     Increment,
+    ///     Reset,
+    /// }
+    ///
+    /// #[derive(Clone, Default)]
+    /// struct Increment;
+    ///
+    /// impl Action for Increment {
+    ///     type App = Counter;
+    ///     const ID: &'static str = "contador.incrementar";
+    ///     const TITLE: &'static str = "Incrementar";
+    ///     fn into_msg(self) -> Msg {
+    ///         Msg::Increment
+    ///     }
+    /// }
+    ///
+    /// #[derive(Clone, Default)]
+    /// struct Reset;
+    ///
+    /// impl Action for Reset {
+    ///     type App = Counter;
+    ///     const ID: &'static str = "contador.reiniciar";
+    ///     const TITLE: &'static str = "Reiniciar";
+    ///     fn available(counter: &Counter) -> Availability {
+    ///         if counter.0 == 0 {
+    ///             Availability::disabled("Ya está en cero")
+    ///         } else {
+    ///             Availability::Enabled
+    ///         }
+    ///     }
+    ///     fn into_msg(self) -> Msg {
+    ///         Msg::Reset
+    ///     }
+    /// }
+    ///
+    /// impl SimpleApp for Counter {
+    ///     type Msg = Msg;
+    ///     fn commands(registry: &mut CommandRegistry<Self>) {
+    ///         registry.action::<Increment>();
+    ///         registry.action::<Reset>();
+    ///     }
+    ///     fn title(&self) -> String {
+    ///         "Contador".into()
+    ///     }
+    ///     fn update(&mut self, msg: Msg) {
+    ///         match msg {
+    ///             Msg::Increment => self.0 += 1,
+    ///             Msg::Reset => self.0 = 0,
+    ///         }
+    ///     }
+    ///     fn view(&self) -> Element<Msg> {
+    ///         div()
+    ///     }
+    /// }
+    ///
+    /// let mut app = TestApp::new(Counter::default());
+    /// let error = app.invoke(Reset).unwrap_err();
+    /// assert_eq!(error.message, "Ya está en cero");
+    /// app.invoke(Increment).unwrap();
+    /// assert_eq!(app.available::<Reset>(), Availability::Enabled);
+    /// app.invoke(Reset).unwrap();
+    /// assert_eq!(app.app().0, 0);
+    /// ```
+    pub fn invoke<C: Action<App = A>>(&mut self, action: C) -> Result<(), CommandError> {
+        self.session.send_command(C::ID, action.into_msg())?;
+        self.frame();
+        Ok(())
+    }
+
+    /// Run a registered query against the current model.
+    pub fn query<Q: Query<App = A>>(&self, input: Q) -> Result<Q::Output, CommandError> {
+        if !self.session.has_query(Q::ID) {
+            return Err(CommandError::new(format!(
+                "consulta no registrada: {}",
+                Q::ID
+            )));
+        }
+        Q::run(self.session.app(), input)
+    }
+
+    /// Availability of a registered action after the last `update`.
+    #[track_caller]
+    pub fn available<C: Action<App = A>>(&self) -> Availability {
+        match self.session.command_state(C::ID) {
+            Some(state) => state.availability.clone(),
+            None => panic!("acción no registrada: {}", C::ID),
+        }
+    }
+
+    /// Run command `id` as its menu bar item does. Returns whether
+    /// something ran (a disabled action does not).
+    pub fn perform(&mut self, id: &str) -> bool {
+        let ran = self.session.perform_command(id);
+        self.frame();
+        ran
+    }
+
+    /// Every registered command with its availability after the last
+    /// `update`, in registration order.
+    pub fn commands(&self) -> &[CommandState] {
+        self.session.commands()
     }
 
     /// Press and release the primary button at `point`, whatever is there.

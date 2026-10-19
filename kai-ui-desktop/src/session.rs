@@ -13,7 +13,9 @@ use cosmic_text::{FontSystem, Metrics};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
-use crate::commands::{Availability, CommandKind, CommandRegistry, CommandState, PALETTE};
+use crate::commands::{
+    Availability, CommandError, CommandKind, CommandRegistry, CommandState, PALETTE,
+};
 use crate::components::{PaletteItem, command_palette};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
@@ -254,9 +256,12 @@ impl<A: App> Session<A> {
     }
 
     /// Every command and its availability after the last `update`.
-    #[cfg(test)]
     pub fn commands(&self) -> &[CommandState] {
         &self.commands
+    }
+
+    pub fn command_state(&self, id: &str) -> Option<&CommandState> {
+        self.commands.iter().find(|command| command.id == id)
     }
 
     pub fn take_outbox(&mut self) -> Outbox {
@@ -432,6 +437,25 @@ impl<A: App> Session<A> {
             }
             Err(_) => false,
         }
+    }
+
+    /// Send `msg`, the message of action `id`, if `id` is a registered
+    /// action that can run now; otherwise say why not.
+    pub fn send_command(&mut self, id: &str, msg: A::Msg) -> Result<(), CommandError> {
+        let availability = self.registry.availability(&self.app, id)?;
+        match availability {
+            Availability::Enabled => {
+                self.send(msg);
+                Ok(())
+            }
+            Availability::Disabled { reason } => Err(CommandError::new(reason)),
+            Availability::Hidden => Err(CommandError::new(format!("{id} no está disponible"))),
+        }
+    }
+
+    /// Whether `id` is a registered query.
+    pub fn has_query(&self, id: &str) -> bool {
+        self.registry.has_query(id)
     }
 
     /// Whether the command palette is open.

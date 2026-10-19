@@ -167,13 +167,34 @@ impl<A: App> CommandRegistry<A> {
             .collect()
     }
 
-    /// The message of action `id` if it can run now.
-    pub fn message(&self, app: &A, id: &str) -> Result<A::Msg, CommandError> {
-        let entry = self
-            .entries
+    fn entry(&self, id: &str) -> Result<&Entry<A>, CommandError> {
+        self.entries
             .iter()
             .find(|entry| entry.id == id)
-            .ok_or_else(|| CommandError::new(format!("comando desconocido: {id}")))?;
+            .ok_or_else(|| CommandError::new(format!("comando desconocido: {id}")))
+    }
+
+    /// Availability of action `id` for `app`; an error for unknown ids
+    /// and queries.
+    pub fn availability(&self, app: &A, id: &str) -> Result<Availability, CommandError> {
+        let entry = self.entry(id)?;
+        if entry.kind != CommandKind::Action {
+            return Err(CommandError::new(format!(
+                "{id} es una consulta, no una acción"
+            )));
+        }
+        Ok((entry.available)(app))
+    }
+
+    /// Whether query `id` is registered.
+    pub fn has_query(&self, id: &str) -> bool {
+        self.entry(id)
+            .is_ok_and(|entry| entry.kind == CommandKind::Query)
+    }
+
+    /// The message of action `id` if it can run now.
+    pub fn message(&self, app: &A, id: &str) -> Result<A::Msg, CommandError> {
+        let entry = self.entry(id)?;
         let message = entry
             .message
             .ok_or_else(|| CommandError::new(format!("{id} no produce un mensaje")))?;
