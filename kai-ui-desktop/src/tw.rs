@@ -12,17 +12,52 @@
 //! Like generated Tailwind CSS, `leading-*` always wins over the line height
 //! set by `text-*` sizes, and variants apply in a fixed order regardless of
 //! their position in the string: base, group, hover, focus-within, focus,
-//! active, disabled. `hover:` and `active:` do not apply to disabled
-//! elements.
+//! control size (`control-small:`…), active, disabled. `hover:` and
+//! `active:` do not apply to disabled elements.
+//!
+//! `focus-visible:` follows the browser heuristic: text fields always,
+//! other controls only when the focus did not come from a pointer press.
+//!
+//! AppKit state variants: `keyboard-focus:` (focus shown by the keyboard:
+//! text fields always, buttons only with full keyboard access),
+//! `selected:`/`checked:` and `mixed:`/`indeterminate:` (control state),
+//! `window-inactive:` (neither key nor main) and `control-mini:` …
+//! `control-xl:` (effective control size). Priority, lowest first: base,
+//! control size, group-hover, group-focus-within, hover, focus-within,
+//! focus, focus-visible, keyboard-focus, selected, mixed, active,
+//! window-inactive, disabled.
+//!
+//! Responsive variants as in Tailwind: `sm:` (window ≥ 640 pt), `md:`
+//! (768), `lg:` (1024), `xl:` (1280), by the window width
+//! ([`State::viewport_width`]); they rank just above base, wider ones
+//! last: `grid grid-cols-1 sm:grid-cols-2` stacks in a narrow window.
+//!
+//! Control metrics follow the node's effective control size: `h-control`,
+//! `min-h-control`, `h-field`, `h-field-square`, `rounded-control`,
+//! `px-control` and `text-control` read the per-size arrays of
+//! [`crate::theme::ControlTokens`]; `gap-control` and `ring-focus` (width,
+//! offset and `focus` color) read the theme too. The macOS text styles are
+//! `text-large-title`, `text-title1`…`text-title3`, `text-headline`,
+//! `text-body`, `text-callout`, `text-subheadline`, `text-footnote`,
+//! `text-caption1` and `text-caption2`; `tracking-[Nem]` sets letter spacing.
+//!
+//! Theme variants (`kai:`, `appkit:`, `dark:`, `light:`) are evaluated while
+//! parsing: a class whose theme condition does not hold for the parsing
+//! theme is dropped. They go before any state variant and can be stacked:
+//! `appkit:dark:hover:bg-control`. `hover:appkit:x` is an unknown class.
+//! [`crate::layout::StyleCache`] re-parses when the theme changes.
 
 use cosmic_text::Weight;
 
+use crate::element::ControlSize;
 use crate::render::Color;
 use crate::style::{
     Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, Overflow, Position,
     Shadow, Style,
 };
-use crate::theme::{REM, Theme};
+use crate::theme::{
+    AppKitGeneration, Appearance, BySize, FieldLabels, MixStyle, REM, Theme, ThemeKind,
+};
 
 /// Interaction state of an element, and of its nearest `group` ancestor.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -34,57 +69,201 @@ pub struct State {
     pub disabled: bool,
     pub group_hover: bool,
     pub group_focus_within: bool,
+    /// `:focus-visible`: focused text fields, and other focused controls
+    /// unless the focus came from a pointer press.
+    pub focus_visible: bool,
+    /// Focused and shown as such: text fields always, other controls only
+    /// when the focus came from the keyboard and full keyboard access is on.
+    pub keyboard_focus: bool,
+    /// The window is neither key nor main.
+    pub window_inactive: bool,
+    /// `ControlState::On`.
+    pub selected: bool,
+    /// `ControlState::Mixed`.
+    pub mixed: bool,
+    /// Effective (inherited) control size.
+    pub control_size: ControlSize,
+    /// Window (viewport) width in points, for the `sm:` … `xl:` breakpoints.
+    pub viewport_width: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Variant {
     Base,
+    /// Tailwind breakpoint (`sm:` 640, `md:` 768, `lg:` 1024, `xl:` 1280):
+    /// the window is at least that wide.
+    MinWidth(Breakpoint),
+    ControlSize(ControlSize),
     GroupHover,
     GroupFocusWithin,
     Hover,
     FocusWithin,
     Focus,
+    FocusVisible,
+    KeyboardFocus,
+    Selected,
+    Mixed,
     Active,
+    WindowInactive,
     Disabled,
 }
-
-const VARIANT_ORDER: [Variant; 8] = [
-    Variant::Base,
-    Variant::GroupHover,
-    Variant::GroupFocusWithin,
-    Variant::Hover,
-    Variant::FocusWithin,
-    Variant::Focus,
-    Variant::Active,
-    Variant::Disabled,
-];
 
 impl Variant {
     fn parse(prefix: &str) -> Option<Self> {
         Some(match prefix {
             "hover" => Self::Hover,
-            "focus" | "focus-visible" => Self::Focus,
+            "focus" => Self::Focus,
+            "focus-visible" => Self::FocusVisible,
             "focus-within" => Self::FocusWithin,
             "active" => Self::Active,
             "disabled" => Self::Disabled,
             "group-hover" => Self::GroupHover,
             "group-focus-within" => Self::GroupFocusWithin,
+            "keyboard-focus" => Self::KeyboardFocus,
+            "selected" | "checked" => Self::Selected,
+            "mixed" | "indeterminate" => Self::Mixed,
+            "window-inactive" => Self::WindowInactive,
+            "sm" => Self::MinWidth(Breakpoint::Sm),
+            "md" => Self::MinWidth(Breakpoint::Md),
+            "lg" => Self::MinWidth(Breakpoint::Lg),
+            "xl" => Self::MinWidth(Breakpoint::Xl),
+            "control-mini" => Self::ControlSize(ControlSize::Mini),
+            "control-small" => Self::ControlSize(ControlSize::Small),
+            "control-regular" => Self::ControlSize(ControlSize::Regular),
+            "control-large" => Self::ControlSize(ControlSize::Large),
+            "control-xl" => Self::ControlSize(ControlSize::ExtraLarge),
             _ => return None,
         })
+    }
+
+    /// Priority: declarations of a higher rank override lower ones; within
+    /// a rank, the string order decides.
+    fn rank(self) -> u8 {
+        match self {
+            Self::Base => 0,
+            // Wider breakpoints override narrower ones, as in Tailwind.
+            Self::MinWidth(breakpoint) => 1 + breakpoint as u8,
+            Self::ControlSize(_) => 5,
+            Self::GroupHover => 6,
+            Self::GroupFocusWithin => 7,
+            Self::Hover => 8,
+            Self::FocusWithin => 9,
+            Self::Focus => 10,
+            Self::FocusVisible => 11,
+            Self::KeyboardFocus => 12,
+            Self::Selected => 13,
+            Self::Mixed => 14,
+            Self::Active => 15,
+            // Beats selected/active: the accent turns off.
+            Self::WindowInactive => 16,
+            // Beats everything.
+            Self::Disabled => 17,
+        }
     }
 
     fn applies(self, state: State) -> bool {
         match self {
             Self::Base => true,
+            Self::MinWidth(breakpoint) => state.viewport_width >= breakpoint.min_width(),
+            Self::ControlSize(size) => state.control_size == size,
             Self::GroupHover => state.group_hover,
             Self::GroupFocusWithin => state.group_focus_within,
             Self::Hover => state.hover && !state.disabled,
             Self::FocusWithin => state.focus_within,
             Self::Focus => state.focus,
+            Self::FocusVisible => state.focus_visible,
+            Self::KeyboardFocus => state.keyboard_focus,
+            Self::Selected => state.selected,
+            Self::Mixed => state.mixed,
             Self::Active => state.active && !state.disabled,
+            Self::WindowInactive => state.window_inactive,
             Self::Disabled => state.disabled,
         }
     }
+}
+
+/// Tailwind's default screens, by window width (Kai web uses the same).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Breakpoint {
+    Sm,
+    Md,
+    Lg,
+    Xl,
+}
+
+impl Breakpoint {
+    fn min_width(self) -> u32 {
+        match self {
+            Self::Sm => 640,
+            Self::Md => 768,
+            Self::Lg => 1024,
+            Self::Xl => 1280,
+        }
+    }
+}
+
+/// Condition on the theme; evaluated in [`ClassList::parse`], not in
+/// [`ClassList::resolve`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ThemeVariant {
+    Kai,
+    AppKit,
+    /// AppKit 26+ (`Glass26`, `Glass27`).
+    Glass,
+    /// AppKit theme with that mixed-theme candidate (`mix-a:` …).
+    Mix(MixStyle),
+    /// AppKit theme with that field-label experiment (`label-top:`,
+    /// `label-near:`, `label-tab:`; [`Theme::field_labels`]).
+    Labels(FieldLabels),
+    Dark,
+    Light,
+}
+
+impl ThemeVariant {
+    fn parse(prefix: &str) -> Option<Self> {
+        Some(match prefix {
+            "kai" => Self::Kai,
+            "appkit" => Self::AppKit,
+            "glass" => Self::Glass,
+            "mix-a" => Self::Mix(MixStyle::A),
+            "mix-b" => Self::Mix(MixStyle::B),
+            "mix-c" => Self::Mix(MixStyle::C),
+            "label-top" => Self::Labels(FieldLabels::Top),
+            "label-near" => Self::Labels(FieldLabels::Near),
+            "label-tab" => Self::Labels(FieldLabels::Tab),
+            "dark" => Self::Dark,
+            "light" => Self::Light,
+            _ => return None,
+        })
+    }
+
+    fn holds(self, theme: &Theme) -> bool {
+        match self {
+            Self::Kai => !theme.is_appkit(),
+            Self::AppKit => theme.is_appkit(),
+            Self::Mix(mix) => theme.is_appkit() && theme.mix == mix,
+            Self::Labels(labels) => theme.is_appkit() && theme.field_labels == labels,
+            Self::Glass => matches!(
+                theme.kind,
+                ThemeKind::AppKit(AppKitGeneration::Glass26 | AppKitGeneration::Glass27)
+            ),
+            Self::Dark => theme.appearance == Appearance::Dark,
+            Self::Light => theme.appearance == Appearance::Light,
+        }
+    }
+}
+
+/// Strips the leading theme variants of `class`, returning whether all of
+/// them hold for `theme` and the rest of the class.
+fn strip_theme_variants<'a>(mut class: &'a str, theme: &Theme) -> (bool, &'a str) {
+    let mut holds = true;
+    while let Some((prefix, rest)) = class.split_once(':')
+        && let Some(variant) = ThemeVariant::parse(prefix)
+    {
+        holds &= variant.holds(theme);
+        class = rest;
+    }
+    (holds, class)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -141,6 +320,18 @@ enum Decl {
     Weight(Weight),
     NoWrap(bool),
     Stroke(f32),
+    // By control size (`h-control`, `px-control`…), indexed by
+    // `ControlSize::index()` of the resolved state.
+    HeightBySize(BySize),
+    MinHeightBySize(BySize),
+    RadiusBySize(BySize),
+    PaddingXBySize(BySize),
+    FontBySize {
+        size: BySize,
+        line: BySize,
+    },
+    /// Letter spacing in em.
+    Tracking(f32),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -155,11 +346,13 @@ impl ClassList {
     pub fn parse(classes: &str, theme: &Theme) -> Self {
         let mut list = Self::default();
         for class in classes.split_whitespace() {
-            if class == "group" {
-                list.group = true;
+            let (applies, rest) = strip_theme_variants(class, theme);
+            // `group` may carry a theme variant (`kai:group`, from `themed`).
+            if rest == "group" {
+                list.group |= applies;
                 continue;
             }
-            let (variant, utility) = match class.split_once(':') {
+            let (variant, utility) = match rest.split_once(':') {
                 Some((prefix, utility)) => match Variant::parse(prefix) {
                     Some(variant) => (variant, utility),
                     None => {
@@ -167,34 +360,36 @@ impl ClassList {
                         continue;
                     }
                 },
-                None => (Variant::Base, class),
+                None => (Variant::Base, rest),
             };
             let parser = Parser { theme };
             match parser.utility(utility) {
+                // Still parsed when the theme variant does not hold, so a
+                // typo behind `appkit:` is reported with the Kai theme too.
+                Some(_) if !applies => {}
                 Some(decls) => list
                     .decls
                     .extend(decls.into_iter().map(|decl| (variant, decl))),
                 None => list.unknown.push(class.to_owned()),
             }
         }
+        // Stable: within a rank the string order is kept.
+        list.decls.sort_by_key(|(variant, _)| variant.rank());
         list
     }
 
     pub fn resolve(&self, state: State) -> Style {
         let mut style = Style::default();
-        for variant in VARIANT_ORDER {
-            if !variant.applies(state) {
-                continue;
-            }
-            let decls = self.decls.iter().filter(|(v, _)| *v == variant);
+        for rank in self.decls.chunk_by(|a, b| a.0.rank() == b.0.rank()) {
+            let decls = rank.iter().filter(|(v, _)| v.applies(state));
             for (_, decl) in decls.clone() {
                 if !matches!(decl, Decl::Leading(_)) {
-                    apply(&mut style, *decl);
+                    apply(&mut style, decl, &state);
                 }
             }
             for (_, decl) in decls {
                 if matches!(decl, Decl::Leading(_)) {
-                    apply(&mut style, *decl);
+                    apply(&mut style, decl, &state);
                 }
             }
         }
@@ -228,8 +423,9 @@ fn set_sides<T: Copy>(edges: &mut Edges<T>, sides: Sides, value: T) {
     }
 }
 
-fn apply(style: &mut Style, decl: Decl) {
-    match decl {
+fn apply(style: &mut Style, decl: &Decl, state: &State) {
+    let size = state.control_size.index();
+    match *decl {
         Decl::Display(display, inline) => {
             style.display = display;
             style.inline = inline;
@@ -288,6 +484,15 @@ fn apply(style: &mut Style, decl: Decl) {
         Decl::Weight(weight) => style.text.weight = Some(weight),
         Decl::NoWrap(nowrap) => style.text.nowrap = Some(nowrap),
         Decl::Stroke(width) => style.text.stroke_width = Some(width),
+        Decl::HeightBySize(values) => style.height = Length::Px(values[size]),
+        Decl::MinHeightBySize(values) => style.min_height = Length::Px(values[size]),
+        Decl::RadiusBySize(values) => style.radius = values[size],
+        Decl::PaddingXBySize(values) => set_sides(&mut style.padding, Sides::X, values[size]),
+        Decl::FontBySize { size: sizes, line } => {
+            style.text.font_size = Some(sizes[size]);
+            style.text.line_height = Some(LineHeight::Px(line[size]));
+        }
+        Decl::Tracking(em) => style.text.letter_spacing = Some(em),
     }
 }
 
@@ -299,6 +504,9 @@ impl Parser<'_> {
     fn utility(&self, class: &str) -> Option<Vec<Decl>> {
         if let Some(decl) = self.keyword(class) {
             return Some(vec![decl]);
+        }
+        if let Some(decls) = self.compound(class) {
+            return Some(decls);
         }
         if class == "truncate" {
             return Some(vec![Decl::NoWrap(true), Decl::Overflow(Overflow::Hidden)]);
@@ -378,6 +586,10 @@ impl Parser<'_> {
                 let width: f32 = arbitrary(value).unwrap_or(value).parse().ok()?;
                 vec![Decl::Stroke(width)]
             }
+            "tracking" => vec![Decl::Tracking(match value {
+                "normal" => 0.0,
+                _ => arbitrary(value)?.strip_suffix("em")?.parse().ok()?,
+            })],
             _ => return None,
         };
         Some(decls)
@@ -451,12 +663,50 @@ impl Parser<'_> {
             "font-medium" => Decl::Weight(t.weight_medium),
             "font-semibold" => Decl::Weight(t.weight_semibold),
             "font-bold" => Decl::Weight(t.weight_bold),
-            "h-control" => Decl::Height(Length::Px(controls.height_md)),
+            // By the node's control size; `Regular` keeps the Kai values.
+            "h-control" => Decl::HeightBySize(controls.button_height),
+            "min-h-control" => Decl::MinHeightBySize(controls.button_height),
+            "h-field" => Decl::HeightBySize(controls.field_height),
+            "h-field-square" => Decl::HeightBySize(controls.field_square_height),
+            "rounded-control" => Decl::RadiusBySize(controls.radius),
+            "rounded-field" => Decl::RadiusBySize(controls.field_radius),
+            "rounded-field-square" => Decl::RadiusBySize(controls.field_square_radius),
+            "px-control" => Decl::PaddingXBySize(controls.padding_x),
+            "text-control" => Decl::FontBySize {
+                size: controls.font_size,
+                line: controls.line_height,
+            },
+            "gap-control" => Decl::Gap(Some(controls.gap), Some(controls.gap)),
             "h-control-compact" => Decl::Height(Length::Px(controls.height_compact)),
-            "min-h-control" => Decl::MinHeight(Length::Px(controls.height_md)),
             "py-control" => Decl::Padding(Sides::Y, controls.padding_y_md),
             _ => return None,
         })
+    }
+
+    /// Classes that expand to several declarations: `ring-focus` and the
+    /// macOS text styles (`text-body`, `text-large-title`…).
+    fn compound(&self, class: &str) -> Option<Vec<Decl>> {
+        if class == "ring-focus" {
+            let controls = &self.theme.controls;
+            return Some(vec![
+                Decl::RingWidth(controls.focus_ring_width),
+                Decl::RingOffset(controls.focus_ring_offset),
+                Decl::RingColor(self.theme.semantic.focus_ring),
+            ]);
+        }
+        let style = self
+            .theme
+            .typography
+            .styles
+            .get(class.strip_prefix("text-")?)?;
+        let mut decls = vec![
+            Decl::FontSize(style.size, Some(style.line_height)),
+            Decl::Weight(style.weight),
+        ];
+        if style.tracking_em != 0.0 {
+            decls.push(Decl::Tracking(style.tracking_em));
+        }
+        Some(decls)
     }
 
     /// Tailwind spacing scale: `4` = 4 units, `1.5`, `px`, `[12px]`, `[0.5rem]`.
@@ -685,6 +935,8 @@ fn shadow(value: &str) -> Option<Option<Shadow>> {
         "md" => shadow(4.0, 6.0, -1.0, 0.1),
         "lg" => shadow(10.0, 15.0, -3.0, 0.1),
         "xl" => shadow(20.0, 25.0, -5.0, 0.1),
+        // Push button bezel: 0.5 pt drop (11 §6.2) [C].
+        "bezel" => shadow(0.5, 0.5, 0.0, 0.2),
         _ => None,
     }
 }
@@ -734,12 +986,343 @@ mod tests {
     use cosmic_text::Weight;
 
     use super::{ClassList, State};
+    use crate::element::ControlSize;
     use crate::render::Color;
     use crate::style::{
         Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, Overflow,
         Position,
     };
-    use crate::theme::{Density, Theme};
+    use crate::theme::{AppKitGeneration, Appearance, Density, Theme, ThemeKind};
+
+    fn appkit(appearance: Appearance) -> Theme {
+        Theme {
+            kind: ThemeKind::AppKit(AppKitGeneration::Aqua11),
+            appearance,
+            ..Theme::kai(Density::Comfortable)
+        }
+    }
+
+    #[test]
+    fn window_inactive_beats_selected_and_active() {
+        let theme = Theme::kai(Density::Comfortable);
+        let list = parse(
+            "window-inactive:bg-control bg-primary selected:bg-control-accent \
+             active:bg-error",
+        );
+        let state = State {
+            selected: true,
+            active: true,
+            ..State::default()
+        };
+        assert_eq!(list.resolve(state).background, Some(theme.colors.error));
+        let inactive = State {
+            window_inactive: true,
+            ..state
+        };
+        assert_eq!(
+            list.resolve(inactive).background,
+            Some(theme.semantic.control)
+        );
+        let selected = State {
+            selected: true,
+            ..State::default()
+        };
+        assert_eq!(
+            list.resolve(selected).background,
+            Some(theme.semantic.control_accent)
+        );
+    }
+
+    #[test]
+    fn disabled_beats_window_inactive() {
+        let theme = Theme::kai(Density::Comfortable);
+        let list = parse("disabled:bg-error window-inactive:bg-control");
+        let state = State {
+            window_inactive: true,
+            disabled: true,
+            ..State::default()
+        };
+        assert_eq!(list.resolve(state).background, Some(theme.colors.error));
+    }
+
+    fn sized(size: ControlSize) -> State {
+        State {
+            control_size: size,
+            ..State::default()
+        }
+    }
+
+    #[test]
+    fn glass_variant_and_field_radii_follow_the_generation() {
+        let classes = "bg-control glass:bg-fill-2 rounded-field";
+        let square = "rounded-field-square";
+        let regular = sized(ControlSize::Regular);
+        for (generation, fill, radius, square_radius) in [
+            (AppKitGeneration::Aqua11, "control", 5.0, 0.0),
+            (AppKitGeneration::Glass26, "fill-2", 6.0, 6.0),
+            (AppKitGeneration::Glass27, "fill-2", 6.0, 6.0),
+        ] {
+            let theme = Theme::appkit_static(generation, Appearance::Light);
+            let list = ClassList::parse(classes, &theme);
+            assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+            let style = list.resolve(regular);
+            assert_eq!(style.background, theme.color(fill), "{generation:?}");
+            assert_eq!(style.radius, radius, "{generation:?}");
+            let style = ClassList::parse(square, &theme).resolve(regular);
+            assert_eq!(style.radius, square_radius, "{generation:?}");
+        }
+        let kai = Theme::kai(Density::Comfortable);
+        assert_eq!(
+            ClassList::parse(classes, &kai).resolve(regular).background,
+            kai.color("control")
+        );
+    }
+
+    #[test]
+    fn control_metrics_follow_control_size() {
+        let mut theme = Theme::kai(Density::Comfortable);
+        theme.controls.button_height = [13.0, 16.0, 20.0, 28.0, 36.0];
+        theme.controls.radius = [3.0, 4.0, 5.0, 6.0, 7.0];
+        theme.controls.font_size = [9.0, 11.0, 13.0, 13.0, 15.0];
+        let list = ClassList::parse("h-control rounded-control px-control text-control", &theme);
+        assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+        let heights: Vec<Length> = ControlSize::ALL
+            .iter()
+            .map(|size| list.resolve(sized(*size)).height)
+            .collect();
+        assert_eq!(
+            heights,
+            [13.0, 16.0, 20.0, 28.0, 36.0].map(Length::Px).to_vec()
+        );
+        let mini = list.resolve(sized(ControlSize::Mini));
+        assert_eq!(mini.radius, 3.0);
+        assert_eq!(mini.text.font_size, Some(9.0));
+        assert_eq!(mini.padding.left, theme.controls.padding_x[0]);
+        assert_eq!(
+            ClassList::parse("min-h-control", &theme)
+                .resolve(sized(ControlSize::Large))
+                .min_height,
+            Length::Px(28.0)
+        );
+    }
+
+    #[test]
+    fn h_control_unchanged_for_kai_regular() {
+        for density in [Density::Comfortable, Density::Compact] {
+            let theme = Theme::kai(density);
+            let style = ClassList::parse("h-control min-h-control text-control", &theme)
+                .resolve(State::default());
+            assert_eq!(style.height, Length::Px(theme.controls.height_md));
+            assert_eq!(style.min_height, Length::Px(theme.controls.height_md));
+            let sm = ClassList::parse("text-sm leading-5", &theme).resolve(State::default());
+            assert_eq!(style.text.font_size, sm.text.font_size);
+            assert_eq!(style.text.line_height, sm.text.line_height);
+        }
+    }
+
+    #[test]
+    fn ring_focus_reads_theme() {
+        let kai = Theme::kai(Density::Comfortable);
+        let ring = parse("ring-focus").resolve(State::default()).ring;
+        assert_eq!((ring.width, ring.offset), (2.0, 2.0));
+        assert_eq!(ring.color, Some(kai.semantic.focus_ring));
+        let appkit = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        let list = ClassList::parse("ring-0 keyboard-focus:ring-focus gap-control", &appkit);
+        let focused = list.resolve(State {
+            keyboard_focus: true,
+            ..State::default()
+        });
+        assert_eq!((focused.ring.width, focused.ring.offset), (3.0, 0.0));
+        assert_eq!((focused.gap_x, focused.gap_y), (8.0, 8.0));
+        assert_eq!(list.resolve(State::default()).ring.width, 0.0);
+    }
+
+    #[test]
+    fn text_styles_parse() {
+        let appkit = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        for name in [
+            "large-title",
+            "title1",
+            "title2",
+            "title3",
+            "headline",
+            "body",
+            "callout",
+            "subheadline",
+            "footnote",
+            "caption1",
+            "caption2",
+        ] {
+            let class = format!("text-{name}");
+            for theme in [Theme::kai(Density::Comfortable), appkit] {
+                let list = ClassList::parse(&class, &theme);
+                assert!(list.unknown.is_empty(), "{class}");
+                let style = list.resolve(State::default());
+                let token = theme.typography.styles.get(name).unwrap();
+                assert_eq!(style.text.font_size, Some(token.size));
+                assert_eq!(
+                    style.text.line_height,
+                    Some(LineHeight::Px(token.line_height))
+                );
+                assert_eq!(style.text.weight, Some(token.weight));
+            }
+        }
+        let headline = ClassList::parse("text-headline", &appkit).resolve(State::default());
+        assert_eq!(headline.text.weight, Some(Weight(700)));
+        assert_eq!(headline.text.letter_spacing, Some(-0.08 / 13.0));
+        assert_eq!(
+            parse("text-body")
+                .resolve(State::default())
+                .text
+                .letter_spacing,
+            None
+        );
+        assert_eq!(
+            parse("tracking-[-0.01em]")
+                .resolve(State::default())
+                .text
+                .letter_spacing,
+            Some(-0.01)
+        );
+        assert_eq!(
+            ClassList::parse("text-title4 tracking-[2px]", &appkit).unknown,
+            vec!["text-title4", "tracking-[2px]"]
+        );
+    }
+
+    #[test]
+    fn group_can_carry_a_theme_variant() {
+        let kai = Theme::kai(Density::Comfortable);
+        let appkit = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        assert!(ClassList::parse("kai:group", &kai).group);
+        assert!(!ClassList::parse("kai:group", &appkit).group);
+        assert!(ClassList::parse("appkit:group", &appkit).unknown.is_empty());
+        let bezel = ClassList::parse("shadow-bezel", &appkit).resolve(State::default());
+        assert_eq!(bezel.shadow.map(|s| (s.offset_y, s.blur)), Some((0.5, 0.5)));
+    }
+
+    #[test]
+    fn focus_visible_is_its_own_state() {
+        let list = parse("ring-0 focus:ring-1 focus-visible:ring-2 keyboard-focus:ring-3");
+        let pointer = State {
+            focus: true,
+            ..State::default()
+        };
+        assert_eq!(list.resolve(pointer).ring.width, 1.0);
+        let visible = State {
+            focus_visible: true,
+            ..pointer
+        };
+        assert_eq!(list.resolve(visible).ring.width, 2.0);
+        let keyboard = State {
+            keyboard_focus: true,
+            ..visible
+        };
+        assert_eq!(list.resolve(keyboard).ring.width, 3.0);
+    }
+
+    #[test]
+    fn mixed_and_keyboard_focus_variants() {
+        let theme = Theme::kai(Density::Comfortable);
+        let list = parse("ring-0 focus:ring-1 keyboard-focus:ring-3 indeterminate:bg-error");
+        let pointer_focus = State {
+            focus: true,
+            ..State::default()
+        };
+        assert_eq!(list.resolve(pointer_focus).ring.width, 1.0);
+        let keyboard = State {
+            keyboard_focus: true,
+            ..pointer_focus
+        };
+        assert_eq!(list.resolve(keyboard).ring.width, 3.0);
+        let mixed = State {
+            mixed: true,
+            ..State::default()
+        };
+        assert_eq!(list.resolve(mixed).background, Some(theme.colors.error));
+        assert_eq!(list.resolve(State::default()).background, None);
+    }
+
+    #[test]
+    fn control_size_variants_pick_one() {
+        use crate::element::ControlSize;
+
+        let list = parse("h-4 control-small:h-3 control-large:h-7 hover:h-8");
+        let height = |control_size: ControlSize, hover: bool| {
+            list.resolve(State {
+                control_size,
+                hover,
+                ..State::default()
+            })
+            .height
+        };
+        assert_eq!(height(ControlSize::Regular, false), Length::Px(16.0));
+        assert_eq!(height(ControlSize::Small, false), Length::Px(12.0));
+        assert_eq!(height(ControlSize::Large, false), Length::Px(28.0));
+        assert_eq!(height(ControlSize::Mini, false), Length::Px(16.0));
+        assert_eq!(height(ControlSize::Large, true), Length::Px(32.0));
+        assert!(!list.is_static());
+    }
+
+    #[test]
+    fn theme_variants_filter_at_parse_time() {
+        let kai = Theme::kai(Density::Comfortable);
+        let classes = "kai:bg-primary appkit:bg-error";
+        let list = ClassList::parse(classes, &kai);
+        assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+        assert_eq!(
+            list.resolve(State::default()).background,
+            Some(kai.colors.primary)
+        );
+        let list = ClassList::parse(classes, &appkit(Appearance::Light));
+        assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+        assert_eq!(
+            list.resolve(State::default()).background,
+            Some(kai.colors.error)
+        );
+        // Dropped declarations do not make a list interaction-dependent.
+        assert!(ClassList::parse("appkit:hover:bg-error", &kai).is_static());
+        let hovered = State {
+            hover: true,
+            ..State::default()
+        };
+        let list = ClassList::parse("kai:hover:bg-error", &kai);
+        assert_eq!(list.resolve(hovered).background, Some(kai.colors.error));
+    }
+
+    #[test]
+    fn stacked_theme_variants() {
+        let classes = "appkit:dark:text-label";
+        let color = |theme: &Theme| {
+            let list = ClassList::parse(classes, theme);
+            assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+            list.resolve(State::default()).text.color
+        };
+        let kai = Theme::kai(Density::Comfortable);
+        let dark_kai = Theme {
+            appearance: Appearance::Dark,
+            ..kai
+        };
+        assert_eq!(color(&kai), None);
+        assert_eq!(color(&dark_kai), None);
+        assert_eq!(color(&appkit(Appearance::Light)), None);
+        assert_eq!(color(&appkit(Appearance::Dark)), Some(kai.semantic.label));
+        let light = ClassList::parse("light:bg-window dark:bg-black", &kai);
+        assert_eq!(
+            light.resolve(State::default()).background,
+            Some(kai.semantic.window_background)
+        );
+    }
+
+    #[test]
+    fn theme_variant_after_state_is_unknown() {
+        let kai = Theme::kai(Density::Comfortable);
+        let list = ClassList::parse("hover:appkit:bg-primary", &kai);
+        assert_eq!(list.unknown, vec!["hover:appkit:bg-primary".to_owned()]);
+        // A typo behind a theme variant that does not hold is still reported.
+        let list = ClassList::parse("appkit:bg-nope", &kai);
+        assert_eq!(list.unknown, vec!["appkit:bg-nope".to_owned()]);
+    }
 
     fn parse(classes: &str) -> ClassList {
         let list = ClassList::parse(classes, &Theme::kai(Density::Comfortable));
@@ -870,12 +1453,71 @@ mod tests {
     }
 
     #[test]
+    fn breakpoints_follow_the_window_width_wider_ones_win() {
+        let list = parse("grid-cols-1 lg:grid-cols-4 sm:grid-cols-2 md:grid-cols-3");
+        let columns = |viewport_width| {
+            list.resolve(State {
+                viewport_width,
+                ..State::default()
+            })
+            .grid_columns
+        };
+        assert_eq!(columns(0), 1);
+        assert_eq!(columns(639), 1);
+        assert_eq!(columns(640), 2);
+        assert_eq!(columns(768), 3);
+        assert_eq!(columns(1023), 3);
+        assert_eq!(columns(1024), 4);
+        // Below state variants: `hover:` still beats `sm:`.
+        let list = parse("p-1 sm:p-2 hover:p-3");
+        let state = State {
+            viewport_width: 800,
+            hover: true,
+            ..State::default()
+        };
+        let p3 = parse("p-3").resolve(State::default()).padding.left;
+        assert_eq!(list.resolve(state).padding.left, p3);
+    }
+
+    #[test]
+    fn label_variants_need_an_appkit_theme_with_that_experiment() {
+        use crate::theme::FieldLabels;
+        let holds = |class: &str, theme: &Theme| {
+            ClassList::parse(&format!("{class}:hidden"), theme)
+                .resolve(State::default())
+                .display
+                == Display::None
+        };
+        // `near` is the default of every AppKit theme, strict mix too.
+        let strict = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        assert_eq!(strict.field_labels, FieldLabels::Near);
+        assert_eq!(FieldLabels::default(), FieldLabels::Near);
+        assert!(holds("label-near", &strict));
+        let appkit = strict.with_field_labels(FieldLabels::AppKit);
+        let kai = Theme::kai(Density::Comfortable);
+        for (class, labels) in [
+            ("label-top", FieldLabels::Top),
+            ("label-near", FieldLabels::Near),
+            ("label-tab", FieldLabels::Tab),
+        ] {
+            assert!(!holds(class, &appkit), "{class}");
+            assert!(holds(class, &appkit.with_field_labels(labels)), "{class}");
+            assert!(!holds(class, &kai.with_field_labels(labels)), "{class}");
+            for other in [FieldLabels::Top, FieldLabels::Near, FieldLabels::Tab] {
+                if other != labels {
+                    assert!(!holds(class, &appkit.with_field_labels(other)), "{class}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn unknown_classes_and_variants_are_reported() {
         let list = ClassList::parse(
-            "p-4 bg-nope sm:p-2 lol border-3 group",
+            "p-4 bg-nope xs:p-2 lol border-3 group",
             &Theme::kai(Density::Comfortable),
         );
-        assert_eq!(list.unknown, vec!["bg-nope", "sm:p-2", "lol", "border-3"]);
+        assert_eq!(list.unknown, vec!["bg-nope", "xs:p-2", "lol", "border-3"]);
         assert!(list.group);
     }
 }

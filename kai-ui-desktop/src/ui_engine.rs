@@ -2,7 +2,8 @@
 
 use std::ops::Range;
 
-use crate::element::{FocusKind, FocusOrder, WidgetId};
+use crate::element::{FocusKind, FocusOrder, KeyEquivalent, WidgetId};
+use crate::responder::{Action, FocusContext, KeyRoute, key_equivalent_route};
 use crate::signal::Signal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,6 +12,9 @@ pub enum ActivationSource {
     Enter,
     Space,
     Accessibility,
+    /// Return for the default button, Escape for the cancel button, or a
+    /// control's own shortcut.
+    KeyEquivalent,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -18,6 +22,17 @@ pub struct Modifiers {
     pub shift: bool,
     pub command: bool,
     pub control: bool,
+    /// ⌥ Option (Alt).
+    pub option: bool,
+}
+
+impl Modifiers {
+    pub const NONE: Self = Self {
+        shift: false,
+        command: false,
+        control: false,
+        option: false,
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,10 +48,16 @@ pub enum Key {
     End,
     Backspace,
     Delete,
+    Escape,
+    /// `.` (Cmd+. cancels, like Escape).
+    Period,
     A,
     C,
     X,
     V,
+    /// Any other letter or digit key, lowercase, by its US-layout position
+    /// (for `KeyEquivalent::cmd(Key::Char('s'))`).
+    Char(char),
     Other,
 }
 
@@ -83,12 +104,24 @@ pub enum Intent {
     Text(TextIntent),
 }
 
+/// Where a focus change came from: keyboard focus is shown with a ring
+/// (`keyboard-focus:`), pointer focus on buttons is not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FocusOrigin {
+    Keyboard,
+    Pointer,
+    /// Assistive technology or the app.
+    Programmatic,
+}
+
 #[derive(Clone, Debug, PartialEq)]
-pub enum Command {
-    SetFocus(Option<WidgetId>),
+pub enum UiCommand {
+    SetFocus(Option<WidgetId>, FocusOrigin),
     SetPressed(Option<WidgetId>),
     Activate(WidgetId, ActivationSource),
     Text(WidgetId, TextIntent),
+    /// Standard action for the responder chain.
+    Perform(Action),
 }
 
 #[derive(Debug)]
@@ -96,6 +129,9 @@ pub struct UiModel {
     pub focused: Signal<Option<WidgetId>>,
     /// Button currently held down by the pointer.
     pub pressed: Signal<Option<WidgetId>>,
+    /// The focus came from the keyboard or assistive technology, not a
+    /// pointer press (`:focus-visible`).
+    pub focus_visible: Signal<bool>,
     pub activation_count: u32,
 }
 
@@ -104,6 +140,7 @@ impl Default for UiModel {
         Self {
             focused: Signal::new(None),
             pressed: Signal::new(None),
+            focus_visible: Signal::new(false),
             activation_count: 0,
         }
     }
@@ -122,6 +159,9 @@ pub struct DispatchResult {
     pub activated: Option<Activation>,
     /// Text work for the focused text field.
     pub text_actions: Vec<(WidgetId, TextIntent)>,
+    /// Standard action nobody consumed yet; the runtime sends it up the
+    /// responder chain (`responder::chain`).
+    pub action: Option<Action>,
 }
 
 /// Translate a Kai intent into commands and reduce them into the model.
@@ -134,9 +174,12 @@ pub fn dispatch(model: &mut UiModel, order: &FocusOrder, intent: Intent) -> Disp
 
     for command in commands {
         match command {
-            Command::SetFocus(target) => result.changed |= model.focused.set(target),
-            Command::SetPressed(target) => result.changed |= model.pressed.set(target),
-            Command::Activate(widget, source) => {
+            UiCommand::SetFocus(target, origin) => {
+                result.changed |= model.focused.set(target);
+                result.changed |= model.focus_visible.set(origin != FocusOrigin::Pointer);
+            }
+            UiCommand::SetPressed(target) => result.changed |= model.pressed.set(target),
+            UiCommand::Activate(widget, source) => {
                 model.activation_count = model.activation_count.saturating_add(1);
                 result.changed = true;
                 result.activated = Some(Activation {
@@ -145,7 +188,8 @@ pub fn dispatch(model: &mut UiModel, order: &FocusOrder, intent: Intent) -> Disp
                     count: model.activation_count,
                 });
             }
-            Command::Text(widget, action) => result.text_actions.push((widget, action)),
+            UiCommand::Text(widget, action) => result.text_actions.push((widget, action)),
+            UiCommand::Perform(action) => result.action = Some(action),
         }
     }
 
@@ -167,38 +211,43 @@ pub fn sync_focus(model: &mut UiModel, order: &FocusOrder) -> bool {
     changed
 }
 
-fn commands_for(model: &UiModel, order: &FocusOrder, intent: Intent) -> Vec<Command> {
+fn commands_for(model: &UiModel, order: &FocusOrder, intent: Intent) -> Vec<UiCommand> {
     let focusable = |target: Option<WidgetId>| target.filter(|id| order.kind(*id).is_some());
     match intent {
         Intent::SetFocus(target) => match target {
             Some(id) if order.kind(id).is_none() => Vec::new(),
-            _ => vec![Command::SetFocus(target)],
+            _ => vec![UiCommand::SetFocus(target, FocusOrigin::Programmatic)],
         },
         Intent::PointerDown(target) => {
             let target = focusable(target);
             let pressed = target.filter(|id| order.kind(*id) == Some(FocusKind::Button));
             if target.is_some_and(|id| !order.focus_on_press(id)) {
-                return vec![Command::SetPressed(pressed)];
+                return vec![UiCommand::SetPressed(pressed)];
             }
-            vec![Command::SetFocus(target), Command::SetPressed(pressed)]
+            vec![
+                UiCommand::SetFocus(target, FocusOrigin::Pointer),
+                UiCommand::SetPressed(pressed),
+            ]
         }
         Intent::PointerUp(target) => {
             let pressed = *model.pressed.get();
-            let mut commands = vec![Command::SetPressed(None)];
+            let mut commands = vec![UiCommand::SetPressed(None)];
             if let Some(id) = pressed
                 && target == Some(id)
             {
-                commands.push(Command::Activate(id, ActivationSource::Pointer));
+                commands.push(UiCommand::Activate(id, ActivationSource::Pointer));
             }
             commands
         }
-        Intent::CancelPointer => vec![Command::SetPressed(None)],
+        Intent::CancelPointer => vec![UiCommand::SetPressed(None)],
         Intent::Activate(id) => match order.kind(id) {
             Some(FocusKind::Button) => vec![
-                Command::SetFocus(Some(id)),
-                Command::Activate(id, ActivationSource::Accessibility),
+                UiCommand::SetFocus(Some(id), FocusOrigin::Programmatic),
+                UiCommand::Activate(id, ActivationSource::Accessibility),
             ],
-            Some(FocusKind::TextField) => vec![Command::SetFocus(Some(id))],
+            Some(FocusKind::TextField) => {
+                vec![UiCommand::SetFocus(Some(id), FocusOrigin::Programmatic)]
+            }
             None => Vec::new(),
         },
         Intent::Text(TextIntent::KeyDown {
@@ -208,40 +257,109 @@ fn commands_for(model: &UiModel, order: &FocusOrder, intent: Intent) -> Vec<Comm
         }) => key_commands(order, *model.focused.get(), key, modifiers, repeat),
         Intent::Text(action) => match *model.focused.get() {
             Some(id) if order.kind(id) == Some(FocusKind::TextField) => {
-                vec![Command::Text(id, action)]
+                vec![UiCommand::Text(id, action)]
             }
             _ => Vec::new(),
         },
     }
 }
 
+/// Keys go first to the key equivalents (default and cancel buttons,
+/// shortcuts), then to the focused element; standard actions nobody takes
+/// are returned for the responder chain.
 fn key_commands(
     order: &FocusOrder,
     focused: Option<WidgetId>,
     key: Key,
     modifiers: Modifiers,
     repeat: bool,
-) -> Vec<Command> {
+) -> Vec<UiCommand> {
     if key == Key::Tab && !repeat {
-        return vec![Command::SetFocus(order.next(focused, modifiers.shift))];
+        return vec![UiCommand::SetFocus(
+            order.next(focused, modifiers.shift),
+            FocusOrigin::Keyboard,
+        )];
     }
 
-    let Some(focused) = focused else {
-        return Vec::new();
-    };
-    match order.kind(focused) {
-        Some(FocusKind::Button) => {
+    let kind = focused.and_then(|id| order.kind(id));
+    let pressed = KeyEquivalent { key, modifiers };
+    if !repeat {
+        let focus = FocusContext {
+            is_text: kind == Some(FocusKind::TextField),
+            claims_return: kind == Some(FocusKind::Button)
+                || focused.is_some_and(|id| order.submits(id)),
+        };
+        match key_equivalent_route(order.equivalents(), pressed, focus) {
+            KeyRoute::Activate(id) => {
+                return vec![UiCommand::Activate(id, ActivationSource::KeyEquivalent)];
+            }
+            KeyRoute::Command(name) => return vec![UiCommand::Perform(Action::Command(name))],
+            KeyRoute::PassThrough => {}
+        }
+        if pressed == KeyEquivalent::ESCAPE || pressed == KeyEquivalent::cmd(Key::Period) {
+            return vec![UiCommand::Perform(Action::CancelOperation)];
+        }
+    }
+
+    match (focused, kind) {
+        (Some(focused), Some(FocusKind::Button)) => {
             if repeat {
                 return Vec::new();
             }
             match key {
-                Key::Enter => vec![Command::Activate(focused, ActivationSource::Enter)],
-                Key::Space => vec![Command::Activate(focused, ActivationSource::Space)],
-                _ => Vec::new(),
+                Key::Enter => vec![UiCommand::Activate(focused, ActivationSource::Enter)],
+                Key::Space => vec![UiCommand::Activate(focused, ActivationSource::Space)],
+                _ => standard_action(key, modifiers)
+                    .map(UiCommand::Perform)
+                    .into_iter()
+                    .collect(),
             }
         }
-        Some(FocusKind::TextField) => text_key_commands(focused, key, modifiers, repeat),
-        None => Vec::new(),
+        (Some(field), Some(FocusKind::TextField)) => {
+            let mut commands = text_key_commands(field, key, modifiers, repeat);
+            if !repeat {
+                let unconsumed = match standard_action(key, modifiers) {
+                    // The field has no undo stack yet.
+                    Some(action @ (Action::Undo | Action::Redo)) => Some(action),
+                    _ if pressed == KeyEquivalent::RETURN && !order.submits(field) => {
+                        Some(Action::InsertNewline)
+                    }
+                    _ => None,
+                };
+                commands.extend(unconsumed.map(UiCommand::Perform));
+            }
+            commands
+        }
+        _ if repeat => Vec::new(),
+        _ => standard_action(key, modifiers)
+            .map(UiCommand::Perform)
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// Standard key bindings of macOS for keys the focus does not handle.
+fn standard_action(key: Key, modifiers: Modifiers) -> Option<Action> {
+    let Modifiers {
+        shift,
+        command,
+        control,
+        option,
+    } = modifiers;
+    if command && !control && !option {
+        return match (key, shift) {
+            (Key::A, false) => Some(Action::SelectAll),
+            (Key::C, false) => Some(Action::Copy),
+            (Key::X, false) => Some(Action::Cut),
+            (Key::V, false) => Some(Action::Paste),
+            (Key::Char('z'), false) => Some(Action::Undo),
+            (Key::Char('z'), true) => Some(Action::Redo),
+            _ => None,
+        };
+    }
+    match key {
+        Key::Backspace | Key::Delete if modifiers == Modifiers::NONE => Some(Action::Delete),
+        _ => None,
     }
 }
 
@@ -250,7 +368,7 @@ fn text_key_commands(
     key: Key,
     modifiers: Modifiers,
     repeat: bool,
-) -> Vec<Command> {
+) -> Vec<UiCommand> {
     if repeat
         && !matches!(
             key,
@@ -274,11 +392,11 @@ fn text_key_commands(
             _ => None,
         };
         if let Some(action) = action {
-            return vec![Command::Text(field, action)];
+            return vec![UiCommand::Text(field, action)];
         }
     }
 
-    vec![Command::Text(
+    vec![UiCommand::Text(
         field,
         TextIntent::KeyDown {
             key,
@@ -295,7 +413,8 @@ mod tests {
         dispatch, sync_focus,
     };
     use crate::element::sample;
-    use crate::element::{Element, FocusOrder, div, input};
+    use crate::element::{Element, FocusOrder, WidgetId, div, input};
+    use crate::responder::Action;
 
     fn order() -> FocusOrder {
         FocusOrder::from_tree(&sample::tree())
@@ -523,6 +642,127 @@ mod tests {
         let result = dispatch(&mut model, &order, Intent::Activate(sample::field()));
         assert_eq!(*model.focused.get(), Some(sample::field()));
         assert_eq!(result.activated, None);
+    }
+
+    fn tree_with_default_and_cancel() -> (Element<sample::Msg>, [WidgetId; 4]) {
+        let mut tree: Element<sample::Msg> = div().children([
+            input("", "Nombre").on_input(sample::Msg::Edited),
+            input("", "Correo").on_submit(sample::Msg::Submitted),
+            div().on_click(sample::Msg::Clicked).cancel_button(),
+            div().on_click(sample::Msg::Clicked).default_button(true),
+        ]);
+        tree.assign_ids();
+        let ids = [0, 1, 2, 3].map(|index| tree.children[index].id);
+        (tree, ids)
+    }
+
+    fn plain(key: Key) -> Intent {
+        Intent::Text(TextIntent::KeyDown {
+            key,
+            modifiers: Modifiers::NONE,
+            repeat: false,
+        })
+    }
+
+    fn cmd(key: Key, shift: bool) -> Intent {
+        Intent::Text(TextIntent::KeyDown {
+            key,
+            modifiers: Modifiers {
+                command: true,
+                shift,
+                ..Modifiers::NONE
+            },
+            repeat: false,
+        })
+    }
+
+    #[test]
+    fn return_and_escape_go_to_key_equivalents_first() {
+        let (tree, [name, email, cancel, save]) = tree_with_default_and_cancel();
+        let order = FocusOrder::from_tree(&tree);
+        let mut model = UiModel::default();
+        dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
+
+        let enter = dispatch(&mut model, &order, plain(Key::Enter));
+        let activated = enter.activated.unwrap();
+        assert_eq!(
+            (activated.widget, activated.source),
+            (save, ActivationSource::KeyEquivalent)
+        );
+        assert!(enter.text_actions.is_empty());
+        assert_eq!(*model.focused.get(), Some(name), "focus stays in the field");
+
+        dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
+        let submit = dispatch(&mut model, &order, plain(Key::Enter));
+        assert_eq!(submit.activated, None, "on_submit keeps Return");
+        assert_eq!(submit.text_actions.len(), 1);
+
+        let escape = dispatch(&mut model, &order, plain(Key::Escape));
+        assert_eq!(escape.activated.map(|a| a.widget), Some(cancel));
+        let period = dispatch(&mut model, &order, cmd(Key::Period, false));
+        assert_eq!(period.activated.map(|a| a.widget), Some(cancel));
+
+        // A focused button keeps Return; Escape still cancels.
+        dispatch(&mut model, &order, Intent::SetFocus(Some(cancel)));
+        let enter = dispatch(&mut model, &order, plain(Key::Enter));
+        assert_eq!(
+            enter.activated.map(|a| (a.widget, a.source)),
+            Some((cancel, ActivationSource::Enter))
+        );
+    }
+
+    #[test]
+    fn unconsumed_keys_become_standard_actions() {
+        let mut model = UiModel::default();
+        let order = order();
+        let escape = dispatch(&mut model, &order, plain(Key::Escape));
+        assert_eq!(escape.action, Some(Action::CancelOperation));
+        assert_eq!(escape.activated, None);
+
+        dispatch(&mut model, &order, Intent::SetFocus(Some(sample::button())));
+        let copy = dispatch(&mut model, &order, cmd(Key::C, false));
+        assert_eq!(copy.action, Some(Action::Copy));
+
+        dispatch(&mut model, &order, Intent::SetFocus(Some(sample::field())));
+        let copy = dispatch(&mut model, &order, cmd(Key::C, false));
+        assert_eq!(copy.action, None, "the field copies");
+        assert_eq!(copy.text_actions, vec![(sample::field(), TextIntent::Copy)]);
+        let redo = dispatch(&mut model, &order, cmd(Key::Char('z'), true));
+        assert_eq!(redo.action, Some(Action::Redo));
+        let escape = dispatch(&mut model, &order, plain(Key::Escape));
+        assert_eq!(escape.action, Some(Action::CancelOperation));
+        assert!(escape.text_actions.is_empty());
+
+        let (mut tree, [name, ..]) = tree_with_default_and_cancel();
+        tree.children.truncate(1);
+        let order = FocusOrder::from_tree(&tree);
+        dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
+        let enter = dispatch(&mut model, &order, plain(Key::Enter));
+        assert_eq!(enter.action, Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn pointer_focus_is_not_visible() {
+        let mut model = UiModel::default();
+        let order = order();
+        dispatch(
+            &mut model,
+            &order,
+            Intent::PointerDown(Some(sample::button())),
+        );
+        assert_eq!(*model.focused.get(), Some(sample::button()));
+        assert!(!*model.focus_visible.get());
+        let tab = dispatch(&mut model, &order, key(Key::Tab, false));
+        assert!(tab.changed);
+        assert!(*model.focus_visible.get());
+        dispatch(
+            &mut model,
+            &order,
+            Intent::PointerDown(Some(sample::field())),
+        );
+        assert!(!*model.focus_visible.get());
+        dispatch(&mut model, &order, Intent::Activate(sample::button()));
+        assert!(*model.focus_visible.get(), "assistive technology");
     }
 
     #[test]

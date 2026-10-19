@@ -9,11 +9,12 @@
 //! after their text content, text elements are labels. Buttons and inputs
 //! are leaves; hidden (`display: none`) subtrees are omitted.
 
-use accesskit::{Action, ActionData, ActionRequest, Affine, Node, NodeId, Rect as AccessRect, Role, TreeId,
+use accesskit::{
+    Action, ActionData, ActionRequest, Affine, Node, NodeId, Rect as AccessRect, Role, TreeId,
     TreeInfo, TreeUpdate,
 };
 
-use crate::element::{FocusKind, FocusOrder, Role as KaiRole, WidgetId};
+use crate::element::{ControlState, FocusKind, FocusOrder, Role as KaiRole, WidgetId};
 use crate::geometry::Rect;
 use crate::layout::{Content, Layout, LayoutNode};
 use crate::ui_engine::{Intent, TextIntent};
@@ -75,12 +76,14 @@ fn role_of(node: &LayoutNode) -> Role {
         Some(KaiRole::Paragraph) => Role::Paragraph,
         Some(KaiRole::Label) => Role::Label,
         Some(KaiRole::Status) => Role::Status,
+        Some(KaiRole::Button) if node.is_default => Role::DefaultButton,
         Some(KaiRole::Button) => Role::Button,
         Some(KaiRole::TextInput) => Role::TextInput,
         Some(KaiRole::Image) => Role::Image,
         None => match node.content {
             Content::Input { .. } => Role::TextInput,
             Content::Icon(_) => Role::Image,
+            _ if node.control && node.is_default => Role::DefaultButton,
             _ if node.control => Role::Button,
             Content::Text(_) => Role::Label,
             Content::Box => Role::GenericContainer,
@@ -164,8 +167,17 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             if matches!(source.content, Content::Input { .. }) {
                 node.add_action(Action::ReplaceSelectedText);
             }
-            if source.is_pressed && role == Role::Button {
-                node.set_toggled(accesskit::Toggled::True);
+            if let Some(state) = source.control_state
+                && matches!(role, Role::Button | Role::DefaultButton)
+            {
+                node.set_toggled(match state {
+                    ControlState::Off => accesskit::Toggled::False,
+                    ControlState::On => accesskit::Toggled::True,
+                    ControlState::Mixed => accesskit::Toggled::Mixed,
+                });
+            }
+            if let Some(shortcut) = source.key_equivalent {
+                node.set_keyboard_shortcut(shortcut.label());
             }
         }
     }
@@ -367,7 +379,12 @@ mod tests {
         let root = node(&update, node_id(tree.id));
         assert_eq!(
             root.children(),
-            &[node_id(ids[1]), node_id(ids[2]), node_id(ids[3]), node_id(ids[4])],
+            &[
+                node_id(ids[1]),
+                node_id(ids[2]),
+                node_id(ids[3]),
+                node_id(ids[4])
+            ],
             "decorative icons are omitted"
         );
         let alert = node(&update, node_id(ids[1]));
@@ -388,6 +405,43 @@ mod tests {
         let toggle = node(&update, node_id(ids[4]));
         assert_eq!(toggle.role(), Role::Button);
         assert_eq!(toggle.toggled(), Some(accesskit::Toggled::True));
+    }
+
+    #[test]
+    fn control_state_default_button_and_shortcuts_are_exposed() {
+        use crate::element::{ControlState, KeyEquivalent};
+        use crate::ui_engine::Key;
+
+        let mut tree: Element<Msg> = div().children([
+            div()
+                .label("Mixto")
+                .state(ControlState::Mixed)
+                .on_click(Msg::Clicked),
+            div().label("Apagado").pressed(false).on_click(Msg::Clicked),
+            div()
+                .label("Guardar")
+                .default_button(true)
+                .on_click(Msg::Clicked),
+            div()
+                .label("Exportar")
+                .key_equivalent(KeyEquivalent::cmd(Key::Char('e')))
+                .on_click(Msg::Clicked),
+        ]);
+        tree.assign_ids();
+        let ids: Vec<WidgetId> = tree.children.iter().map(|child| child.id).collect();
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let mixed = node(&update, node_id(ids[0]));
+        assert_eq!(mixed.toggled(), Some(accesskit::Toggled::Mixed));
+        let off = node(&update, node_id(ids[1]));
+        assert_eq!(off.toggled(), Some(accesskit::Toggled::False));
+        let default = node(&update, node_id(ids[2]));
+        assert_eq!(default.role(), Role::DefaultButton);
+        assert_eq!(default.toggled(), None);
+        assert_eq!(default.keyboard_shortcut(), Some("↩"));
+        let export = node(&update, node_id(ids[3]));
+        assert_eq!(export.role(), Role::Button);
+        assert_eq!(export.keyboard_shortcut(), Some("⌘E"));
     }
 
     #[test]

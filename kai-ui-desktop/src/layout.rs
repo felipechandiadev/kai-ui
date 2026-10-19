@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
-use crate::element::{Element, Kind, Role, WidgetId};
+use crate::element::{ControlSize, ControlState, Element, KeyEquivalent, Kind, Role, WidgetId};
 use crate::geometry::{Insets, Point, Rect, Size};
 use crate::icons::Icon;
 use crate::render::TextId;
@@ -35,27 +35,73 @@ pub trait TextMeasure {
     -> Size;
 }
 
-/// Pointer and keyboard state that selects class variants.
+/// `NSWindow.isKeyWindow` / `isMainWindow`. With a single window, key ==
+/// main == the app is active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowActivity {
+    pub key: bool,
+    pub main: bool,
+}
+
+impl Default for WindowActivity {
+    /// Active: tests and captures render a focused window.
+    fn default() -> Self {
+        Self {
+            key: true,
+            main: true,
+        }
+    }
+}
+
+impl WindowActivity {
+    pub const ACTIVE: Self = Self {
+        key: true,
+        main: true,
+    };
+    pub const INACTIVE: Self = Self {
+        key: false,
+        main: false,
+    };
+
+    /// AppKit dims accents only when the window is neither key nor main.
+    pub fn is_inactive(self) -> bool {
+        !self.key && !self.main
+    }
+}
+
+/// Pointer, keyboard and window state that selects class variants.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Interaction {
     /// Hit-test path under the pointer, root first.
     pub hovered: Vec<WidgetId>,
     pub focused: Option<WidgetId>,
     pub pressed: Option<WidgetId>,
+    pub window: WindowActivity,
+    /// The focus came from the keyboard or assistive technology
+    /// (`UiModel::focus_visible`).
+    pub focus_visible: bool,
 }
 
 /// Vertical scroll offset of each `overflow-auto` element.
 pub type ScrollOffsets = HashMap<WidgetId, f32>;
 
-/// Parsed class strings, reused across frames. Clear it when the theme
-/// changes.
+/// Parsed class strings, reused across frames. Empties itself when called
+/// with a theme different from the one it parsed with.
 #[derive(Default)]
 pub struct StyleCache {
     lists: HashMap<String, ClassList>,
+    /// Theme the cached lists were parsed with. Colors and `kai:`/`appkit:`/
+    /// `dark:`/`light:` variants are resolved at parse time, so a different
+    /// theme empties the cache.
+    theme: Option<Theme>,
 }
 
 impl StyleCache {
     pub fn get(&mut self, classes: &str, theme: &Theme) -> &ClassList {
+        if self.theme.as_ref() != Some(theme) {
+            self.lists.clear();
+            self.theme = Some(*theme);
+        }
         if !self.lists.contains_key(classes) {
             self.lists
                 .insert(classes.to_owned(), ClassList::parse(classes, theme));
@@ -108,7 +154,11 @@ pub struct LayoutNode {
     pub label: Option<String>,
     pub description: Option<String>,
     pub disabled: bool,
-    pub is_pressed: bool,
+    /// Effective control size (own or inherited).
+    pub control_size: ControlSize,
+    pub control_state: Option<ControlState>,
+    pub is_default: bool,
+    pub key_equivalent: Option<KeyEquivalent>,
     pub required: bool,
     /// Input focused by a click on this node (see
     /// [`Element::delegates_focus`]).
@@ -180,6 +230,7 @@ pub fn text_style(text: &ComputedText) -> TextStyle {
         line_height: text.line_height,
         weight: text.weight,
         wrap: !text.nowrap,
+        letter_spacing: text.letter_spacing,
     }
 }
 
@@ -188,6 +239,8 @@ struct Builder<'a> {
     interaction: &'a Interaction,
     focus_path: Vec<WidgetId>,
     styles: &'a mut StyleCache,
+    /// For the `sm:` … `xl:` breakpoints.
+    viewport_width: u32,
     taffy: TaffyTree<Leaf>,
     nodes: Vec<LayoutNode>,
     handles: Vec<Option<NodeId>>,
@@ -201,6 +254,10 @@ struct Inherited {
     pointer_events: bool,
     group_hover: bool,
     group_focus_within: bool,
+    control_size: ControlSize,
+    /// The parent's explicit `items-*`: auto-width inline children
+    /// (`inline-flex` buttons…) follow it instead of aligning to the start.
+    parent_align_items: Option<crate::style::Align>,
 }
 
 impl Builder<'_> {
@@ -212,16 +269,37 @@ impl Builder<'_> {
     ) -> taffy::TaffyResult<NodeId> {
         let id = element.id;
         let interaction = self.interaction;
-        let hover = interaction.hovered.contains(&id);
+        let control_size = element.control.size.unwrap_or(inherited.control_size);
+        let window_inactive = interaction.window.is_inactive();
+        // Hover is a theme option (on by default, also in the mixed AppKit
+        // themes). AppKit does no rollover in inactive windows; browsers
+        // (and the Kai theme) keep hover. Disabled controls skip `hover:`
+        // in `tw`.
+        let hover = interaction.hovered.contains(&id)
+            && self.theme.hover_effects
+            && !(window_inactive && self.theme.is_appkit());
         let focus_within = self.focus_path.contains(&id);
+        let focus = interaction.focused == Some(id);
+        let is_text = matches!(element.kind, Kind::Input { .. });
         let state = State {
             hover,
-            focus: interaction.focused == Some(id),
+            focus,
             focus_within,
             active: interaction.pressed == Some(id),
             disabled: element.disabled,
             group_hover: inherited.group_hover,
             group_focus_within: inherited.group_focus_within,
+            // Browser `:focus-visible`: a click focuses a text field
+            // visibly, but not a button.
+            focus_visible: focus && (is_text || interaction.focus_visible),
+            keyboard_focus: focus
+                && (is_text
+                    || (interaction.focus_visible && self.theme.prefs.full_keyboard_access)),
+            window_inactive,
+            selected: element.control.state == Some(ControlState::On),
+            mixed: element.control.state == Some(ControlState::Mixed),
+            control_size,
+            viewport_width: self.viewport_width,
         };
         let classes = self.styles.get(&element.class, self.theme);
         let is_group = classes.group;
@@ -255,7 +333,10 @@ impl Builder<'_> {
             label: element.label.clone(),
             description: element.description.clone(),
             disabled: element.disabled,
-            is_pressed: element.is_pressed,
+            control_size,
+            control_state: element.control.state,
+            is_default: element.control.is_default,
+            key_equivalent: element.control.key_equivalent,
             required: element.required,
             focus_delegate: element
                 .delegates_focus
@@ -289,8 +370,16 @@ impl Builder<'_> {
             } else {
                 inherited.group_focus_within
             },
+            control_size,
+            parent_align_items: node.style.align_items,
         };
-        let taffy_style = node.style.to_taffy();
+        let mut taffy_style = node.style.to_taffy();
+        // `Style::to_taffy` aligns auto-width inline elements to the start
+        // so they keep their content width; an explicit `items-*` on the
+        // parent wins, as in CSS.
+        if node.style.align_self.is_none() && inherited.parent_align_items.is_some() {
+            taffy_style.align_self = None;
+        }
         self.nodes.push(node);
         self.handles.push(None);
         if let Some(parent) = parent {
@@ -414,6 +503,7 @@ impl Layout {
             interaction: input.interaction,
             focus_path,
             styles,
+            viewport_width: input.viewport.width.max(0.0) as u32,
             taffy: TaffyTree::new(),
             nodes: Vec::new(),
             handles: Vec::new(),
@@ -425,6 +515,8 @@ impl Layout {
             pointer_events: true,
             group_hover: false,
             group_focus_within: false,
+            control_size: input.theme.control_size,
+            parent_align_items: None,
         };
         let root_handle = builder
             .build(root, None, inherited)
@@ -723,7 +815,8 @@ fn push_paint_order(nodes: &[LayoutNode], index: usize, order: &mut Vec<usize>) 
     }
 }
 
-#[cfg(test)]
+/// Test helpers, public so the demo binary, examples and apps can lay out
+/// trees without fonts.
 pub mod testing {
     use super::TextMeasure;
     use crate::geometry::Size;
@@ -743,7 +836,7 @@ pub mod testing {
             style: TextStyle,
             max_width: Option<f32>,
         ) -> Size {
-            let char_width = style.font_size / 2.0;
+            let char_width = style.font_size * (0.5 + style.letter_spacing);
             let full = text.chars().count() as f32 * char_width;
             match max_width.filter(|_| style.wrap) {
                 Some(max) if full > max => {
@@ -770,7 +863,157 @@ mod tests {
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, text};
     use crate::geometry::{Point, Rect, Size};
-    use crate::theme::{Density, Theme};
+    use crate::render::Color;
+    use crate::theme::{AppKitGeneration, Density, Theme, ThemeKind};
+    use crate::tw::State;
+
+    #[test]
+    fn keyboard_focus_requires_fka_for_buttons() {
+        use crate::element::input;
+
+        let probe = "ring-0 keyboard-focus:ring-3";
+        let root = tree(div().children([
+            div().class(probe).on_click(Msg::Clicked),
+            input("", "Campo").class(probe),
+        ]));
+        let (button, field) = (root.children[0].id, root.children[1].id);
+        let kai = Theme::kai(Density::Comfortable);
+        let mut no_fka = kai;
+        no_fka.prefs.full_keyboard_access = false;
+        let keyboard_focus = |theme: &Theme, focused: WidgetId, focus_visible: bool| {
+            let layout = Layout::compute(
+                &root,
+                &LayoutInput {
+                    viewport: WINDOW,
+                    theme,
+                    interaction: &Interaction {
+                        focused: Some(focused),
+                        focus_visible,
+                        ..Interaction::default()
+                    },
+                    scroll: &ScrollOffsets::new(),
+                },
+                &mut StyleCache::default(),
+                &mut FixedMeasure,
+            );
+            layout.node(focused).unwrap().style.ring.width == 3.0
+        };
+        assert!(keyboard_focus(&kai, button, true));
+        assert!(!keyboard_focus(&kai, button, false), "pointer focus");
+        assert!(!keyboard_focus(&no_fka, button, true));
+        assert!(keyboard_focus(&no_fka, field, true));
+        assert!(keyboard_focus(&no_fka, field, false));
+    }
+
+    #[test]
+    fn hover_is_on_by_default_off_by_option_inactive_window_or_disabled() {
+        use super::WindowActivity;
+        use crate::theme::Appearance;
+
+        let root = tree(
+            div()
+                .child(div().class("bg-background hover:bg-hover"))
+                .child(div().class("bg-background hover:bg-hover").disabled(true)),
+        );
+        let (card, disabled) = (root.children[0].id, root.children[1].id);
+        let kai = Theme::kai(Density::Comfortable);
+        let appkit = Theme {
+            kind: ThemeKind::AppKit(AppKitGeneration::Aqua11),
+            appearance: Appearance::Light,
+            ..kai
+        };
+        let background_of = |node, theme: &Theme, window: WindowActivity| {
+            Layout::compute(
+                &root,
+                &LayoutInput {
+                    viewport: WINDOW,
+                    theme,
+                    interaction: &Interaction {
+                        hovered: vec![root.id, card, disabled],
+                        window,
+                        ..Interaction::default()
+                    },
+                    scroll: &ScrollOffsets::new(),
+                },
+                &mut StyleCache::default(),
+                &mut FixedMeasure,
+            )
+            .node(node)
+            .unwrap()
+            .style
+            .background
+        };
+        let background = |theme: &Theme, window| background_of(card, theme, window);
+        let (hover, base) = (Some(kai.colors.hover), Some(kai.colors.background));
+        // Mixed AppKit theme: hover on by default, except in an inactive window.
+        assert!(appkit.hover_effects && kai.hover_effects);
+        assert_eq!(background(&appkit, WindowActivity::ACTIVE), hover);
+        assert_eq!(background(&appkit, WindowActivity::INACTIVE), base);
+        assert_eq!(
+            background(&kai, WindowActivity::INACTIVE),
+            hover,
+            "web keeps hover"
+        );
+        // Strict AppKit (or a Kai screen without hover).
+        for theme in [appkit.with_hover(false), kai.with_hover(false)] {
+            assert_eq!(background(&theme, WindowActivity::ACTIVE), base);
+        }
+        // Disabled controls never hover.
+        for theme in [&appkit, &kai] {
+            assert_eq!(background_of(disabled, theme, WindowActivity::ACTIVE), base);
+        }
+    }
+
+    #[test]
+    fn window_activity_defaults_to_active() {
+        use super::WindowActivity;
+        assert_eq!(Interaction::default().window, WindowActivity::ACTIVE);
+        assert!(!WindowActivity::default().is_inactive());
+        assert!(WindowActivity::INACTIVE.is_inactive());
+        // A key panel over an inactive main window is not dimmed.
+        assert!(
+            !WindowActivity {
+                key: true,
+                main: false
+            }
+            .is_inactive()
+        );
+    }
+
+    #[test]
+    fn style_cache_clears_on_theme_change() {
+        let kai = Theme::kai(Density::Comfortable);
+        let mut other = Theme {
+            kind: ThemeKind::AppKit(AppKitGeneration::Aqua11),
+            ..kai
+        };
+        other.semantic.label = Color::hex(0x123456);
+        let mut styles = StyleCache::default();
+        let background = |styles: &mut StyleCache, theme: &Theme, classes: &str| -> Option<Color> {
+            styles
+                .get(classes, theme)
+                .resolve(State::default())
+                .background
+        };
+        assert_eq!(
+            background(&mut styles, &kai, "bg-label"),
+            Some(kai.semantic.label)
+        );
+        assert_eq!(
+            background(&mut styles, &other, "bg-label"),
+            Some(Color::hex(0x123456))
+        );
+        let variants = "kai:bg-primary appkit:bg-error";
+        assert_eq!(
+            background(&mut styles, &other, variants),
+            Some(kai.colors.error)
+        );
+        assert_eq!(
+            background(&mut styles, &kai, variants),
+            Some(kai.colors.primary)
+        );
+        assert!(styles.unknown().is_empty());
+    }
 
     const WINDOW: Size = Size {
         width: 800.0,
@@ -809,6 +1052,51 @@ mod tests {
     fn tree(mut root: Element<Msg>) -> Element<Msg> {
         root.assign_ids();
         root
+    }
+
+    /// Auto-width inline children (buttons) keep their content width and
+    /// sit at the start, unless the parent sets `items-*`: then they follow
+    /// it like any flex item (`self-*` still wins).
+    #[test]
+    fn inline_children_follow_an_explicit_items_class() {
+        let row = |items: &str, child: &str| {
+            let root = tree(div().class("w-full h-full").child(
+                div().class(&format!("flex {items} h-20 w-80")).children([
+                    div().class("w-10 h-20"),
+                    div().class(child).child(text("Ok")),
+                ]),
+            ));
+            let layout = layout(&root, WINDOW);
+            let row = layout.bounds(root.children[0].id).unwrap();
+            let button = layout.bounds(root.children[0].children[1].id).unwrap();
+            (button.y - row.y, button.height, button.width)
+        };
+        let inline = "inline-flex h-8 px-2";
+        let (top, height, width) = row("", inline);
+        assert_eq!((top, height), (0.0, 32.0));
+        assert!(width < 100.0);
+        assert_eq!(row("items-start", inline).0, 0.0);
+        assert_eq!(row("items-center", inline).0, 24.0);
+        assert_eq!(row("items-end", inline).0, 48.0);
+        assert_eq!(row("items-end", &format!("{inline} self-start")).0, 0.0);
+        // Stretch is honored too (no fixed height).
+        assert_eq!(row("items-stretch", "inline-flex px-2").1, 80.0);
+        // Columns: centered horizontally, still content-wide.
+        let root = tree(
+            div().class("w-full h-full").child(
+                div()
+                    .class("flex flex-col items-center w-80")
+                    .child(div().class(inline).child(text("Ok"))),
+            ),
+        );
+        let layout = layout(&root, WINDOW);
+        let column = layout.bounds(root.children[0].id).unwrap();
+        let button = layout.bounds(root.children[0].children[0].id).unwrap();
+        assert!(button.width < 100.0);
+        assert_eq!(
+            button.x - column.x,
+            ((column.width - button.width) / 2.0).round()
+        );
     }
 
     #[test]

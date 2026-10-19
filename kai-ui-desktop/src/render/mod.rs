@@ -11,6 +11,7 @@ pub mod paint;
 pub mod text;
 pub mod wgpu_backend;
 
+use crate::background::BackgroundLayer;
 use crate::element::WidgetId;
 use crate::geometry::{Point, Rect};
 use crate::icons::Icon;
@@ -54,6 +55,7 @@ impl Color {
     }
 
     /// Components in linear light, for blending on an sRGB render target.
+    /// Only for `KAI_LINEAR_BLEND=1`: Kai blends in gamma since Paso 14.
     pub fn to_linear(self) -> [f32; 4] {
         [
             srgb_to_linear(self.r),
@@ -63,7 +65,8 @@ impl Color {
         ]
     }
 
-    /// Components still sRGB-encoded, for non-sRGB render targets.
+    /// Components still sRGB-encoded, for non-sRGB render targets (gamma
+    /// blending, the default since Paso 14).
     pub fn to_srgb(self) -> [f32; 4] {
         [
             f32::from(self.r) / 255.0,
@@ -199,6 +202,8 @@ pub enum DrawOp {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DrawList {
     pub clear: Color,
+    /// Window background effect, drawn over `clear` and under every op.
+    pub background: Option<BackgroundLayer>,
     pub ops: Vec<DrawOp>,
 }
 
@@ -206,6 +211,7 @@ impl DrawList {
     pub fn new(clear: Color) -> Self {
         Self {
             clear,
+            background: None,
             ops: Vec::new(),
         }
     }

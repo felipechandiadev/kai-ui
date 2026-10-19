@@ -120,12 +120,7 @@ impl TextFieldState {
         let mut buffer = Buffer::new(font_system, metrics);
         buffer.set_wrap(Wrap::None);
         buffer.set_size(None, Some(metrics.line_height));
-        buffer.set_text(
-            "",
-            &ui_font_attrs(),
-            Shaping::Advanced,
-            None,
-        );
+        buffer.set_text("", &ui_font_attrs(), Shaping::Advanced, None);
         Self {
             editor: Editor::new(buffer),
             preedit: None,
@@ -526,50 +521,49 @@ impl TextFieldState {
             preedit: preedit_range,
         }
     }
-
 }
 
 fn measure_display(display: &DisplayState, line_height: f32) -> DisplayMetrics {
-        let mut metrics = DisplayMetrics {
-            caret: None,
-            selection: Vec::new(),
-            preedit_underline: Vec::new(),
-            content_width: 0.0,
-        };
-        for run in display.buffer.layout_runs() {
-            metrics.content_width = metrics.content_width.max(run.line_w);
-            if let Some(cursor) = display.caret
-                && let Some(x) = run.cursor_position(&cursor)
-            {
-                metrics.caret = Some(Rect {
+    let mut metrics = DisplayMetrics {
+        caret: None,
+        selection: Vec::new(),
+        preedit_underline: Vec::new(),
+        content_width: 0.0,
+    };
+    for run in display.buffer.layout_runs() {
+        metrics.content_width = metrics.content_width.max(run.line_w);
+        if let Some(cursor) = display.caret
+            && let Some(x) = run.cursor_position(&cursor)
+        {
+            metrics.caret = Some(Rect {
+                x,
+                y: run.line_top,
+                width: CARET_WIDTH,
+                height: line_height,
+            });
+        }
+        if let Some((start, end)) = display.selection {
+            metrics
+                .selection
+                .extend(run.highlight(start, end).map(|(x, width)| Rect {
                     x,
                     y: run.line_top,
-                    width: CARET_WIDTH,
-                    height: line_height,
-                });
-            }
-            if let Some((start, end)) = display.selection {
-                metrics
-                    .selection
-                    .extend(run.highlight(start, end).map(|(x, width)| Rect {
-                        x,
-                        y: run.line_top,
-                        width,
-                        height: run.line_height,
-                    }));
-            }
-            if let Some((start, end)) = display.preedit {
-                metrics
-                    .preedit_underline
-                    .extend(run.highlight(start, end).map(|(x, width)| Rect {
-                        x,
-                        y: run.line_top + run.line_height - PREEDIT_UNDERLINE_HEIGHT,
-                        width,
-                        height: PREEDIT_UNDERLINE_HEIGHT,
-                    }));
-            }
+                    width,
+                    height: run.line_height,
+                }));
         }
-        metrics
+        if let Some((start, end)) = display.preedit {
+            metrics
+                .preedit_underline
+                .extend(run.highlight(start, end).map(|(x, width)| Rect {
+                    x,
+                    y: run.line_top + run.line_height - PREEDIT_UNDERLINE_HEIGHT,
+                    width,
+                    height: PREEDIT_UNDERLINE_HEIGHT,
+                }));
+        }
+    }
+    metrics
 }
 
 fn single_line(text: &str) -> String {

@@ -9,9 +9,10 @@
 //! never cut.
 
 use super::{DrawList, Mask, Quad, TRANSPARENT, TextId};
+use crate::background::{BackgroundEffect, BackgroundLayer};
 use crate::element::WidgetId;
 use crate::geometry::{Point, Rect};
-use crate::layout::{Content, Layout, LayoutNode};
+use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
 use crate::render::Color;
 use crate::text_field::TextFieldDecorations;
 use crate::theme::Theme;
@@ -24,9 +25,15 @@ pub struct PaintInput<'a> {
     pub layout: &'a Layout,
     pub theme: &'a Theme,
     pub focused: Option<WidgetId>,
+    /// Key/main state of the window: an inactive window hides the caret and
+    /// paints selections with the unemphasized color.
+    pub window: WindowActivity,
     /// Caret, selection and preedit per input; missing entries paint as an
     /// unfocused empty field.
     pub text_fields: &'a [(WidgetId, &'a TextFieldDecorations)],
+    /// Window background effect: drawn over the root's background color,
+    /// which then paints nothing itself (the effect starts from it).
+    pub background: BackgroundEffect,
 }
 
 struct Painter<'a> {
@@ -40,10 +47,12 @@ pub fn paint(input: &PaintInput<'_>) -> DrawList {
         .layout
         .root()
         .and_then(|root| root.style.background)
-        .unwrap_or(input.theme.colors.background);
+        .unwrap_or(input.theme.semantic.window_background);
+    let mut list = DrawList::new(clear);
+    list.background = BackgroundLayer::new(&input.background, clear, input.theme.appearance);
     let mut painter = Painter {
         input,
-        list: DrawList::new(clear),
+        list,
         clip: None,
     };
     if input.layout.root().is_some() {
@@ -140,7 +149,7 @@ impl Painter<'_> {
 
     fn decorations(&mut self, node: &LayoutNode) {
         let style = &node.style;
-        let colors = &self.input.theme.colors;
+        let semantic = &self.input.theme.semantic;
         let opacity = node.opacity;
         let bounds = node.bounds;
         if let Some(shadow) = style.shadow {
@@ -162,10 +171,7 @@ impl Painter<'_> {
             self.list.quad(Quad {
                 rect: grow(bounds, spread),
                 fill: TRANSPARENT,
-                border: faded(
-                    ring.color.unwrap_or(colors.primary.with_alpha(128)),
-                    opacity,
-                ),
+                border: faded(ring.color.unwrap_or(semantic.focus_ring), opacity),
                 border_width: ring.width,
                 radius: if style.radius > 0.0 {
                     style.radius + spread
@@ -176,8 +182,17 @@ impl Painter<'_> {
                 mask: None,
             });
         }
-        let fill = faded(style.background.unwrap_or(TRANSPARENT), opacity);
-        let border_color = faded(style.border_color.unwrap_or(colors.border), opacity);
+        let is_root = self
+            .input
+            .layout
+            .root()
+            .is_some_and(|root| root.id == node.id);
+        let fill = if is_root && self.list.background.is_some() {
+            TRANSPARENT
+        } else {
+            faded(style.background.unwrap_or(TRANSPARENT), opacity)
+        };
+        let border_color = faded(style.border_color.unwrap_or(semantic.separator), opacity);
         let widths = style.border_width;
         if widths.is_uniform() {
             self.list.quad(Quad {
@@ -253,19 +268,32 @@ impl Painter<'_> {
         self.set_clip(Some(clip));
         let line_origin = origin(line);
         let text_color = faded(node.text.color, opacity);
+        // `textInsertionPointColor` in AppKit; Kai draws it with the text.
+        let caret_color = if theme.is_appkit() {
+            faded(theme.semantic.caret, opacity)
+        } else {
+            text_color
+        };
+        let inactive = self.input.window.is_inactive();
+        let selection = if inactive {
+            theme.semantic.text_selection_inactive
+        } else {
+            theme.semantic.text_selection
+        };
         for rect in &field.selection {
-            self.list.fill_rect(
-                rect.translated(line_origin),
-                faded(theme.colors.primary.with_alpha(71), opacity),
-            );
+            self.list
+                .fill_rect(rect.translated(line_origin), faded(selection, opacity));
         }
         for rect in &field.preedit_underline {
             self.list
                 .fill_rect(rect.translated(line_origin), text_color);
         }
-        if focused && let Some(caret) = field.caret {
+        if focused
+            && !inactive
+            && let Some(caret) = field.caret
+        {
             self.list
-                .fill_rect(caret.translated(line_origin), text_color);
+                .fill_rect(caret.translated(line_origin), caret_color);
         }
         if field.has_content {
             self.list.text(
@@ -280,7 +308,7 @@ impl Painter<'_> {
             let placeholder = node
                 .style
                 .placeholder_color
-                .unwrap_or(theme.colors.muted_foreground);
+                .unwrap_or(theme.semantic.placeholder);
             self.list.text(
                 TextId::placeholder(node.id),
                 line_origin,
@@ -312,6 +340,8 @@ impl Painter<'_> {
                     width: SCROLLBAR_WIDTH,
                     height: thumb_height,
                 },
+                // Kai's own overlay scroller; AppKit draws its scroller
+                // natively (Paso 20), so it has no semantic token yet.
                 faded(
                     self.input.theme.colors.muted_foreground.with_alpha(153),
                     node.opacity,
@@ -324,6 +354,7 @@ impl Painter<'_> {
 #[cfg(test)]
 mod tests {
     use super::{PaintInput, paint};
+    use crate::background::{BackgroundEffect, BackgroundKind};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, icon, text};
     use crate::geometry::{Point, Rect, Size};
@@ -368,7 +399,9 @@ mod tests {
             layout: &layout,
             theme: &theme(),
             focused: interaction.focused,
+            window: interaction.window,
             text_fields: fields,
+            background: BackgroundEffect::NONE,
         })
     }
 
@@ -387,6 +420,46 @@ mod tests {
             .iter()
             .position(|op| matches!(op, DrawOp::Text { id: text, .. } if *text == id))
             .unwrap()
+    }
+
+    /// A background effect starts from the root's color: the list carries
+    /// it (with that base) and the root paints no fill over it.
+    #[test]
+    fn background_effects_replace_the_root_fill() {
+        let tree = sample::tree();
+        let interaction = Interaction::default();
+        let layout = layout(&tree, WINDOW, &interaction);
+        let theme = theme();
+        let input = |background| PaintInput {
+            layout: &layout,
+            theme: &theme,
+            focused: None,
+            window: interaction.window,
+            text_fields: &[],
+            background,
+        };
+        let root = layout.root().unwrap().bounds;
+        let root_fill = |list: &DrawList| {
+            quads(list)
+                .iter()
+                .any(|q| q.rect == root && q.fill == theme.colors.neutral)
+        };
+        let solid = paint(&input(BackgroundEffect::NONE));
+        assert_eq!(solid.background, None);
+        assert!(root_fill(&solid));
+        let glow = paint(&input(BackgroundEffect::new(BackgroundKind::Glow)));
+        let layer = glow.background.expect("layer");
+        assert_eq!(layer.kind, BackgroundKind::Glow);
+        assert_eq!(layer.base, theme.colors.neutral);
+        assert_eq!(glow.clear, solid.clear);
+        assert!(!root_fill(&glow));
+        assert_eq!(
+            glow.ops.len(),
+            solid.ops.len(),
+            "same ops, root fill transparent"
+        );
+        let faded = BackgroundEffect::new(BackgroundKind::Mesh).with_intensity(0.0);
+        assert_eq!(paint(&input(faded)).background, None);
     }
 
     #[test]
@@ -497,6 +570,74 @@ mod tests {
         assert_eq!(disabled.opacity, 0.5);
         let label = layout.get(disabled.children[0]);
         assert_eq!(label.opacity, 0.5, "opacity multiplies down the tree");
+    }
+
+    #[test]
+    fn inactive_window_hides_caret_and_dims_selection() {
+        use crate::layout::WindowActivity;
+
+        let tree = sample::tree();
+        let theme = theme();
+        let caret = Rect {
+            x: 10.0,
+            y: 0.0,
+            width: 1.5,
+            height: 24.0,
+        };
+        let selection = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 24.0,
+        };
+        let decorations = TextFieldDecorations {
+            has_content: true,
+            caret: Some(caret),
+            selection: vec![selection],
+            ..TextFieldDecorations::default()
+        };
+        let fields = [(sample::field(), &decorations)];
+        let active = Interaction {
+            focused: Some(sample::field()),
+            ..Interaction::default()
+        };
+        let inactive = Interaction {
+            window: WindowActivity::INACTIVE,
+            ..active.clone()
+        };
+        let line = layout(&tree, WINDOW, &active)
+            .text_box(sample::field())
+            .unwrap();
+        let at = |rect: Rect| {
+            rect.translated(Point {
+                x: line.x,
+                y: line.y,
+            })
+        };
+        let fill_at = |list: &DrawList, rect: Rect| {
+            quads(list)
+                .into_iter()
+                .find(|q| q.rect == at(rect))
+                .map(|q| q.fill)
+        };
+
+        let list = draw(&tree, WINDOW, &active, &fields);
+        assert!(fill_at(&list, caret).is_some());
+        assert_eq!(
+            fill_at(&list, selection),
+            Some(theme.semantic.text_selection)
+        );
+
+        let list = draw(&tree, WINDOW, &inactive, &fields);
+        assert_eq!(
+            fill_at(&list, caret),
+            None,
+            "no caret in an inactive window"
+        );
+        assert_eq!(
+            fill_at(&list, selection),
+            Some(theme.semantic.text_selection_inactive)
+        );
     }
 
     #[test]

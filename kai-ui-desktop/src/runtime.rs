@@ -7,10 +7,17 @@
 //! the caret/selection of each input. Inputs are controlled: every frame the
 //! value in the tree is pushed into the editor when it differs, so an input
 //! without `on_input` is effectively read-only.
+//!
+//! The loop waits for events (`ControlFlow::Wait`): nothing redraws on its
+//! own, except an animated [`App::background`], which asks for frames at
+//! [`FRAME_INTERVAL`] only while the window is visible, active and motion
+//! is not reduced. Those frames reuse the last prepared draws unless
+//! something else changed (`dirty`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Instant;
 
 use cosmic_text::{FontSystem, Metrics};
 use winit::{
@@ -22,19 +29,22 @@ use winit::{
 };
 
 use crate::a11y;
+use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{PhysicalPoint, Point, ScaleFactor, Size};
 use crate::layout::{
-    Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, text_style,
+    Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, WindowActivity,
+    text_style,
 };
 use crate::platform_adapter::{adapt_ime_event, adapt_keyboard_event, adapt_modifiers};
 use crate::render::TextId;
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
 use crate::render::wgpu_backend::WgpuRenderer;
+use crate::responder::{self, Action, Responder};
 use crate::style::Cursor;
 use crate::text_field::{SystemClipboard, TextFieldDecorations, TextFieldState};
-use crate::theme::Theme;
+use crate::theme::{Appearance, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
 
 /// Extra room kept visible around a focused element when scrolling to it
@@ -48,6 +58,23 @@ pub trait App: 'static {
     fn title(&self) -> String;
     fn update(&mut self, msg: Self::Msg);
     fn view(&self) -> Element<Self::Msg>;
+
+    /// Window background effect for the current model, read after every
+    /// `update` (so it can change live). Default: the solid window color.
+    fn background(&self) -> BackgroundEffect {
+        BackgroundEffect::NONE
+    }
+}
+
+/// Whether an animated background should get frames now: the effect moves,
+/// motion is not reduced, and the window is visible and active.
+pub fn background_running(
+    background: &BackgroundEffect,
+    reduce_motion: bool,
+    occluded: bool,
+    activity: WindowActivity,
+) -> bool {
+    background.is_animated() && !reduce_motion && !occluded && activity == WindowActivity::ACTIVE
 }
 
 /// Open a window and run `app` until it is closed.
@@ -84,6 +111,38 @@ pub fn pointer_target(layout: &Layout, path: &[WidgetId]) -> Option<WidgetId> {
             node.focus_delegate
         }
     })
+}
+
+/// Message for a standard action that the focused element did not consume:
+/// the first `on_action` along the responder chain (focus, ancestors) that
+/// returns one. The window handles `CancelOperation` by doing nothing; the
+/// app end is the hook for the command registry of 09 (today a debug log).
+pub fn action_message<Msg>(
+    tree: &Element<Msg>,
+    focused: Option<WidgetId>,
+    action: Action,
+) -> Option<Msg> {
+    let path = focused.and_then(|id| tree.path_to(id)).unwrap_or_default();
+    for responder in responder::chain(&path) {
+        match responder {
+            Responder::Widget(id) => {
+                let handler = tree
+                    .find(id)
+                    .and_then(|element| element.handlers.on_action.as_ref());
+                if let Some(msg) = handler.and_then(|handler| handler(action)) {
+                    return Some(msg);
+                }
+            }
+            Responder::Window if action == Action::CancelOperation => return None,
+            Responder::Window => {}
+            Responder::App => {
+                if cfg!(debug_assertions) {
+                    eprintln!("Acción sin responder: {action:?}");
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Whether gaining focus should select the whole value of input `id`.
@@ -144,6 +203,19 @@ struct WindowState<A: App> {
     modifiers: Modifiers,
     ui: UiModel,
     dragging: Option<WidgetId>,
+    /// Key/main state, from `WindowEvent::Focused`.
+    activity: WindowActivity,
+    /// `WindowEvent::Occluded` (hidden, minimized or fully covered).
+    occluded: bool,
+    /// The app's background effect as of the last `view`.
+    background: BackgroundEffect,
+    clock: BackgroundClock,
+    /// Background of the last full frame, for animation-only frames.
+    background_layer: Option<BackgroundLayer>,
+    /// Something besides the background animation needs a full frame.
+    dirty: bool,
+    /// When the next animation frame is due.
+    next_frame: Option<Instant>,
 }
 
 impl<A: App> WindowState<A> {
@@ -178,6 +250,13 @@ impl<A: App> WindowState<A> {
             modifiers: Modifiers::default(),
             ui: UiModel::default(),
             dragging: None,
+            activity: WindowActivity::default(),
+            occluded: false,
+            background: BackgroundEffect::NONE,
+            clock: BackgroundClock::default(),
+            background_layer: None,
+            dirty: true,
+            next_frame: None,
         };
         state.rebuild();
         state.relayout();
@@ -197,6 +276,7 @@ impl<A: App> WindowState<A> {
     /// Run `view`, then reconcile focus and input editors with the new tree.
     fn rebuild(&mut self) {
         self.tree = build_view(&self.app);
+        self.background = self.app.background();
         self.focus_order = FocusOrder::from_tree(&self.tree);
         sync_focus(&mut self.ui, &self.focus_order);
         self.handlers = self.tree.collect_handlers().into_iter().collect();
@@ -240,6 +320,8 @@ impl<A: App> WindowState<A> {
             hovered: self.hover_path.clone(),
             focused: *self.ui.focused.get(),
             pressed: *self.ui.pressed.get(),
+            window: self.activity,
+            focus_visible: *self.ui.focus_visible.get(),
         };
         self.layout = Layout::compute(
             &self.tree,
@@ -252,6 +334,9 @@ impl<A: App> WindowState<A> {
             &mut self.styles,
             &mut self.text,
         );
+        let layout = &self.layout;
+        self.focus_order
+            .retain_visible_equivalents(|id| layout.node(id).is_some_and(|node| !node.hidden));
         for (id, field) in &mut self.text_fields {
             if let Some(node) = self.layout.node(*id) {
                 let font_system = &mut self.text.font_system;
@@ -266,9 +351,52 @@ impl<A: App> WindowState<A> {
         }
     }
 
+    /// Ask for a full frame (view, layout, paint).
+    fn invalidate(&mut self) {
+        self.dirty = true;
+        self.window.request_redraw();
+    }
+
+    fn background_running(&self) -> bool {
+        background_running(
+            &self.background,
+            self.theme.prefs.reduce_motion,
+            self.occluded,
+            self.activity,
+        )
+    }
+
+    /// Frame for `RedrawRequested`: a full one, or only the next frame of
+    /// the background animation when nothing else changed.
+    fn redraw(&mut self) -> Result<(), String> {
+        if !self.dirty && self.background_running() {
+            let seconds = self.clock.tick(Instant::now(), true);
+            let layer = self.background_layer.map(|layer| layer.at(seconds));
+            if self.renderer.redraw_background(layer.as_ref())? {
+                return Ok(());
+            }
+        }
+        self.render()
+    }
+
+    /// Schedule the next animation frame, or go back to waiting for events.
+    fn control_flow(&mut self) -> ControlFlow {
+        if !self.background_running() {
+            self.next_frame = None;
+            return ControlFlow::Wait;
+        }
+        let now = Instant::now();
+        let due = *self.next_frame.get_or_insert(now);
+        if now >= due {
+            self.window.request_redraw();
+            self.next_frame = Some(now + FRAME_INTERVAL);
+        }
+        ControlFlow::WaitUntil(self.next_frame.unwrap_or(now + FRAME_INTERVAL))
+    }
+
     fn send(&mut self, msg: A::Msg) {
         self.app.update(msg);
-        self.window.request_redraw();
+        self.invalidate();
     }
 
     fn handler(&self, id: WidgetId) -> Option<&Handlers<A::Msg>> {
@@ -408,8 +536,13 @@ impl<A: App> WindowState<A> {
         {
             self.send(msg);
         }
+        if let Some(action) = result.action
+            && let Some(msg) = action_message(&self.tree, current_focus, action)
+        {
+            self.send(msg);
+        }
         if result.changed || current_focus != previous_focus {
-            self.window.request_redraw();
+            self.invalidate();
         }
     }
 
@@ -433,7 +566,7 @@ impl<A: App> WindowState<A> {
         }
         if effect.changed {
             self.update_ime_cursor_area();
-            self.window.request_redraw();
+            self.invalidate();
         }
         let handlers = self.handler(id).cloned().unwrap_or_default();
         if after != before
@@ -459,11 +592,12 @@ impl<A: App> WindowState<A> {
         let next = (scroll.offset - delta_y).clamp(0.0, scroll.max);
         if next != scroll.offset {
             self.scroll.insert(id, next);
-            self.window.request_redraw();
+            self.invalidate();
         }
     }
 
     fn render(&mut self) -> Result<(), String> {
+        self.dirty = false;
         self.rebuild();
         self.relayout();
         if self.refresh_hover() {
@@ -501,13 +635,20 @@ impl<A: App> WindowState<A> {
             layout: &self.layout,
             theme: &self.theme,
             focused: *self.ui.focused.get(),
+            window: self.activity,
             text_fields: &text_fields,
+            background: self.background,
         });
+        let mut list = list;
+        let running = self.background_running();
+        let seconds = self.clock.tick(Instant::now(), running);
+        list.background = list.background.map(|layer| layer.at(seconds));
+        self.background_layer = list.background;
         let presented = self
             .renderer
             .render(&list, &mut self.text, self.scale_factor.as_f32())?;
         if !presented {
-            self.window.request_redraw();
+            self.invalidate();
         }
         self.update_accessibility();
         Ok(())
@@ -532,8 +673,17 @@ impl<A: App> WindowState<A> {
             self.apply_intent(Intent::PointerUp(target));
             self.dragging = None;
         }
-        self.window.request_redraw();
+        self.invalidate();
     }
+}
+
+/// Title bar appearance: an AppKit theme forces its own; Kai follows the
+/// system, as before.
+fn window_theme(theme: &Theme) -> Option<winit::window::Theme> {
+    theme.is_appkit().then_some(match theme.appearance {
+        Appearance::Light => winit::window::Theme::Light,
+        Appearance::Dark => winit::window::Theme::Dark,
+    })
 }
 
 impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
@@ -550,7 +700,8 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
             .with_min_inner_size(LogicalSize::new(
                 f64::from(minimum.width),
                 f64::from(minimum.height),
-            ));
+            ))
+            .with_theme(window_theme(&self.theme));
         let window = match event_loop.create_window(attrs) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -589,12 +740,12 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.renderer.resize(size.width, size.height);
-                state.window.request_redraw();
+                state.invalidate();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(scale) = ScaleFactor::new(scale_factor) {
                     state.scale_factor = scale;
-                    state.window.request_redraw();
+                    state.invalidate();
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => state.scroll_wheel(delta),
@@ -613,7 +764,7 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
                     redraw = true;
                 }
                 if redraw {
-                    state.window.request_redraw();
+                    state.invalidate();
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -621,7 +772,7 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
                 state.refresh_hover();
                 state.apply_intent(Intent::CancelPointer);
                 state.dragging = None;
-                state.window.request_redraw();
+                state.invalidate();
             }
             WindowEvent::Focused(false) => {
                 state.apply_intent(Intent::CancelPointer);
@@ -630,13 +781,18 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
                     field.set_preedit(&mut state.text.font_system, None);
                 }
                 state.window.set_ime_allowed(false);
-                state.window.request_redraw();
+                // Variants and paint read the activity; no need to re-run
+                // `view`.
+                state.activity = WindowActivity::INACTIVE;
+                state.invalidate();
             }
             WindowEvent::Focused(true) => {
                 state
                     .window
                     .set_ime_allowed(state.focused_text_field().is_some());
                 state.update_ime_cursor_area();
+                state.activity = WindowActivity::ACTIVE;
+                state.invalidate();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 state.modifiers = adapt_modifiers(modifiers.state());
@@ -652,13 +808,25 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
                     state.apply_intent(intent);
                 }
             }
+            WindowEvent::Occluded(occluded) => {
+                state.occluded = occluded;
+                if !occluded {
+                    state.invalidate();
+                }
+            }
             WindowEvent::RedrawRequested => {
-                if let Err(error) = state.render() {
+                if let Err(error) = state.redraw() {
                     eprintln!("Error al presentar el frame GPU: {error}");
                     event_loop.exit();
                 }
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(state) = self.state.as_mut() {
+            event_loop.set_control_flow(state.control_flow());
         }
     }
 
@@ -673,13 +841,16 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cursor_for, pointer_target, selects_on_focus};
+    use super::{action_message, background_running, cursor_for, pointer_target, selects_on_focus};
+    use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, div, icon, input};
     use crate::geometry::{Point, Size};
     use crate::icons::Icon;
+    use crate::layout::WindowActivity;
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use crate::responder::Action;
     use crate::style::Cursor;
     use crate::theme::{Density, Theme};
 
@@ -770,6 +941,66 @@ mod tests {
         assert!(selects_on_focus(&tree, quick.id));
         assert!(!selects_on_focus(&tree, outline.children[1].id));
         assert!(!selects_on_focus(&tree, outline.id));
+    }
+
+    #[test]
+    fn action_bubbles_to_first_handler() {
+        let mut tree: Element<Msg> = div()
+            .on_action(|action| (action == Action::CancelOperation).then_some(Msg::Clicked))
+            .child(
+                div()
+                    .on_action(|action| (action == Action::Copy).then_some(Msg::Submitted))
+                    .child(input("", "Campo")),
+            );
+        tree.assign_ids();
+        let field = tree.children[0].children[0].id;
+        assert_eq!(
+            action_message(&tree, Some(field), Action::Copy),
+            Some(Msg::Submitted)
+        );
+        assert_eq!(
+            action_message(&tree, Some(field), Action::CancelOperation),
+            Some(Msg::Clicked),
+            "skips the inner handler that returns None"
+        );
+        assert_eq!(action_message(&tree, Some(field), Action::Undo), None);
+        assert_eq!(
+            action_message(&tree, None, Action::CancelOperation),
+            None,
+            "without focus only the window and the app respond"
+        );
+    }
+
+    /// Animation frames only for a moving effect in a visible, active
+    /// window without reduced motion; static effects never ask for frames.
+    #[test]
+    fn background_frames_run_only_when_animated_visible_and_active() {
+        let active = WindowActivity::ACTIVE;
+        let moving =
+            BackgroundEffect::new(BackgroundKind::Aurora).with_motion(BackgroundMotion::Animated);
+        assert!(background_running(&moving, false, false, active));
+        assert!(
+            !background_running(&moving, true, false, active),
+            "reduced motion"
+        );
+        assert!(
+            !background_running(&moving, false, true, active),
+            "occluded"
+        );
+        assert!(!background_running(
+            &moving,
+            false,
+            false,
+            WindowActivity::INACTIVE
+        ));
+        let still = BackgroundEffect::new(BackgroundKind::Aurora);
+        assert!(!background_running(&still, false, false, active));
+        assert!(!background_running(
+            &BackgroundEffect::NONE,
+            false,
+            false,
+            active
+        ));
     }
 
     #[test]

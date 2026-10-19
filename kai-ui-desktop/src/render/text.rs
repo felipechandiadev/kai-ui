@@ -15,11 +15,18 @@ pub struct TextStyle {
     pub line_height: f32,
     pub weight: Weight,
     pub wrap: bool,
+    /// Letter spacing in em; 0 leaves cosmic-text's default.
+    pub letter_spacing: f32,
 }
 
 impl TextStyle {
     fn attrs(self) -> Attrs<'static> {
-        Attrs::new().family(ui_font_family()).weight(self.weight)
+        let attrs = Attrs::new().family(ui_font_family()).weight(self.weight);
+        if self.letter_spacing == 0.0 {
+            attrs
+        } else {
+            attrs.letter_spacing(self.letter_spacing)
+        }
     }
 }
 
@@ -162,6 +169,7 @@ mod tests {
         line_height: 22.0,
         weight: Weight::NORMAL,
         wrap: true,
+        letter_spacing: 0.0,
     };
     const TEXT: TextId = TextId::content(WidgetId(1));
 
@@ -210,5 +218,23 @@ mod tests {
         assert_eq!(buffer.layout_runs().count(), 1);
         assert_eq!(buffer.metrics().line_height, 22.0);
         assert!(store.sync_text(TEXT, "placeholder", BODY), "style change");
+    }
+
+    #[test]
+    fn letter_spacing_changes_measured_width() {
+        let mut store = TextStore::new(FontSystem::new());
+        let body = TextStyle {
+            font_size: 13.0,
+            line_height: 16.0,
+            wrap: false,
+            ..BODY
+        };
+        let tracked = TextStyle {
+            letter_spacing: -0.08 / 13.0,
+            ..body
+        };
+        let plain = store.measure(TEXT, "Hello, World", body, None);
+        let narrow = store.measure(TEXT, "Hello, World", tracked, None);
+        assert!(narrow.width < plain.width, "{narrow:?} vs {plain:?}");
     }
 }

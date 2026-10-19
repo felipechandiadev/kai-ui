@@ -15,9 +15,131 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::icons::Icon;
+use crate::responder::Action;
+use crate::ui_engine::{Key, Modifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WidgetId(pub u64);
+
+/// `NSControl.ControlSize`. Inherited down the tree like SwiftUI's
+/// `.controlSize()`: an element without its own size takes its nearest
+/// ancestor's, and the root takes `Theme::control_size` (`Regular`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ControlSize {
+    Mini,
+    Small,
+    #[default]
+    Regular,
+    Large,
+    ExtraLarge,
+}
+
+impl ControlSize {
+    pub const ALL: [ControlSize; 5] = [
+        Self::Mini,
+        Self::Small,
+        Self::Regular,
+        Self::Large,
+        Self::ExtraLarge,
+    ];
+
+    /// Position in [`ControlSize::ALL`], for per-size tables (`[f32; 5]`).
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// `NSControl.StateValue`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ControlState {
+    #[default]
+    Off,
+    On,
+    Mixed,
+}
+
+/// Shortcut that activates a control even when it has no focus
+/// (`keyEquivalent` + `keyEquivalentModifierMask`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyEquivalent {
+    pub key: Key,
+    pub modifiers: Modifiers,
+}
+
+impl KeyEquivalent {
+    /// Return: the window's default button.
+    pub const RETURN: Self = Self {
+        key: Key::Enter,
+        modifiers: Modifiers::NONE,
+    };
+    /// Escape: the cancel button.
+    pub const ESCAPE: Self = Self {
+        key: Key::Escape,
+        modifiers: Modifiers::NONE,
+    };
+
+    /// Command + `key`.
+    pub const fn cmd(key: Key) -> Self {
+        Self {
+            key,
+            modifiers: Modifiers {
+                command: true,
+                ..Modifiers::NONE
+            },
+        }
+    }
+
+    /// Menu-style label (`⌘S`, `↩`, `⎋`), exposed to assistive technology.
+    pub fn label(&self) -> String {
+        let m = self.modifiers;
+        let mut out = String::new();
+        for (on, symbol) in [
+            (m.control, '⌃'),
+            (m.option, '⌥'),
+            (m.shift, '⇧'),
+            (m.command, '⌘'),
+        ] {
+            if on {
+                out.push(symbol);
+            }
+        }
+        match self.key {
+            Key::Enter => out.push('↩'),
+            Key::Escape => out.push('⎋'),
+            Key::Tab => out.push('⇥'),
+            Key::Space => out.push_str("Space"),
+            Key::Backspace => out.push('⌫'),
+            Key::Delete => out.push('⌦'),
+            Key::ArrowLeft => out.push('←'),
+            Key::ArrowRight => out.push('→'),
+            Key::ArrowUp => out.push('↑'),
+            Key::ArrowDown => out.push('↓'),
+            Key::Home => out.push('↖'),
+            Key::End => out.push('↘'),
+            Key::Period => out.push('.'),
+            Key::A => out.push('A'),
+            Key::C => out.push('C'),
+            Key::X => out.push('X'),
+            Key::V => out.push('V'),
+            Key::Char(c) => out.extend(c.to_uppercase()),
+            Key::Other => {}
+        }
+        out
+    }
+}
+
+/// What every `NSControl` has in common, without class inheritance.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ControlProps {
+    /// `None` = inherit from the nearest ancestor that sets it (root:
+    /// `Regular`).
+    pub size: Option<ControlSize>,
+    /// `None` = not a two- or three-state control.
+    pub state: Option<ControlState>,
+    /// The window's default button: Return activates it.
+    pub is_default: bool,
+    pub key_equivalent: Option<KeyEquivalent>,
+}
 
 /// Semantic role exposed to assistive technology.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +180,9 @@ pub struct Handlers<Msg> {
     pub on_click: Option<Msg>,
     pub on_input: Option<Rc<dyn Fn(String) -> Msg>>,
     pub on_submit: Option<Msg>,
+    /// Standard actions this element handles when they travel the
+    /// responder chain (`None` = handles none).
+    pub on_action: Option<Rc<dyn Fn(Action) -> Option<Msg>>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -66,6 +191,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_click: None,
             on_input: None,
             on_submit: None,
+            on_action: None,
         }
     }
 }
@@ -76,6 +202,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_click: self.on_click.clone(),
             on_input: self.on_input.clone(),
             on_submit: self.on_submit.clone(),
+            on_action: self.on_action.clone(),
         }
     }
 }
@@ -86,6 +213,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_click", &self.on_click)
             .field("on_input", &self.on_input.is_some())
             .field("on_submit", &self.on_submit)
+            .field("on_action", &self.on_action.is_some())
             .finish()
     }
 }
@@ -101,7 +229,8 @@ pub struct Element<Msg> {
     /// Accessible name; buttons default to their text content.
     pub label: Option<String>,
     pub disabled: bool,
-    pub is_pressed: bool,
+    /// Size, on/off/mixed state, default button and key equivalent.
+    pub control: ControlProps,
     /// Required form field, exposed to assistive technology.
     pub required: bool,
     /// Accessible description (e.g. helper text).
@@ -151,7 +280,7 @@ impl<Msg> Element<Msg> {
             role: None,
             label: None,
             disabled: false,
-            is_pressed: false,
+            control: ControlProps::default(),
             required: false,
             description: None,
             delegates_focus: false,
@@ -199,8 +328,60 @@ impl<Msg> Element<Msg> {
         self
     }
 
-    pub fn pressed(mut self, pressed: bool) -> Self {
-        self.is_pressed = pressed;
+    /// The opposite of [`Element::disabled`] (`NSControl.isEnabled`).
+    pub fn enabled(self, enabled: bool) -> Self {
+        self.disabled(!enabled)
+    }
+
+    /// Toggle buttons: sugar for `state(On | Off)`.
+    pub fn pressed(self, pressed: bool) -> Self {
+        self.state(if pressed {
+            ControlState::On
+        } else {
+            ControlState::Off
+        })
+    }
+
+    /// Whether the control is in the `On` state (`aria-pressed="true"`).
+    pub fn is_pressed(&self) -> bool {
+        self.control.state == Some(ControlState::On)
+    }
+
+    /// Two- or three-state control (`NSControl.state`).
+    pub fn state(mut self, state: ControlState) -> Self {
+        self.control.state = Some(state);
+        self
+    }
+
+    /// Control size for this element and the descendants that do not set
+    /// their own.
+    pub fn control_size(mut self, size: ControlSize) -> Self {
+        self.control.size = Some(size);
+        self
+    }
+
+    /// Mark as the window's default button: Return activates it (it keeps
+    /// any key equivalent already set).
+    pub fn default_button(mut self, on: bool) -> Self {
+        self.control.is_default = on;
+        if on {
+            self.control
+                .key_equivalent
+                .get_or_insert(KeyEquivalent::RETURN);
+        } else if self.control.key_equivalent == Some(KeyEquivalent::RETURN) {
+            self.control.key_equivalent = None;
+        }
+        self
+    }
+
+    /// Escape activates this control.
+    pub fn cancel_button(self) -> Self {
+        self.key_equivalent(KeyEquivalent::ESCAPE)
+    }
+
+    /// Shortcut that activates this control without focus.
+    pub fn key_equivalent(mut self, key: KeyEquivalent) -> Self {
+        self.control.key_equivalent = Some(key);
         self
     }
 
@@ -264,6 +445,14 @@ impl<Msg> Element<Msg> {
     /// Message sent when Enter is pressed in an input.
     pub fn on_submit(mut self, msg: Msg) -> Self {
         self.handlers.on_submit = Some(msg);
+        self
+    }
+
+    /// Handle standard actions (Escape → `CancelOperation`, Cmd+Z → `Undo`…)
+    /// that the focused element or a descendant did not consume. Return
+    /// `None` to let the action continue up the responder chain.
+    pub fn on_action(mut self, handler: impl Fn(Action) -> Option<Msg> + 'static) -> Self {
+        self.handlers.on_action = Some(Rc::new(handler));
         self
     }
 
@@ -355,7 +544,11 @@ impl<Msg: Clone> Element<Msg> {
         let mut handlers = Vec::new();
         self.walk(&mut |element| {
             let h = &element.handlers;
-            if h.on_click.is_some() || h.on_input.is_some() || h.on_submit.is_some() {
+            if h.on_click.is_some()
+                || h.on_input.is_some()
+                || h.on_submit.is_some()
+                || h.on_action.is_some()
+            {
                 handlers.push((element.id, h.clone()));
             }
         });
@@ -385,29 +578,44 @@ struct FocusEntry {
     id: WidgetId,
     kind: FocusKind,
     focus_on_press: bool,
+    /// Text field with `on_submit`: it keeps Return for itself.
+    submits: bool,
 }
 
-/// Focusable elements in document order; disabled controls are skipped.
+/// Focusable elements in document order (disabled controls are skipped),
+/// and the key equivalents of enabled controls.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FocusOrder(Vec<FocusEntry>);
+pub struct FocusOrder {
+    entries: Vec<FocusEntry>,
+    equivalents: Vec<(WidgetId, KeyEquivalent)>,
+}
 
 impl FocusOrder {
     pub fn from_tree<Msg>(root: &Element<Msg>) -> Self {
-        let mut order = Vec::new();
+        let mut order = Self::default();
         root.walk(&mut |element| {
             if let Some(kind) = element.focus_kind() {
-                order.push(FocusEntry {
+                order.entries.push(FocusEntry {
                     id: element.id,
                     kind,
                     focus_on_press: element.focus_on_press,
+                    submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
                 });
             }
+            // A button that does not take focus on press can still have an
+            // equivalent.
+            if let Some(equivalent) = element.control.key_equivalent
+                && !element.disabled
+                && element.handlers.on_click.is_some()
+            {
+                order.equivalents.push((element.id, equivalent));
+            }
         });
-        Self(order)
+        order
     }
 
     fn entry(&self, id: WidgetId) -> Option<&FocusEntry> {
-        self.0.iter().find(|entry| entry.id == id)
+        self.entries.iter().find(|entry| entry.id == id)
     }
 
     pub fn kind(&self, id: WidgetId) -> Option<FocusKind> {
@@ -419,25 +627,41 @@ impl FocusOrder {
         self.entry(id).is_some_and(|entry| entry.focus_on_press)
     }
 
+    /// Whether `id` is a text field with `on_submit`.
+    pub fn submits(&self, id: WidgetId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.submits)
+    }
+
     pub fn ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
-        self.0.iter().map(|entry| entry.id)
+        self.entries.iter().map(|entry| entry.id)
+    }
+
+    /// Key equivalents of enabled controls, in document order.
+    pub fn equivalents(&self) -> &[(WidgetId, KeyEquivalent)] {
+        &self.equivalents
+    }
+
+    /// Drop the equivalents of controls `visible` rejects (hidden by
+    /// `display: none`, known only after layout).
+    pub fn retain_visible_equivalents(&mut self, visible: impl Fn(WidgetId) -> bool) {
+        self.equivalents.retain(|(id, _)| visible(*id));
     }
 
     /// Tab / Shift+Tab successor, wrapping around. Without a current focus,
     /// Tab starts at the first element and Shift+Tab at the last one.
     pub fn next(&self, current: Option<WidgetId>, backwards: bool) -> Option<WidgetId> {
-        let len = self.0.len();
+        let len = self.entries.len();
         if len == 0 {
             return None;
         }
-        let position = current.and_then(|id| self.0.iter().position(|entry| entry.id == id));
+        let position = current.and_then(|id| self.entries.iter().position(|entry| entry.id == id));
         let index = match (position, backwards) {
             (None, false) => 0,
             (None, true) => len - 1,
             (Some(index), false) => (index + 1) % len,
             (Some(index), true) => (index + len - 1) % len,
         };
-        Some(self.0[index].id)
+        Some(self.entries[index].id)
     }
 }
 
@@ -515,7 +739,107 @@ pub mod sample {
 #[cfg(test)]
 mod tests {
     use super::sample::{self, Msg};
-    use super::{Element, FocusKind, FocusOrder, WidgetId, div, text};
+    use super::{
+        ControlSize, ControlState, Element, FocusKind, FocusOrder, KeyEquivalent, WidgetId, div,
+        text,
+    };
+    use crate::geometry::Size;
+    use crate::layout::testing::FixedMeasure;
+    use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use crate::theme::{Density, Theme};
+    use crate::ui_engine::Key;
+
+    #[test]
+    fn control_size_is_inherited() {
+        let mut tree: Element<Msg> = div().children([
+            div()
+                .control_size(ControlSize::Small)
+                .child(div().child(div().on_click(Msg::Clicked)))
+                .child(div().control_size(ControlSize::Large)),
+            div().on_click(Msg::Clicked),
+        ]);
+        tree.assign_ids();
+        let layout = Layout::compute(
+            &tree,
+            &LayoutInput {
+                viewport: Size {
+                    width: 200.0,
+                    height: 200.0,
+                },
+                theme: &Theme::kai(Density::Comfortable),
+                interaction: &Interaction::default(),
+                scroll: &ScrollOffsets::new(),
+            },
+            &mut StyleCache::default(),
+            &mut FixedMeasure,
+        );
+        let size = |id: WidgetId| layout.node(id).unwrap().control_size;
+        let small = &tree.children[0];
+        assert_eq!(size(tree.id), ControlSize::Regular);
+        assert_eq!(size(small.children[0].children[0].id), ControlSize::Small);
+        assert_eq!(size(small.children[1].id), ControlSize::Large);
+        assert_eq!(size(tree.children[1].id), ControlSize::Regular);
+        assert_eq!(
+            ControlSize::ALL[ControlSize::Large.index()],
+            ControlSize::Large
+        );
+    }
+
+    #[test]
+    fn default_button_sets_return_equivalent() {
+        let button: Element<Msg> = div().on_click(Msg::Clicked).default_button(true);
+        assert!(button.control.is_default);
+        assert_eq!(button.control.key_equivalent, Some(KeyEquivalent::RETURN));
+        let off = button.default_button(false);
+        assert!(!off.control.is_default);
+        assert_eq!(off.control.key_equivalent, None);
+
+        let save = KeyEquivalent::cmd(Key::Char('s'));
+        let custom: Element<Msg> = div().key_equivalent(save).default_button(true);
+        assert_eq!(custom.control.key_equivalent, Some(save));
+        assert_eq!(save.label(), "⌘S");
+        let cancel: Element<Msg> = div().cancel_button();
+        assert_eq!(cancel.control.key_equivalent, Some(KeyEquivalent::ESCAPE));
+        assert_eq!(KeyEquivalent::RETURN.label(), "↩");
+    }
+
+    #[test]
+    fn focus_order_collects_enabled_equivalents_and_submitting_fields() {
+        use super::input;
+
+        let mut tree: Element<Msg> = div().children([
+            div()
+                .on_click(Msg::Clicked)
+                .focus_on_press(false)
+                .default_button(true),
+            div().on_click(Msg::Clicked).cancel_button().disabled(true),
+            div().cancel_button(),
+            input("", "a").on_submit(Msg::Submitted),
+            input("", "b"),
+        ]);
+        tree.assign_ids();
+        let ids: Vec<WidgetId> = tree.children.iter().map(|child| child.id).collect();
+        let mut order = FocusOrder::from_tree(&tree);
+        assert_eq!(order.equivalents(), &[(ids[0], KeyEquivalent::RETURN)]);
+        assert!(order.submits(ids[3]));
+        assert!(!order.submits(ids[4]));
+        order.retain_visible_equivalents(|id| id != ids[0]);
+        assert!(order.equivalents().is_empty());
+    }
+
+    #[test]
+    fn pressed_maps_to_state_on() {
+        let on: Element<Msg> = div().pressed(true);
+        assert_eq!(on.control.state, Some(ControlState::On));
+        assert!(on.is_pressed());
+        let off: Element<Msg> = div().pressed(false);
+        assert_eq!(off.control.state, Some(ControlState::Off));
+        assert!(!off.is_pressed());
+        let mixed: Element<Msg> = div().state(ControlState::Mixed);
+        assert!(!mixed.is_pressed());
+        assert!(div::<Msg>().enabled(false).disabled);
+        assert_eq!(div::<Msg>().control.state, None);
+    }
 
     #[test]
     fn ids_are_stable_unique_and_keyed_children_keep_theirs_when_moved() {

@@ -796,6 +796,8 @@ dependencies = [
  "bytemuck",
  "cosmic-text",
  "glyphon",
+ "objc2-foundation 0.3.2",
+ "png",
  "pollster",
  "resvg",
  "taffy",

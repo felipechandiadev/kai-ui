@@ -25,6 +25,7 @@ pub fn adapt_modifiers(modifiers: ModifiersState) -> Modifiers {
         shift: modifiers.shift_key(),
         command: modifiers.super_key(),
         control: modifiers.control_key(),
+        option: modifiers.alt_key(),
     }
 }
 
@@ -69,9 +70,9 @@ fn should_emit_committed_text(key: Key, text: &str) -> bool {
     if matches!(key, Key::Enter) {
         return false;
     }
-    !text.chars().all(|character| {
-        matches!(character, '\r' | '\n') || character.is_control()
-    })
+    !text
+        .chars()
+        .all(|character| matches!(character, '\r' | '\n') || character.is_control())
 }
 
 fn map_key(key: KeyCode) -> Key {
@@ -91,15 +92,80 @@ fn map_key(key: KeyCode) -> Key {
         KeyCode::KeyC => Key::C,
         KeyCode::KeyX => Key::X,
         KeyCode::KeyV => Key::V,
-        _ => Key::Other,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Period => Key::Period,
+        _ => char_key(key).map_or(Key::Other, Key::Char),
     }
+}
+
+/// Remaining letter and digit keys, by physical position.
+fn char_key(key: KeyCode) -> Option<char> {
+    const LETTERS: [(KeyCode, char); 22] = [
+        (KeyCode::KeyB, 'b'),
+        (KeyCode::KeyD, 'd'),
+        (KeyCode::KeyE, 'e'),
+        (KeyCode::KeyF, 'f'),
+        (KeyCode::KeyG, 'g'),
+        (KeyCode::KeyH, 'h'),
+        (KeyCode::KeyI, 'i'),
+        (KeyCode::KeyJ, 'j'),
+        (KeyCode::KeyK, 'k'),
+        (KeyCode::KeyL, 'l'),
+        (KeyCode::KeyM, 'm'),
+        (KeyCode::KeyN, 'n'),
+        (KeyCode::KeyO, 'o'),
+        (KeyCode::KeyP, 'p'),
+        (KeyCode::KeyQ, 'q'),
+        (KeyCode::KeyR, 'r'),
+        (KeyCode::KeyS, 's'),
+        (KeyCode::KeyT, 't'),
+        (KeyCode::KeyU, 'u'),
+        (KeyCode::KeyW, 'w'),
+        (KeyCode::KeyY, 'y'),
+        (KeyCode::KeyZ, 'z'),
+    ];
+    const DIGITS: [KeyCode; 10] = [
+        KeyCode::Digit0,
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
+    ];
+    if let Some((_, c)) = LETTERS.iter().find(|(code, _)| *code == key) {
+        return Some(*c);
+    }
+    DIGITS
+        .iter()
+        .position(|code| *code == key)
+        .and_then(|digit| char::from_digit(digit as u32, 10))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::ui_engine::{Intent, Key, Modifiers, TextIntent};
 
-    use super::adapt_key_input;
+    use super::{adapt_key_input, map_key};
+    use winit::keyboard::KeyCode;
+
+    #[test]
+    fn escape_period_and_other_letters_map_to_keys() {
+        assert_eq!(map_key(KeyCode::Escape), Key::Escape);
+        assert_eq!(map_key(KeyCode::Period), Key::Period);
+        assert_eq!(map_key(KeyCode::KeyS), Key::Char('s'));
+        assert_eq!(map_key(KeyCode::Digit7), Key::Char('7'));
+        assert_eq!(map_key(KeyCode::KeyA), Key::A);
+        assert_eq!(map_key(KeyCode::F1), Key::Other);
+        // Escape carries "\u{1b}" as text in winit; it must not be inserted.
+        assert_eq!(
+            adapt_key_input(Key::Escape, Modifiers::default(), false, Some("\u{1b}")).len(),
+            1
+        );
+    }
 
     #[test]
     fn physical_key_and_committed_text_are_separate_intents() {

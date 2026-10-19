@@ -140,6 +140,8 @@ pub struct TextProps {
     pub nowrap: Option<bool>,
     /// Icon stroke width (`stroke-*`), in units of the 24×24 view box.
     pub stroke_width: Option<f32>,
+    /// Letter spacing in em (`tracking-*`, macOS text styles).
+    pub letter_spacing: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -237,6 +239,8 @@ pub struct ComputedText {
     pub weight: Weight,
     pub nowrap: bool,
     pub stroke_width: f32,
+    /// Letter spacing in em.
+    pub letter_spacing: f32,
 }
 
 impl ComputedText {
@@ -256,6 +260,7 @@ impl ComputedText {
             weight: own.weight.unwrap_or(self.weight),
             nowrap: own.nowrap.unwrap_or(self.nowrap),
             stroke_width: own.stroke_width.unwrap_or(self.stroke_width),
+            letter_spacing: own.letter_spacing.unwrap_or(self.letter_spacing),
         }
     }
 }
@@ -416,6 +421,7 @@ mod tests {
         weight: Weight(400),
         nowrap: false,
         stroke_width: 2.0,
+        letter_spacing: 0.0,
     };
 
     #[test]

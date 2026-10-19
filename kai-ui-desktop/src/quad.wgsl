@@ -1,7 +1,8 @@
 // Instanced rounded rectangles drawn with a signed distance field, or icons
 // whose coverage comes from a mask atlas. All coordinates are physical
-// pixels; colors are premultiplied in the fragment stage and blended with
-// premultiplied alpha.
+// pixels; colors are sRGB-encoded, premultiplied in the fragment stage and
+// blended with premultiplied alpha in gamma space (non-sRGB target, Paso 14).
+// With `KAI_LINEAR_BLEND=1` the inputs are linear and the target sRGB.
 
 struct Uniforms {
     surface: vec2<f32>,

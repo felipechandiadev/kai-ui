@@ -5,6 +5,20 @@ edition = "2024"
 rust-version = "1.89"
 publish = false
 
+# Library + demo binary (docs/dev/12-modelo-appkit.md, Paso 1). The library is
+# `kai` so examples and tests can write `use kai::...`.
+[lib]
+name = "kai"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kai-ui-desktop-prototype"
+path = "src/main.rs"
+
+[features]
+# Enables PNG read/write in `kai::snapshot` outside the crate's own tests.
+snapshots = ["dep:png"]
+
 [dependencies]
 accesskit = "0.25.1"
 accesskit_winit = { version = "0.34.1", default-features = false, features = ["rwh_06"] }
@@ -12,8 +26,17 @@ arboard = { version = "3.7.0", default-features = false }
 bytemuck = { version = "1.25", features = ["derive"] }
 glyphon = "0.12.0"
 pollster = "0.4"
+png = { version = "0.18.1", optional = true }
 cosmic-text = "0.19.0"
 resvg = { version = "0.48.1", default-features = false }
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout", "content_size"] }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+
+# `NSProcessInfo.operatingSystemVersion` for `AppKitGeneration::current()`;
+# already in Cargo.lock through wgpu/winit.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
+
+[dev-dependencies]
+png = "0.18.1"
