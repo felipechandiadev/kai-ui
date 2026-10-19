@@ -12,24 +12,46 @@ Usar un ciclo unidireccional simple: **evento de plataforma → evento Kai → h
 
 ## Runtime Elm (`runtime.rs`)
 
-Una aplicación implementa `App`:
+Una aplicación implementa `App` o, si no necesita efectos, `SimpleApp`:
 
 ```rust
 pub trait App: 'static {
-    type Msg: Clone + 'static;
+    type Msg: Clone + Debug + 'static;
+    fn init(&mut self) -> Effects<Self::Msg> { Effects::none() } // una vez, antes del primer view
     fn title(&self) -> String;
-    fn update(&mut self, msg: Self::Msg);
+    fn update(&mut self, msg: Self::Msg) -> Effects<Self::Msg>;
     fn view(&self) -> Element<Self::Msg>;
+    // background, theme y window_override con valor por defecto
 }
+
+pub trait SimpleApp: 'static { /* igual, con update(&mut self, msg) sin efectos */ }
+impl<T: SimpleApp> App for T { /* devuelve Effects::none() */ }
 
 runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 ```
+
+`Effects` es opaco y por ahora siempre vacío; el runtime lo descarta hasta que existan efectos async (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)).
 
 - **El estado de la app vive en el modelo.** `view` se ejecuta en cada frame y produce un árbol `Element<Msg>` nuevo; los ids se derivan de la ruta (o de `key`), así que foco, hover, scroll y el caret de cada input sobreviven a la reconstrucción.
 - **Eventos como mensajes.** `on_click(msg)`, `on_input(|valor| msg)` y `on_submit(msg)` registran el mensaje que el runtime envía a `update`. El clic burbujea desde el nodo más interno de `hit_path` hasta el control más cercano, igual que un evento DOM.
 - **Inputs controlados**, como en React: el valor del árbol se copia al editor en cada frame si difiere. El editor conserva caret, selección e IME; cada edición que cambia el texto emite `on_input` con el valor nuevo, y Enter emite `on_submit`. Un input sin `on_input` es de solo lectura.
 - **Estado de interacción fuera del modelo.** El runtime es dueño de `UiModel` (foco y presión como `Signal<Option<WidgetId>>`), del hover, de los offsets de scroll y de los `TextFieldState`. Las variantes `hover:`, `focus:`, `focus-within:`, `active:`, `disabled:` y `group-*` se resuelven en el layout a partir de ese estado, sin que la app lo gestione.
 - **Ciclo de un frame:** `view` → `FocusOrder` + handlers → sincronizar inputs controlados → layout → hover → paint → render → árbol AccessKit. El foco por teclado desplaza el contenedor con scroll para revelar el elemento (`Layout::reveal`); la rueda desplaza el contenedor con overflow más interno bajo el puntero que aún puede moverse.
+
+### `Session`, `WindowState` y `Outbox`
+
+El runtime está partido en dos para que los tests recorran el mismo camino que la ventana (Paso 4 de [13](13-hoja-de-ruta-plataforma.md)):
+
+- **`Session<A>`** (`session.rs`, sin winit) tiene la app, el árbol, los handlers, el `FocusOrder`, el layout, `UiModel`, el hover, el scroll, los `TextFieldState`, el portapapeles (`ClipboardPort`) y, en tests, el log de `Msg`.
+  - Recibe entradas en unidades lógicas: `pointer_moved(Option<Point>)`, `pointer_button(pressed)`, `scroll_by(delta_y)`, `apply_intent(Intent)`, `set_window_active(bool)`, `accessibility_action(&ActionRequest)` y `set_viewport(Size)`.
+  - Para un frame ofrece `prepare_frame()` (view, layout, hover, scroll y buffers de los inputs), `paint_list()` y `a11y_tree(scale)`.
+  - Mide el texto con las fuentes (`Measure::Real`, en la ventana) o con `FixedMeasure` (`Measure::Fixed`, en tests).
+- **`Outbox`**: lo que la sesión pide a la ventana. Guarda la última petición de cada tipo: `redraw`, `ime_allowed`, `ime_cursor_area` (en puntos lógicos), `cursor`, `title` y `theme`.
+- **`WindowState`** (`runtime.rs`) se queda con lo que depende de la plataforma: la ventana, el renderer wgpu, el adaptador de AccessKit, el factor de escala, los modificadores, la oclusión y el reloj del fondo animado.
+  - Traduce cada `WindowEvent` a una entrada de la sesión.
+  - Después de cada evento vacía el `Outbox` y lo aplica: escala el área del IME, elige el `CursorIcon`, pone el título y el tema, y pide el redibujado.
+  - En `RedrawRequested` llama a `prepare_frame`, pinta y renderiza `paint_list`, y actualiza AccessKit con `a11y_tree`.
+- **`kai::testing::TestApp`** usa la misma `Session` con `Measure::Fixed` y un `MemoryClipboard`. Después de cada acción prepara un frame y descarta el `Outbox`.
 
 ## Estado de L1
 

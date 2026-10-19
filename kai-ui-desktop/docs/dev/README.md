@@ -39,12 +39,14 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **L2–L3 — Gate básico aprobado:** intents/dispatcher puros y adaptador de plataforma implementados; tests automáticos y regresión manual básica reportados correctos. IME/portapapeles siguen siendo verificaciones específicas independientes.
 - **L4 — Completada para el alcance actual:** modelo de cajas tipo CSS sobre Taffy (flex, grid, block, `position: absolute`). La raíz es siempre la ventana; scroll y clip por nodo con `overflow` (clip al padding box); z-index en pintura y hit-test. Sin caché: vista + layout + paint cuestan ≈ 130 µs (p95) en Apple M4 ([02](02-geometria-y-layout.md)).
 - **L5 — Completada:** `DrawList` independiente del backend, `paint` puro en orden de pintor, quads SDF instanciados con radio, borde, blur y clip por instancia, lotes alternos de cajas y texto, render offscreen para capturas, e iconos Lucide en un atlas de máscaras ([04](04-renderer-y-texto.md)).
-- **L6 — Completada para el alcance actual:** arquitectura Elm (`App` con `update`/`view`, runtime en `runtime.rs`), árbol tipo DOM `Element<Msg>`, estilos con clases tipo Tailwind resueltas contra el tema Kai, y componentes Button, TextField (alcance base de la web: variantes, densidades, adornos e iconos, password, required, helper, read-only), Card y Stat con las clases de Kai web ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
+- **L6 — Completada para el alcance actual:** arquitectura Elm (`App` con `update`/`view`, runtime en `runtime.rs` y `session.rs`), árbol tipo DOM `Element<Msg>`, estilos con clases tipo Tailwind resueltas contra el tema Kai, y componentes Button, TextField (alcance base de la web: variantes, densidades, adornos e iconos, password, required, helper, read-only), Card y Stat con las clases de Kai web ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
 - **Modelo y tema AppKit (Pasos 0–15 y 17 de [12](12-modelo-appkit.md); el tema se elige por versión de macOS, todavía sin leer colores de AppKit en runtime):** `ControlProps` (tamaño heredable, estado, botón por defecto, equivalentes de teclado), estado de ventana *key*/*main*, cadena de responders (`responder.rs`), variantes `appkit:`/`dark:`/`window-inactive:`/`control-*`, `Theme::appkit_static` y `Theme::appkit_current`, mezcla en gamma. La demo elige tema con `KAI_THEME`; la galería (`cargo run --example gallery`) muestra todos los controles en los 5 tamaños, con los dos temas, claro/oscuro y ventana activa/inactiva ([11](11-tema-appkit.md)).
 - **Librería y ejemplos (Paso 0 de [13](13-hoja-de-ruta-plataforma.md)):** crate de librería `kai` con la demo en `src/demo.rs`; `cargo run` y `cargo run --example demo` abren la demo; `fixtures/external-app` usa solo la API pública y el CI la compila junto con `cargo doc -D warnings`.
+- **`App` v2 (Paso 1 de 13):** `App` con `init` y `update -> Effects` (vacío hasta los efectos async); `SimpleApp` mantiene el contrato anterior y la demo y la galería lo usan.
 - **Identificación y consultas (Pasos 2 y 3 de 13):** `.test_id(..)` en `Element` y `TextField`, expuesto como `author_id` de AccessKit (`accessibilityIdentifier` en macOS) sin cambiar el `WidgetId`; en debug se reportan `key` y `test_id` duplicados con las rutas de ambos. `kai::testing` encuentra elementos sin ventana ni GPU con `Screen` y filtros `By` (rol, nombre accesible, label, texto, `test_id`, `within`), con el mismo rol y nombre que lee VoiceOver.
+- **`Session` y `TestApp` (Paso 4 de 13):** la parte sin ventana del runtime vive en `Session` (`session.rs`); la ventana aplica lo que la sesión le pide mediante un `Outbox`. `kai::testing::TestApp` maneja una app completa sobre esa misma sesión (clic, escribir, teclas, log de `Msg`, capturas por elemento), sin ventana ni GPU salvo para capturas ([03](03-eventos-y-estado.md)).
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 219 tests (213 normales y 6 `#[ignore]` de benchmark y capturas) más un doctest, Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 233 tests (226 normales y 7 `#[ignore]` de benchmark y capturas) más 2 doctests, Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -53,9 +55,10 @@ kai-ui-desktop/
 ├── src/
 │   ├── lib.rs             crate `kai`: API pública e internos #[doc(hidden)]
 │   ├── main.rs            lanzador de `cargo run` (llama a demo::run_from_env)
-│   ├── demo.rs            demo (App: Model/Msg/update/view), sus tests y capturas
+│   ├── demo.rs            demo (SimpleApp: Model/Msg/update/view), sus tests y capturas
 │   ├── gallery.rs         galería de controles por tamaño, tema, apariencia y ventana
-│   ├── runtime.rs         runtime Elm: ventana, eventos → mensajes, frame, tema en vivo
+│   ├── runtime.rs         App v2 y SimpleApp; ventana: winit → Session, Outbox → ventana, render
+│   ├── session.rs         runtime sin ventana: árbol, layout, foco, inputs, eventos → mensajes
 │   ├── element.rs         árbol tipo DOM Element<Msg>, ids, test_id, validate_ids, FocusOrder
 │   ├── components.rs      Button, TextField, Card… con clases Kai web y AppKit
 │   ├── responder.rs       acciones, cadena de responders, equivalentes de teclado
@@ -71,7 +74,7 @@ kai-ui-desktop/
 │   ├── ui_engine.rs       intents y dispatch de foco/activación/texto
 │   ├── platform_adapter.rs  winit → intents Kai
 │   ├── a11y.rs            árbol AccessKit desde el layout; rol y nombre accesible compartidos
-│   ├── testing/           layout_of y consultas Screen/By para tests (query.rs)
+│   ├── testing/           layout_of, consultas Screen/By (query.rs) y TestApp (app.rs)
 │   └── geometry.rs, signal.rs, grid_layout.rs, fonts.rs, version.rs
 ├── examples/              demo.rs y gallery.rs, binarios finos sobre `kai`
 ├── fixtures/external-app/ app mínima que usa solo la API pública (compilada en CI)

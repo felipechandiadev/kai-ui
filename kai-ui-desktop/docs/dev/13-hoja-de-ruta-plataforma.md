@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: los Pasos 0 (examples y visibilidad de la API), 2 (`test_id` + AccessKit + duplicados) y 3 (consultas `Screen`/`By`) están hechos. Sigue el Paso 1 (`App` v2) y después el Paso 4 (`TestApp`), que necesita los dos.
+- **Siguiente paso concreto**: los Pasos 0 a 4 están hechos, salvo el 1b: examples y visibilidad de la API, `App` v2, `test_id` con AccessKit, consultas `Screen`/`By`, y `Session` + `TestApp`. Siguen el Paso 5 (convención de sub-ids en componentes) y el Paso 6 (migrar a `TestApp` y `Screen` los tests que quedan en `components.rs` y `gallery.rs`). El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -95,12 +95,12 @@ Estado del código a la fecha de este documento (rama `main` más el árbol de t
 | Pieza | Archivo | Estado | Uso en esta hoja de ruta |
 |---|---|---|---|
 | Crate como librería `kai` + binario demo | `Cargo.toml` (`[lib] name = "kai"`), `src/lib.rs`, `src/demo.rs`, `examples/{demo,gallery}.rs`, `fixtures/external-app` | Hecho (Paso 1 de 12 y Paso 0). Internos `#[doc(hidden)]`; paquete aún `kai-ui-desktop-prototype`, `publish = false`. | Base de todo lo demás. |
-| Runtime Elm | `runtime.rs` (`App`: `title`, `update`, `view`, `background`, `theme`, `window_override`; `run`, `build_view`) | Una ventana, sin efectos async. | Paso 1 (App v2). |
+| Runtime Elm | `runtime.rs` (`App` v2: `init`, `update -> Effects`; `SimpleApp`; `run`, `build_view`), `session.rs` (`Session` sin ventana y `Outbox`) | Una ventana; `Effects` vacío hasta el Paso 15 (Pasos 1 y 4). | Pasos 15–16 (efectos). |
 | Árbol `Element<Msg>`, ids por ruta o `key`, `test_id`, `FocusOrder`, `find`, `path_to` | `element.rs` | Hecho. `validate_ids` reporta `key` y `test_id` duplicados (Paso 2). | Paso 3. |
 | Intents y reducciones de UI | `ui_engine.rs` (`Intent`, `UiCommand`, `FocusOrigin`, `UiModel`) | `UiCommand` ya renombrado. | Paso 4 (`TestApp` usa `Intent` reales). |
 | Cadena de responders y equivalentes de teclado | `responder.rs` (`Action`, incluido `Action::Command(&'static str)`; `KeyRoute::Command`; `chain`) | Hecho; el extremo «App» es el enganche del registro. | Pasos 7–8. |
 | Accesibilidad | `a11y.rs` (roles, nombre, descripción, `Toggled` desde `pressed`) | Hecho; `test_id` → `author_id` (Paso 2). | Pasos 3–4. |
-| Capturas offscreen y diff | `snapshot.rs` (`render`, `diff`, `diff_image`, PNG con feature `snapshots`) | Hecho. | Paso 4 (capturas por elemento). |
+| Capturas offscreen y diff | `snapshot.rs` (`render`, `render_element`, `diff`, `diff_image`, PNG con feature `snapshots`) | Hecho; recorte por elemento desde el Paso 4. | Pasos 17–18 (capturas doradas). |
 | Tema Kai y AppKit | `theme.rs`, `theme/appkit.rs`, `theme/generation.rs` (`ThemeKind`, `Appearance`, `appkit_static`, `appkit_for`, `appkit_current`) | Hecho para estático; demo con `KAI_THEME`. | Paso 17 (`[theme] kind`). |
 | Componentes | `components.rs` (Button, TextField, Card, `group_box`, Stat, Badge, Alert, IconButton, Switch) | Hecho para el alcance actual. | Paso 5 (convención de ids), Paso 14 (nuevos). |
 | Estilos tipo Tailwind | `tw.rs`, `style.rs` (clases desconocidas en `layout::StyleCache::unknown`) | Hecho; validación solo en ejecución. | Paso 26 (`tw!`). |
@@ -378,6 +378,7 @@ Reglas de la pista C:
 - **Tests**: la demo sigue en `SimpleApp`; `fixtures/external-app` usa `App` v2 con `init`.
 - **Hecho cuando**: ambas compilan; un test comprueba que un `update` que devuelve `Effects::none()` se comporta igual que hoy.
 - **Riesgos**: diseñar `Effects` demasiado pronto; mitigar dejándolo opaco y vacío.
+- **Estado**: hecho, con un cambio de diseño. `init` es `fn init(&mut self) -> Effects<Msg>` y se llama una vez antes del primer `view`. No es `fn init(ctx) -> (Self, Effects)` como en §7.1, porque eso obligaba a cambiar `run(app, theme)`; `InitContext` llegará con los efectos (Pasos 15–16). `App::Msg` ahora pide `Debug`. `Effects<Msg>` es opaco, con `none()`, `batch()` e `is_none()`, y el runtime lo descarta. Demo y galería implementan `SimpleApp`; `fixtures/external-app` usa `App` v2 con `init`. Tests: `simple_app_updates_like_before_with_no_effects` y `effects_batch_of_none_is_none`.
 
 #### Paso 1b — Herramientas de desarrollo mínimas
 
@@ -482,6 +483,25 @@ Reglas de la pista C:
 - **Tests**: el flujo «escribir nombre → Enviar → se limpia el formulario»; Retorno activa el botón por defecto; Esc no hace nada sin botón cancelar; el toggle de contraseña no roba el foco.
 - **Hecho cuando**: el flujo principal de la demo se prueba en menos de 15 líneas y corre en CI Linux sin GPU (las capturas siguen solo en macOS).
 - **Riesgos**: el refactor de `runtime.rs` es el más delicado de la etapa; hacerlo en dos sub-pasos (extraer `Session` sin cambios de comportamiento, luego `TestApp`) con las capturas como red de seguridad.
+- **Estado**: hecho en los dos sub-pasos, con estos cambios de diseño:
+  - **`Session<A>`** (`src/session.rs`, sin winit) tiene la app, el árbol, el layout, `UiModel`, el scroll, los editores de texto, el portapapeles (`ClipboardPort`) y el log de `Msg`. Sus entradas usan unidades lógicas: `pointer_moved`, `pointer_button`, `scroll_by`, `apply_intent`, `set_window_active` y `accessibility_action`. Para un frame ofrece `prepare_frame`, `paint_list` y `a11y_tree`. Lo que pide a la ventana (redibujar, IME, cursor, título, tema) lo deja en un **`Outbox`**, que `WindowState` vacía y aplica después de cada evento. `WindowState` se queda con la ventana, el renderer, el adaptador de AccessKit, el factor de escala, los modificadores, la oclusión y el fondo animado. Ver [03](03-eventos-y-estado.md).
+  - **Las acciones reciben un `By`**, no un elemento encontrado, para que la consulta no tenga prestada la app mientras se modifica:
+    ```rust
+    let mut app = TestApp::new(Demo::default());
+    app.type_text(By::label("Nombre"), "Ana");
+    app.click(By::test_id("form.enviar"));
+    app.press(Key::Tab, Modifiers::NONE);
+    assert!(app.is_focused(By::label("Nombre")));
+    assert_eq!(app.value(By::label("Nombre")), "Ana");
+    assert_eq!(app.messages().last(), Some(&Msg::Submit));
+    app.screen().get(By::text("Último: Ana"));
+    let image = app.capture(By::test_id("form.enviar"))?;   // GPU, texto real
+    ```
+  - `click` revela el elemento, hace hit-test en su centro y hace panic si otro elemento lo tapa. Un control deshabilitado recibe el clic y no envía nada. `type_text` hace clic y manda un `InsertText` por carácter. `press` pasa por `adapt_key_input`, igual que el teclado real. Después de cada acción se prepara un frame.
+  - También hay `is_enabled`, `focus_visible`, `app()`, `theme()`, el builder (`viewport`, `theme`, `clipboard`) y `MemoryClipboard`. Desde `kai::testing` se reexportan `Key` y `Modifiers`.
+  - Falta `hover`, `scroll`, `is_visible` e `is_pressed`; se agregarán cuando un test los necesite.
+  - **Tests**: sobre una app de formulario y `element::sample` en `testing/app.rs`; sobre la demo (escribir y enviar, Retorno, orden de Tab con anillo, ojo de contraseña, clic deshabilitado); sobre la galería (cambio de tema); captura por elemento (`#[ignore]`, GPU). El flujo principal de la demo ocupa menos de 15 líneas.
+  - **Pendiente a mano**: probar en ventana la demo (Kai y AppKit), la galería y la app externa: clic, Tab, escribir, Retorno, ojo de contraseña, scroll, ventana inactiva y cambio de tema en vivo.
 
 #### Paso 5 — Convención de ids en componentes
 
@@ -957,13 +977,13 @@ Reglas de la pista C:
 
 **Etapa 0 — Librería usable**
 - [x] P0 `examples/demo.rs`, visibilidad de la API, `fixtures/external-app` en CI, `cargo doc` sin warnings.
-- [ ] P1 `App` v2 con `Effects` vacío; `SimpleApp` compatible.
+- [x] P1 `App` v2 con `Effects` vacío; `SimpleApp` compatible.
 - [ ] P1b Devtools: log de `Msg`, inspector, tiempo por frame.
 
 **Etapa 1 — Identificación y pruebas**
 - [x] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug. Falta comprobarlo a mano con Accessibility Inspector.
 - [x] P3 Consultas `get/query/all` con `By::{role,name,label,text,test_id}` y `within`.
-- [ ] P4 `Session` extraída del runtime; `TestApp` con acciones, aserciones, log de `Msg` y capturas por elemento.
+- [x] P4 `Session` extraída del runtime; `TestApp` con acciones, aserciones, log de `Msg` y capturas por elemento. Falta la prueba a mano en ventana.
 - [ ] P5 Convención de sub-ids en componentes; roles `Switch` y `Alert` si hacen falta.
 - [ ] P6 Tests migrados; cero búsquedas frágiles.
 
