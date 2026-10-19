@@ -13,7 +13,8 @@ use cosmic_text::{FontSystem, Metrics};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
-use crate::commands::{CommandKind, CommandRegistry, CommandState};
+use crate::commands::{Availability, CommandKind, CommandRegistry, CommandState, PALETTE};
+use crate::components::{PaletteItem, command_palette};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -31,7 +32,7 @@ use crate::runtime::{
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
 use crate::theme::Theme;
-use crate::ui_engine::{Intent, Key, TextIntent, UiModel, dispatch, sync_focus};
+use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
 
 /// Extra room kept visible around a focused element when scrolling to it
 /// (focus rings are 2px wide with a 2px offset).
@@ -93,6 +94,48 @@ pub(crate) struct Session<A: App> {
     registry: CommandRegistry<A>,
     /// Availability of every command after the last `update`.
     commands: Vec<CommandState>,
+    palette: Option<Palette>,
+}
+
+/// The command palette while it is open: an overlay the session appends to
+/// the app's tree and drives itself.
+struct Palette {
+    /// Contents of the search input.
+    query: String,
+    /// Highlighted row, an index into `rows`.
+    selected: usize,
+    /// Focus to give back on close.
+    previous_focus: Option<WidgetId>,
+    search: WidgetId,
+    panel: WidgetId,
+    /// Rows of the last `view`, in order, with their command ids.
+    rows: Vec<(WidgetId, &'static str)>,
+}
+
+/// Actions the palette lists for `query`: neither hidden nor the
+/// framework's own, matching title, id or description, ignoring case.
+fn palette_items(commands: &[CommandState], query: &str) -> Vec<PaletteItem> {
+    let query = query.trim().to_lowercase();
+    commands
+        .iter()
+        .filter(|command| {
+            command.kind == CommandKind::Action
+                && command.availability != Availability::Hidden
+                && !command.id.starts_with("kai.")
+                && [command.title, command.id, command.description]
+                    .iter()
+                    .any(|text| text.to_lowercase().contains(&query))
+        })
+        .map(|command| PaletteItem {
+            id: command.id,
+            title: command.title,
+            shortcut: command.shortcut,
+            disabled: match &command.availability {
+                Availability::Disabled { reason } => Some(reason.clone()),
+                _ => None,
+            },
+        })
+        .collect()
 }
 
 impl<A: App> Session<A> {
@@ -139,6 +182,7 @@ impl<A: App> Session<A> {
             },
             registry,
             commands,
+            palette: None,
         };
         session.rebuild();
         session.relayout();
@@ -245,6 +289,7 @@ impl<A: App> Session<A> {
             self.commands = commands;
         }
         self.tree = build_view_with(&self.app, &self.commands);
+        self.add_palette();
         self.background = self.app.background();
         if let Some(theme) = self.app.theme()
             && theme != self.theme
@@ -252,13 +297,17 @@ impl<A: App> Session<A> {
             self.theme = theme;
             self.outbox.theme = Some(theme);
         }
-        self.focus_order = FocusOrder::from_tree(&self.tree);
+        // While the palette is open only it takes focus and keys, and its
+        // own shortcut closes it.
+        let overlay = self.palette.as_ref().and(self.tree.children.last());
+        self.focus_order = FocusOrder::from_tree(overlay.unwrap_or(&self.tree));
         self.focus_order.set_commands(
             self.commands
                 .iter()
                 .filter(|command| {
                     command.kind == CommandKind::Action && command.availability.is_enabled()
                 })
+                .filter(|command| overlay.is_none() || command.id == PALETTE)
                 .filter_map(|command| command.shortcut.map(|shortcut| (command.id, shortcut)))
                 .collect(),
         );
@@ -365,9 +414,17 @@ impl<A: App> Session<A> {
     }
 
     /// Run command `id` as a shortcut, the menu bar or the palette do: an
-    /// app action sends its message when it is enabled. Returns whether
-    /// something ran.
+    /// app action sends its message when it is enabled, `kai.paleta` opens
+    /// or closes the palette. Returns whether something ran.
     pub fn perform_command(&mut self, id: &str) -> bool {
+        if id == PALETTE {
+            if self.palette.is_some() {
+                self.close_palette();
+            } else {
+                self.open_palette();
+            }
+            return true;
+        }
         match self.registry.message(&self.app, id) {
             Ok(msg) => {
                 self.send(msg);
@@ -375,6 +432,105 @@ impl<A: App> Session<A> {
             }
             Err(_) => false,
         }
+    }
+
+    /// Whether the command palette is open.
+    #[cfg(test)]
+    pub fn palette_open(&self) -> bool {
+        self.palette.is_some()
+    }
+
+    fn open_palette(&mut self) {
+        self.palette = Some(Palette {
+            query: String::new(),
+            selected: 0,
+            previous_focus: self.focused(),
+            search: WidgetId(0),
+            panel: WidgetId(0),
+            rows: Vec::new(),
+        });
+        self.rebuild();
+        self.relayout();
+        let search = self.palette.as_ref().map(|palette| palette.search);
+        self.apply_intent(Intent::SetFocus(search));
+        self.invalidate();
+    }
+
+    fn close_palette(&mut self) {
+        let Some(palette) = self.palette.take() else {
+            return;
+        };
+        self.rebuild();
+        self.relayout();
+        self.apply_intent(Intent::SetFocus(palette.previous_focus));
+        self.invalidate();
+    }
+
+    /// Run the command of a palette row, closing the palette, unless it is
+    /// disabled.
+    fn run_from_palette(&mut self, id: &str) {
+        if let Ok(msg) = self.registry.message(&self.app, id) {
+            self.close_palette();
+            self.send(msg);
+        }
+    }
+
+    /// Append the open palette to the tree, after the app's ids are set.
+    fn add_palette(&mut self) {
+        let Some(palette) = &mut self.palette else {
+            return;
+        };
+        let items = palette_items(&self.commands, &palette.query);
+        palette.selected = palette.selected.min(items.len().saturating_sub(1));
+        let selected = (!items.is_empty()).then_some(palette.selected);
+        self.tree
+            .children
+            .push(command_palette(&items, &palette.query, selected));
+        self.tree.assign_ids();
+        let find = |test_id: &str| {
+            self.tree
+                .find_test_id(test_id)
+                .map_or(WidgetId(0), |element| element.id)
+        };
+        palette.search = find("kai.paleta.buscar");
+        palette.panel = find("kai.paleta");
+        palette.rows = items
+            .iter()
+            .map(|item| (find(&format!("kai.paleta.{}", item.id)), item.id))
+            .collect();
+    }
+
+    /// Keys the open palette takes before focus sees them: arrows move the
+    /// selection, Return in the search input runs it.
+    fn palette_key(&mut self, intent: &Intent) -> bool {
+        let Some(palette) = &mut self.palette else {
+            return false;
+        };
+        let Intent::Text(TextIntent::KeyDown {
+            key,
+            modifiers,
+            repeat,
+        }) = intent
+        else {
+            return false;
+        };
+        if *modifiers != Modifiers::NONE {
+            return false;
+        }
+        let last = palette.rows.len().saturating_sub(1);
+        match key {
+            Key::ArrowDown => palette.selected = (palette.selected + 1).min(last),
+            Key::ArrowUp => palette.selected = palette.selected.saturating_sub(1),
+            Key::Enter if !repeat && self.ui.focused.get() == &Some(palette.search) => {
+                if let Some(&(_, id)) = palette.rows.get(palette.selected) {
+                    self.run_from_palette(id);
+                }
+                return true;
+            }
+            _ => return false,
+        }
+        self.invalidate();
+        true
     }
 
     fn handler(&self, id: WidgetId) -> Option<&Handlers<A::Msg>> {
@@ -461,6 +617,9 @@ impl<A: App> Session<A> {
     }
 
     pub fn apply_intent(&mut self, intent: Intent) {
+        if self.palette_key(&intent) {
+            return;
+        }
         let previous_focus = *self.ui.focused.get();
         let previous_text_field = self.focused_text_field();
         let result = dispatch(&mut self.ui, &self.focus_order, intent);
@@ -492,7 +651,20 @@ impl<A: App> Session<A> {
         for (id, action) in result.text_actions {
             self.apply_text_intent(id, action);
         }
+        let palette_row = |widget| {
+            self.palette.as_ref().and_then(|palette| {
+                palette
+                    .rows
+                    .iter()
+                    .find(|(row, _)| *row == widget)
+                    .map(|&(_, id)| id)
+            })
+        };
         if let Some(activation) = result.activated
+            && let Some(id) = palette_row(activation.widget)
+        {
+            self.run_from_palette(id);
+        } else if let Some(activation) = result.activated
             && let Some(msg) = self
                 .handler(activation.widget)
                 .and_then(|handlers| handlers.on_click.clone())
@@ -501,6 +673,8 @@ impl<A: App> Session<A> {
         }
         if let Some(Action::Command(id)) = result.action {
             self.perform_command(id);
+        } else if self.palette.is_some() && result.action == Some(Action::CancelOperation) {
+            self.close_palette();
         } else if let Some(action) = result.action
             && let Some(msg) = action_message(&self.tree, current_focus, action)
         {
@@ -531,6 +705,14 @@ impl<A: App> Session<A> {
         }
         if effect.changed {
             self.update_ime_cursor_area();
+            self.invalidate();
+        }
+        if let Some(palette) = &mut self.palette
+            && palette.search == id
+            && palette.query != after
+        {
+            palette.query = after.clone();
+            palette.selected = 0;
             self.invalidate();
         }
         let handlers = self.handler(id).cloned().unwrap_or_default();
@@ -585,6 +767,13 @@ impl<A: App> Session<A> {
     /// Primary button pressed or released at the current pointer.
     pub fn pointer_button(&mut self, pressed: bool) {
         let target = pointer_target(&self.layout, &self.hover_path);
+        if pressed
+            && let Some(palette) = &self.palette
+            && !self.hover_path.contains(&palette.panel)
+        {
+            self.close_palette();
+            return;
+        }
         if pressed {
             let previous_focus = *self.ui.focused.get();
             self.apply_intent(Intent::PointerDown(target));

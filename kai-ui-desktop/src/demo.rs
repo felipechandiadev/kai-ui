@@ -1525,6 +1525,164 @@ mod tests {
         assert_eq!(app.app().clicks, 0);
     }
 
+    const CMD_SHIFT: Modifiers = Modifiers {
+        command: true,
+        shift: true,
+        ..Modifiers::NONE
+    };
+
+    fn row(id: &str) -> By {
+        By::test_id(format!("kai.paleta.{id}"))
+    }
+
+    fn search() -> By {
+        By::test_id("kai.paleta.buscar")
+    }
+
+    #[test]
+    fn palette_opens_with_focus_in_search_and_filters() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        assert!(app.session().palette_open());
+        assert!(app.is_focused(search()));
+        assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
+        let rows = |app: &TestApp<Demo>| -> Vec<String> {
+            let screen = app.screen();
+            let panel = screen.get(By::test_id("kai.paleta"));
+            screen
+                .within(panel)
+                .all(By::role(Role::Button))
+                .iter()
+                .filter_map(|found| found.test_id().map(str::to_owned))
+                .collect()
+        };
+        assert_eq!(
+            rows(&app).len(),
+            5,
+            "every app action, not kai.* or queries"
+        );
+        app.type_text(search(), "REIN");
+        assert_eq!(rows(&app), ["kai.paleta.contador.reiniciar"]);
+        assert_eq!(app.value(search()), "REIN");
+        app.type_text(search(), "zzz");
+        assert_eq!(rows(&app), Vec::<String>::new());
+        assert!(app.screen().query(By::text("Sin resultados")).is_some());
+    }
+
+    #[test]
+    fn disabled_command_stays_disabled_in_button_palette_and_menu() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        let reset = row("contador.reiniciar");
+        assert!(!app.is_enabled(By::test_id("contador.reiniciar")));
+        assert!(!app.is_enabled(reset.clone()));
+        assert_eq!(
+            app.screen().get(reset).node().description.as_deref(),
+            Some("El contador ya está en cero")
+        );
+        let menu = menu_model(app.session().commands());
+        let entry = menu[0]
+            .items
+            .iter()
+            .find(|item| item.id == "contador.reiniciar");
+        assert_eq!(entry.map(|item| item.enabled), Some(false));
+    }
+
+    #[test]
+    fn enter_runs_the_selected_command_only_when_enabled() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.type_text(search(), "rein");
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.messages(), [], "Reiniciar is disabled");
+        assert!(app.session().palette_open());
+
+        app.press(Key::Escape, Modifiers::NONE);
+        app.click(By::test_id("header.sumar"));
+        app.press(Key::Char('p'), CMD_SHIFT);
+        assert_eq!(app.value(search()), "", "a new palette starts empty");
+        app.type_text(search(), "rein");
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.messages(), [Msg::Increment, Msg::Reset]);
+        assert!(!app.session().palette_open());
+        assert_eq!(app.app().clicks, 0);
+    }
+
+    #[test]
+    fn arrows_move_the_selection() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.press(Key::ArrowUp, Modifiers::NONE);
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.messages(), [Msg::Increment], "first row: Incrementar");
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(
+            app.messages(),
+            [Msg::Increment, Msg::Reset],
+            "second row: Reiniciar"
+        );
+    }
+
+    #[test]
+    fn escape_gives_focus_back_and_app_ids_do_not_change() {
+        let mut app = TestApp::new(Demo::default());
+        let name = By::test_id("form.nombre");
+        app.click(name.clone());
+        let reset_id = app.screen().get(By::test_id("contador.reiniciar")).id();
+        app.press(Key::Char('p'), CMD_SHIFT);
+        assert!(!app.is_focused(name.clone()));
+        assert_eq!(
+            app.screen().get(By::test_id("contador.reiniciar")).id(),
+            reset_id
+        );
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(!app.session().palette_open());
+        assert!(app.is_focused(name));
+        assert!(app.screen().query(By::test_id("kai.paleta")).is_none());
+
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.press(Key::Char('p'), CMD_SHIFT);
+        assert!(!app.session().palette_open(), "its shortcut toggles it");
+    }
+
+    #[test]
+    fn tab_stays_inside_the_palette() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        for _ in 0..8 {
+            app.press(Key::Tab, Modifiers::NONE);
+            let focused = app.session().focused().expect("something has focus");
+            let test_id = app
+                .screen()
+                .by_id(focused)
+                .and_then(|found| found.test_id());
+            assert!(
+                test_id.is_some_and(|id| id.starts_with("kai.paleta.")),
+                "focus left the palette: {test_id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn clicks_run_a_row_or_close_on_the_backdrop() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.click(row("contador.incrementar"));
+        assert_eq!(app.messages(), [Msg::Increment]);
+        assert!(!app.session().palette_open());
+
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.click_at(crate::geometry::Point { x: 4.0, y: 4.0 });
+        assert!(!app.session().palette_open());
+        assert_eq!(
+            app.messages(),
+            [Msg::Increment],
+            "the click hit nothing below"
+        );
+    }
+
     #[test]
     fn query_runs_without_msg() {
         let mut app = TestApp::new(Demo::default());

@@ -155,6 +155,16 @@ impl<A: App> TestApp<A> {
         &self.session
     }
 
+    /// Press and release the primary button at `point`, whatever is there.
+    #[cfg(test)]
+    pub(crate) fn click_at(&mut self, point: crate::geometry::Point) {
+        self.session.pointer_moved(Some(point));
+        self.frame();
+        self.session.pointer_button(true);
+        self.session.pointer_button(false);
+        self.frame();
+    }
+
     /// Theme in use (the app's own when it asks for one).
     pub fn theme(&self) -> &Theme {
         self.session.theme()

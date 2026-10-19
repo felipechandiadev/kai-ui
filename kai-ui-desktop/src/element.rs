@@ -271,7 +271,8 @@ pub struct Element<Msg> {
     /// where it was).
     pub focus_on_press: bool,
     pub handlers: Handlers<Msg>,
-    /// App command this control runs ([`Element::on_command`]).
+    /// Command this control runs ([`Element::on_command`]); a control even
+    /// without a message, as the palette's rows, which the session runs.
     pub command: Option<&'static str>,
 }
 
@@ -659,7 +660,9 @@ impl<Msg> Element<Msg> {
         }
         match self.kind {
             Kind::Input { .. } => Some(FocusKind::TextField),
-            _ if self.handlers.on_click.is_some() => Some(FocusKind::Button),
+            _ if self.handlers.on_click.is_some() || self.command.is_some() => {
+                Some(FocusKind::Button)
+            }
             _ => None,
         }
     }
@@ -675,7 +678,9 @@ impl<Msg> Element<Msg> {
     /// Clickable or editable, enabled or not: such elements are hit-test
     /// targets and expose semantic roles.
     pub fn is_control(&self) -> bool {
-        matches!(self.kind, Kind::Input { .. }) || self.handlers.on_click.is_some()
+        matches!(self.kind, Kind::Input { .. })
+            || self.handlers.on_click.is_some()
+            || self.command.is_some()
     }
 
     /// Concatenated text of the subtree, used as default accessible name.

@@ -8,7 +8,7 @@
 
 use std::rc::Rc;
 
-use crate::element::{ControlSize, Element, Role, div, icon, input, text};
+use crate::element::{ControlSize, Element, KeyEquivalent, Role, div, icon, input, text};
 use crate::icons::Icon;
 
 /// One class string per theme: prefixes every class of `kai` with `kai:` and
@@ -1349,6 +1349,109 @@ pub fn alert<Msg>(variant: AlertVariant, message: impl Into<String>) -> Element<
                 .class("flex-1 text-sm font-normal text-foreground")
                 .part("message"),
         ])
+}
+
+/// A row of [`command_palette`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaletteItem {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub shortcut: Option<KeyEquivalent>,
+    /// Why the command cannot run now; the row is shown disabled.
+    pub disabled: Option<String>,
+}
+
+/// Command palette: a backdrop over the whole window and a panel with the
+/// search input `kai.paleta.buscar` and one button per item
+/// (`kai.paleta.<id>`), `selected` highlighted. Behavior lives in the
+/// session that shows it; the elements send no messages.
+pub fn command_palette<Msg>(
+    items: &[PaletteItem],
+    query: &str,
+    selected: Option<usize>,
+) -> Element<Msg> {
+    // Layout is shared; `themed` only picks each theme's look.
+    let style = |layout: &str, kai: &str, appkit: &str| format!("{layout} {}", themed(kai, appkit));
+    let secondary = |layout: &str| {
+        style(
+            layout,
+            "text-xs text-muted-foreground",
+            "text-caption1 text-secondary-label",
+        )
+    };
+    let rows = items.iter().enumerate().map(|(index, item)| {
+        let (kai_selected, appkit_selected) = if selected == Some(index) {
+            ("bg-primary/10", "bg-selection/20")
+        } else {
+            ("", "")
+        };
+        let mut row = div()
+            .class(&style(
+                "flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed",
+                &format!(
+                    "px-3 py-2 rounded-md text-sm leading-5 text-foreground hover:bg-accent/10 \
+                     disabled:opacity-50 {kai_selected}"
+                ),
+                &format!(
+                    "px-2 py-1 rounded-control text-body text-label hover:bg-fill-3 \
+                     disabled:text-disabled-control-text {appkit_selected}"
+                ),
+            ))
+            .role(Role::Button)
+            .key(item.id)
+            .test_id(format!("kai.paleta.{}", item.id))
+            .label(item.title)
+            .child(text(item.title).class("flex-1 whitespace-nowrap"));
+        row.command = Some(item.id);
+        if let Some(reason) = &item.disabled {
+            row = row
+                .disabled(true)
+                .description(reason.clone())
+                .child(text(reason.clone()).class(&secondary("whitespace-nowrap")));
+        }
+        if let Some(shortcut) = item.shortcut {
+            row = row.child(text(shortcut.label()).class(&secondary("whitespace-nowrap")));
+        }
+        row
+    });
+    let list = if items.is_empty() {
+        div()
+            .class("p-3")
+            .child(text("Sin resultados").class(&secondary("")))
+    } else {
+        div()
+            .class("flex flex-col gap-0.5 p-1 overflow-y-auto")
+            .children(rows)
+    };
+    div()
+        .class(&style(
+            "absolute inset-0 z-50 flex justify-center items-start pt-24",
+            "bg-foreground/20",
+            "bg-label/10",
+        ))
+        .key("kai.paleta")
+        .child(
+            div()
+                .class(&style(
+                    "flex flex-col w-[480px] max-h-[360px] border overflow-hidden",
+                    "rounded-lg border-border bg-background shadow-lg",
+                    "rounded-[10px] border-separator bg-window shadow-lg",
+                ))
+                .role(Role::Group)
+                .label("Paleta de comandos")
+                .test_id("kai.paleta")
+                .children([
+                    input(query, "Buscar comandos")
+                        .class(&style(
+                            "w-full h-11 px-4 bg-transparent border-b",
+                            "text-sm text-foreground border-border placeholder-muted-foreground",
+                            "text-body text-label border-separator placeholder-placeholder",
+                        ))
+                        .label("Buscar comandos")
+                        .test_id("kai.paleta.buscar"),
+                    list,
+                ]),
+        )
 }
 
 /// `.fs-icon-button` variants.
