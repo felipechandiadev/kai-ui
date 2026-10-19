@@ -1,6 +1,6 @@
 //! An app that only uses Kai's public API.
 
-use kai::commands::{Action, Availability, CommandRegistry};
+use kai::commands::{Action, Availability, CommandRegistry, describe_json};
 use kai::components::{ButtonVariant, TextField, button, card, card_content, heading, paragraph};
 use kai::element::{Element, div};
 use kai::runtime::{self, App, Effects};
@@ -84,5 +84,12 @@ impl App for Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--describe-commands")
+    {
+        println!("{}", describe_json::<Greeter>());
+        return Ok(());
+    }
     runtime::run(Greeter::default(), Theme::kai(Density::Comfortable))
 }

@@ -24,6 +24,7 @@ use crate::element::KeyEquivalent;
 use crate::runtime::App;
 
 pub use registry::{CommandBuilder, CommandRegistry};
+pub use schema::{DIALECT, describe, describe_json};
 
 /// Shortcut of a command: a key plus modifiers, as a control's key
 /// equivalent.

@@ -5,7 +5,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-use crate::commands::{Action, Availability, CommandError, CommandRegistry, Query, Shortcut};
+use crate::commands::{
+    Action, Availability, CommandError, CommandRegistry, Query, Shortcut, describe_json,
+};
 use crate::components::{
     AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
     IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge, button,
@@ -144,11 +146,11 @@ impl Action for Incrementar {
     }
 }
 
-/// Suma `cantidad` clics de una vez.
+/// Adds `cantidad` clicks at once; only scripts and agents call it.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Sumar {
-    /// Clics que se suman.
+    #[schemars(description = "Clics que se suman")]
     cantidad: u32,
 }
 
@@ -766,8 +768,16 @@ impl Demo {
 }
 
 /// Opens the demo window. Reads `KAI_THEME`, `KAI_HOVER`, `KAI_MIX`,
-/// `KAI_LABEL`, `KAI_BG` and `KAI_BG_ANIM`.
+/// `KAI_LABEL`, `KAI_BG` and `KAI_BG_ANIM`. With `--describe-commands` it
+/// prints the commands and their schemas (`mcp-schema.json`) instead.
 pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--describe-commands")
+    {
+        println!("{}", describe_json::<Demo>());
+        return Ok(());
+    }
     if !cfg!(target_os = "macos") {
         return Err("Kai UI Desktop comienza como prototipo para macOS".into());
     }
@@ -870,7 +880,7 @@ mod tests {
     use serde_json::json;
 
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-    use crate::commands::{Availability, PALETTE};
+    use crate::commands::{Availability, DIALECT, PALETTE, describe_json};
     use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
     use crate::geometry::Size;
     use crate::layout::testing::FixedMeasure;
@@ -1937,6 +1947,55 @@ mod tests {
         app.call("form.enviar", json!({})).unwrap();
         assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!("Ana")));
         assert!(app.call("contador.nada", json!({})).is_err());
+    }
+
+    /// Lines that differ between `expected` and `actual`, numbered; `None`
+    /// when they are equal.
+    fn line_diff(expected: &str, actual: &str) -> Option<String> {
+        let expected: Vec<&str> = expected.lines().collect();
+        let actual: Vec<&str> = actual.lines().collect();
+        let mut diff = String::new();
+        for line in 0..expected.len().max(actual.len()) {
+            let (old, new) = (expected.get(line), actual.get(line));
+            if old != new {
+                for (sign, text) in [("-", old), ("+", new)] {
+                    if let Some(text) = text {
+                        diff.push_str(&format!("{:>4} {sign} {text}\n", line + 1));
+                    }
+                }
+            }
+        }
+        (!diff.is_empty()).then_some(diff)
+    }
+
+    /// `mcp-schema.json` is what the demo publishes to agents; a change
+    /// must be deliberate. `KAI_UPDATE_SCHEMA=1 cargo test mcp_schema`
+    /// rewrites it.
+    #[test]
+    fn mcp_schema_matches_snapshot() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mcp-schema.json");
+        let actual = describe_json::<Demo>() + "\n";
+        if std::env::var_os("KAI_UPDATE_SCHEMA").is_some() {
+            std::fs::write(&path, &actual).expect("write mcp-schema.json");
+            return;
+        }
+        let expected = std::fs::read_to_string(&path).unwrap_or_default();
+        if let Some(diff) = line_diff(&expected, &actual) {
+            panic!(
+                "mcp-schema.json cambió; si es a propósito, KAI_UPDATE_SCHEMA=1 cargo test \
+                 mcp_schema\n{diff}"
+            );
+        }
+        let document: serde_json::Value = serde_json::from_str(&actual).unwrap();
+        assert_eq!(document["$schema"], DIALECT);
+        let ids: Vec<&str> = document["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|command| command["id"].as_str())
+            .collect();
+        assert!(ids.contains(&"contador.sumar") && ids.contains(&"form.ultimo_envio"));
+        assert!(ids.iter().all(|id| !id.starts_with("kai.")), "{ids:?}");
     }
 
     #[test]

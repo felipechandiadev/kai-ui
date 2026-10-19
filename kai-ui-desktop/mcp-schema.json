@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "commands": [
+    {
+      "description": "Suma un clic al contador",
+      "id": "contador.incrementar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Incrementar"
+    },
+    {
+      "description": "Suma varios clics al contador",
+      "id": "contador.sumar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cantidad": {
+            "description": "Clics que se suman",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cantidad"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Sumar"
+    },
+    {
+      "description": "Vuelve el contador a cero",
+      "id": "contador.reiniciar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Reiniciar"
+    },
+    {
+      "description": "Registra el nombre y limpia el formulario",
+      "id": "form.enviar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Enviar"
+    },
+    {
+      "description": "Borra el nombre y el correo",
+      "id": "form.limpiar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Limpiar"
+    },
+    {
+      "id": "form.alternar_contrasena",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mostrar u ocultar contraseña"
+    },
+    {
+      "id": "form.ultimo_envio",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": "Último envío"
+    }
+  ],
+  "format": 1
+}

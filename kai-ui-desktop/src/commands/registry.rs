@@ -1,6 +1,6 @@
 use std::any::type_name;
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::schema::{decode, input_schema, output_schema};
 use super::{
@@ -266,6 +266,40 @@ impl<A: App> CommandRegistry<A> {
     /// JSON Schema 2020-12 of the output of query `id`.
     pub fn output_schema(&self, id: &str) -> Option<Value> {
         self.entry(id).ok()?.output_schema.map(|schema| schema())
+    }
+
+    /// The app's commands as JSON, in registration order, without the
+    /// framework's `kai.*`: id, title, description, kind, safety and the
+    /// schemas of input and (queries) output.
+    pub(super) fn descriptions(&self) -> Vec<Value> {
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let mut command = Map::new();
+                command.insert("id".into(), json!(entry.id));
+                command.insert("title".into(), json!(entry.title));
+                if !entry.description.is_empty() {
+                    command.insert("description".into(), json!(entry.description));
+                }
+                let kind = match entry.kind {
+                    CommandKind::Action => "action",
+                    CommandKind::Query => "query",
+                };
+                command.insert("kind".into(), json!(kind));
+                if let Some(safety) = entry.safety {
+                    let safety = match safety {
+                        Safety::Mutating => "mutating",
+                        Safety::Destructive => "destructive",
+                    };
+                    command.insert("safety".into(), json!(safety));
+                }
+                command.insert("inputSchema".into(), (entry.input_schema?)());
+                if let Some(output) = entry.output_schema {
+                    command.insert("outputSchema".into(), output());
+                }
+                Some(Value::Object(command))
+            })
+            .collect()
     }
 
     /// Repeated ids and shortcuts (with the types that declared them),
