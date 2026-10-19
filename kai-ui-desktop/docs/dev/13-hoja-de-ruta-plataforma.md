@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas; los Pasos 0 a 10 están hechos, salvo el 1b. La demo hace cada acción igual desde botón, atajo, menú, paleta y `TestApp::invoke` (hito M2a). Sigue el Paso 11 (esquemas), que abre la Etapa 3; antes hay que tomar las decisiones de §12 sobre el dialecto de JSON Schema, los tipos propios y cuándo se genera. El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas, y los Pasos 0 a 11 están hechos, salvo el 1b. Los comandos ya se describen en JSON Schema 2020-12 (`mcp-schema.json`, `--describe-commands`) y se ejecutan desde JSON con `Session::call`. Sigue el Paso 12 (MCP experimental por stdio). Antes de escribir código hay que evaluar `rmcp` frente a una implementación propia (§12), y en ese paso se suman el `output` de las acciones y `registry.expose`. El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -643,6 +643,32 @@ Reglas de la pista C:
 - **Diseño**: el registro produce un documento con id, título, descripción, seguridad, esquema de entrada y de salida de cada comando. Se genera con `cargo test` o con el binario en modo `--describe-commands`.
 - **Tests**: snapshot de `mcp-schema.json`; cambiar un campo hace fallar el test con un diff legible.
 - **Decisión a tomar aquí**: dialecto de JSON Schema publicado, representación de enums y tipos propios (`Rut`, montos), generación en compilación o al arrancar (§12).
+- **Estado**: hecho.
+  - **Decisiones**:
+    - **Dialecto:** JSON Schema 2020-12 (`schemars` 1.2 con `SchemaSettings::draft2020_12`). El `$schema` va una sola vez, en la raíz del documento.
+    - **Subesquemas en línea:** se publican sin `$ref`, así ningún cliente tiene que resolverlos.
+    - **Tipos propios:** un RUT es un `string` con `pattern`; los montos son enteros en pesos, nunca `f64`; los enums usan `#[serde(tag = "tipo")]` y salen como `oneOf`.
+    - **Generación:** en ejecución, desde el registro. No hay `build.rs`.
+  - **Entrada**: `Action` y `Query` exigen `DeserializeOwned + JsonSchema`, y `Query::Output` exige `Serialize + JsonSchema`, como en §7.2.
+    - **Sin `Default`:** la acción es su propia entrada.
+    - **Acciones sin parámetros:** siguen siendo structs unitarios. Aceptan `{}` o `null` y se publican como objeto vacío cerrado. Las demás usan `#[serde(deny_unknown_fields)]`.
+    - **Esquema raíz:** pierde `title` y `description`, porque el comando tiene los suyos. El texto de los campos para agentes va en `#[schemars(description = ..)]`.
+    - **Errores de entrada:** son `CommandError` con el id y el mensaje de serde (`entrada inválida para contador.sumar: missing field \`cantidad\``).
+  - **Registro**:
+    - Cada entrada guarda `decode` o `run_query` sobre `serde_json::Value`, sus esquemas y `needs_input` (si `{}` no basta).
+    - `message_from` y `run_query` son las entradas por JSON.
+    - Las acciones con entrada no van al menú ni a la paleta, y `validate` reporta si declaran atajo o menú.
+  - **`Session::call` y `TestApp::call`** ejecutan un comando desde JSON. Es el camino que usará MCP en el Paso 12.
+  - **Documento**: `kai::commands::describe::<App>()` y `describe_json` devuelven `{ "$schema", "format": 1, "commands": [...] }`. Cada comando lleva id, título, descripción, tipo, seguridad, `inputSchema` y, en las consultas, `outputSchema`. Los comandos van en orden de registro, sin `kai.*`.
+    - `mcp-schema.json`, en la raíz del crate, es el snapshot de la demo: `mcp_schema_matches_snapshot` muestra las líneas distintas y `KAI_UPDATE_SCHEMA=1 cargo test mcp_schema` lo reescribe.
+    - `cargo run -- --describe-commands` imprime lo mismo, y la fixture externa también acepta el flag.
+  - **Demo**: la acción `contador.sumar { cantidad: u32 }` no tiene botón ni menú; solo la llaman scripts y agentes.
+  - **Diferido al Paso 12**: el `type Output` y `output()` de las acciones (§7.3), y `registry.expose` (§7.4). Por ahora el documento lista todos los comandos de la app.
+  - **Tests**:
+    - en `schema.rs`: unitarios como objeto cerrado, errores legibles, esquemas sin `$schema` ni `title`, y la convención de RUT, montos y enum con `tag`, en línea;
+    - en el registro: acciones con entrada (`needs_input`, `message_from`, `run_query`) y la validación de atajo o menú;
+    - en la demo: `json_calls_run_actions_and_queries`, `actions_with_input_stay_out_of_menus_and_palette`, `mcp_schema_matches_snapshot` y `Via::Json` en las tablas de vías.
+    - La línea base de capturas sigue en 6/6.
 
 #### Paso 12 — `kai-mcp` experimental (stdio)
 
@@ -934,7 +960,7 @@ Reglas de la pista C:
 |---|---|---|---|
 | Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Tokio en hilo de servicio**: `rmcp` lo usa y 00 solo excluye Tokio como runtime de la UI | Paso 12 |
 | SDK MCP | `rmcp`, implementación propia | Evaluar `rmcp` con los criterios de 09 §4.8; propia solo si falla en MSRV, licencia o stdio servidor | Paso 12 |
-| JSON Schema | `schemars`, manual | `schemars`; fijar dialecto y representación de tipos propios con snapshot | Paso 11 |
+| JSON Schema | `schemars`, manual | **Decidido en el Paso 11: `schemars` 1.2**, dialecto 2020-12, subesquemas en línea, RUT como `string` con `pattern`, montos enteros, enums con `tag`; snapshot en `mcp-schema.json` | Paso 11 |
 | Nombres de herramienta | `clientes.buscar`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
 | Menú nativo | `objc2-app-kit` propio, `muda` | **Decidido en el Paso 8: `muda` 0.19**, que ya usa el mismo objc2 que winit y trae los ítems predefinidos; `objc2-app-kit` propio solo si muda limita (submenús dinámicos, validación por la cadena de responders) | Paso 8 |
 | Validación de clases | Solo ejecución, `tw!`, `rsx!` | `tw!` primero; `rsx!` opcional después | Paso 26 (o antes) |
@@ -1039,7 +1065,7 @@ Reglas de la pista C:
 - [x] P10 Demo migrada a comandos, con un test por acción y vía.
 
 **Etapa 3 — Agentes**
-- [ ] P11 Esquemas y `mcp-schema.json` con snapshot.
+- [x] P11 Esquemas y `mcp-schema.json` con snapshot.
 - [ ] P12 MCP stdio experimental; probado con Cursor o Claude Desktop.
 - [ ] P13 `Dialog`, confirmación, auditoría, indicador de agente.
 

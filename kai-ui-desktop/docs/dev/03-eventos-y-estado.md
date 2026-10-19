@@ -81,7 +81,17 @@ assert_eq!(app.available::<Reiniciar>(), Availability::Enabled);
 app.perform("contador.reiniciar");                  // la vía del menú y los atajos
 ```
 
-  `invoke` usa `Session::send_command`, que respeta la misma disponibilidad que el menú, la paleta y `on_command`; `commands()` devuelve los estados que ellos ven. La demo prueba cada acción por todas sus vías (invocación, botón, atajo, menú y paleta) y compara el resultado con `invoke` (`every_action_does_the_same_from_every_via`).
+  `invoke` usa `Session::send_command`, que respeta la misma disponibilidad que el menú, la paleta y `on_command`; `commands()` devuelve los estados que ellos ven. La demo prueba cada acción por todas sus vías (invocación, JSON, botón, atajo, menú y paleta) y compara el resultado con `invoke` (`every_action_does_the_same_from_every_via`).
+- **Desde JSON** (Paso 11), como lo hará un agente: `Session::call(id, input)` y `TestApp::call` decodifican la entrada con serde, comprueban la disponibilidad y envían el `Msg` (devuelven `null`) o, si es una consulta, devuelven su salida serializada.
+
+```rust
+app.call("contador.sumar", json!({"cantidad": 3}))?;     // Msg::Add(3)
+app.call("contador.incrementar", json!({}))?;            // acción sin parámetros: {}
+assert_eq!(app.call("form.ultimo_envio", json!({}))?, json!(null));
+app.call("contador.sumar", json!({})).unwrap_err();      // entrada inválida …: missing field `cantidad`
+```
+
+  Una acción cuya entrada `{}` no basta (`needs_input`) no aparece en el menú ni en la paleta, y el registro reporta en debug si declara atajo o menú. `kai::commands::describe::<App>()` publica todos los comandos con sus esquemas ([13](13-hoja-de-ruta-plataforma.md), Paso 11).
 
 ## Estado de L1
 
