@@ -351,7 +351,9 @@ impl App for Demo {
             card_content().class("gap-4").children([
                 div().class("flex flex-wrap items-center gap-3").children([
                     button("Primary", ButtonVariant::Primary).on_click(Msg::Increment),
-                    button("Secondary", ButtonVariant::Secondary).on_click(Msg::Increment),
+                    button("Secondary", ButtonVariant::Secondary)
+                        .test_id("botones.secondary")
+                        .on_click(Msg::Increment),
                     button("Outlined", ButtonVariant::Outlined).on_click(Msg::Increment),
                     button("Text", ButtonVariant::Text).on_click(Msg::Increment),
                     button("Danger", ButtonVariant::Danger).on_click(Msg::Reset),
@@ -1177,14 +1179,7 @@ mod tests {
         screen.get_by_text(title).parent().unwrap().id()
     }
 
-    /// Row of the «Secondary» IconButtons. It is not focusable, so
-    /// `demo-variants-focus` draws no ring; kept so the baseline stays put.
-    fn secondary_icon_row(demo: &Demo) -> WidgetId {
-        let layout = layout_of(&build_view(demo));
-        let screen = Screen::new(&layout);
-        let captions = screen.all(By::text("Secondary"));
-        captions.last().unwrap().parent().unwrap().id()
-    }
+    const BUTTONS_CARD: &str = "Botones, Tamaños e IconButtons";
 
     #[test]
     fn test_ids_are_unique_and_point_at_the_controls() {
@@ -1432,7 +1427,7 @@ mod tests {
             ];
             let mut sheet: Vec<Image> = Vec::new();
             for (caption, theme, tag) in &rows {
-                let buttons = section(theme, &demo, "Botones, Tamaños e IconButtons", 300.0);
+                let buttons = section(theme, &demo, BUTTONS_CARD, 300.0);
                 let fields = section(theme, &filled, "Variantes de TextField", 470.0);
                 sheet.push(label(&format!("{caption} — {generation:?} {appearance:?}")));
                 sheet.push(side_by_side(&buttons, &fields));
@@ -1441,8 +1436,6 @@ mod tests {
                         width: 1024.0,
                         height: 720.0,
                     };
-                    let content = build_view(&demo).children[1].id;
-                    let bottom = ScrollOffsets::from([(content, 10_000.0)]);
                     let shots = [
                         (
                             "demo-variants-focus",
@@ -1451,11 +1444,11 @@ mod tests {
                                 &demo,
                                 wide,
                                 &Interaction {
-                                    focused: Some(secondary_icon_row(&demo)),
+                                    focused: Some(find(&demo, By::test_id("botones.secondary"))),
                                     focus_visible: true,
                                     ..Interaction::default()
                                 },
-                                &bottom,
+                                &scrolled_to(theme, &demo, wide, BUTTONS_CARD),
                             ),
                         ),
                         ("demo-fields", {
@@ -1928,8 +1921,6 @@ mod tests {
             &none,
         );
 
-        let content = tree.children[1].id;
-        let bottom = ScrollOffsets::from([(content, 10_000.0)]);
         snapshot(
             out,
             "demo-variants-focus",
@@ -1937,12 +1928,12 @@ mod tests {
             wide,
             2.0,
             &Interaction {
-                focused: Some(secondary_icon_row(&typed)),
+                focused: Some(find(&typed, By::test_id("botones.secondary"))),
                 // Reached with Tab: the ring is drawn.
                 focus_visible: true,
                 ..Interaction::default()
             },
-            &bottom,
+            &scrolled_to(&out.theme, &typed, wide, BUTTONS_CARD),
         );
 
         let fields_view = Size {
