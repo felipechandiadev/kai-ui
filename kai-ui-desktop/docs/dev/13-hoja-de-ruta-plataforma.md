@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas, y los Pasos 0 a 12 están hechos, salvo el 1b. La demo ya es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`), y solo falta probarla a mano con Cursor o Claude Desktop ([14](14-mcp.md)). Sigue el Paso 13 (confirmación y auditoría), que necesita el widget `Dialog`. El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: las Etapas 1, 2 y 3 están cerradas, y los Pasos 0 a 13 están hechos, salvo el 1b. La demo es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`). Una acción `Destructive` pedida por un agente espera a la persona en un diálogo, y cada llamada por JSON queda en la auditoría. Falta probarlo a mano con Cursor o Claude Desktop ([14](14-mcp.md)). Sigue la Etapa 4: el Paso 14 (DSP desktop, en `dsp-27/desktop/`) decide qué widgets y efectos faltan. Antes conviene confirmar el primer corte con el equipo de DSP. El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -328,7 +328,7 @@ flowchart LR
 | S2 | Pasos 17–18: galería y capturas doradas | Paso 4 (capturas por elemento) | `snapshot.rs` y la galería se prueban con las consultas de la Etapa 1. |
 | S3 | Paso 20: controles nuevos (switch, checkbox, pop-up, segmented, search field, sidebar, toolbar) | Paso 14 (widgets de la app guía) | Cada control nace con roles nuevos, convención de `test_id` y tests con `TestApp`. |
 | S4 | Paso 16: tema AppKit en runtime | Paso 17 (`[theme] kind`) | `kai.toml` elige `kai`, `appkit` o `system`. |
-| S5 | `Dialog` (fuera de 12, necesario en ambas) | Paso 13 (confirmación) | Un solo widget `Dialog` con rol accesible `Dialog`. |
+| S5 | `Dialog` (fuera de 12, necesario en ambas) | Paso 13 (confirmación) | Un solo widget `Dialog` con rol accesible `Dialog`. Resuelto en el Paso 13: `components::dialog` y `Role::Dialog`, que también usa la paleta. |
 
 ### 8.1 Mapas: pista de dominio (pista C)
 
@@ -599,7 +599,7 @@ Reglas de la pista C:
   - **Sin menú Edición**: los ítems predefinidos de Copiar y Pegar le quitarían ⌘C y ⌘V a los campos de Kai, que hacen su propia edición.
   - **Paleta**: `components::command_palette` es un fondo `absolute inset-0 z-50` con un panel (`Role::Group`, «Paleta de comandos»), la búsqueda `kai.paleta.buscar` y una fila por acción (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo. `Session` la agrega como último hijo de la raíz, así que los `WidgetId` de la app no cambian. Mientras está abierta, el foco y Tab quedan dentro de ella y el único atajo activo es el suyo. El texto de la búsqueda se copia del editor, porque el input no tiene `on_input`. Las flechas mueven la selección; Return ejecuta la fila seleccionada si está habilitada y cierra; Esc cierra y devuelve el foco; un clic en una fila la ejecuta y un clic en el fondo cierra. Las filas son controles sin `Msg`: `Element::command` basta para que sean enfocables y reciban clics.
   - **Tests**: `command_shortcuts_come_after_controls` en `responder.rs`; en la demo, `command_shortcut_sends_the_same_msg_as_the_button`, `disabled_command_shortcut_sends_nothing`, `command_shortcuts_do_not_steal_copy_in_a_field`, `a_button_follows_its_command`, `menu_bar_follows_the_registry` y siete de la paleta. `disabled_command_stays_disabled_in_button_palette_and_menu` prueba el «hecho cuando». En `menu.rs`, `menus_group_actions_in_registration_order`, `enabling_an_item_keeps_the_structure` y, solo en macOS, `shortcuts_map_to_accelerators`. La línea base de capturas no cambió.
-  - **Pendiente a mano** en la ventana real: ⌘I, ⌘0 con 0 clics, ⇧⌘P y ⌘C en un campo, para descartar que el menú y la ruta de teclas disparen dos veces. También revisar la paleta con VoiceOver; queda como grupo con nombre hasta tener `Role::Dialog` (S5).
+  - **Pendiente a mano** en la ventana real: ⌘I, ⌘0 con 0 clics, ⇧⌘P y ⌘C en un campo, para descartar que el menú y la ruta de teclas disparen dos veces. También revisar la paleta con VoiceOver; desde el Paso 13 es un `Role::Dialog` modal (S5).
 
 #### Paso 9 — Comandos en `TestApp`
 
@@ -693,7 +693,7 @@ Reglas de la pista C:
     - `serve` corre `rmcp` en un hilo con un runtime Tokio `current_thread`, sobre el par de streams que se le pase; `serve_stdio` usa stdin y stdout.
     - Cada `tools/call` es una `Invocation { id: InvocationId, command, input }` que llega al hilo de UI como `UserEvent::Mcp` por el `EventLoopProxy`. Ahí corre `Session::call` y la respuesta vuelve por un `oneshot`.
     - Los errores del comando (`CommandError`: no disponible, entrada inválida) vuelven como resultado con `isError`. Una herramienta no expuesta o inexistente es un error JSON-RPC.
-  - **Runtime:** `kai::runtime::run_with_mcp(app, theme)`. Las llamadas que llegan antes de que exista la ventana esperan en una cola. Cuando el cliente cierra stdin, la app termina (`UserEvent::McpClosed`). Stdout queda para el protocolo; un test revisa que `runtime.rs`, `session.rs` y `mcp/` no impriman ahí.
+  - **Runtime:** `kai::runtime::run_with_mcp(app, theme)`. Las llamadas que llegan antes de que exista la ventana esperan en una cola. Cuando el cliente cierra stdin, la app termina (desde el Paso 13, `UserEvent::Mcp(Event::Closed)`). Stdout queda para el protocolo; un test revisa que `runtime.rs`, `session.rs`, `session/calls.rs` y `mcp/` no impriman ahí.
   - **Demo:** `--mcp` (con `--features mcp`; sin la feature, error claro). Expone todo menos `form.alternar_contrasena`; `form.enviar` responde con `form.ultimo_envio`.
   - **Tests:** `TestApp::mcp_client()` conecta un cliente JSON-RPC por un `tokio::io::duplex` al mismo servidor; las llamadas corren en el `TestApp`. En la demo, `mcp_lists_the_exposed_commands_as_tools` compara la lista con `describe`, y `mcp_tool_calls_run_on_the_app` cubre la acción con entrada reflejada en la UI, la acción no disponible, la entrada inválida, la herramienta no expuesta y las respuestas estructuradas. CI suma clippy y tests con `--features mcp`.
   - **Prueba de humo:** con líneas JSON-RPC por stdin, el binario responde a `initialize`, `tools/list` y `tools/call`, y termina con código 0 al cerrarse stdin.
@@ -721,6 +721,23 @@ Reglas de la pista C:
   assert_eq!(app.audit_log().last().unwrap().command, "demo.limpiar_todo");
   ```
 - **Hecho cuando**: rechazar no toca el modelo; aceptar queda en la auditoría; el diálogo se encuentra por `get_by_role(Role::Dialog)`.
+- **Estado**: hecho, salvo la prueba a mano con Cursor o Claude Desktop (guía en [14](14-mcp.md)). Decisiones: en la demo, la acción `Destructive` es `contador.reiniciar`. La auditoría registra solo las llamadas por JSON (agentes, scripts y tests), rechazadas incluidas, con su origen. Lo que la persona hace en la ventana no se confirma ni se audita.
+  - **`Dialog` (S5):** `Role::Dialog` en `element.rs`, que AccessKit publica como `Dialog` modal y con el título como nombre. `components::dialog(title, body, actions)` arma el fondo (`absolute inset-0 z-50`) con las partes `panel`, `title`, `body` y `actions`. La paleta del Paso 8 usa el mismo rol.
+  - **Auditoría (`src/commands/audit.rs`):** cada `AuditEntry` guarda la fecha, el `Origin` (`Agent { client }` o `Script`), el id del comando, la entrada redactada, el `Outcome` (`Done`, `Failed`, `Denied`, `Cancelled`) y la duración. `AuditLog` guarda las últimas 500 (`AUDIT_CAPACITY`). Solo se auditan las acciones; las consultas no cambian nada. `redact` reemplaza por `•••` los campos marcados `writeOnly` en el esquema de entrada, también dentro de objetos, listas y `oneOf`/`anyOf`/`allOf`, así que un secreto se marca con `#[schemars(extend("writeOnly" = true))]`.
+  - **Sesión (`src/session/calls.rs`):** `Session::call` es el camino de scripts y tests (`Origin::Script`, sin confirmación). `Session::agent_call` es el de agentes:
+    - Un comando no expuesto se rechaza.
+    - Una acción `Destructive` que la persona no permitió para la sesión se valida primero, para que una entrada mala o una acción no disponible fallen sin preguntar. Si pasa, se abre el diálogo `kai.confirmar`.
+    - El diálogo muestra «¿Permitir «título»?», el cliente, el id, la descripción y los datos resumidos y redactados. Tiene tres botones: `kai.confirmar.sesion`, `.una_vez` y `.rechazar`. El foco empieza en Rechazar.
+    - Mientras está abierto, Esc rechaza, los clics fuera del panel no hacen nada, los atajos y el menú quedan apagados, y las demás llamadas de agentes esperan en cola, en orden.
+    - Rechazar responde «La persona rechazó «título»» como error de herramienta, sin tocar el modelo.
+    - `cancel_agent_call` cierra el diálogo, o saca la llamada de la cola, como `Cancelled`.
+  - **Indicador:** `kai.agente`, con rol `Status`, en la esquina inferior derecha: «Agente: cliente», y «Agente: cliente · Sumar» tras la última acción que corrió.
+  - **MCP:** `Invocation` lleva el nombre del cliente (su `title`, o su `name`, de `initialize`). El servidor manda `mcp::Event::{Connected, Call, Cancel, Closed}` al hilo de UI (`UserEvent::Mcp`). Cada llamada espera la respuesta con un `select!`:
+    - si pasan 30 s (`mcp::TIMEOUT`), manda `Cancel` y responde «… no terminó en 30 s (¿esperaba confirmación?)»;
+    - si el cliente manda `notifications/cancelled`, manda `Cancel`.
+  - **Tests:** `TestApp` suma `agent_call` (devuelve un `AgentReply`), `cancel_agent_call`, `on_confirmation(Confirm::{Ask, AllowOnce, AllowForSession, Deny})`, `agent_connected`, `confirmation_open` y `audit_log`. `McpClient` suma `send_call`, que vuelve cuando el diálogo está abierto o llegó la respuesta, junto con `finish` y `cancel`; el cliente de prueba se llama `kai-test` (`MCP_CLIENT`). En la demo hay seis tests de confirmación: diálogo, cola y cancelación, fallo antes de preguntar, personas y scripts sin diálogo, indicador, y el recorrido por MCP.
+  - **Prueba de humo:** por stdin, `contador.sumar` y luego `contador.reiniciar` abren el diálogo en la ventana real. `notifications/cancelled` lo cierra sin respuesta y la siguiente llamada corre. La app termina con código 0 al cerrarse stdin.
+  - **Pendiente:** probarlo con Cursor y con Claude Desktop. Hay que ver si 30 s alcanzan para decidir con calma o si el plazo debe ser configurable, y si el cliente muestra bien el error de rechazo.
 
 ### Etapa 4 — App guía real (hito M3)
 
@@ -1080,7 +1097,7 @@ Reglas de la pista C:
 **Etapa 3 — Agentes**
 - [x] P11 Esquemas y `mcp-schema.json` con snapshot.
 - [x] P12 MCP stdio experimental (falta la prueba a mano con Cursor o Claude Desktop; ver [14](14-mcp.md)).
-- [ ] P13 `Dialog`, confirmación, auditoría, indicador de agente.
+- [x] P13 `Dialog`, confirmación, auditoría, indicador de agente (falta la prueba a mano con Cursor o Claude Desktop).
 
 **Etapa 4 — App guía**
 - [ ] P14 DSP desktop (login, áreas, flujo operativo, notificaciones) y widgets del backlog, cada uno con ids y tests.

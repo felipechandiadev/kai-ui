@@ -51,8 +51,9 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **Comandos en pruebas y demo migrada (Pasos 9 y 10 de 13):** `TestApp::invoke`, `query`, `available` y `perform`; cada acción de la demo hace lo mismo desde botón, atajo, menú, paleta y código. Con esto se cierra la Etapa 2.
 - **Esquemas (Paso 11 de 13):** cada comando es su propia entrada, deserializable con serde y descrita en JSON Schema 2020-12 con schemars. `Session::call` y `TestApp::call` ejecutan un comando desde JSON, y el registro se publica en `mcp-schema.json`, comparado en un test, y con `cargo run -- --describe-commands`.
 - **MCP experimental (Paso 12 de 13):** con `--features mcp`, la demo lanzada con `--mcp` es un servidor MCP por stdio (`rmcp`). Las herramientas son los comandos marcados con `.expose()`, y cada llamada corre en el hilo de UI como `Session::call`. Una acción puede responder con una consulta (`.returns::<Q>()`). `TestApp::mcp_client()` lo prueba en proceso. Falta la prueba a mano con Cursor o Claude Desktop ([14](14-mcp.md)).
+- **Confirmación y auditoría (Paso 13 de 13):** un agente no corre una acción `Destructive` sin una persona. La ventana muestra un diálogo modal (`components::dialog`, `Role::Dialog`) con «Permitir una vez», «Permitir en esta sesión» y «Rechazar». Sin respuesta en 30 s, o si el cliente cancela, la llamada no corre. Cada llamada por JSON queda en una `AuditLog` en memoria, con su origen y la entrada redactada (los campos `writeOnly` no se guardan). Un indicador muestra el agente conectado y su última acción. Con esto se cierra la Etapa 3.
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 279 tests (272 normales y 7 `#[ignore]` de benchmark y capturas; con `--features mcp` son 275 normales) más 5 doctests (uno ignorado), Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 288 tests (281 normales y 7 `#[ignore]` de benchmark y capturas; con `--features mcp` son 285 normales) más 5 doctests (uno ignorado), Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -65,12 +66,15 @@ kai-ui-desktop/
 │   ├── gallery.rs         galería de controles por tamaño, tema, apariencia y ventana
 │   ├── runtime.rs         App v2 y SimpleApp; ventana: winit → Session, Outbox → ventana, render
 │   ├── session.rs         runtime sin ventana: árbol, layout, foco, inputs, eventos → mensajes
+│   ├── session/calls.rs   llamadas por JSON: scripts y agentes, confirmación, cola, indicador
 │   ├── element.rs         árbol tipo DOM Element<Msg>, ids, test_id, validate_ids, FocusOrder
-│   ├── components.rs      Button, TextField, Card, paleta… con clases Kai web y AppKit
+│   ├── components.rs      Button, TextField, Card, Dialog, paleta… con clases Kai web y AppKit
 │   ├── responder.rs       acciones, cadena de responders, equivalentes y atajos de comandos
 │   ├── commands/          registro de comandos: Action, Query, disponibilidad, validación,
-│   │                      entrada JSON y esquemas (schema.rs: describe, mcp-schema.json)
-│   ├── mcp/               servidor MCP por stdio con rmcp (feature `mcp`): Tools, Invocation, serve
+│   │                      entrada JSON, esquemas (schema.rs: describe, mcp-schema.json) y
+│   │                      auditoría (audit.rs: AuditLog, redact)
+│   ├── mcp/               servidor MCP por stdio con rmcp (feature `mcp`): Tools, Invocation,
+│   │                      Event, serve; plazo de 30 s y cancelación
 │   ├── menu.rs            barra de menús desde el registro (menu_model; muda en macOS)
 │   ├── tw.rs              parser de clases tipo Tailwind → Style
 │   ├── style.rs           Style tipo CSS → taffy::Style, texto heredable
