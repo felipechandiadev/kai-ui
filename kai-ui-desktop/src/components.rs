@@ -1494,7 +1494,7 @@ pub fn dialog<Msg>(
         .child(
             div()
                 .class(&style(
-                    "flex flex-col w-[420px] border overflow-hidden",
+                    "flex flex-col w-[480px] border overflow-hidden",
                     "gap-4 p-6 rounded-lg border-border bg-background shadow-lg",
                     "gap-3 p-5 rounded-[10px] border-separator bg-window shadow-lg",
                 ))
@@ -1511,7 +1511,7 @@ pub fn dialog<Msg>(
                         .part("title"),
                     body.part("body"),
                     div()
-                        .class("flex justify-end gap-2")
+                        .class("flex flex-wrap justify-end gap-2")
                         .part("actions")
                         .children(actions),
                 ]),

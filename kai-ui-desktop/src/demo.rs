@@ -2197,6 +2197,62 @@ mod tests {
 
     #[cfg(feature = "mcp")]
     #[test]
+    fn mcp_destructive_calls_wait_for_the_person() {
+        use crate::testing::MCP_CLIENT;
+
+        let mut app = TestApp::new(Demo::default());
+        let mut client = app.mcp_client();
+        client
+            .app()
+            .screen()
+            .get(By::role(Role::Status).name(format!("Agente: {MCP_CLIENT}")));
+        client
+            .call_tool("contador.sumar", json!({"cantidad": 3}))
+            .unwrap();
+        client
+            .app()
+            .screen()
+            .get(By::role(Role::Status).name(format!("Agente: {MCP_CLIENT} · Sumar")));
+
+        let reset = client.send_call("contador.reiniciar", json!({}));
+        let screen = client.app().screen();
+        let dialog = screen.get(By::role(Role::Dialog).name("¿Permitir «Reiniciar»?"));
+        screen.within(dialog).get(By::text(format!(
+            "{MCP_CLIENT} quiere ejecutar contador.reiniciar."
+        )));
+        client.app().click(By::test_id("kai.confirmar.rechazar"));
+        let result = client.finish(reset).unwrap();
+        assert_eq!(result["isError"], json!(true));
+        assert_eq!(
+            result["content"][0]["text"],
+            json!("La persona rechazó «Reiniciar»")
+        );
+        assert_eq!(client.app().app().clicks, 3);
+        let last = client.app().audit_log().last().unwrap().clone();
+        assert_eq!(last.origin, agent(MCP_CLIENT));
+        assert_eq!(last.outcome, Outcome::Denied);
+
+        let reset = client.send_call("contador.reiniciar", json!({}));
+        client.cancel(reset);
+        assert!(!client.app().confirmation_open());
+        assert_eq!(client.app().app().clicks, 3);
+        let last = client.app().audit_log().last().unwrap().outcome.clone();
+        assert_eq!(last, Outcome::Cancelled);
+
+        client.app().on_confirmation(Confirm::AllowOnce);
+        let result = client.call_tool("contador.reiniciar", json!({})).unwrap();
+        assert_eq!(result["isError"], json!(false));
+        assert_eq!(client.app().app().clicks, 0);
+        let last = client.app().audit_log().last().unwrap().clone();
+        assert_eq!(
+            (last.origin, last.outcome),
+            (agent(MCP_CLIENT), Outcome::Done)
+        );
+        assert!(client.close());
+    }
+
+    #[cfg(feature = "mcp")]
+    #[test]
     fn mcp_tool_calls_run_on_the_app() {
         let mut app = TestApp::new(Demo::default());
         let mut client = app.mcp_client();
@@ -2211,12 +2267,17 @@ mod tests {
             .within(screen.get_by_test_id("contador"))
             .get(By::role(Role::Status).name("2"));
 
-        client.call_tool("contador.reiniciar", json!({})).unwrap();
+        let reset = client.send_call("contador.reiniciar", json!({}));
+        assert!(client.app().confirmation_open());
+        client.app().click(By::test_id("kai.confirmar.una_vez"));
+        assert_eq!(client.finish(reset).unwrap()["isError"], json!(false));
+        assert_eq!(client.app().app().clicks, 0);
         let result = client.call_tool("contador.reiniciar", json!({})).unwrap();
         assert_eq!(result["isError"], json!(true));
         assert_eq!(
             result["content"][0]["text"],
-            json!("El contador ya está en cero")
+            json!("El contador ya está en cero"),
+            "an action that cannot run fails without asking"
         );
 
         let result = client

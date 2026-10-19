@@ -393,6 +393,12 @@ impl<A: App> TestApp<A> {
         self.session.audit_log()
     }
 
+    /// Whether an agent's call waits for the person in the confirmation
+    /// dialog.
+    pub fn confirmation_open(&self) -> bool {
+        self.session.confirmation_open()
+    }
+
     /// Click the button of the [`Confirm`] policy while a dialog is open.
     fn answer_confirmations(&mut self) {
         let part = match self.confirm {

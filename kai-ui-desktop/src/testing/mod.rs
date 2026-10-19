@@ -26,7 +26,7 @@ mod query;
 
 pub use app::{AgentReply, Confirm, MemoryClipboard, TestApp, TestAppBuilder};
 #[cfg(feature = "mcp")]
-pub use mcp::McpClient;
+pub use mcp::{MCP_CLIENT, McpClient};
 pub use query::{By, Found, Screen};
 
 pub use crate::ui_engine::{Key, Modifiers};

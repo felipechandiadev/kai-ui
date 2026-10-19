@@ -4,11 +4,12 @@
 //!
 //! The protocol runs on its own thread with a small tokio runtime; the app
 //! stays on the UI thread. Each tool call travels as an [`Invocation`] to the
-//! event loop, which runs it like any JSON call ([`TestApp::call`]) and sends
-//! the answer back. Build with `--features mcp` and start the app with
+//! event loop, which runs it as an agent call ([`TestApp::agent_call`]):
+//! a `Destructive` action waits for the person in a confirmation dialog
+//! (13, Paso 13). Build with `--features mcp` and start the app with
 //! [`run_with_mcp`](crate::runtime::run_with_mcp).
 //!
-//! [`TestApp::call`]: crate::testing::TestApp::call
+//! [`TestApp::agent_call`]: crate::testing::TestApp::agent_call
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -22,7 +23,7 @@ use rmcp::model::{
     JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
     ToolAnnotations,
 };
-use rmcp::service::RequestContext;
+use rmcp::service::{NotificationContext, Peer, RequestContext};
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -30,6 +31,7 @@ use tokio::sync::oneshot;
 
 use crate::commands::{CommandError, CommandRegistry};
 use crate::runtime::App;
+use crate::session::AgentCall;
 
 /// How long a tool call waits for the app before giving up.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
@@ -116,10 +118,13 @@ fn object(value: &Value) -> JsonObject {
 pub struct InvocationId(pub u64);
 
 /// A tool call waiting for the app: run `command` with `input` on the UI
-/// thread, then [`reply`](Self::reply).
+/// thread (as an agent call, so a `Destructive` action asks the person
+/// first), then [`reply`](Self::reply).
 #[derive(Debug)]
 pub struct Invocation {
     pub id: InvocationId,
+    /// The client that asked, as it introduced itself.
+    pub client: String,
     pub command: String,
     pub input: Value,
     reply: oneshot::Sender<Result<Value, CommandError>>,
@@ -130,33 +135,84 @@ impl Invocation {
     pub fn reply(self, result: Result<Value, CommandError>) {
         let _ = self.reply.send(result);
     }
+
+    pub(crate) fn into_agent_call(self) -> AgentCall {
+        let reply = self.reply;
+        AgentCall {
+            id: self.id.0,
+            client: self.client,
+            command: self.command,
+            input: self.input,
+            reply: Box::new(move |result| {
+                let _ = reply.send(result);
+            }),
+        }
+    }
 }
 
-type Invoke = Arc<dyn Fn(Invocation) + Send + Sync>;
+/// What the server tells the app, in order.
+#[derive(Debug)]
+pub enum Event {
+    /// A client finished the handshake, with its name.
+    Connected(String),
+    /// A tool call to run.
+    Call(Invocation),
+    /// The agent stopped waiting for this call (time limit or
+    /// `notifications/cancelled`); if it did not run yet, it must not.
+    Cancel(InvocationId),
+    /// The client went away; the server thread is done.
+    Closed,
+}
+
+type Notify = Arc<dyn Fn(Event) + Send + Sync>;
 
 struct Server {
     tools: Tools,
-    invoke: Invoke,
+    send: Notify,
     next: AtomicU64,
 }
 
+/// Name of the client: its title, or its name.
+fn client_name(peer: &Peer<RoleServer>) -> String {
+    peer.peer_info().map_or_else(
+        || "agente".to_owned(),
+        |info| {
+            let client = &info.client_info;
+            client.title.clone().unwrap_or_else(|| client.name.clone())
+        },
+    )
+}
+
 impl Server {
-    async fn run(&self, name: String, input: Value) -> Result<Value, CommandError> {
+    async fn run(
+        &self,
+        name: String,
+        input: Value,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<Value, CommandError> {
         let (reply, answer) = oneshot::channel();
         let id = InvocationId(self.next.fetch_add(1, Ordering::Relaxed));
-        (self.invoke)(Invocation {
+        (self.send)(Event::Call(Invocation {
             id,
+            client: client_name(&context.peer),
             command: name.clone(),
             input,
             reply,
-        });
-        match tokio::time::timeout(TIMEOUT, answer).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(CommandError::new("La app se cerró antes de responder")),
-            Err(_) => Err(CommandError::new(format!(
-                "{name} no respondió en {} s",
-                TIMEOUT.as_secs()
-            ))),
+        }));
+        tokio::select! {
+            answer = answer => answer
+                .unwrap_or_else(|_| Err(CommandError::new("La app se cerró antes de responder"))),
+            () = tokio::time::sleep(TIMEOUT) => {
+                (self.send)(Event::Cancel(id));
+                Err(CommandError::new(format!(
+                    "{name} no terminó en {} s (¿esperaba confirmación?)",
+                    TIMEOUT.as_secs()
+                )))
+            }
+            () = context.ct.cancelled() => {
+                (self.send)(Event::Cancel(id));
+                Err(CommandError::new(format!("{name} se canceló")))
+            }
         }
     }
 
@@ -179,6 +235,10 @@ impl ServerHandler for Server {
         )
     }
 
+    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
+        (self.send)(Event::Connected(client_name(&context.peer)));
+    }
+
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
@@ -190,7 +250,7 @@ impl ServerHandler for Server {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let name = request.name.to_string();
         if !self.tools.contains(&name) {
@@ -200,26 +260,27 @@ impl ServerHandler for Server {
             ));
         }
         let input = Value::Object(request.arguments.unwrap_or_default());
-        let result = self.run(name.clone(), input).await;
+        let result = self.run(name.clone(), input, &context).await;
         Ok(self.result(&name, result).into())
     }
 }
 
 /// Serve `tools` over the stream `connect` opens, on a thread of its own.
-/// Calls reach `invoke`; `on_close` runs once the client goes away.
+/// Everything the app must know arrives at `send` as an [`Event`], the
+/// last one [`Event::Closed`].
 pub fn serve<R, W>(
     tools: Tools,
     connect: impl FnOnce() -> (R, W) + Send + 'static,
-    invoke: impl Fn(Invocation) + Send + Sync + 'static,
-    on_close: impl FnOnce() + Send + 'static,
+    send: impl Fn(Event) + Send + Sync + 'static,
 ) -> JoinHandle<()>
 where
     R: AsyncRead + Send + Unpin + 'static,
     W: AsyncWrite + Send + Unpin + 'static,
 {
+    let send: Notify = Arc::new(send);
     let server = Server {
         tools,
-        invoke: Arc::new(invoke),
+        send: Arc::clone(&send),
         next: AtomicU64::new(1),
     };
     std::thread::Builder::new()
@@ -242,19 +303,15 @@ where
                 }
                 Err(error) => eprintln!("MCP: no se pudo crear el runtime: {error}"),
             }
-            on_close();
+            send(Event::Closed);
         })
         .expect("no se pudo crear el hilo de MCP")
 }
 
 /// [`serve`] over the process's stdin and stdout. Stdout then belongs to
 /// the protocol: anything else the app prints must go to stderr.
-pub fn serve_stdio(
-    tools: Tools,
-    invoke: impl Fn(Invocation) + Send + Sync + 'static,
-    on_close: impl FnOnce() + Send + 'static,
-) -> JoinHandle<()> {
-    serve(tools, rmcp::transport::io::stdio, invoke, on_close)
+pub fn serve_stdio(tools: Tools, send: impl Fn(Event) + Send + Sync + 'static) -> JoinHandle<()> {
+    serve(tools, rmcp::transport::io::stdio, send)
 }
 
 #[cfg(test)]
@@ -267,6 +324,7 @@ mod tests {
             ("mcp/mod.rs", include_str!("mod.rs")),
             ("runtime.rs", include_str!("../runtime.rs")),
             ("session.rs", include_str!("../session.rs")),
+            ("session/calls.rs", include_str!("../session/calls.rs")),
         ];
         for (file, source) in sources {
             for (at, _) in source.match_indices("print") {

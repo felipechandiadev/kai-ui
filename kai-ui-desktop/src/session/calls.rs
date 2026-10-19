@@ -438,7 +438,7 @@ fn confirmation_dialog<Msg>(
         let variant = if decision == Decision::Deny {
             ButtonVariant::Primary
         } else {
-            ButtonVariant::Secondary
+            ButtonVariant::Outlined
         };
         let mut button = button(label, variant).test_id(format!("{CONFIRMATION}.{part}"));
         button.command = Some(CONFIRMATION);

@@ -201,17 +201,10 @@ pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
 pub fn run_with_mcp<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
     let tools = crate::mcp::Tools::of::<A>(app.title());
     run_with(app, theme, move |proxy| {
-        let calls = proxy.clone();
-        let close = proxy.clone();
-        crate::mcp::serve_stdio(
-            tools,
-            move |invocation| {
-                let _ = calls.send_event(UserEvent::Mcp(invocation));
-            },
-            move || {
-                let _ = close.send_event(UserEvent::McpClosed);
-            },
-        );
+        let proxy = proxy.clone();
+        crate::mcp::serve_stdio(tools, move |event| {
+            let _ = proxy.send_event(UserEvent::Mcp(event));
+        });
     })
 }
 
@@ -397,12 +390,10 @@ enum UserEvent {
     /// The menu bar item of this command id was chosen.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Menu(String),
-    /// An agent called a tool.
+    /// News from the MCP server: a client connected, called or cancelled a
+    /// tool, or went away.
     #[cfg(feature = "mcp")]
-    Mcp(crate::mcp::Invocation),
-    /// The MCP client went away.
-    #[cfg(feature = "mcp")]
-    McpClosed,
+    Mcp(crate::mcp::Event),
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -416,9 +407,9 @@ struct Runner<A: App> {
     theme: Theme,
     state: Option<WindowState<A>>,
     proxy: EventLoopProxy<UserEvent>,
-    /// Tool calls that arrived before the window existed.
+    /// MCP events that arrived before the window existed.
     #[cfg(feature = "mcp")]
-    pending: Vec<crate::mcp::Invocation>,
+    pending: Vec<crate::mcp::Event>,
 }
 
 struct WindowState<A: App> {
@@ -480,12 +471,17 @@ impl<A: App> WindowState<A> {
         Ok(state)
     }
 
-    /// Run a tool call like any JSON call and answer the agent.
+    /// Hand an MCP event to the session: tool calls run as agent calls,
+    /// which may wait for confirmation.
     #[cfg(feature = "mcp")]
-    fn answer(&mut self, mut invocation: crate::mcp::Invocation) {
-        let input = std::mem::take(&mut invocation.input);
-        let result = self.session.call(&invocation.command, input);
-        invocation.reply(result);
+    fn mcp(&mut self, event: crate::mcp::Event) {
+        use crate::mcp::Event;
+        match event {
+            Event::Connected(client) => self.session.agent_connected(&client),
+            Event::Call(invocation) => self.session.agent_call(invocation.into_agent_call()),
+            Event::Cancel(id) => self.session.cancel_agent_call(id.0),
+            Event::Closed => {}
+        }
     }
 
     /// Apply what the session asked of the window since the last flush.
@@ -672,8 +668,8 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             Ok(mut state) => {
                 #[cfg(feature = "mcp")]
                 {
-                    for invocation in self.pending.drain(..) {
-                        state.answer(invocation);
+                    for event in self.pending.drain(..) {
+                        state.mcp(event);
                     }
                     state.flush();
                 }
@@ -756,12 +752,12 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         #[cfg(feature = "mcp")]
         let event = match event {
-            UserEvent::McpClosed => {
+            UserEvent::Mcp(crate::mcp::Event::Closed) => {
                 event_loop.exit();
                 return;
             }
-            UserEvent::Mcp(invocation) if self.state.is_none() => {
-                self.pending.push(invocation);
+            UserEvent::Mcp(event) if self.state.is_none() => {
+                self.pending.push(event);
                 return;
             }
             event => event,
@@ -780,9 +776,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 state.session.perform_command(&id);
             }
             #[cfg(feature = "mcp")]
-            UserEvent::Mcp(invocation) => state.answer(invocation),
-            #[cfg(feature = "mcp")]
-            UserEvent::McpClosed => return,
+            UserEvent::Mcp(event) => state.mcp(event),
         }
         state.flush();
     }

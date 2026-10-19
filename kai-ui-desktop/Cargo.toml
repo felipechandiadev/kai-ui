@@ -39,7 +39,7 @@ serde_json = "1"
 # MCP SDK (13 §12: MSRV 1.88, Apache-2.0, stdio server) and the runtime of
 # its service thread; only with the `mcp` feature.
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io"], optional = true }
-tokio = { version = "1", features = ["rt", "sync", "time", "io-std", "io-util"], optional = true }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros", "io-std", "io-util"], optional = true }
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout", "content_size"] }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }

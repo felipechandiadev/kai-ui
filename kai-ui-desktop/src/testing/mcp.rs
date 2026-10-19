@@ -1,6 +1,7 @@
 //! [`McpClient`]: an agent talking MCP to a [`TestApp`], over an in-memory
 //! pipe instead of stdio, with the same server the window runtime starts.
 
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
 
@@ -9,50 +10,51 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::TestApp;
-use crate::mcp::{Invocation, Tools, serve};
+use crate::mcp::{self, Tools, serve};
 use crate::runtime::App;
 
-/// How long a request waits for the server before the test fails.
+/// How long the client waits for the server before the test fails.
 const WAIT: Duration = Duration::from_secs(10);
 
 const PROTOCOL: &str = "2025-06-18";
 
+/// Name the client gives in `initialize`.
+pub const MCP_CLIENT: &str = "kai-test";
+
 enum Event {
-    Call(Invocation),
+    Server(mcp::Event),
     Line(String),
-    Closed,
 }
 
-/// MCP client of a [`TestApp`]: requests go out as JSON-RPC lines and the
-/// tool calls they cause run on the app, as in the window runtime. Each
-/// request waits for its response (failing the test after ten seconds).
+/// MCP client of a [`TestApp`]: requests go out as JSON-RPC lines, and the
+/// events they cause (tool calls, cancellations) reach the app as in the
+/// window runtime: a `Destructive` action opens the confirmation dialog.
+/// Waiting fails the test after ten seconds.
 pub struct McpClient<'a, A: App> {
     app: &'a mut TestApp<A>,
     outgoing: Option<UnboundedSender<String>>,
     events: Receiver<Event>,
     next_id: u64,
     initialized: Value,
+    /// Responses that arrived before anyone asked for them.
+    responses: HashMap<u64, Value>,
 }
 
 impl<A: App> TestApp<A> {
     /// Start the MCP server of this app's exposed commands and connect an
-    /// initialized client to it.
+    /// initialized client to it, named [`MCP_CLIENT`].
     pub fn mcp_client(&mut self) -> McpClient<'_, A> {
         let tools = Tools::of::<A>(self.app().title());
         let (client_io, server_io) = tokio::io::duplex(1 << 16);
         let (events_tx, events) = mpsc::channel();
         let (outgoing, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-        let calls = events_tx.clone();
-        let closed = events_tx.clone();
+        let server_events = events_tx.clone();
         serve(
             tools,
             move || tokio::io::split(server_io),
-            move |invocation| {
-                let _ = calls.send(Event::Call(invocation));
-            },
-            move || {
-                let _ = closed.send(Event::Closed);
+            move |event| {
+                let _ = server_events.send(Event::Server(event));
             },
         );
 
@@ -90,17 +92,21 @@ impl<A: App> TestApp<A> {
             events,
             next_id: 1,
             initialized: Value::Null,
+            responses: HashMap::new(),
         };
         let response = client.request(
             "initialize",
             json!({
                 "protocolVersion": PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "kai-test", "version": "0"},
+                "clientInfo": {"name": MCP_CLIENT, "version": "0"},
             }),
         );
         client.initialized = response["result"].clone();
-        client.notify("notifications/initialized");
+        client.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+        client.wait_for("la conexión", |event| {
+            matches!(event, mcp::Event::Connected(_))
+        });
         client
     }
 }
@@ -111,7 +117,7 @@ impl<A: App> McpClient<'_, A> {
         &self.initialized
     }
 
-    /// The app, to check what the calls did.
+    /// The app, to check what the calls did or to answer the dialog.
     pub fn app(&mut self) -> &mut TestApp<A> {
         self.app
     }
@@ -125,40 +131,66 @@ impl<A: App> McpClient<'_, A> {
             .unwrap_or_else(|| panic!("tools/list sin herramientas: {response}"))
     }
 
-    /// Call tool `name`: `Ok` with the `CallToolResult` (which may be an
-    /// `isError` result), `Err` with the JSON-RPC error.
+    /// Call tool `name` and wait for its answer: `Ok` with the
+    /// `CallToolResult` (which may be an `isError` result), `Err` with the
+    /// JSON-RPC error. A call that opens the confirmation dialog needs the
+    /// app to answer it ([`TestApp::on_confirmation`]); otherwise use
+    /// [`Self::send_call`] and [`Self::finish`].
     pub fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, Value> {
-        let response = self.request("tools/call", json!({"name": name, "arguments": arguments}));
+        let id = self.send_call(name, arguments);
+        self.finish(id)
+    }
+
+    /// Call tool `name` without waiting for the answer: return once the
+    /// app has the call, ran or waiting for confirmation. The request id
+    /// is for [`Self::finish`] and [`Self::cancel`].
+    pub fn send_call(&mut self, name: &str, arguments: Value) -> u64 {
+        let id = self.send_request("tools/call", json!({"name": name, "arguments": arguments}));
+        loop {
+            match self.next_event("tools/call") {
+                Event::Server(event) => {
+                    let call = matches!(event, mcp::Event::Call(_));
+                    self.handle(event);
+                    if call && self.app.confirmation_open() {
+                        return id;
+                    }
+                }
+                Event::Line(line) => {
+                    if self.store(&line) == Some(id) {
+                        return id;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Wait for the answer of tool call `id`, as [`Self::call_tool`].
+    pub fn finish(&mut self, id: u64) -> Result<Value, Value> {
+        let response = self.response(id, "tools/call");
         match response.get("error") {
             Some(error) => Err(error.clone()),
             None => Ok(response["result"].clone()),
         }
     }
 
-    /// Send a JSON-RPC request and return its whole response, running the
-    /// tool calls it causes on the app meanwhile.
+    /// Cancel tool call `id` (`notifications/cancelled`) and wait until the
+    /// app heard of it.
+    pub fn cancel(&mut self, id: u64) {
+        self.send(json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {"requestId": id, "reason": "el test dejó de esperar"},
+        }));
+        self.wait_for("la cancelación", |event| {
+            matches!(event, mcp::Event::Cancel(_))
+        });
+    }
+
+    /// Send a JSON-RPC request and return its whole response, handing the
+    /// events it causes to the app meanwhile.
     pub fn request(&mut self, method: &str, params: Value) -> Value {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        loop {
-            match self.events.recv_timeout(WAIT) {
-                Ok(Event::Call(mut invocation)) => {
-                    let input = std::mem::take(&mut invocation.input);
-                    let result = self.app.call(&invocation.command, input);
-                    invocation.reply(result);
-                }
-                Ok(Event::Line(line)) => {
-                    let message: Value = serde_json::from_str(&line)
-                        .unwrap_or_else(|error| panic!("línea MCP inválida ({error}): {line}"));
-                    if message["id"] == json!(id) {
-                        return message;
-                    }
-                }
-                Ok(Event::Closed) => panic!("el servidor MCP se cerró durante {method}"),
-                Err(_) => panic!("el servidor MCP no respondió a {method}"),
-            }
-        }
+        let id = self.send_request(method, params);
+        self.response(id, method)
     }
 
     /// Disconnect, as an agent quitting does. Whether the server noticed
@@ -167,15 +199,78 @@ impl<A: App> McpClient<'_, A> {
         self.outgoing = None;
         loop {
             match self.events.recv_timeout(WAIT) {
-                Ok(Event::Closed) => return true,
+                Ok(Event::Server(mcp::Event::Closed)) => return true,
                 Ok(_) => {}
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return false,
             }
         }
     }
 
-    fn notify(&mut self, method: &str) {
-        self.send(json!({"jsonrpc": "2.0", "method": method}));
+    fn send_request(&mut self, method: &str, params: Value) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
+        id
+    }
+
+    fn response(&mut self, id: u64, method: &str) -> Value {
+        loop {
+            if let Some(response) = self.responses.remove(&id) {
+                return response;
+            }
+            match self.next_event(method) {
+                Event::Server(event) => self.handle(event),
+                Event::Line(line) => {
+                    self.store(&line);
+                }
+            }
+        }
+    }
+
+    /// Hand server events to the app until one matches `wanted`.
+    fn wait_for(&mut self, what: &str, wanted: impl Fn(&mcp::Event) -> bool) {
+        loop {
+            match self.next_event(what) {
+                Event::Server(event) => {
+                    let found = wanted(&event);
+                    self.handle(event);
+                    if found {
+                        return;
+                    }
+                }
+                Event::Line(line) => {
+                    self.store(&line);
+                }
+            }
+        }
+    }
+
+    fn next_event(&mut self, what: &str) -> Event {
+        match self.events.recv_timeout(WAIT) {
+            Ok(Event::Server(mcp::Event::Closed)) => {
+                panic!("el servidor MCP se cerró esperando {what}")
+            }
+            Ok(event) => event,
+            Err(_) => panic!("el servidor MCP no respondió a {what}"),
+        }
+    }
+
+    fn handle(&mut self, event: mcp::Event) {
+        match event {
+            mcp::Event::Connected(client) => self.app.agent_connected(&client),
+            mcp::Event::Call(invocation) => self.app.run_agent_call(invocation.into_agent_call()),
+            mcp::Event::Cancel(id) => self.app.cancel_agent_call(id.0),
+            mcp::Event::Closed => {}
+        }
+    }
+
+    /// Keep a response for later; its id, if it is one.
+    fn store(&mut self, line: &str) -> Option<u64> {
+        let message: Value = serde_json::from_str(line)
+            .unwrap_or_else(|error| panic!("línea MCP inválida ({error}): {line}"));
+        let id = message["id"].as_u64()?;
+        self.responses.insert(id, message);
+        Some(id)
     }
 
     fn send(&mut self, message: Value) {
