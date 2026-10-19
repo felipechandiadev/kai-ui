@@ -4,7 +4,7 @@
 
 > **Todo el código de esta guía es API propuesta, no existente.** Los nombres de tipos, módulos, clases Tailwind y funciones son un diseño a validar. Lo que existe hoy se cita con su archivo (`theme.rs`, `tw.rs`, `fonts.rs`…).
 
-> **Contexto de versiones (18-oct-2026).** La versión vigente es **macOS 27 Golden Gate** (publicada el 14-sep-2026 según [9to5Mac](https://9to5mac.com/2026/09/14/macos-27-golden-gate-now-available-here-is-everything-new/)). **macOS 26 Tahoe** introdujo Liquid Glass y controles más altos; 27 lo refina. Las mediciones propias de esta guía se hicieron en el Mac de desarrollo, que corre **macOS 15.6.1 (24G90)**, Apple Silicon, pantalla Retina 2×: describen la generación «Aqua plana» (macOS 11–15) y coinciden con lo que AppKit 26+ llama métricas *compactas*. Los valores de 26/27 que no pude medir se marcan como tales; la **sección 6.3** reúne todo lo publicado sobre 26 y 27 (oficial y de terceros) con ambas generaciones lado a lado.
+> **Contexto de versiones (18-oct-2026).** La versión vigente es **macOS 27 Golden Gate** (publicada el 14-sep-2026 según [9to5Mac](https://9to5mac.com/2026/09/14/macos-27-golden-gate-now-available-here-is-everything-new/)). **macOS 26 Tahoe** introdujo Liquid Glass y controles más altos; 27 lo refina. Las mediciones propias de esta guía se hicieron en el Mac de desarrollo, que corre **macOS 15.6.1 (24G90)**, Apple Silicon, pantalla Retina 2×: describen la generación «Aqua plana» (macOS 11–15) y coinciden con lo que AppKit 26+ llama métricas *compactas*. Los valores de 26/27 que no pude medir se marcan como tales; la **sección 6.3** reúne todo lo publicado sobre 26 y 27 (oficial y de terceros) con ambas generaciones lado a lado. **Actualización (18-oct-2026):** el Mac pasó a macOS 27.0.1 y **6.3.8** recoge las mediciones en 27 [B-med 27.0.1]. Las cifras [B-med] de 15.6.1 siguen siendo lo que ve en 27 una app enlazada con un SDK anterior a 26.
 
 ## Procedencia de los datos
 
@@ -13,6 +13,7 @@ Cada número lleva una marca:
 | Marca | Significado |
 |---|---|
 | **[A]** | Documentado oficialmente por Apple (HIG, documentación de AppKit o sesión WWDC). Se cita la URL. |
+| **[B-med 27.0.1]** | Medido en el mismo Mac tras actualizarlo a macOS 27.0.1 (sondeo `probe27` de la sección 14). Ver 6.3.8. |
 | **[B-med]** | Medido en este Mac (macOS 15.6.1) con AppKit: `fittingSize`, `alignmentRectInsets`, `NSColor` resuelto en sRGB, o renderizado con `cacheDisplay` a 2× (sección 14). Exacto para esa versión; puede cambiar en otras. |
 | **[B-ext]** | Apple Design Resources o terceros reputados (Mozilla, Zed, comunidad con fuente). |
 | **[C]** | Estimación propia, inferida de las anteriores. Hay que verificarla. |
@@ -84,7 +85,7 @@ Otros datos:
 - `NSFont.systemFontSize` = 13, `smallSystemFontSize` = 11, `labelFontSize` = 10 [B-med]. `systemFontSize(for:)`: **mini 9, small 11, regular 13, large 13** [B-med]. Es decir, el tamaño de control cambia la fuente solo hasta *regular*.
 - Fuentes de control [B-med]: `menuFont` 13, `menuBarFont` 13, `messageFont` 13, `titleBarFont` 13, `toolTipsFont` 11, `controlContentFont` **12** (ojo: no 13), `labelFont` 10. Monoespaciada: `.AppleSystemUIFontMonospaced-Regular` (SF Mono); `userFixedPitchFont` = Menlo.
 - Métricas de SF a 13 pt [B-med]: ascender 12,57, descender −2,74, leading 0 (fuente del sistema) → interlineado natural 16. A 11 pt: 10,63 / −2,32 → 13. A 10 pt: 9,67 / −2,11 → 12. Los estilos de texto añaden `leading` para llegar a los valores de la tabla (p. ej. `footnote` 10 pt → 13).
-- **Tracking:** el sistema ajusta el espaciado según el tamaño; la HIG publica la tabla para maquetas [A] ([Tracking values](https://developer.apple.com/design/human-interface-guidelines/typography#Tracking-values)). Extracto: 10 pt +0,12; 11 pt +0,06; 12 pt 0; **13 pt −0,08**; 15 pt −0,23; 17 pt −0,43; 20 pt −0,45; 22 pt −0,26; 26 pt +0,22 (en puntos). CoreText lo aplica desde la tabla `trak` de la fuente (`SFNS.ttf` la tiene [B-med]); cosmic-text 0.19 no aplica tracking (`UNMAPPED_TOKENS` de `theme.rs`). Sin él, el texto de 13 pt queda ~0,08 pt más ancho por carácter que en AppKit.
+- **Tracking:** el sistema ajusta el espaciado según el tamaño; la HIG publica la tabla para maquetas [A] ([Tracking values](https://developer.apple.com/design/human-interface-guidelines/typography#Tracking-values)). Extracto: 10 pt +0,12; 11 pt +0,06; 12 pt 0; **13 pt −0,08**; 15 pt −0,23; 17 pt −0,43; 20 pt −0,45; 22 pt −0,26; 26 pt +0,22 (en puntos). CoreText lo aplica desde la tabla `trak` de la fuente (`SFNS.ttf` la tiene [B-med]); cosmic-text 0.19 no lee `trak`, pero sí aplica un espaciado explícito con `Attrs::letter_spacing(f32)` (en *em*). Kai lo usa desde el Paso 13 de [12](12-modelo-appkit.md): `TextStyleToken.tracking_em` = tracking de esta tabla ÷ tamaño, aplicado con las clases `text-<estilo>` y `tracking-[Nem]`. Sin él, el texto de 13 pt queda ~0,08 pt más ancho por carácter que en AppKit.
 - **Pesos:** evitar Ultralight/Thin/Light [A]. En `TypeTokens`, `weight_*` mapean a Regular 400, Medium 500, Semibold 600, Bold 700, Heavy 800.
 
 ### 3.2 Dynamic Type en macOS
@@ -154,6 +155,10 @@ Valores en sRGB, `#rrggbb` + alfa, resueltos en macOS 15.6.1 con el acento por d
 | `shadowColor` | Sombra virtual | `#000000` | `#000000` | base de `shadow-*` |
 | `windowFrameTextColor` | Título de ventana | `#000000` α .847 | `#ffffff` α .847 | *`title`* |
 | `selectedMenuItemTextColor` | Texto de ítem de menú seleccionado | `#ffffff` | `#ffffff` | *`menu-selected-text`* |
+
+En macOS 27 con SDK ≥ 26 cambian `windowBackgroundColor`, `underPageBackgroundColor` y `placeholderTextColor`, y los tonos de 4.3 pasan a los de la HIG 26 para cualquier app (6.3.8).
+
+En Kai (`src/theme/appkit.rs`): `Theme::appkit_static(Glass27, …)` usa estos tres colores y los tonos HIG 26; `Glass26`, sin medir, repite `Glass27`. `AppKitGeneration::current()` toma la generación del menor entre la versión de macOS y el SDK enlazado (leído del propio `LC_BUILD_VERSION`), porque así se ven las ventanas y los controles nativos del mismo proceso. Los tonos, en cambio, siguen a la versión de macOS: `Theme::appkit_current` da Aqua11 con tonos HIG 26 en macOS 27 con SDK 15.
 
 `hover` (Kai: `color-mix(neutral 65%, background)`) no tiene equivalente: en AppKit los controles de contenido no cambian con el puntero (sección 7). En el tema AppKit, `hover` = color base del control.
 
@@ -229,7 +234,7 @@ AppKit distingue el **frame** de la vista y el **rectángulo de alineación** (`
 
 ### 6.3 Generación Liquid Glass: macOS 26 Tahoe y 27 Golden Gate
 
-El Mac de desarrollo corre macOS 15, así que **nada de esta sección está medido por mí**. Reúne lo que Apple publica [A] y lo que midieron terceros con fuente [B-ext] (investigación del 18-oct-2026). Donde no hay dato se escribe «sin dato»; no se rellenan huecos con estimaciones salvo las marcadas [C].
+Cuando se escribió, el Mac de desarrollo corría macOS 15, así que **nada de 6.3.1–6.3.7 está medido por mí**; las mediciones en macOS 27.0.1 están en **6.3.8** [B-med 27.0.1]. Reúne lo que Apple publica [A] y lo que midieron terceros con fuente [B-ext] (investigación del 18-oct-2026). Donde no hay dato se escribe «sin dato»; no se rellenan huecos con estimaciones salvo las marcadas [C].
 
 **Fuentes descartadas:** tablas de alturas «verificadas» en repositorios de *prompts* o *skills* para IA (p. ej. push regular «~32 pt», large «~38 pt») que no citan ninguna medición y contradicen lo medido aquí en macOS 15. No se usan.
 
@@ -272,7 +277,7 @@ El Mac de desarrollo corre macOS 15, así que **nada de esta sección está medi
 | Checkbox / radio | 14 (regular) | sin dato. Firefox sigue dibujando celdas de 11 / 13 / 16 px (mini / small / regular) ([nsNativeThemeCocoa.mm](https://searchfox.org/mozilla-central/source/widget/cocoa/nsNativeThemeCocoa.mm)) [B-ext] (?) | sin dato |
 | Slider | 20 (frame 28) | sin dato; relleno opcional y `neutralValue` [A] | sin dato |
 
-Conclusión: **en 26/27 no hay ninguna tabla fiable de alturas publicada.** La única cifra concreta (30/24/18) es de foro. La estimación anterior de esta guía (regular 24) queda **retirada**. La única fuente segura es medir en runtime con `fittingSize` y `alignmentRectInsets` (fase A2) en un Mac con 26 o 27.
+Conclusión (antes de medir): **en 26/27 no hay ninguna tabla fiable de alturas publicada.** La única cifra concreta (30/24/18) es de foro. La estimación anterior de esta guía (regular 24) queda **retirada**. La única fuente segura es medir en runtime con `fittingSize` y `alignmentRectInsets` (fase A2) en un Mac con 26 o 27. **Medido en 27.0.1 (6.3.8):** push 16 / 20 / 24 / 28 / 36 (regular 24), campos 19 / 22 / 24, switch regular 54 × 24.
 
 #### 6.3.3 Ventana, barra de título, semáforos y sidebar
 
@@ -349,6 +354,147 @@ La [HIG de Color](https://developer.apple.com/design/human-interface-guidelines/
 
 Todo eso se resuelve ejecutando el sondeo de la sección 14 (los mismos `probe*.swift`) en un Mac con 26 y otro con 27, o en VMs de macOS con Virtualization.framework (?).
 
+**Estado (18-oct-2026):** en macOS 27.0.1 quedan medidos los puntos 1, 2, 3 (radio de ventana, barra de título, semáforos y toolbar) y 5 (salvo el campo de texto); ver 6.3.8. Siguen pendientes macOS 26 y el punto 4.
+
+#### 6.3.8 Mediciones en macOS 27.0.1 [B-med 27.0.1]
+
+Medido el 18-oct-2026 en el Mac de desarrollo tras actualizarlo de 15.6.1 a **macOS 27.0.1** (`sw_vers`: build 26A434), Apple Silicon, Retina 2×, acento por defecto, sin Aumentar contraste ni acceso completo por teclado. Método y limitaciones en la sección 14 (sondeo `probe27`). Todo es **[B-med 27.0.1]** salvo que se indique.
+
+**Hallazgo principal: decide el SDK con el que se enlaza la app.** AppKit aplica el diseño de 26+ solo a binarios enlazados con el SDK 26 o posterior (campo `sdk` de `LC_BUILD_VERSION`). El mismo programa enlazado con el SDK 15.5:
+
+- reproduce en 27 **exactamente** las métricas de 6.2 y 8.2 (push 13 / 16 / 20 / 28, campos 15 / 19 / 21 / 21 y 17 / 19 / 22 / 30, switch 26 × 15 / 32 × 18 / 38 × 22, barra de título 28, semáforos de 14 × 16);
+- recibe los colores antiguos de `windowBackgroundColor`, `underPageBackgroundColor` y `placeholderTextColor`.
+
+Hoy el binario de Kai (`target/debug/kai-ui-desktop-prototype`) es `minos 11.0, sdk 15.5` (Command Line Tools): **AppKit lo trata como app antigua**. Un lector de runtime (Paso 16) leería en 27 los valores de 15 mientras no se enlace con `sdk ≥ 26`.
+
+##### Alturas por `ControlSize` (alineación = frame − `alignmentRectInsets`, pt)
+
+| Control | 27 nativo: mini / small / regular / large / extraLarge | 27 con `prefersCompactControlSizeMetrics` | SDK 15 en 27 (= 6.2) |
+|---|---|---|---|
+| Push (`.push`) y por defecto | **16 / 20 / 24 / 28 / 36** (insets 0: frame = bisel) | 13 / 16 / 20 / 28 / 36 (vuelven los insets de 15) | 13 / 16 / 20 / 28 / — |
+| `.flexiblePush` | 13 / 20 / 24 / 28 / 36 | 13 / 18 / 24 / 28 / 36 | 14 / 16 / 20 / 28 / — |
+| Pop-up | 16 / 20 / 24 / 28 / 36 | 13 / 16 / 20 / 28 / 36 | 13 / 16 / 20 / 28 / — |
+| Segmented | 16 / 20 / 24 / 28 / 36 | 13 / 16 / 20 / 28 / 36 | 15 / 18 / 22 / 30 / — |
+| Help (círculo) | 16 / 20 / 24 / 28 / 36 | 13 / 16 / 20 / 28 / 36 | 13 / 16 / 20 / 26 / — |
+| Text field `.squareBezel` y `.roundedBezel` (iguales en 27) | 19 / 22 / 24 / 24 / 24 | **sin efecto** (19 / 22 / 24 / 24 / 24) | 15 / 19 / 21 / 21 · 17 / 19 / 22 / 30 |
+| Search field | 16 / 22 / 25 / 28 / 36 | 16 / 20 / 24 / 28 / 36 | 15 / 19 / 21 / 21 / — |
+| Combo box | 16 / 20 / 24 / 28 / 36 | 13 / 16 / 20 / 28 / 36 | 13 / 16 / 20 / 20 / — |
+| Stepper | 16 / 20 / 24 / 28 / 36 | 13 / 16 / 20 / 28 / 36 | 13 / 16 / 20 / 20 / — |
+| Checkbox / radio (caja) | 12 / 14 / 16 / 18 / 18 | 10 / 12 / 14 / 18 / 18 | 10 / 12 / 14 / 16 / — |
+| Switch: pista ancho × alto | 36 × 16,5 / 44 × 20 / **54 × 24** / 64 × 28 / 80 × 36 | 26 × 15 / 32 × 18 / 38 × 20 / 64 × 28 / 80 × 36 | 26 × 15 / 32 × 18 / 38 × 22 / 38 × 22 |
+| Slider | 12 / 14 / 16 / 20 / 20 | igual | 13 / 16 / 20 / 20 / — |
+| `.toolbar` y sin borde | sin cambios respecto de 15 | — | — |
+
+- `NSSwitch.fittingSize` **no cambia con `controlSize`** (54 × 24 en 27, 38 × 20 compacto, 42 × 25 con SDK 15); el dibujo sí cambia. La pista se midió en el render. El pulgar de 27 es una píldora horizontal (32 × 20 en regular).
+- `systemFontSize(for:)`: mini 9, small 11, regular 13, large 13, **extraLarge 13**. Igual que en 15.
+- **Padding horizontal del push** ((ancho de alineación − ancho del título) / 2): 27 nativo **8 / 10 / 12 / 14 / 18**; con SDK 15: 7 / 8 / 10 / 10 / 10.
+
+##### Radios (render a 8×, estimador calibrado a ±0,1 pt)
+
+| Control | mini / small / regular / large / extraLarge | Nota |
+|---|---|---|
+| Push, pop-up, segmented (27 nativo y compacto) | 4 / 5 / 6 / **14 / 18** | large/XL = alto / 2: **cápsula** [A] confirmada. Con métricas compactas el radio sigue siendo el de 27, no el de 15 |
+| Text field (cuadrado y redondeado) | 4 / 5 / 6 / 7 / 9 | El bisel «cuadrado» ya no es cuadrado en 27 |
+| Checkbox | 3,4 / 4,5 / 5,5 / 6,4 / 6,4 | Radio y help: círculos |
+| SDK 15 en 27: push / campo redondeado / checkbox | 3,2 / 3,7 / 5,1 / 5,9 · 3,3 / 3,9 / 5,3 / 5,8 · 1,7 / 2,5 / 3,5 / 4,8 | Campo cuadrado ≈ 0,4 |
+
+##### Rellenos de los controles (render fuera de pantalla, claro | oscuro)
+
+- Bisel de push, pop-up, segmented y help: negro α .078 | blanco α .078, es decir `secondarySystemFill`. **No** es blanco con sombra como en 15.
+- Botón por defecto: acento plano `#007bff`. En 15 el centro de su degradado es `#1485ff`.
+- Checkbox, radio y pista apagada del switch: negro α .098 | blanco α .098 (`systemFill`).
+- Interior del campo de texto: blanco α ≈ .98 | `#171717` α ≈ .98.
+- Sin ventana *key* no se ven ni el estado encendido del switch de 27 ni el glass (limitación del método).
+
+##### Colores (`NSColor` en sRGB; claro | oscuro)
+
+Cambian respecto de 4.2 solo con SDK ≥ 26:
+
+| Color | 27 nativo | macOS 15 / SDK 15 en 27 |
+|---|---|---|
+| `windowBackgroundColor` | **`#ffffff` \| `#1e1e1e`** | `#ececec` \| `#323232` |
+| `underPageBackgroundColor` | `#f6f6f6` \| `#282828` | `#969696` α .90 \| `#282828` |
+| `placeholderTextColor` | **negro α .498 \| blanco α .549** (= `secondaryLabelColor`) | α .247 \| α .247 |
+
+Cambian **para cualquier app** (también enlazada con SDK 15), y coinciden con la tabla de la HIG de 6.3.4:
+
+| Color | Claro | Oscuro |
+|---|---|---|
+| Red | `#ff383c` | `#ff4245` |
+| Orange | `#ff8d28` | `#ff9230` |
+| Yellow | `#ffcc00` | `#ffd600` |
+| Green | `#34c759` | `#30d158` |
+| Mint | `#00c8b3` | `#00dac3` |
+| Teal | `#00c3d0` | `#00d2e0` |
+| Cyan | `#00c0e8` | `#3cd3fe` |
+| Blue | `#0088ff` | `#0091ff` |
+| Indigo | `#6155f5` | `#6d7cff` |
+| Purple | `#cb30e0` | `#db34f2` |
+| Pink | `#ff2d55` | `#ff375f` |
+| Brown | `#ac7f5e` | `#b78a66` |
+| Gray | `#8e8e93` | **`#98989d`** (la HIG dice 142,142,147) |
+
+Sin cambios respecto de 4.2:
+- `label`… `quaternaryLabel`, y el nuevo `quinaryLabelColor` α .047.
+- `textColor`, `controlTextColor`, `disabledControlTextColor`, `headerTextColor` y `windowFrameTextColor`.
+- `controlAccentColor` `#007aff`: **no** es `systemBlue` (`#0088ff`).
+- Efectos del acento: `.pressed` `#005cd7` | `#2ea8ff`, `.deepPressed` `#0045b7` | `#52ccff`, `.rollover` `#0045b7` | `#3db7ff`, `.disabled` α .35 | .50.
+- `controlColor` `#ffffff` | blanco α .247. Sus efectos: `.pressed` `#d7d7d7` | `#6d6d6d` α .427, `.rollover` `#b7b7b7` | `#7c7c7c` α .486, `.disabled` blanco α .35 | α .124.
+- Selección y selección sin énfasis.
+- `keyboardFocusIndicatorColor` `#0067f4` | `#1aa9ff` α .498.
+- `textInsertionPointColor`, `linkColor`, `separatorColor`, `gridColor` y `controlBackgroundColor`/`textBackgroundColor`.
+- `systemFill` … `quinarySystemFill` (α .098 / .078 / .047 / .027 / .008).
+- `alternatingContentBackgroundColors`.
+
+##### Tipografía, foco, ventana y glass
+
+- **Estilos de texto:** idénticos a 3.1 (tamaño, interlineado de `NSLayoutManager` y cara `.SFNS-Regular` / `-Bold` / `-Medium`). `controlContentFont` 12. La fuente `/System/Library/Fonts/SFNS.ttf` es nueva (fecha 24-sep-2026), lo que basta para cambiar el rasterizado de glifos en las capturas de Kai.
+- **Anillo de foco** (`drawFocusRingMask` con `NSFocusRingPlacement.only`, push y checkbox):
+  - 3 pt hacia fuera en los cuatro lados, `keyboardFocusIndicatorColor` α .498.
+  - Radio exterior = radio del control + 3 (push regular 6 + 3 = 9).
+  - Con SDK 15, el push muestra el anillo a 3 / 1 / 3 / 5 pt (izq. / arriba / der. / abajo) porque sigue al bisel con su sombra.
+  - El anillo del campo de texto no se dibuja fuera de pantalla (lo pinta el editor de campo): sin medir.
+- **Ventana** (`NSWindow` con `fullSizeContentView`, nunca mostrada):
+
+  | Elemento | 27 nativo | SDK 15 en 27 |
+  |---|---|---|
+  | Barra de título sola | **32** | 28 |
+  | Semáforos | 14 × 14, x = 9 / 32 / 55, 9 pt desde arriba | 14 × 16, x = 9 / 29 / 49, 6 desde arriba |
+  | Toolbar `.unified`/`.automatic` vacía | 66; cierre en (19, 19) | 52; (19, 18) |
+  | `.unifiedCompact` | 40; cierre en (12, 13) | 38; (12, 11) |
+  | `.expanded` vacía | 48 | 44 |
+  | Radio de ventana (`_cornerRadius`, privado) | **16 en todos los estilos** | 16 |
+  | `NSScroller.scrollerWidth` regular *legacy* / *overlay* / small | 17 / 17 / 13 | 15 / 16 / 11 |
+
+  - El radio de ventana de 27 es el mismo para todos los estilos y también para las apps con SDK 15.
+  - El contenido a la derecha de los semáforos empieza en 55 + 14 + 9 = **78** [C].
+- **Liquid Glass:**
+  - Existen `NSGlassEffectView`, `NSGlassEffectContainerView`, `NSBackgroundExtensionView` y `NSViewCornerConfiguration`.
+  - Valores por defecto de `NSGlassEffectView`: `cornerRadius` 8, `style` 0 (`.regular`), `tintColor` nil.
+  - `NSButton` responde a `borderShape` y `tintProminence`; `NSView` responde a `cornerConfiguration` y `prefersCompactControlSizeMetrics`.
+  - El glass no se compone fuera de pantalla: su aspecto sigue sin medir.
+
+##### Qué acertaron y qué no las cifras anteriores
+
+| Afirmación previa | Resultado en 27.0.1 |
+|---|---|
+| Estimación retirada «push regular 24» (6.3.2) | **Correcta**: 24 |
+| 18 / 24 / 30 del foro de PureBasic [B-ext] | **Incorrecta**: 16 / 20 / 24 (large 28, XL 36) |
+| «Con el SDK 26 el bisel llena el frame» (Firefox) [B-ext] | **Correcta**: insets 0 |
+| Large/XL en cápsula [A] | **Correcta**: radio = alto / 2 |
+| «La tabla 6.2 *es* la métrica compacta» [A] | **Parcial**: vale para push, pop-up, segmented, help, combo, stepper, checkbox y switch en mini–regular. Los campos de texto no cambian (19 / 22 / 24), el search field queda en 16 / 20 / 24 y los radios son los de 27 |
+| Radios de 15 «≈ 3 / 4 / 5 / 6, ±0,5» [C] | **Correcta** (3,2 / 3,7 / 5,1 / 5,9) |
+| Radio de checkbox «≈ 3 pt» [C] | Algo bajo: 3,5 en regular |
+| Padding del push «~12 regular, ~8 small» [C] | **Incorrecta para 15** (10 / 8). En 27, regular 12 y small 10 |
+| Radio de ventana 16 en 27 (bremer-media) [B-ext] | **Correcta**, y uniforme |
+| Barra de 32 y semáforos de 14 (26) [B-ext] | **Correctas también en 27**. `origin.y` ≈ 7 → 9 desde arriba; contenido desde x = 78 ✓ |
+| Colores de sistema de la HIG 26 (6.3.4) [A] | **Correctos** como `NSColor` en 27, salvo Gray oscuro (`#98989d`) |
+| «La tipografía no cambió» (6.3.6) | **Correcta** |
+| Anillo de 3 pt (6.4) | **Sin cambios**; sigue el radio + 3 |
+| Checkbox de Firefox 11 / 13 / 16 [B-ext] | **No aplica a 27**: 12 / 14 / 16 |
+| Pista apagada del switch «negro α ≈ .22» (6.2) | Medido α .098 (con ambos SDK) (?) |
+| Segmented mini 14 (6.2) | 15 con SDK 15 en 27 (?) |
+
 ### 6.4 Anillo de foco
 
 - [B-med] (render de un campo con `NSFocusRingPlacement.only`): anillo de **3 pt hacia fuera**, sin separación (*offset* 0), alfa uniforme, color `keyboardFocusIndicatorColor` (acento al 50 %), y sigue el radio del control **+ 3 pt**.
@@ -374,7 +520,7 @@ Propuesta: `Density::Comfortable` ↔ `ControlSize::Regular` y `Density::Compact
 | Estado | AppKit (11–15) | Procedencia | Propuesta Kai |
 |---|---|---|---|
 | Reposo | Bisel `controlColor`, texto `controlTextColor` | [B-med] | base |
-| **Hover** | **Sin cambio** en push, checkbox, pop-up, segmented ni campos. El rollover existe en botones sin bisel de toolbar y en `NSButton.showsBorderOnlyWhileMouseInside` | [B-med]/[A] | `hover:` = no-op en las variantes AppKit; los botones sin bisel de toolbar muestran un fondo `fill` al pasar el puntero [C]. |
+| **Hover** | **Sin cambio** en push, checkbox, pop-up, segmented ni campos. El rollover existe en botones sin bisel de toolbar y en `NSButton.showsBorderOnlyWhileMouseInside` | [B-med]/[A] | `hover:` = no-op en las variantes AppKit; los botones sin bisel de toolbar muestran un fondo `fill` al pasar el puntero [C]. **Kai (tema mixto, 19-oct-2026):** el tema AppKit conserva hover a propósito (12, Paso 12); AppKit estricto con `Theme::with_hover(false)`. |
 | Presionado | Bisel `controlColor.withSystemEffect(.pressed)`: `#d7d7d7` claro, `#6d6d6d` α .427 oscuro; el botón por defecto oscurece el acento (`#005cd7`) | [B-med] | `active:` usa *`control-pressed`* / `active` |
 | Deshabilitado | Texto `disabledControlTextColor` (α .247); bisel con menor contraste; acento `.disabled` α .35 / .50 | [B-med] | Sustituir `disabled:opacity-50` por colores específicos |
 | Foco por teclado | Anillo 3 pt (6.4); solo controles de contenido salvo acceso completo por teclado | [A]/[B-med] | Nueva variante *`keyboard-focus:`* (foco + FKA o campo de texto) |
@@ -637,7 +783,7 @@ Con lo encontrado en 6.3, la variante Glass se apoya en **reglas** publicadas y 
 4. ¿`NSToolbar` vacía real o barra propia con semáforos movidos?
 5. ¿Hasta dónde llevar `TextField`: sin etiqueta flotante en AppKit, o conservarla como opción?
 6. ¿Leer los kits de Apple Design Resources para confirmar radios y paddings ([C] en 6.2) es compatible con su licencia?
-7. ¿Alturas reales por `ControlSize` en 26 y 27 (¿regular 30 en 26?), radio de ventana en 27 (¿16?) y separación del sidebar flotante en 26 (¿7?)? Medir en un Mac o una VM con 26/27 (A2b).
+7. ¿Alturas reales por `ControlSize` en 26 y 27 (¿regular 30 en 26?), radio de ventana en 27 (¿16?) y separación del sidebar flotante en 26 (¿7?)? Medir en un Mac o una VM con 26/27 (A2b). **27 respondido en 6.3.8** (regular 24, radio de ventana 16); 26 y el sidebar siguen abiertos.
 8. ¿Hay API pública para leer el radio de la ventana y el regulador de Liquid Glass de 27? No encontré ninguna.
 9. ¿Vale la pena la variante de glass nativo (11.9 a) con varias superficies `wgpu`, o basta la imitación?
 
@@ -651,4 +797,20 @@ Las cifras [B-med] salen de tres programas Swift (`probe.swift`, `probe2.swift`,
 - **Ventana:** `NSWindow` con `titled`, `fullSizeContentView` y `NSToolbar` en cada `toolbarStyle`; `frame` de `standardWindowButton`, `contentLayoutRect`, `NSScroller.scrollerWidth`, `NSMenu.size`.
 - **Preferencias:** `NSWorkspace.accessibilityDisplayShould*`, `NSApp.isFullKeyboardAccessEnabled`, `NSEvent.keyRepeatDelay`… y `NSAnimationContext.current.duration`.
 
-Repetir el sondeo en macOS 26 y 27 (fase A2b) es la tarea pendiente más valiosa de esta guía. Hay que añadir: alto del contenedor de la barra de título, `standardWindowButton(_:).frame` con cada `toolbarStyle`, radio de los controles por `ControlSize` (incluido `.extraLarge`), con y sin `prefersCompactControlSizeMetrics`, y un render de `NSSplitViewController` con sidebar para medir la separación y el radio del panel flotante.
+**Sondeo `probe27` (macOS 27.0.1, 18-oct-2026).** Programas desechables en `/tmp/kai-appkit-probe27/` (fuera del repo):
+- **Programas:**
+  - `common.swift`: render a 8× con `cacheDisplay(in:to:)` y estimador de radio.
+  - `controls.swift`: `fittingSize`, `alignmentRectInsets` y render por `ControlSize`, con y sin `prefersCompactControlSizeMetrics`.
+  - `switch.swift`.
+  - `padding.swift`.
+  - `system.swift`: colores, fuentes, anillo de foco, ventanas nunca mostradas y clases de Liquid Glass.
+  - `calibrate.swift`: el estimador de radio sobre rectángulos redondeados sintéticos da ±0,1 pt.
+- **Compilación:** `swiftc` 6.1.2 de las Command Line Tools, que solo traen el SDK 15.5. Cada programa se compila dos veces:
+  - tal cual (`sdk 15.5`: AppKit aplica el aspecto antiguo);
+  - con el SDK declarado como 27.0 mediante `vtool -set-build-version macos 15.0 27.0 -replace` y firma ad hoc (`codesign -s -`): AppKit aplica el diseño de 26+. Las apps del sistema son `minos 27.0, sdk 27.0`.
+- **Limitaciones:**
+  - Sin ventana *key* no hay estado encendido animado del switch, pulso del botón por defecto ni composición de glass.
+  - El anillo del campo de texto no se dibuja fuera de pantalla.
+  - Los radios se miden en el punto a 45°: una esquina continua (*squircle*) daría un valor equivalente, no su parámetro.
+
+Repetir el sondeo en macOS 26 (fase A2b) sigue pendiente; 27 está hecho (6.3.8). Hay que añadir: alto del contenedor de la barra de título, `standardWindowButton(_:).frame` con cada `toolbarStyle`, radio de los controles por `ControlSize` (incluido `.extraLarge`), con y sin `prefersCompactControlSizeMetrics`, y un render de `NSSplitViewController` con sidebar para medir la separación y el radio del panel flotante.

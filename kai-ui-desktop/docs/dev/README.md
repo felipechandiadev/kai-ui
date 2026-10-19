@@ -17,6 +17,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 11. [Mapas interactivos](10-mapas.md)
 12. [Tema AppKit para macOS](11-tema-appkit.md)
 13. [Guía: modelo AppKit como estándar de Kai](12-modelo-appkit.md)
+14. [Hoja de ruta: de Kai UI a plataforma de desarrollo de apps](13-hoja-de-ruta-plataforma.md)
 
 ## Orden recomendado
 

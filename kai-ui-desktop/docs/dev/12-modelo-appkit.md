@@ -1256,6 +1256,8 @@ pub fn group_box<Msg>(title: Option<&str>) -> Element<Msg>;
 
 **Objetivo.** Cerrar la etapa 2: ningún componente con el tema AppKit reacciona al puntero (salvo los *borderless* que lo pidan), y todo lo que usa acento se apaga con la ventana inactiva.
 
+> **Cambio de rumbo (19-oct-2026): tema mixto.** Por decisión del dueño, los temas AppKit de Kai **sí tienen hover**: lógica y aspecto AppKit, con un paso de hover sutil en botones, botones de icono, ojo de contraseña, switch y borde de los campos (tokens `bezel-hover`, `accent-hover`, `fill-pressed`; valores en `src/theme/appkit.rs` y `src/components.rs`). Cards y group boxes no reaccionan. El hover sigue apagado en ventana inactiva y en controles deshabilitados. AppKit estricto, sin hover: `Theme::with_hover(false)` (`Theme::hover_effects`) o `KAI_HOVER=0` en la demo.
+
 **Archivos.** Modificar `src/components.rs` (todas las constantes con `hover:`; `switch_with_options`, `icon_button_sized`, `badge_classes`, `alert`), `src/theme.rs` (`switch-on-inactive`).
 
 **Cambios.**
