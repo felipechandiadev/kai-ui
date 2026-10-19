@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: la Etapa 1 está cerrada; los Pasos 0 a 8 están hechos, salvo el 1b. La Etapa 2 ya tiene el registro de comandos (Paso 7) y sus consumidores locales (Paso 8): atajos, `on_command`, menú nativo con muda y paleta Cmd+Shift+P. Sigue el Paso 9 (`invoke`, `query` y `available` en `TestApp`). El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: las Etapas 1 y 2 están cerradas; los Pasos 0 a 10 están hechos, salvo el 1b. La demo hace cada acción igual desde botón, atajo, menú, paleta y `TestApp::invoke` (hito M2a). Sigue el Paso 11 (esquemas), que abre la Etapa 3; antes hay que tomar las decisiones de §12 sobre el dialecto de JSON Schema, los tipos propios y cuándo se genera. El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -613,6 +613,11 @@ Reglas de la pista C:
   assert_eq!(app.available::<Reiniciar>(), Availability::Enabled);
   ```
 - **Hecho cuando**: hay un test por acción de la demo por cada vía (invocación directa, botón, atajo).
+- **Estado**: hecho.
+  - **`TestApp`**: `invoke(Accion)` devuelve `Result<(), CommandError>`, pasa por la disponibilidad del registro y luego hace un frame; `query(Consulta)` lee el modelo sin `Msg` y falla si la consulta no está registrada; `available::<Accion>()` devuelve el `Availability` actual y entra en pánico si la acción no está registrada; `perform(id)` es la vía del menú (el mismo `perform_command` que usan `UserEvent::Menu` y los atajos); `commands()` expone los estados que ven el menú y la paleta.
+  - **`Session`**: `send_command(id, msg)` rechaza las acciones `Disabled` con su motivo y las `Hidden` con «no está disponible»; `command_state(id)`, `has_query(id)` y `commands()` son públicos dentro del crate. `CommandRegistry::availability` distingue un id desconocido de una consulta.
+  - **Doctest** de `invoke` con un contador mínimo: `Reset` falla con «Ya está en cero» hasta que `Increment` cambia el modelo.
+  - **Tests** en la demo: `invoke_runs_enabled_actions_and_reports_disabled_ones`, `query_reads_the_model_without_msg` y `availability_follows_update` (ahora con `available` y `commands`). La tabla por acción y vía del «hecho cuando» quedó en el Paso 10, cuando todos los botones ya usan `on_command`.
 
 #### Paso 10 — Migrar la demo a comandos
 
@@ -620,6 +625,13 @@ Reglas de la pista C:
 - **Depende de**: Pasos 8–9.
 - **Diseño**: incrementar, reiniciar, enviar, limpiar y mostrar/ocultar contraseña pasan a acciones; los botones usan `on_command`.
 - **Hecho cuando**: todas funcionan igual desde botón, atajo, menú y paleta, con tests para cada vía, y las capturas no cambian.
+- **Estado**: hecho; la línea base de capturas sigue 6/6.
+  - **Demo**: `header.sumar` y «Incrementar» usan `on_command(Incrementar)`, «Limpiar» `on_command(Limpiar)`, «Enviar» `on_command(Enviar)` (sigue siendo el botón por defecto) y el ojo del campo de contraseña `AlternarContrasena`. Los botones del muestrario y el `on_submit` del correo siguen con `Msg` directos porque no son acciones de la app.
+  - **`TextField::password_command(revelada, Accion)`**: como `password`, pero el ojo lleva el id del comando, así que se deshabilita con él y figura en el registro.
+  - **Partes**: `bind_commands` no le pone el id del comando como `test_id` a un elemento con `part`; el ojo sigue siendo `form.password.toggle`. El estado (deshabilitado, motivo, nombre) sí se aplica.
+  - **Tests**: `every_action_does_the_same_from_every_via` recorre una tabla con las cinco acciones y sus vías (invocación, cada botón, atajo, Return en un campo para «Enviar», menú y paleta), cada una en una app nueva, y compara el modelo resultante y los `Msg` con los de `invoke`. `disabled_actions_do_nothing_from_any_via` hace lo mismo con «Reiniciar» en cero y «Enviar» sin nombre: ninguna vía envía `Msg`.
+  - **Fixture externo**: `fixtures/external-app` declara la acción `saludo.saludar` (deshabilitada con «Falta el nombre») y su botón usa `on_command`, así que la API pública de comandos queda compilada fuera del crate.
+  - **Pendiente a mano** (sigue del Paso 8): atajos y menú en la ventana real, y la paleta con VoiceOver.
 
 ### Etapa 3 — Operable por agentes (hito M2)
 
@@ -1023,8 +1035,8 @@ Reglas de la pista C:
 **Etapa 2 — Comandos**
 - [x] P7 Registro con `Query` y `Action`, duplicados y disponibilidad.
 - [x] P8 Atajos, menú nativo, paleta, `on_command`. Falta probar a mano en ventana los atajos con el menú y la paleta con VoiceOver.
-- [ ] P9 `invoke`, `query`, `available` en `TestApp`.
-- [ ] P10 Demo migrada a comandos.
+- [x] P9 `invoke`, `query`, `available` en `TestApp`.
+- [x] P10 Demo migrada a comandos, con un test por acción y vía.
 
 **Etapa 3 — Agentes**
 - [ ] P11 Esquemas y `mcp-schema.json` con snapshot.

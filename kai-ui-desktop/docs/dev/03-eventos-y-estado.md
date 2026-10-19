@@ -71,6 +71,17 @@ fn commands(registry: &mut CommandRegistry<Self>) {
 - **Ruta de teclas**: `key_equivalent_route` ofrece la tecla primero a los equivalentes de los controles (botón por defecto, cancelar, atajos propios) y después a los atajos de los comandos habilitados, como AppKit. Con un campo enfocado no se toman teclas sin ⌘ ni ⌃, y el registro reserva ⌘A/C/X/V/Z y ⇧⌘Z para la edición. `KeyRoute::Command(id)` sale del dispatch como `Action::Command(id)`, que la sesión atiende antes de la cadena de responders.
 - **En la ventana**, el menú consume primero los atajos de sus ítems habilitados y llega al bucle como `UserEvent::Menu(id)`; si el ítem está deshabilitado, la ruta de teclas tampoco lo dispara.
 - **Paleta**: mientras está abierta, la sesión arma el `FocusOrder` solo con ella y el único atajo activo es ⇧⌘P. Atiende las flechas y Return de la búsqueda antes del dispatch, cierra con `CancelOperation` (Esc, ⌘.) o con un clic fuera del panel, y devuelve el foco que había.
+- **En `TestApp`** (Paso 9) los comandos se prueban sin pasar por la UI:
+
+```rust
+app.invoke(Incrementar)?;                          // disponibilidad → into_msg → update → frame
+assert!(app.invoke(Reiniciar).is_err());            // Disabled: devuelve el motivo y no envía Msg
+let saludo = app.query(Saludo)?;                    // lee el modelo, sin Msg
+assert_eq!(app.available::<Reiniciar>(), Availability::Enabled);
+app.perform("contador.reiniciar");                  // la vía del menú y los atajos
+```
+
+  `invoke` usa `Session::send_command`, que respeta la misma disponibilidad que el menú, la paleta y `on_command`; `commands()` devuelve los estados que ellos ven. La demo prueba cada acción por todas sus vías (invocación, botón, atajo, menú y paleta) y compara el resultado con `invoke` (`every_action_does_the_same_from_every_via`).
 
 ## Estado de L1
 

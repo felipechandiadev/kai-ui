@@ -147,6 +147,16 @@ button("Reiniciar", ButtonVariant::Outlined).on_command(Reiniciar)
 // test_id "contador.reiniciar"; deshabilitado con 0 clics, con el motivo
 ```
 
+- **Partes**: un elemento que es parte de un componente (`.part(..)`) conserva su sub-id; `on_command` solo le aplica el estado. Por eso **`TextField::password_command(revelada, Accion)`**, la variante de `password` con comando, deja el ojo como `x.toggle` y lo deshabilita junto con la acción.
+
+```rust
+TextField::new("Contraseña", &model.password)
+    .test_id("form.password")
+    .password_command(model.show_password, AlternarContrasena)
+    .build()
+// el ojo sigue siendo "form.password.toggle"
+```
+
 - **`command_palette(items, query, selected)`** dibuja la paleta: fondo `absolute inset-0 z-50`, panel `Role::Group` «Paleta de comandos», búsqueda `kai.paleta.buscar` y una fila por `PaletteItem` (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo (`KeyEquivalent::label`). La muestra la sesión con ⇧⌘P; los elementos no llevan `Msg`. Comparte el layout entre temas y elige colores y tipografía con `themed`.
 
 ### Ids de prueba y partes
