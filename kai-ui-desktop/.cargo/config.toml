@@ -1,0 +1,22 @@
+# SDK de macOS con el que se enlaza Kai (docs/dev/11-tema-appkit.md 6.3.8).
+#
+# AppKit dibuja el diseño 26+ solo en binarios enlazados con SDK >= 26
+# (campo `sdk` de LC_BUILD_VERSION; ver `vtool -show-build`). Hoy este Mac
+# solo tiene Command Line Tools 16.4 (SDK 15.5), así que Kai y sus ventanas
+# nativas se ven Aqua11 aun en macOS 27, y AppKitGeneration::current() elige
+# Aqua11 a propósito.
+#
+# Decisión (19-oct-2026): el dueño se queda por ahora en el SDK 15.5 (no
+# instala las Command Line Tools 27).
+#
+# Para pasar a Glass27 instalar (requiere admin):
+#   sudo softwareupdate --install "Command Line Tools for Xcode 27.0-27.0"
+# Eso mueve /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk al SDK 27 y
+# basta con `cargo clean && cargo build`. Para fijar el SDK y el mínimo de
+# despliegue (11.0 = el valor por defecto de Rust) explícitamente,
+# descomentar (confirmar antes el nombre con
+# `ls /Library/Developer/CommandLineTools/SDKs/`):
+#
+# [env]
+# SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk"
+# MACOSX_DEPLOYMENT_TARGET = "11.0"
