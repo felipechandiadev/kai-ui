@@ -2,7 +2,7 @@
 
 use kai::components::{ButtonVariant, TextField, button, card, card_content, heading, paragraph};
 use kai::element::{Element, div};
-use kai::runtime::{self, App};
+use kai::runtime::{self, App, Effects};
 use kai::theme::{Density, Theme};
 
 #[derive(Default)]
@@ -24,11 +24,17 @@ impl App for Greeter {
         "Kai — app externa".to_owned()
     }
 
-    fn update(&mut self, msg: Msg) {
+    fn init(&mut self) -> Effects<Msg> {
+        self.greeting = Some("Escribe tu nombre y pulsa Saludar".to_owned());
+        Effects::none()
+    }
+
+    fn update(&mut self, msg: Msg) -> Effects<Msg> {
         match msg {
             Msg::NameChanged(name) => self.name = name,
             Msg::Greet => self.greeting = Some(format!("Hola, {}", self.name.trim())),
         }
+        Effects::none()
     }
 
     fn view(&self) -> Element<Msg> {

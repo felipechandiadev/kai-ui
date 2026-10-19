@@ -9,7 +9,7 @@ use crate::components::{
 };
 use crate::element::{ControlSize, Element, Role, div, text};
 use crate::layout::WindowActivity;
-use crate::runtime::App;
+use crate::runtime::SimpleApp;
 use crate::theme::{Appearance, Density, Theme};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -453,7 +453,7 @@ fn text_styles() -> Element<Msg> {
         }))
 }
 
-impl App for Gallery {
+impl SimpleApp for Gallery {
     type Msg = Msg;
 
     fn title(&self) -> String {

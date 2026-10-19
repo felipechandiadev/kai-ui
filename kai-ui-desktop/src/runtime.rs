@@ -17,6 +17,8 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
+use std::fmt::{self, Debug};
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -53,11 +55,44 @@ use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sy
 const FOCUS_REVEAL_MARGIN: f32 = 4.0;
 const LINE_SCROLL: f32 = 40.0;
 
+/// What `update` asks the runtime to do, as a value. Opaque and always
+/// empty until async effects exist (13, Paso 15); the runtime drops it.
+#[must_use]
+pub struct Effects<Msg>(PhantomData<fn() -> Msg>);
+
+impl<Msg> Effects<Msg> {
+    pub fn none() -> Self {
+        Self(PhantomData)
+    }
+
+    pub fn batch(effects: impl IntoIterator<Item = Self>) -> Self {
+        effects.into_iter().for_each(drop);
+        Self::none()
+    }
+
+    pub fn is_none(&self) -> bool {
+        true
+    }
+}
+
+impl<Msg> fmt::Debug for Effects<Msg> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Effects::none()")
+    }
+}
+
+/// An Elm app: a model that turns messages into a new model (and effects)
+/// and is drawn by `view`. Apps without effects implement [`SimpleApp`].
 pub trait App: 'static {
-    type Msg: Clone + 'static;
+    type Msg: Clone + Debug + 'static;
+
+    /// Called once, before the first `view`.
+    fn init(&mut self) -> Effects<Self::Msg> {
+        Effects::none()
+    }
 
     fn title(&self) -> String;
-    fn update(&mut self, msg: Self::Msg);
+    fn update(&mut self, msg: Self::Msg) -> Effects<Self::Msg>;
     fn view(&self) -> Element<Self::Msg>;
 
     /// Window background effect for the current model, read after every
@@ -79,6 +114,59 @@ pub trait App: 'static {
     }
 }
 
+/// An [`App`] whose `update` has no effects; every `SimpleApp` is an `App`.
+pub trait SimpleApp: 'static {
+    type Msg: Clone + Debug + 'static;
+
+    fn title(&self) -> String;
+    fn update(&mut self, msg: Self::Msg);
+    fn view(&self) -> Element<Self::Msg>;
+
+    /// See [`App::background`].
+    fn background(&self) -> BackgroundEffect {
+        BackgroundEffect::NONE
+    }
+
+    /// See [`App::theme`].
+    fn theme(&self) -> Option<Theme> {
+        None
+    }
+
+    /// See [`App::window_override`].
+    fn window_override(&self) -> Option<WindowActivity> {
+        None
+    }
+}
+
+impl<T: SimpleApp> App for T {
+    type Msg = T::Msg;
+
+    fn title(&self) -> String {
+        SimpleApp::title(self)
+    }
+
+    fn update(&mut self, msg: Self::Msg) -> Effects<Self::Msg> {
+        SimpleApp::update(self, msg);
+        Effects::none()
+    }
+
+    fn view(&self) -> Element<Self::Msg> {
+        SimpleApp::view(self)
+    }
+
+    fn background(&self) -> BackgroundEffect {
+        SimpleApp::background(self)
+    }
+
+    fn theme(&self) -> Option<Theme> {
+        SimpleApp::theme(self)
+    }
+
+    fn window_override(&self) -> Option<WindowActivity> {
+        SimpleApp::window_override(self)
+    }
+}
+
 /// Whether an animated background should get frames now: the effect moves,
 /// motion is not reduced, and the window is visible and active.
 pub fn background_running(
@@ -91,7 +179,8 @@ pub fn background_running(
 }
 
 /// Open a window and run `app` until it is closed.
-pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
+pub fn run<A: App>(mut app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
+    let _effects = app.init();
     let event_loop = EventLoop::<accesskit_winit::Event>::with_user_event().build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
@@ -438,7 +527,7 @@ impl<A: App> WindowState<A> {
     }
 
     fn send(&mut self, msg: A::Msg) {
-        self.app.update(msg);
+        let _effects = self.app.update(msg);
         self.invalidate();
     }
 
@@ -884,7 +973,10 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::{action_message, background_running, cursor_for, pointer_target, selects_on_focus};
+    use super::{
+        App, Effects, SimpleApp, action_message, background_running, cursor_for, pointer_target,
+        selects_on_focus,
+    };
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, div, icon, input};
@@ -916,6 +1008,50 @@ mod tests {
             &mut StyleCache::default(),
             &mut FixedMeasure,
         )
+    }
+
+    #[derive(Default)]
+    struct Counter {
+        count: u32,
+    }
+
+    impl SimpleApp for Counter {
+        type Msg = Msg;
+
+        fn title(&self) -> String {
+            format!("{}", self.count)
+        }
+
+        fn update(&mut self, msg: Msg) {
+            if msg == Msg::Clicked {
+                self.count += 1;
+            }
+        }
+
+        fn view(&self) -> Element<Msg> {
+            div().on_click(Msg::Clicked)
+        }
+    }
+
+    #[test]
+    fn simple_app_updates_like_before_with_no_effects() {
+        let mut counter = Counter::default();
+        assert!(App::init(&mut counter).is_none());
+        let effects = App::update(&mut counter, Msg::Clicked);
+        assert!(effects.is_none());
+        let _ = App::update(&mut counter, Msg::Submitted);
+        assert_eq!(counter.count, 1);
+        assert_eq!(App::title(&counter), "1");
+        assert_eq!(App::theme(&counter), None);
+        assert_eq!(App::window_override(&counter), None);
+    }
+
+    #[test]
+    fn effects_batch_of_none_is_none() {
+        let batch = Effects::<Msg>::batch([Effects::none(), Effects::none()]);
+        assert!(batch.is_none());
+        assert!(Effects::<Msg>::batch([]).is_none());
+        assert_eq!(format!("{batch:?}"), "Effects::none()");
     }
 
     #[test]

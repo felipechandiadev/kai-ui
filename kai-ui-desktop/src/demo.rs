@@ -10,7 +10,7 @@ use crate::components::{
 };
 use crate::element::{ControlSize, Element, Role, div, icon, text};
 use crate::icons::Icon;
-use crate::runtime::{self, App};
+use crate::runtime::{self, SimpleApp};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -123,7 +123,7 @@ impl Demo {
     }
 }
 
-impl App for Demo {
+impl SimpleApp for Demo {
     type Msg = Msg;
 
     fn title(&self) -> String {
@@ -728,7 +728,7 @@ mod tests {
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::render::paint::{PaintInput, paint};
     use crate::render::text::TextStore;
-    use crate::runtime::{App, build_view};
+    use crate::runtime::{SimpleApp, build_view};
     use crate::snapshot::{self, Shot};
     use crate::testing::{By, Screen, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
