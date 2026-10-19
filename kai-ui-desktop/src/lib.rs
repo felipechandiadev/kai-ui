@@ -17,6 +17,8 @@ pub mod commands;
 pub mod components;
 pub mod element;
 pub mod icons;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod menu;
 pub mod runtime;
 pub mod snapshot;

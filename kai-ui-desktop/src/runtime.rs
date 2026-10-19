@@ -192,6 +192,34 @@ pub fn background_running(
 
 /// Open a window and run `app` until it is closed.
 pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
+    run_with(app, theme, |_| {})
+}
+
+/// Like [`run`], and also serve the exposed commands over MCP on stdin and
+/// stdout (see [`crate::mcp`]). The app quits when the client disconnects.
+#[cfg(feature = "mcp")]
+pub fn run_with_mcp<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
+    let tools = crate::mcp::Tools::of::<A>(app.title());
+    run_with(app, theme, move |proxy| {
+        let calls = proxy.clone();
+        let close = proxy.clone();
+        crate::mcp::serve_stdio(
+            tools,
+            move |invocation| {
+                let _ = calls.send_event(UserEvent::Mcp(invocation));
+            },
+            move || {
+                let _ = close.send_event(UserEvent::McpClosed);
+            },
+        );
+    })
+}
+
+fn run_with<A: App>(
+    app: A,
+    theme: Theme,
+    start: impl FnOnce(&EventLoopProxy<UserEvent>),
+) -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
@@ -202,11 +230,14 @@ pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
             let _ = proxy.send_event(UserEvent::Menu(id));
         });
     }
+    start(&proxy);
     let mut runner = Runner {
         app: Some(app),
         theme,
         state: None,
         proxy,
+        #[cfg(feature = "mcp")]
+        pending: Vec::new(),
     };
     event_loop.run_app(&mut runner)?;
     Ok(())
@@ -366,6 +397,12 @@ enum UserEvent {
     /// The menu bar item of this command id was chosen.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Menu(String),
+    /// An agent called a tool.
+    #[cfg(feature = "mcp")]
+    Mcp(crate::mcp::Invocation),
+    /// The MCP client went away.
+    #[cfg(feature = "mcp")]
+    McpClosed,
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -379,6 +416,9 @@ struct Runner<A: App> {
     theme: Theme,
     state: Option<WindowState<A>>,
     proxy: EventLoopProxy<UserEvent>,
+    /// Tool calls that arrived before the window existed.
+    #[cfg(feature = "mcp")]
+    pending: Vec<crate::mcp::Invocation>,
 }
 
 struct WindowState<A: App> {
@@ -438,6 +478,14 @@ impl<A: App> WindowState<A> {
         };
         state.flush();
         Ok(state)
+    }
+
+    /// Run a tool call like any JSON call and answer the agent.
+    #[cfg(feature = "mcp")]
+    fn answer(&mut self, mut invocation: crate::mcp::Invocation) {
+        let input = std::mem::take(&mut invocation.input);
+        let result = self.session.call(&invocation.command, input);
+        invocation.reply(result);
     }
 
     /// Apply what the session asked of the window since the last flush.
@@ -620,7 +668,15 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         let state = pollster::block_on(WgpuRenderer::new(Arc::clone(&window)))
             .and_then(|renderer| WindowState::new(window, accessibility, renderer, theme, app));
         match state {
-            Ok(state) => {
+            #[cfg_attr(not(feature = "mcp"), allow(unused_mut))]
+            Ok(mut state) => {
+                #[cfg(feature = "mcp")]
+                {
+                    for invocation in self.pending.drain(..) {
+                        state.answer(invocation);
+                    }
+                    state.flush();
+                }
                 state.window.request_redraw();
                 self.state = Some(state);
             }
@@ -697,7 +753,21 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        #[cfg(feature = "mcp")]
+        let event = match event {
+            UserEvent::McpClosed => {
+                event_loop.exit();
+                return;
+            }
+            UserEvent::Mcp(invocation) if self.state.is_none() => {
+                self.pending.push(invocation);
+                return;
+            }
+            event => event,
+        };
+        #[cfg(not(feature = "mcp"))]
+        let _ = event_loop;
         let Some(state) = self.state.as_mut() else {
             return;
         };
@@ -709,6 +779,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             UserEvent::Menu(id) => {
                 state.session.perform_command(&id);
             }
+            #[cfg(feature = "mcp")]
+            UserEvent::Mcp(invocation) => state.answer(invocation),
+            #[cfg(feature = "mcp")]
+            UserEvent::McpClosed => return,
         }
         state.flush();
     }

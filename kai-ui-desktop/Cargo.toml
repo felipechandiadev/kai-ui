@@ -18,6 +18,8 @@ path = "src/main.rs"
 [features]
 # Enables PNG read/write in `kai::snapshot` outside the crate's own tests.
 snapshots = ["dep:png"]
+# Experimental MCP server over stdio (`--mcp`, 13 Paso 12).
+mcp = ["dep:rmcp", "dep:tokio"]
 
 [dependencies]
 accesskit = "0.25.1"
@@ -34,6 +36,10 @@ resvg = { version = "0.48.1", default-features = false }
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# MCP SDK (13 §12: MSRV 1.88, Apache-2.0, stdio server) and the runtime of
+# its service thread; only with the `mcp` feature.
+rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io"], optional = true }
+tokio = { version = "1", features = ["rt", "sync", "time", "io-std", "io-util"], optional = true }
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout", "content_size"] }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }

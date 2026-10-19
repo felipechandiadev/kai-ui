@@ -303,7 +303,7 @@ impl<A: App> CommandRegistry<A> {
     /// The app's commands as JSON, in registration order, without the
     /// framework's `kai.*`: id, title, description, kind, safety, whether
     /// agents see it, and the schemas of input and output.
-    pub(super) fn descriptions(&self) -> Vec<Value> {
+    pub(crate) fn descriptions(&self) -> Vec<Value> {
         self.entries
             .iter()
             .filter_map(|entry| {

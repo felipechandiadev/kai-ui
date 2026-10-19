@@ -41,6 +41,9 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       # Pure tests only: no window, GPU surface or clipboard access.
       - run: cargo test --locked
+      # Experimental MCP server (13, Paso 12): in-process client over a pipe.
+      - run: cargo clippy --locked --all-targets --features mcp -- -D warnings
+      - run: cargo test --locked --features mcp
       - run: cargo doc --locked --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

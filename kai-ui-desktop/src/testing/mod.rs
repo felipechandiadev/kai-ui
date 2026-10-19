@@ -20,9 +20,13 @@
 //! ```
 
 mod app;
+#[cfg(feature = "mcp")]
+mod mcp;
 mod query;
 
 pub use app::{MemoryClipboard, TestApp, TestAppBuilder};
+#[cfg(feature = "mcp")]
+pub use mcp::McpClient;
 pub use query::{By, Found, Screen};
 
 pub use crate::ui_engine::{Key, Modifiers};

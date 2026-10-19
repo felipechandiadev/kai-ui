@@ -778,12 +778,14 @@ impl Demo {
 /// `KAI_LABEL`, `KAI_BG` and `KAI_BG_ANIM`. With `--describe-commands` it
 /// prints the commands and their schemas (`mcp-schema.json`) instead.
 pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args()
-        .skip(1)
-        .any(|arg| arg == "--describe-commands")
-    {
+    let flag = |name: &str| std::env::args().skip(1).any(|arg| arg == name);
+    if flag("--describe-commands") {
         println!("{}", describe_json::<Demo>());
         return Ok(());
+    }
+    let mcp = flag("--mcp");
+    if mcp && !cfg!(feature = "mcp") {
+        return Err("--mcp necesita compilar con --features mcp".into());
     }
     if !cfg!(target_os = "macos") {
         return Err("Kai UI Desktop comienza como prototipo para macOS".into());
@@ -800,6 +802,10 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
         background_motion,
         ..Demo::default()
     };
+    #[cfg(feature = "mcp")]
+    if mcp {
+        return runtime::run_with_mcp(demo, demo_theme());
+    }
     runtime::run(demo, demo_theme())
 }
 
@@ -1974,6 +1980,96 @@ mod tests {
                 "form.ultimo_envio",
             ]
         );
+    }
+
+    #[cfg(feature = "mcp")]
+    #[test]
+    fn mcp_lists_the_exposed_commands_as_tools() {
+        let mut app = TestApp::new(Demo::default());
+        let mut client = app.mcp_client();
+        assert!(client.initialized()["capabilities"]["tools"].is_object());
+        let tools = client.tools();
+        let described = crate::commands::describe::<Demo>();
+        let exposed: Vec<&serde_json::Value> = described["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|command| command["exposed"] == json!(true))
+            .collect();
+        assert_eq!(tools.len(), exposed.len());
+        for (tool, command) in tools.iter().zip(exposed) {
+            assert_eq!(tool["name"], command["id"]);
+            assert_eq!(tool["title"], command["title"]);
+            assert_eq!(tool["inputSchema"], command["inputSchema"]);
+            let read_only = command["kind"] == "query";
+            assert_eq!(tool["annotations"]["readOnlyHint"], json!(read_only));
+            let destructive = command["safety"] == "destructive";
+            assert_eq!(tool["annotations"]["destructiveHint"], json!(destructive));
+            match command.get("outputSchema") {
+                Some(output) => assert_eq!(
+                    tool["outputSchema"]["properties"]["result"], *output,
+                    "{} envuelve su salida",
+                    command["id"]
+                ),
+                None => assert!(tool.get("outputSchema").is_none()),
+            }
+        }
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(!names.contains(&"form.alternar_contrasena"));
+        assert!(
+            client.close(),
+            "el servidor termina cuando el cliente se va"
+        );
+    }
+
+    #[cfg(feature = "mcp")]
+    #[test]
+    fn mcp_tool_calls_run_on_the_app() {
+        let mut app = TestApp::new(Demo::default());
+        let mut client = app.mcp_client();
+
+        let result = client
+            .call_tool("contador.sumar", json!({"cantidad": 2}))
+            .unwrap();
+        assert_eq!(result["isError"], json!(false));
+        assert_eq!(client.app().app().clicks, 2);
+        let screen = client.app().screen();
+        screen
+            .within(screen.get_by_test_id("contador"))
+            .get(By::role(Role::Status).name("2"));
+
+        client.call_tool("contador.reiniciar", json!({})).unwrap();
+        let result = client.call_tool("contador.reiniciar", json!({})).unwrap();
+        assert_eq!(result["isError"], json!(true));
+        assert_eq!(
+            result["content"][0]["text"],
+            json!("El contador ya está en cero")
+        );
+
+        let result = client
+            .call_tool("contador.sumar", json!({"cantidad": "dos"}))
+            .unwrap();
+        assert_eq!(result["isError"], json!(true));
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("entrada inválida para contador.sumar")
+        );
+
+        let error = client
+            .call_tool("form.alternar_contrasena", json!({}))
+            .unwrap_err();
+        assert!(error["message"].as_str().unwrap().contains("desconocida"));
+        assert_eq!(client.app().app().clicks, 0);
+
+        client.app().type_text(By::test_id("form.nombre"), "Ana");
+        let result = client.call_tool("form.enviar", json!({})).unwrap();
+        assert_eq!(result["structuredContent"], json!({"result": "Ana"}));
+        let result = client.call_tool("form.ultimo_envio", json!({})).unwrap();
+        assert_eq!(result["structuredContent"], json!({"result": "Ana"}));
+        assert_eq!(result["content"][0]["text"], json!(r#"{"result":"Ana"}"#));
+        assert!(client.close());
     }
 
     /// Lines that differ between `expected` and `actual`, numbered; `None`
