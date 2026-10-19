@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use accesskit::{ActionRequest, TreeUpdate};
 use cosmic_text::{FontSystem, Metrics};
+use serde_json::Value;
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
@@ -114,14 +115,16 @@ struct Palette {
     rows: Vec<(WidgetId, &'static str)>,
 }
 
-/// Actions the palette lists for `query`: neither hidden nor the
-/// framework's own, matching title, id or description, ignoring case.
+/// Actions the palette lists for `query`: neither hidden, nor needing an
+/// input, nor the framework's own, matching title, id or description,
+/// ignoring case.
 fn palette_items(commands: &[CommandState], query: &str) -> Vec<PaletteItem> {
     let query = query.trim().to_lowercase();
     commands
         .iter()
         .filter(|command| {
             command.kind == CommandKind::Action
+                && !command.needs_input
                 && command.availability != Availability::Hidden
                 && !command.id.starts_with("kai.")
                 && [command.title, command.id, command.description]
@@ -456,6 +459,18 @@ impl<A: App> Session<A> {
     /// Whether `id` is a registered query.
     pub fn has_query(&self, id: &str) -> bool {
         self.registry.has_query(id)
+    }
+
+    /// Run command `id` on a JSON `input`, as a script or an agent does: a
+    /// query returns its output; an action that can run sends its message
+    /// and returns `null`.
+    pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
+        if self.registry.has_query(id) {
+            return self.registry.run_query(&self.app, id, input);
+        }
+        let msg = self.registry.message_from(&self.app, id, input)?;
+        self.send(msg);
+        Ok(Value::Null)
     }
 
     /// Whether the command palette is open.

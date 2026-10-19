@@ -1,6 +1,9 @@
 //! Kai UI Desktop demo, shared by the `kai-ui-desktop-prototype` binary
 //! (`cargo run`) and `examples/demo.rs` (`cargo run --example demo`).
 
+use schemars::JsonSchema;
+use serde::Deserialize;
+
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
 use crate::commands::{Action, Availability, CommandError, CommandRegistry, Query, Shortcut};
 use crate::components::{
@@ -107,6 +110,7 @@ enum Field {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Msg {
     Increment,
+    Add(u32),
     Reset,
     NameChanged(String),
     EmailChanged(String),
@@ -125,7 +129,7 @@ impl Demo {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Deserialize, JsonSchema)]
 struct Incrementar;
 
 impl Action for Incrementar {
@@ -140,7 +144,27 @@ impl Action for Incrementar {
     }
 }
 
-#[derive(Clone, Default)]
+/// Suma `cantidad` clics de una vez.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Sumar {
+    /// Clics que se suman.
+    cantidad: u32,
+}
+
+impl Action for Sumar {
+    type App = Demo;
+    const ID: &'static str = "contador.sumar";
+    const TITLE: &'static str = "Sumar";
+    fn description() -> &'static str {
+        "Suma varios clics al contador"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Add(self.cantidad)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
 struct Reiniciar;
 
 impl Action for Reiniciar {
@@ -162,7 +186,7 @@ impl Action for Reiniciar {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Deserialize, JsonSchema)]
 struct Enviar;
 
 impl Action for Enviar {
@@ -184,7 +208,7 @@ impl Action for Enviar {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Deserialize, JsonSchema)]
 struct Limpiar;
 
 impl Action for Limpiar {
@@ -199,7 +223,7 @@ impl Action for Limpiar {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Deserialize, JsonSchema)]
 struct AlternarContrasena;
 
 impl Action for AlternarContrasena {
@@ -212,6 +236,7 @@ impl Action for AlternarContrasena {
 }
 
 /// The last name sent, if any.
+#[derive(Deserialize, JsonSchema)]
 struct Saludo;
 
 impl Query for Saludo {
@@ -232,6 +257,7 @@ impl SimpleApp for Demo {
             .action::<Incrementar>()
             .shortcut(Shortcut::cmd(Key::Char('i')))
             .menu("Contador");
+        registry.action::<Sumar>();
         registry
             .action::<Reiniciar>()
             .shortcut(Shortcut::cmd(Key::Char('0')))
@@ -254,6 +280,7 @@ impl SimpleApp for Demo {
     fn update(&mut self, msg: Msg) {
         match msg {
             Msg::Increment => self.clicks += 1,
+            Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
             Msg::Reset => self.clicks = 0,
             Msg::NameChanged(name) => self.name = name,
             Msg::EmailChanged(email) => self.email = email,
@@ -840,6 +867,8 @@ mod tests {
     use super::{
         AlternarContrasena, Demo, Enviar, Field, Incrementar, Limpiar, Msg, Reiniciar, Saludo,
     };
+    use serde_json::json;
+
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::commands::{Availability, PALETTE};
     use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
@@ -1415,6 +1444,7 @@ mod tests {
             ids,
             [
                 "contador.incrementar",
+                "contador.sumar",
                 "contador.reiniciar",
                 "form.enviar",
                 "form.limpiar",
@@ -1698,6 +1728,8 @@ mod tests {
     #[derive(Clone, Copy, Debug)]
     enum Via {
         Invoke,
+        /// `call(id, {})`, as an agent will.
+        Json,
         Button(&'static str),
         Key(Key, Modifiers),
         Menu,
@@ -1720,6 +1752,9 @@ mod tests {
         let before = app.messages().len();
         match via {
             Via::Invoke => (case.invoke)(&mut app),
+            Via::Json => {
+                let _ = app.call(case.id, json!({}));
+            }
             Via::Button(test_id) => app.click(By::test_id(test_id)),
             Via::Key(key, modifiers) => app.press(key, modifiers),
             Via::Menu => {
@@ -1752,6 +1787,7 @@ mod tests {
                 invoke: |app| app.invoke(Incrementar).unwrap(),
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("header.sumar"),
                     Via::Button("contador.incrementar"),
                     Via::Key(Key::Char('i'), CMD),
@@ -1765,6 +1801,7 @@ mod tests {
                 invoke: |app| app.invoke(Reiniciar).unwrap(),
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("contador.reiniciar"),
                     Via::Key(Key::Char('0'), CMD),
                     Via::Menu,
@@ -1777,6 +1814,7 @@ mod tests {
                 invoke: |app| app.invoke(Enviar).unwrap(),
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("form.enviar"),
                     // Return in «Nombre»: «Enviar» is the default button.
                     Via::Key(Key::Enter, Modifiers::NONE),
@@ -1790,6 +1828,7 @@ mod tests {
                 invoke: |app| app.invoke(Limpiar).unwrap(),
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("form.limpiar"),
                     Via::Menu,
                     Via::Palette("Limpiar"),
@@ -1801,6 +1840,7 @@ mod tests {
                 invoke: |app| app.invoke(AlternarContrasena).unwrap(),
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("form.password.toggle"),
                     Via::Menu,
                     Via::Palette("contraseña"),
@@ -1838,6 +1878,7 @@ mod tests {
                 },
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("contador.reiniciar"),
                     Via::Key(Key::Char('0'), CMD),
                     Via::Menu,
@@ -1853,6 +1894,7 @@ mod tests {
                 },
                 vias: vec![
                     Via::Invoke,
+                    Via::Json,
                     Via::Button("form.enviar"),
                     Via::Key(Key::Enter, Modifiers::NONE),
                     Via::Menu,
@@ -1870,6 +1912,48 @@ mod tests {
                 assert_eq!(model, before, "{} vía {via:?}", case.id);
             }
         }
+    }
+
+    #[test]
+    fn json_calls_run_actions_and_queries() {
+        let mut app = TestApp::new(Demo::default());
+        assert_eq!(
+            app.call("contador.sumar", json!({"cantidad": 3})),
+            Ok(json!(null))
+        );
+        assert_eq!(app.app().clicks, 3);
+        assert_eq!(app.messages(), [Msg::Add(3)]);
+        let error = app.call("contador.sumar", json!({})).unwrap_err();
+        assert_eq!(
+            error.message,
+            "entrada inválida para contador.sumar: missing field `cantidad`"
+        );
+        assert!(app.call("contador.sumar", json!({"cantidad": -1})).is_err());
+
+        assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!(null)));
+        let error = app.call("form.enviar", json!({})).unwrap_err();
+        assert_eq!(error.message, "Falta el nombre");
+        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.call("form.enviar", json!({})).unwrap();
+        assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!("Ana")));
+        assert!(app.call("contador.nada", json!({})).is_err());
+    }
+
+    #[test]
+    fn actions_with_input_stay_out_of_menus_and_palette() {
+        let mut app = TestApp::new(Demo::default());
+        let sumar = app.commands().iter().find(|c| c.id == "contador.sumar");
+        assert!(sumar.is_some_and(|c| c.needs_input));
+        let menu = menu_model(app.commands());
+        assert!(
+            menu.iter()
+                .flat_map(|g| &g.items)
+                .all(|e| e.id != "contador.sumar")
+        );
+        app.press(Key::Char('p'), CMD_SHIFT);
+        app.type_text(search(), "Sumar");
+        assert!(app.screen().query(row("contador.sumar")).is_none());
+        assert!(app.screen().query(By::text("Sin resultados")).is_some());
     }
 
     #[test]

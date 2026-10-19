@@ -4,13 +4,21 @@
 //! shortcuts, the command palette, buttons and tests all read the same
 //! [`CommandRegistry`].
 //!
-//! Inputs, outputs and schemas for agents come later (13, Pasos 9 and 11):
-//! for now an action takes no parameters, so it must be `Default`.
+//! A command is its own input: it deserializes from JSON (serde) and
+//! describes itself with JSON Schema 2020-12 (schemars), so scripts and
+//! agents can call it (13, Paso 11). An action without parameters is a
+//! unit struct; it takes `{}` and is published as a closed empty object.
+//! Other inputs use `#[serde(deny_unknown_fields)]`.
 
 mod registry;
+mod schema;
 
 use std::error::Error;
 use std::fmt;
+
+use schemars::JsonSchema;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::element::KeyEquivalent;
 use crate::runtime::App;
@@ -100,7 +108,7 @@ impl Error for CommandError {}
 /// #     fn view(&self) -> Element<Msg> { div() }
 /// # }
 ///
-/// #[derive(Clone, Default)]
+/// #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
 /// struct Reset;
 ///
 /// impl Action for Reset {
@@ -119,7 +127,7 @@ impl Error for CommandError {}
 ///     }
 /// }
 /// ```
-pub trait Action: Clone + 'static {
+pub trait Action: Clone + DeserializeOwned + JsonSchema + 'static {
     type App: App;
     /// Lowercase segments separated by `.` (`clientes.crear`); `kai.*` is
     /// reserved.
@@ -140,9 +148,9 @@ pub trait Action: Clone + 'static {
 
 /// A command that reads the app and changes nothing: no message, no
 /// `update`.
-pub trait Query: 'static {
+pub trait Query: DeserializeOwned + JsonSchema + 'static {
     type App: App;
-    type Output;
+    type Output: Serialize + JsonSchema;
     const ID: &'static str;
     const TITLE: &'static str;
 
@@ -172,5 +180,8 @@ pub struct CommandState {
     pub shortcut: Option<Shortcut>,
     /// Menu bar menu it appears in (`"Contador"`).
     pub menu: Option<&'static str>,
+    /// An action that `{}` does not satisfy: only scripts and agents can
+    /// run it, so menus and the palette leave it out.
+    pub needs_input: bool,
     pub availability: Availability,
 }

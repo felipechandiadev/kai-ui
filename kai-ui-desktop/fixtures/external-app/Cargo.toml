@@ -9,3 +9,6 @@ publish = false
 # (docs/dev/13-hoja-de-ruta-plataforma.md, Paso 0). CI runs `cargo check`.
 [dependencies]
 kai = { package = "kai-ui-desktop-prototype", path = "../.." }
+# Command inputs (`Action: Deserialize + JsonSchema`); same majors as Kai.
+schemars = "1"
+serde = { version = "1", features = ["derive"] }

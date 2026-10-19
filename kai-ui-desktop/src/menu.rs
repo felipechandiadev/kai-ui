@@ -25,13 +25,17 @@ pub struct MenuEntry {
     pub shortcut: Option<KeyEquivalent>,
 }
 
-/// Group the actions that declare a menu, skipping `Hidden` ones; menus
-/// and items keep the order in which they were registered.
+/// Group the actions that declare a menu, skipping `Hidden` ones and those
+/// that need an input; menus and items keep the order in which they were
+/// registered.
 pub fn menu_model(states: &[CommandState]) -> Vec<MenuGroup> {
     let mut groups: Vec<MenuGroup> = Vec::new();
     for state in states {
         let Some(menu) = state.menu else { continue };
-        if state.kind != CommandKind::Action || state.availability == Availability::Hidden {
+        if state.kind != CommandKind::Action
+            || state.needs_input
+            || state.availability == Availability::Hidden
+        {
             continue;
         }
         let entry = MenuEntry {
@@ -286,6 +290,7 @@ mod tests {
             safety: None,
             shortcut: None,
             menu,
+            needs_input: false,
             availability: Availability::Enabled,
         }
     }
@@ -296,11 +301,14 @@ mod tests {
         hidden.availability = Availability::Hidden;
         let mut query = state("b.consulta", Some("B"));
         query.kind = CommandKind::Query;
+        let mut with_input = state("b.con_entrada", Some("B"));
+        with_input.needs_input = true;
         let model = menu_model(&[
             state("b.uno", Some("B")),
             state("a.uno", Some("A")),
             hidden,
             query,
+            with_input,
             state("sin.menu", None),
             state("b.dos", Some("B")),
         ]);

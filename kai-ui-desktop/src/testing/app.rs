@@ -5,6 +5,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use serde_json::Value;
+
 use super::{By, Found, Screen, VIEWPORT};
 use crate::commands::{Action, Availability, CommandError, CommandState, Query};
 use crate::element::WidgetId;
@@ -176,7 +178,7 @@ impl<A: App> TestApp<A> {
     ///     Reset,
     /// }
     ///
-    /// #[derive(Clone, Default)]
+    /// #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
     /// struct Increment;
     ///
     /// impl Action for Increment {
@@ -188,7 +190,7 @@ impl<A: App> TestApp<A> {
     ///     }
     /// }
     ///
-    /// #[derive(Clone, Default)]
+    /// #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
     /// struct Reset;
     ///
     /// impl Action for Reset {
@@ -273,6 +275,15 @@ impl<A: App> TestApp<A> {
     /// `update`, in registration order.
     pub fn commands(&self) -> &[CommandState] {
         self.session.commands()
+    }
+
+    /// Run command `id` on a JSON `input`, the way an agent will: a query
+    /// returns its output, an action returns `null` once its message went
+    /// through `update`. Without parameters the input is `{}`.
+    pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
+        let output = self.session.call(id, input)?;
+        self.frame();
+        Ok(output)
     }
 
     /// Press and release the primary button at `point`, whatever is there.

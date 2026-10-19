@@ -1,5 +1,8 @@
 use std::any::type_name;
 
+use serde_json::{Map, Value};
+
+use super::schema::{decode, input_schema, output_schema};
 use super::{
     Action, Availability, CommandError, CommandKind, CommandState, PALETTE, Query, Safety, Shortcut,
 };
@@ -18,6 +21,11 @@ const EDITING: [Shortcut; 6] = [
     KeyEquivalent::cmd_shift(Key::Char('z')),
 ];
 
+type Decode<A> = fn(Value) -> Result<<A as App>::Msg, CommandError>;
+
+/// A query run on a JSON input, with its output as JSON.
+type RunQuery<A> = fn(&A, Value) -> Result<Value, CommandError>;
+
 struct Entry<A: App> {
     id: &'static str,
     title: &'static str,
@@ -29,9 +37,14 @@ struct Entry<A: App> {
     /// Type that declared it, for error messages.
     origin: &'static str,
     available: fn(&A) -> Availability,
-    /// The message of an action without parameters; `None` for queries
-    /// and `kai.*` commands (the session runs those itself).
-    message: Option<fn() -> A::Msg>,
+    /// The message of an action for a JSON input; `None` for queries and
+    /// `kai.*` commands (the session runs those itself).
+    decode: Option<Decode<A>>,
+    run_query: Option<RunQuery<A>>,
+    /// `None` for `kai.*` commands, which are not described.
+    input_schema: Option<fn() -> Value>,
+    output_schema: Option<fn() -> Value>,
+    needs_input: bool,
 }
 
 /// Every command of an app, declared once in [`App::commands`]:
@@ -68,8 +81,18 @@ fn always<A>(_: &A) -> Availability {
     Availability::Enabled
 }
 
-fn message_of<T: Action + Default>() -> <T::App as App>::Msg {
-    T::default().into_msg()
+fn empty() -> Value {
+    Value::Object(Map::new())
+}
+
+fn message_of<T: Action>(input: Value) -> Result<<T::App as App>::Msg, CommandError> {
+    decode::<T>(T::ID, input).map(T::into_msg)
+}
+
+fn run_query_of<T: Query>(app: &T::App, input: Value) -> Result<Value, CommandError> {
+    let output = T::run(app, decode::<T>(T::ID, input)?)?;
+    serde_json::to_value(output)
+        .map_err(|error| CommandError::new(format!("salida inválida de {}: {error}", T::ID)))
 }
 
 impl<A: App> Default for CommandRegistry<A> {
@@ -96,7 +119,11 @@ impl<A: App> CommandRegistry<A> {
             menu: Some("Ver"),
             origin: "kai",
             available: always,
-            message: None,
+            decode: None,
+            run_query: None,
+            input_schema: None,
+            output_schema: None,
+            needs_input: false,
         });
         registry
     }
@@ -107,7 +134,7 @@ impl<A: App> CommandRegistry<A> {
         CommandBuilder { entry }
     }
 
-    pub fn action<T: Action<App = A> + Default>(&mut self) -> CommandBuilder<'_, A> {
+    pub fn action<T: Action<App = A>>(&mut self) -> CommandBuilder<'_, A> {
         self.push(Entry {
             id: T::ID,
             title: T::TITLE,
@@ -118,7 +145,11 @@ impl<A: App> CommandRegistry<A> {
             menu: None,
             origin: type_name::<T>(),
             available: T::available,
-            message: Some(message_of::<T>),
+            decode: Some(message_of::<T>),
+            run_query: None,
+            input_schema: Some(input_schema::<T>),
+            output_schema: None,
+            needs_input: decode::<T>(T::ID, empty()).is_err(),
         })
     }
 
@@ -133,7 +164,11 @@ impl<A: App> CommandRegistry<A> {
             menu: None,
             origin: type_name::<T>(),
             available: always,
-            message: None,
+            decode: None,
+            run_query: Some(run_query_of::<T>),
+            input_schema: Some(input_schema::<T>),
+            output_schema: Some(output_schema::<T::Output>),
+            needs_input: decode::<T>(T::ID, empty()).is_err(),
         })
     }
 
@@ -162,6 +197,7 @@ impl<A: App> CommandRegistry<A> {
                 safety: entry.safety,
                 shortcut: entry.shortcut,
                 menu: entry.menu,
+                needs_input: entry.needs_input,
                 availability: (entry.available)(app),
             })
             .collect()
@@ -192,17 +228,44 @@ impl<A: App> CommandRegistry<A> {
             .is_ok_and(|entry| entry.kind == CommandKind::Query)
     }
 
-    /// The message of action `id` if it can run now.
+    /// The message of action `id` without parameters (input `{}`) if it
+    /// can run now.
     pub fn message(&self, app: &A, id: &str) -> Result<A::Msg, CommandError> {
+        self.message_from(app, id, empty())
+    }
+
+    /// The message of action `id` for a JSON `input` if it can run now:
+    /// availability first, then the input.
+    pub fn message_from(&self, app: &A, id: &str, input: Value) -> Result<A::Msg, CommandError> {
         let entry = self.entry(id)?;
-        let message = entry
-            .message
+        let decode = entry
+            .decode
             .ok_or_else(|| CommandError::new(format!("{id} no produce un mensaje")))?;
         match (entry.available)(app) {
-            Availability::Enabled => Ok(message()),
+            Availability::Enabled => decode(input),
             Availability::Disabled { reason } => Err(CommandError::new(reason)),
             Availability::Hidden => Err(CommandError::new(format!("{id} no está disponible"))),
         }
+    }
+
+    /// Run query `id` on a JSON `input`; its output as JSON.
+    pub fn run_query(&self, app: &A, id: &str, input: Value) -> Result<Value, CommandError> {
+        let run = self
+            .entry(id)?
+            .run_query
+            .ok_or_else(|| CommandError::new(format!("{id} es una acción, no una consulta")))?;
+        run(app, input)
+    }
+
+    /// JSON Schema 2020-12 of the input of command `id`, without
+    /// `$schema`; `None` for unknown ids and `kai.*` commands.
+    pub fn input_schema(&self, id: &str) -> Option<Value> {
+        self.entry(id).ok()?.input_schema.map(|schema| schema())
+    }
+
+    /// JSON Schema 2020-12 of the output of query `id`.
+    pub fn output_schema(&self, id: &str) -> Option<Value> {
+        self.entry(id).ok()?.output_schema.map(|schema| schema())
     }
 
     /// Repeated ids and shortcuts (with the types that declared them),
@@ -258,6 +321,12 @@ impl<A: App> CommandRegistry<A> {
                     shortcut.label()
                 ));
             }
+            if entry.needs_input && (entry.shortcut.is_some() || entry.menu.is_some()) {
+                problems.push(format!(
+                    "comando \"{}\" ({}): necesita entrada, así que no puede tener atajo ni menú",
+                    entry.id, entry.origin
+                ));
+            }
         }
         problems
     }
@@ -276,6 +345,10 @@ fn well_formed(id: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+    use serde_json::json;
+
     use super::super::{Action, Availability, CommandKind, PALETTE, Query, Shortcut};
     use super::CommandRegistry;
     use crate::element::{Element, div};
@@ -288,6 +361,7 @@ mod tests {
     #[derive(Clone, Debug, PartialEq)]
     enum Msg {
         Add,
+        AddMany(u32),
         Reset,
     }
 
@@ -299,6 +373,7 @@ mod tests {
         fn update(&mut self, msg: Msg) {
             match msg {
                 Msg::Add => self.0 += 1,
+                Msg::AddMany(amount) => self.0 += amount,
                 Msg::Reset => self.0 = 0,
             }
         }
@@ -307,7 +382,7 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Default)]
+    #[derive(Clone, Deserialize, JsonSchema)]
     struct Add;
 
     impl Action for Add {
@@ -319,7 +394,7 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Default)]
+    #[derive(Clone, Deserialize, JsonSchema)]
     struct Reset;
 
     impl Action for Reset {
@@ -339,7 +414,7 @@ mod tests {
     }
 
     /// Same id as `Add`.
-    #[derive(Clone, Default)]
+    #[derive(Clone, Deserialize, JsonSchema)]
     struct Twin;
 
     impl Action for Twin {
@@ -351,6 +426,22 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
+    struct AddMany {
+        amount: u32,
+    }
+
+    impl Action for AddMany {
+        type App = Counter;
+        const ID: &'static str = "contador.sumar_varios";
+        const TITLE: &'static str = "Sumar varios";
+        fn into_msg(self) -> Msg {
+            Msg::AddMany(self.amount)
+        }
+    }
+
+    #[derive(Deserialize, JsonSchema)]
     struct Total;
 
     impl Query for Total {
@@ -396,7 +487,7 @@ mod tests {
 
     #[test]
     fn kai_ids_and_editing_shortcuts_are_reserved() {
-        #[derive(Clone, Default)]
+        #[derive(Clone, Deserialize, JsonSchema)]
         struct Intruder;
         impl Action for Intruder {
             type App = Counter;
@@ -406,7 +497,7 @@ mod tests {
                 Msg::Add
             }
         }
-        #[derive(Clone, Default)]
+        #[derive(Clone, Deserialize, JsonSchema)]
         struct Shouting;
         impl Action for Shouting {
             type App = Counter;
@@ -465,5 +556,57 @@ mod tests {
         assert_eq!(state.safety, None);
         assert!(registry.message(&Counter(3), Total::ID).is_err());
         assert_eq!(Total::run(&Counter(3), Total), Ok(3));
+        assert_eq!(
+            registry.run_query(&Counter(3), Total::ID, json!({})),
+            Ok(json!(3))
+        );
+        assert_eq!(
+            registry.output_schema(Total::ID).unwrap()["type"],
+            "integer"
+        );
+    }
+
+    #[test]
+    fn actions_with_input_decode_json_and_need_it() {
+        let registry = registry(|r| {
+            r.action::<Add>();
+            r.action::<AddMany>();
+        });
+        let app = Counter::default();
+        let states = registry.states(&app);
+        assert!(!states[0].needs_input);
+        assert!(states[1].needs_input);
+        assert_eq!(
+            registry.message_from(&app, AddMany::ID, json!({"amount": 3})),
+            Ok(Msg::AddMany(3))
+        );
+        assert_eq!(
+            registry.message(&app, AddMany::ID).unwrap_err().message,
+            "entrada inválida para contador.sumar_varios: missing field `amount`"
+        );
+        assert_eq!(
+            registry.message_from(&app, Add::ID, json!(null)),
+            Ok(Msg::Add)
+        );
+        assert_eq!(
+            registry
+                .run_query(&app, Add::ID, json!({}))
+                .unwrap_err()
+                .message,
+            "contador.sumar es una acción, no una consulta"
+        );
+        let schema = registry.input_schema(AddMany::ID).unwrap();
+        assert_eq!(schema["required"], json!(["amount"]));
+        assert_eq!(registry.input_schema(PALETTE), None);
+    }
+
+    #[test]
+    fn actions_that_need_input_have_no_shortcut_or_menu() {
+        let registry = registry(|r| {
+            r.action::<AddMany>().menu("Contador");
+        });
+        let problems = registry.validate();
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("necesita entrada"), "{problems:?}");
     }
 }

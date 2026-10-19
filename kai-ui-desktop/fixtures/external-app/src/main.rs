@@ -5,6 +5,8 @@ use kai::components::{ButtonVariant, TextField, button, card, card_content, head
 use kai::element::{Element, div};
 use kai::runtime::{self, App, Effects};
 use kai::theme::{Density, Theme};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 #[derive(Default)]
 struct Greeter {
@@ -18,7 +20,8 @@ enum Msg {
     Greet,
 }
 
-#[derive(Clone, Default)]
+/// Greets whoever typed their name.
+#[derive(Clone, Deserialize, JsonSchema)]
 struct Saludar;
 
 impl Action for Saludar {
