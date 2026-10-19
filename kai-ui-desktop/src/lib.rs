@@ -7,6 +7,8 @@
 pub mod a11y;
 pub mod background;
 pub mod components;
+#[doc(hidden)]
+pub mod demo;
 pub mod element;
 pub mod fonts;
 pub mod geometry;
