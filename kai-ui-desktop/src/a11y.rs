@@ -63,31 +63,57 @@ pub fn a11y_tree(snapshot: &A11ySnapshot<'_>) -> TreeUpdate {
     }
 }
 
+/// Kai role of a node: its own, or inferred (inputs are text inputs,
+/// icons images, clickable elements buttons, text labels). Shared by the
+/// AccessKit tree and the `testing` queries.
+pub fn effective_role(node: &LayoutNode) -> KaiRole {
+    node.role.unwrap_or(match node.content {
+        Content::Input { .. } => KaiRole::TextInput,
+        Content::Icon(_) => KaiRole::Image,
+        _ if node.control => KaiRole::Button,
+        Content::Text(_) => KaiRole::Label,
+        Content::Box => KaiRole::Generic,
+    })
+}
+
+/// Name assistive technologies read: the explicit label; for inputs the
+/// placeholder; for buttons (default ones too) their text content; for
+/// text, the text itself.
+pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
+    let node = layout.get(index);
+    match &node.content {
+        Content::Input { placeholder, .. } => {
+            Some(node.label.clone().unwrap_or_else(|| placeholder.clone()))
+        }
+        Content::Text(text) => Some(node.label.clone().unwrap_or_else(|| text.clone())),
+        Content::Icon(_) => node.label.clone(),
+        Content::Box => node.label.clone().or_else(|| {
+            (effective_role(node) == KaiRole::Button).then(|| {
+                let mut parts = Vec::new();
+                text_content(layout, index, &mut parts);
+                parts.join(" ")
+            })
+        }),
+    }
+}
+
 fn role_of(node: &LayoutNode) -> Role {
     if matches!(node.content, Content::Input { masked: true, .. }) {
         return Role::PasswordInput;
     }
-    match node.role {
-        Some(KaiRole::Generic) => Role::GenericContainer,
-        Some(KaiRole::Main) => Role::Main,
-        Some(KaiRole::Header) => Role::Banner,
-        Some(KaiRole::Group) => Role::Group,
-        Some(KaiRole::Heading) => Role::Heading,
-        Some(KaiRole::Paragraph) => Role::Paragraph,
-        Some(KaiRole::Label) => Role::Label,
-        Some(KaiRole::Status) => Role::Status,
-        Some(KaiRole::Button) if node.is_default => Role::DefaultButton,
-        Some(KaiRole::Button) => Role::Button,
-        Some(KaiRole::TextInput) => Role::TextInput,
-        Some(KaiRole::Image) => Role::Image,
-        None => match node.content {
-            Content::Input { .. } => Role::TextInput,
-            Content::Icon(_) => Role::Image,
-            _ if node.control && node.is_default => Role::DefaultButton,
-            _ if node.control => Role::Button,
-            Content::Text(_) => Role::Label,
-            Content::Box => Role::GenericContainer,
-        },
+    match effective_role(node) {
+        KaiRole::Generic => Role::GenericContainer,
+        KaiRole::Main => Role::Main,
+        KaiRole::Header => Role::Banner,
+        KaiRole::Group => Role::Group,
+        KaiRole::Heading => Role::Heading,
+        KaiRole::Paragraph => Role::Paragraph,
+        KaiRole::Label => Role::Label,
+        KaiRole::Status => Role::Status,
+        KaiRole::Button if node.is_default => Role::DefaultButton,
+        KaiRole::Button => Role::Button,
+        KaiRole::TextInput => Role::TextInput,
+        KaiRole::Image => Role::Image,
     }
 }
 
@@ -115,7 +141,15 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     let source = layout.get(index);
     let role = role_of(source);
     let mut node = Node::new(role);
-    let leaf = matches!(role, Role::Button | Role::TextInput | Role::PasswordInput);
+    let leaf = matches!(
+        role,
+        Role::Button | Role::DefaultButton | Role::TextInput | Role::PasswordInput
+    );
+    if !matches!(source.content, Content::Text(_))
+        && let Some(name) = accessible_name(layout, index)
+    {
+        node.set_label(name);
+    }
     match &source.content {
         Content::Text(text) => node.set_value(text.as_str()),
         Content::Input {
@@ -123,7 +157,6 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             masked,
             read_only,
         } => {
-            node.set_label(source.label.as_deref().unwrap_or(placeholder));
             node.set_placeholder(placeholder.as_str());
             if !masked {
                 let value = snapshot
@@ -137,20 +170,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 node.set_read_only();
             }
         }
-        Content::Icon(_) => {
-            if let Some(label) = &source.label {
-                node.set_label(label.as_str());
-            }
-        }
-        Content::Box => {
-            if let Some(label) = &source.label {
-                node.set_label(label.as_str());
-            } else if role == Role::Button {
-                let mut parts = Vec::new();
-                text_content(layout, index, &mut parts);
-                node.set_label(parts.join(" "));
-            }
-        }
+        Content::Icon(_) | Content::Box => {}
     }
     if let Some(test_id) = &source.test_id {
         node.set_author_id(test_id.as_str());
@@ -421,6 +441,33 @@ mod tests {
         let toggle = node(&update, node_id(ids[4]));
         assert_eq!(toggle.role(), Role::Button);
         assert_eq!(toggle.toggled(), Some(accesskit::Toggled::True));
+    }
+
+    #[test]
+    fn default_button_is_named_after_its_text() {
+        let mut tree: Element<Msg> = div().children([
+            div()
+                .default_button(true)
+                .on_click(Msg::Clicked)
+                .child(crate::element::text("Enviar")),
+            div()
+                .role(crate::element::Role::Button)
+                .default_button(true)
+                .on_click(Msg::Clicked)
+                .child(crate::element::text("Guardar")),
+        ]);
+        tree.assign_ids();
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        for (child, name) in tree.children.iter().zip(["Enviar", "Guardar"]) {
+            let button = node(&update, node_id(child.id));
+            assert_eq!(button.role(), Role::DefaultButton);
+            assert_eq!(button.label(), Some(name));
+            assert!(
+                button.children().is_empty(),
+                "{name}: text folds into the name"
+            );
+        }
     }
 
     #[test]
