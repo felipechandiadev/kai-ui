@@ -33,9 +33,12 @@ taffy = { version = "0.15.0", default-features = false, features = ["std", "taff
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The native menu bar (`kai::menu`). 0.19 is the last release for Rust 1.89
+# and shares objc2 0.6 / objc2-app-kit 0.3 with winit.
+muda = { version = "0.19.3", default-features = false }
 # `NSProcessInfo.operatingSystemVersion` for `AppKitGeneration::current()`;
 # already in Cargo.lock through wgpu/winit.
-[target.'cfg(target_os = "macos")'.dependencies]
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
 
 [dev-dependencies]

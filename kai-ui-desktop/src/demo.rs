@@ -843,11 +843,12 @@ mod tests {
 
     use super::{Demo, Field, Msg, Saludo};
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-    use crate::commands::{Availability, Query};
-    use crate::element::{FocusKind, FocusOrder, Kind, Role, WidgetId};
+    use crate::commands::{Availability, PALETTE, Query};
+    use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
     use crate::geometry::Size;
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use crate::menu::{MenuEntry, menu_model};
     use crate::render::paint::{PaintInput, paint};
     use crate::render::text::TextStore;
     use crate::runtime::{SimpleApp, build_view};
@@ -1440,6 +1441,26 @@ mod tests {
         assert!(!availability(&app, "form.enviar").is_enabled());
         app.type_text(By::test_id("form.nombre"), "Ana");
         assert!(availability(&app, "form.enviar").is_enabled());
+    }
+
+    #[test]
+    fn menu_bar_follows_the_registry() {
+        let app = TestApp::new(Demo::default());
+        let model = menu_model(app.session().commands());
+        let titles: Vec<_> = model.iter().map(|group| group.title).collect();
+        assert_eq!(titles, ["Contador", "Formulario", "Ver"]);
+        assert_eq!(
+            model[0].items[1],
+            MenuEntry {
+                id: "contador.reiniciar",
+                title: "Reiniciar",
+                enabled: false,
+                shortcut: Some(KeyEquivalent::cmd(Key::Char('0'))),
+            }
+        );
+        assert_eq!(model[2].items.len(), 1);
+        assert_eq!(model[2].items[0].id, PALETTE);
+        assert!(model[2].items[0].enabled);
     }
 
     const CMD: Modifiers = Modifiers {

@@ -192,9 +192,16 @@ pub fn background_running(
 
 /// Open a window and run `app` until it is closed.
 pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
-    let event_loop = EventLoop::<accesskit_winit::Event>::with_user_event().build()?;
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
+    {
+        let proxy = proxy.clone();
+        crate::menu::forward_events(move |id| {
+            let _ = proxy.send_event(UserEvent::Menu(id));
+        });
+    }
     let mut runner = Runner {
         app: Some(app),
         theme,
@@ -349,11 +356,26 @@ pub fn cursor_for(layout: &Layout, path: &[WidgetId]) -> Cursor {
     Cursor::Default
 }
 
+/// What reaches the event loop from outside winit's own events.
+#[derive(Debug)]
+enum UserEvent {
+    A11y(accesskit_winit::Event),
+    /// The menu bar item of this command id was chosen.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Menu(String),
+}
+
+impl From<accesskit_winit::Event> for UserEvent {
+    fn from(event: accesskit_winit::Event) -> Self {
+        Self::A11y(event)
+    }
+}
+
 struct Runner<A: App> {
     app: Option<A>,
     theme: Theme,
     state: Option<WindowState<A>>,
-    proxy: EventLoopProxy<accesskit_winit::Event>,
+    proxy: EventLoopProxy<UserEvent>,
 }
 
 struct WindowState<A: App> {
@@ -370,6 +392,8 @@ struct WindowState<A: App> {
     background_layer: Option<BackgroundLayer>,
     /// When the next animation frame is due.
     next_frame: Option<Instant>,
+    #[cfg(target_os = "macos")]
+    menu: Option<crate::menu::NativeMenu>,
 }
 
 impl<A: App> WindowState<A> {
@@ -406,6 +430,8 @@ impl<A: App> WindowState<A> {
             clock: BackgroundClock::default(),
             background_layer: None,
             next_frame: None,
+            #[cfg(target_os = "macos")]
+            menu: None,
         };
         state.flush();
         Ok(state)
@@ -446,6 +472,17 @@ impl<A: App> WindowState<A> {
         }
         if outbox.redraw {
             self.window.request_redraw();
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(commands) = outbox.commands {
+            let model = crate::menu::menu_model(&commands);
+            match &mut self.menu {
+                Some(menu) => menu.update(model),
+                None => {
+                    let name = self.window.title();
+                    self.menu = Some(crate::menu::NativeMenu::install(&name, model));
+                }
+            }
         }
     }
 
@@ -546,7 +583,7 @@ fn window_theme(theme: &Theme) -> Option<winit::window::Theme> {
     })
 }
 
-impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
+impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let Some(app) = self.app.take() else {
             return;
@@ -657,13 +694,20 @@ impl<A: App> ApplicationHandler<accesskit_winit::Event> for Runner<A> {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: accesskit_winit::Event) {
-        if let Some(state) = self.state.as_mut()
-            && state.window.id() == event.window_id
-        {
-            state.handle_accessibility_event(event.window_event);
-            state.flush();
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        match event {
+            UserEvent::A11y(event) if state.window.id() == event.window_id => {
+                state.handle_accessibility_event(event.window_event);
+            }
+            UserEvent::A11y(_) => return,
+            UserEvent::Menu(id) => {
+                state.session.perform_command(&id);
+            }
         }
+        state.flush();
     }
 }
 
