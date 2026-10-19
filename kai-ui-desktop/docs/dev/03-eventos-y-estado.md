@@ -46,12 +46,31 @@ El runtime está partido en dos para que los tests recorran el mismo camino que 
   - Recibe entradas en unidades lógicas: `pointer_moved(Option<Point>)`, `pointer_button(pressed)`, `scroll_by(delta_y)`, `apply_intent(Intent)`, `set_window_active(bool)`, `accessibility_action(&ActionRequest)` y `set_viewport(Size)`.
   - Para un frame ofrece `prepare_frame()` (view, layout, hover, scroll y buffers de los inputs), `paint_list()` y `a11y_tree(scale)`.
   - Mide el texto con las fuentes (`Measure::Real`, en la ventana) o con `FixedMeasure` (`Measure::Fixed`, en tests).
-- **`Outbox`**: lo que la sesión pide a la ventana. Guarda la última petición de cada tipo: `redraw`, `ime_allowed`, `ime_cursor_area` (en puntos lógicos), `cursor`, `title` y `theme`.
+- **`Outbox`**: lo que la sesión pide a la ventana. Guarda la última petición de cada tipo: `redraw`, `ime_allowed`, `ime_cursor_area` (en puntos lógicos), `cursor`, `title`, `theme` y `commands` (estados de los comandos, para el menú).
 - **`WindowState`** (`runtime.rs`) se queda con lo que depende de la plataforma: la ventana, el renderer wgpu, el adaptador de AccessKit, el factor de escala, los modificadores, la oclusión y el reloj del fondo animado.
   - Traduce cada `WindowEvent` a una entrada de la sesión.
   - Después de cada evento vacía el `Outbox` y lo aplica: escala el área del IME, elige el `CursorIcon`, pone el título y el tema, y pide el redibujado.
   - En `RedrawRequested` llama a `prepare_frame`, pinta y renderiza `paint_list`, y actualiza AccessKit con `a11y_tree`.
 - **`kai::testing::TestApp`** usa la misma `Session` con `Measure::Fixed` y un `MemoryClipboard`. Después de cada acción prepara un frame y descarta el `Outbox`.
+
+### Comandos
+
+Lo que la app sabe hacer se declara una vez en `App::commands` (Pasos 7 y 8 de [13](13-hoja-de-ruta-plataforma.md)):
+
+```rust
+fn commands(registry: &mut CommandRegistry<Self>) {
+    registry.action::<Incrementar>().shortcut(Shortcut::cmd(Key::Char('i'))).menu("Contador");
+    registry.action::<Reiniciar>().shortcut(Shortcut::cmd(Key::Char('0'))).menu("Contador");
+    registry.query::<Saludo>();
+}
+```
+
+- **`Action`** produce un `Msg` (`into_msg`) y dice si está disponible (`available(&App) -> Availability`). **`Query`** lee el modelo y no pasa por `update`.
+- **`Session`** recalcula la disponibilidad tras cada `update`, igual que `view`. Si cambió, la deja en `Outbox.commands` y la ventana actualiza el menú nativo (`kai::menu`, muda).
+- **`Session::perform_command(id)`** es la entrada única de atajos, menú y paleta: envía el `Msg` si la acción está habilitada, y `kai.paleta` abre o cierra la paleta.
+- **Ruta de teclas**: `key_equivalent_route` ofrece la tecla primero a los equivalentes de los controles (botón por defecto, cancelar, atajos propios) y después a los atajos de los comandos habilitados, como AppKit. Con un campo enfocado no se toman teclas sin ⌘ ni ⌃, y el registro reserva ⌘A/C/X/V/Z y ⇧⌘Z para la edición. `KeyRoute::Command(id)` sale del dispatch como `Action::Command(id)`, que la sesión atiende antes de la cadena de responders.
+- **En la ventana**, el menú consume primero los atajos de sus ítems habilitados y llega al bucle como `UserEvent::Menu(id)`; si el ítem está deshabilitado, la ruta de teclas tampoco lo dispara.
+- **Paleta**: mientras está abierta, la sesión arma el `FocusOrder` solo con ella y el único atajo activo es ⇧⌘P. Atiende las flechas y Return de la búsqueda antes del dispatch, cierra con `CancelOperation` (Esc, ⌘.) o con un clic fuera del panel, y devuelve el foco que había.
 
 ## Estado de L1
 

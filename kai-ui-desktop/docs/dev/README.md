@@ -46,8 +46,9 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **Identificación y consultas (Pasos 2 y 3 de 13):** `.test_id(..)` en `Element` y en los componentes, expuesto como `author_id` de AccessKit (`accessibilityIdentifier` en macOS) sin cambiar el `WidgetId`; en debug se reportan `key` y `test_id` duplicados con las rutas de ambos. `kai::testing` encuentra elementos sin ventana ni GPU con `Screen` y filtros `By` (rol, nombre accesible, label, texto, `test_id`, `within`), con el mismo rol y nombre que lee VoiceOver.
 - **`Session` y `TestApp` (Paso 4 de 13):** la parte sin ventana del runtime vive en `Session` (`session.rs`); la ventana aplica lo que la sesión le pide mediante un `Outbox`. `kai::testing::TestApp` maneja una app completa sobre esa misma sesión (clic, escribir, teclas, log de `Msg`, capturas por elemento), sin ventana ni GPU salvo para capturas ([03](03-eventos-y-estado.md)).
 - **Sub-ids y tests sin búsquedas frágiles (Pasos 5 y 6 de 13):** con `.test_id("x")`, los componentes nombran solos sus partes (`x.input`, `x.title`, `x.track`…), y `.part(..)`/`.parts_root()` hacen lo mismo en componentes propios ([05](05-widgets-y-tema.md)). El switch se publica como `Role::Switch` con el nombre de su label. Los tests localizan por `test_id` o por consultas, no por posición ni por clases. Con esto se cierra la Etapa 1 de [13](13-hoja-de-ruta-plataforma.md).
+- **Comandos (Pasos 7 y 8 de 13):** registro tipado de acciones y consultas (`kai::commands`) con disponibilidad tras cada `update` y validación en debug. Lo consumen los atajos, `on_command` en los botones, el menú nativo de macOS (`kai::menu`, con muda) y la paleta ⇧⌘P; una acción deshabilitada se ve atenuada en los tres ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 243 tests (236 normales y 7 `#[ignore]` de benchmark y capturas) más 2 doctests, Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 266 tests (259 normales y 7 `#[ignore]` de benchmark y capturas) más 4 doctests (uno ignorado), Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -61,8 +62,10 @@ kai-ui-desktop/
 │   ├── runtime.rs         App v2 y SimpleApp; ventana: winit → Session, Outbox → ventana, render
 │   ├── session.rs         runtime sin ventana: árbol, layout, foco, inputs, eventos → mensajes
 │   ├── element.rs         árbol tipo DOM Element<Msg>, ids, test_id, validate_ids, FocusOrder
-│   ├── components.rs      Button, TextField, Card… con clases Kai web y AppKit
-│   ├── responder.rs       acciones, cadena de responders, equivalentes de teclado
+│   ├── components.rs      Button, TextField, Card, paleta… con clases Kai web y AppKit
+│   ├── responder.rs       acciones, cadena de responders, equivalentes y atajos de comandos
+│   ├── commands/          registro de comandos: Action, Query, disponibilidad, validación
+│   ├── menu.rs            barra de menús desde el registro (menu_model; muda en macOS)
 │   ├── tw.rs              parser de clases tipo Tailwind → Style
 │   ├── style.rs           Style tipo CSS → taffy::Style, texto heredable
 │   ├── theme.rs, theme/   tema Kai (tokens.css) y AppKit (appkit.rs, generation.rs)

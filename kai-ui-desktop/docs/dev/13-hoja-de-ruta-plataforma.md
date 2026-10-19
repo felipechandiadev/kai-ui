@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: la Etapa 1 está cerrada; los Pasos 0 a 6 están hechos, salvo el 1b: examples y visibilidad de la API, `App` v2, `test_id` con AccessKit, consultas `Screen`/`By`, `Session` + `TestApp`, sub-ids por convención en los componentes y tests que localizan por id o consulta. Sigue el Paso 7 (registro de comandos), que abre la Etapa 2. El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: la Etapa 1 está cerrada; los Pasos 0 a 8 están hechos, salvo el 1b. La Etapa 2 ya tiene el registro de comandos (Paso 7) y sus consumidores locales (Paso 8): atajos, `on_command`, menú nativo con muda y paleta Cmd+Shift+P. Sigue el Paso 9 (`invoke`, `query` y `available` en `TestApp`). El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -570,6 +570,14 @@ Reglas de la pista C:
 - **Tests**: duplicados de id y de atajo; disponibilidad recalculada tras `update`; `Query` sin `Msg`.
 - **Hecho cuando**: los tests pasan y la demo declara sus comandos (aunque todavía no los consuma nadie).
 - **Riesgos**: diseñar de más; sin macros ni esquemas en este paso.
+- **Estado**: hecho, con §7.2 recortado.
+  - **Módulo `kai::commands`**: `Action` y `Query` como traits, `Availability` (`Enabled`, `Disabled { reason }`, `Hidden`), `Safety` (`Mutating`, `Destructive`), `CommandError` y `CommandRegistry<A>`. Todo vive en `mod.rs` y `registry.rs`; no hizo falta separar `query.rs` ni `action.rs`.
+  - **Recortes**: no hay serde, esquemas ni `output` (llegan en los Pasos 9 y 11). Una acción sin parámetros necesita `Default` para registrarse: el registro guarda `fn() -> Msg` hecho con `T::default().into_msg()`. Los atajos son `KeyEquivalent` (`Shortcut::cmd(Key::Char('i'))`) y no caracteres.
+  - **Registro**: `App::commands` (también en `SimpleApp`) declara las entradas con `.shortcut(..)` y `.menu(..)`; `CommandRegistry::of` suma `kai.paleta` (⇧⌘P, menú «Ver»). `Action::Command` sigue siendo un `&'static str`, pero ahora es el id de un comando registrado.
+  - **Validación en debug**, reportada una vez por hilo: ids repetidos con los dos `type_name`, atajos repetidos, `kai.*` usado por la app, ids mal formados y atajos reservados para la edición (⌘A/C/X/V/Z y ⇧⌘Z). Por eso ningún comando, ni el menú, le quita ⌘C a un campo; la excepción «salvo que el comando lo declare» del Paso 8 no se implementó.
+  - **Disponibilidad**: `Session` recalcula los estados tras cada `update`, igual que `view`, y avisa a la ventana por `Outbox.commands` cuando cambian.
+  - **Demo**: `contador.incrementar` (⌘I), `contador.reiniciar` (⌘0, deshabilitado con 0 clics), `form.enviar` (deshabilitado sin nombre), `form.limpiar`, `form.alternar_contrasena` y la consulta `form.ultimo_envio`.
+  - **Tests**: `duplicate_command_ids_are_reported_with_both_types`, `duplicate_shortcuts_are_reported`, `kai_ids_and_editing_shortcuts_are_reserved`, `availability_and_messages_follow_the_model` y `query_runs_without_msg` en el registro; `availability_follows_update` y `query_runs_without_msg` en la demo.
 
 #### Paso 8 — Consumidores locales del registro
 
@@ -583,6 +591,14 @@ Reglas de la pista C:
   - **`Element::on_command(Accion)`**: el elemento se deshabilita solo si la acción no está disponible; su nombre accesible por defecto es el título; su `test_id` por defecto es el id del comando.
 - **Tests** (con `TestApp`): una acción `Disabled` atenúa el botón y no aparece habilitada en la paleta; el atajo dispara el mismo `Msg` que el botón; un atajo no roba Cmd+C dentro de un campo.
 - **Hecho cuando**: una acción deshabilitada se ve atenuada a la vez en el menú, el botón y la paleta.
+- **Estado**: hecho.
+  - **Atajos**: `FocusOrder` guarda los atajos de los comandos habilitados y `key_equivalent_route` los ofrece después de los equivalentes de los controles, como AppKit (vistas antes que el menú). Con un campo enfocado rige la misma regla que para los controles: no se toman teclas sin ⌘ ni ⌃. `KeyRoute::Command(id)` llega a `Session::perform_command`, que envía el `Msg` si la acción está habilitada; ya no termina en un log del `Responder::App`.
+  - **`Element::on_command(Accion)`**: pone el `Msg` como `on_click` y guarda el id. Antes de `assign_ids`, `build_view_with` aplica el estado: `Disabled` y `Hidden` deshabilitan el elemento, el motivo pasa a ser la descripción accesible, el `test_id` por defecto es el id del comando y el nombre por defecto es el título si el elemento no tiene texto. En la demo solo «Reiniciar» usa `on_command`; el resto queda para el Paso 10.
+  - **Menú nativo con muda 0.19** (solo macOS; la 0.21 pide Rust 1.90). Comparte objc2 0.6 y objc2-app-kit 0.3 con winit. `kai::menu::menu_model` es puro y se prueba en cualquier plataforma: agrupa las acciones por menú, en orden de registro, sin `Hidden` ni consultas. `NativeMenu` arma el menú de la app (Acerca de, Ocultar, Ocultar otros, Mostrar todo, Salir) más un menú por grupo, y tras cada cambio solo conmuta `enabled` si la estructura no cambió. Los ítems llegan al bucle como `UserEvent::Menu(id)`.
+  - **Sin menú Edición**: los ítems predefinidos de Copiar y Pegar le quitarían ⌘C y ⌘V a los campos de Kai, que hacen su propia edición.
+  - **Paleta**: `components::command_palette` es un fondo `absolute inset-0 z-50` con un panel (`Role::Group`, «Paleta de comandos»), la búsqueda `kai.paleta.buscar` y una fila por acción (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo. `Session` la agrega como último hijo de la raíz, así que los `WidgetId` de la app no cambian. Mientras está abierta, el foco y Tab quedan dentro de ella y el único atajo activo es el suyo. El texto de la búsqueda se copia del editor, porque el input no tiene `on_input`. Las flechas mueven la selección; Return ejecuta la fila seleccionada si está habilitada y cierra; Esc cierra y devuelve el foco; un clic en una fila la ejecuta y un clic en el fondo cierra. Las filas son controles sin `Msg`: `Element::command` basta para que sean enfocables y reciban clics.
+  - **Tests**: `command_shortcuts_come_after_controls` en `responder.rs`; en la demo, `command_shortcut_sends_the_same_msg_as_the_button`, `disabled_command_shortcut_sends_nothing`, `command_shortcuts_do_not_steal_copy_in_a_field`, `a_button_follows_its_command`, `menu_bar_follows_the_registry` y siete de la paleta. `disabled_command_stays_disabled_in_button_palette_and_menu` prueba el «hecho cuando». En `menu.rs`, `menus_group_actions_in_registration_order`, `enabling_an_item_keeps_the_structure` y, solo en macOS, `shortcuts_map_to_accelerators`. La línea base de capturas no cambió.
+  - **Pendiente a mano** en la ventana real: ⌘I, ⌘0 con 0 clics, ⇧⌘P y ⌘C en un campo, para descartar que el menú y la ruta de teclas disparen dos veces. También revisar la paleta con VoiceOver; queda como grupo con nombre hasta tener `Role::Dialog` (S5).
 
 #### Paso 9 — Comandos en `TestApp`
 
@@ -908,7 +924,7 @@ Reglas de la pista C:
 | SDK MCP | `rmcp`, implementación propia | Evaluar `rmcp` con los criterios de 09 §4.8; propia solo si falla en MSRV, licencia o stdio servidor | Paso 12 |
 | JSON Schema | `schemars`, manual | `schemars`; fijar dialecto y representación de tipos propios con snapshot | Paso 11 |
 | Nombres de herramienta | `clientes.buscar`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
-| Menú nativo | `objc2-app-kit` propio, `muda` | `objc2-app-kit` (ya entra por la pista B); `muda` si el coste de mantenimiento crece | Paso 8 |
+| Menú nativo | `objc2-app-kit` propio, `muda` | **Decidido en el Paso 8: `muda` 0.19**, que ya usa el mismo objc2 que winit y trae los ítems predefinidos; `objc2-app-kit` propio solo si muda limita (submenús dinámicos, validación por la cadena de responders) | Paso 8 |
 | Validación de clases | Solo ejecución, `tw!`, `rsx!` | `tw!` primero; `rsx!` opcional después | Paso 26 (o antes) |
 | Deshacer | Inversos por acción, instantáneas del modelo | Inversos declarados para acciones de agente; instantáneas solo si el modelo es pequeño | Paso 25 |
 | Recarga en caliente | Reiniciar con estado de ventana, parcheo en vivo | Reiniciar con estado (seguro); parcheo en vivo fuera de alcance | Paso 18 |
@@ -1005,8 +1021,8 @@ Reglas de la pista C:
 - [x] P6 Tests migrados; cero búsquedas frágiles.
 
 **Etapa 2 — Comandos**
-- [ ] P7 Registro con `Query` y `Action`, duplicados y disponibilidad.
-- [ ] P8 Atajos, menú nativo, paleta, `on_command`.
+- [x] P7 Registro con `Query` y `Action`, duplicados y disponibilidad.
+- [x] P8 Atajos, menú nativo, paleta, `on_command`. Falta probar a mano en ventana los atajos con el menú y la paleta con VoiceOver.
 - [ ] P9 `invoke`, `query`, `available` en `TestApp`.
 - [ ] P10 Demo migrada a comandos.
 

@@ -138,6 +138,17 @@ icon(Icon::Search).class("size-5 text-secondary stroke-[1.5]")
 - `stat(etiqueta, valor, pista)`: tarjeta compacta de estadística.
 - `heading`, `paragraph` y `caption`: texto con rol y estilos de la tipografía del tema.
 
+### Botones con comando y paleta
+
+- **`.on_command(Accion)`** conecta un control a una acción registrada (Paso 8 de [13](13-hoja-de-ruta-plataforma.md)). Pone su `Msg` como `on_click` y, en cada `view`, aplica la disponibilidad: si la acción está `Disabled` o `Hidden` el control se deshabilita y el motivo es su descripción accesible. Su `test_id` por defecto es el id del comando y su nombre, el título, si no tiene texto propio.
+
+```rust
+button("Reiniciar", ButtonVariant::Outlined).on_command(Reiniciar)
+// test_id "contador.reiniciar"; deshabilitado con 0 clics, con el motivo
+```
+
+- **`command_palette(items, query, selected)`** dibuja la paleta: fondo `absolute inset-0 z-50`, panel `Role::Group` «Paleta de comandos», búsqueda `kai.paleta.buscar` y una fila por `PaletteItem` (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo (`KeyEquivalent::label`). La muestra la sesión con ⇧⌘P; los elementos no llevan `Msg`. Comparte el layout entre temas y elige colores y tipografía con `themed`.
+
 ### Ids de prueba y partes
 
 Un componente con `.test_id("x")` nombra solo sus partes internas, así un test las encuentra sin conocer su estructura (convención de [13 §6.4](13-hoja-de-ruta-plataforma.md#64-convención-de-sub-ids-en-componentes)):
