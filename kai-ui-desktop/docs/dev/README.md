@@ -40,28 +40,41 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **L4 — Completada para el alcance actual:** modelo de cajas tipo CSS sobre Taffy (flex, grid, block, `position: absolute`). La raíz es siempre la ventana; scroll y clip por nodo con `overflow` (clip al padding box); z-index en pintura y hit-test. Sin caché: vista + layout + paint cuestan ≈ 130 µs (p95) en Apple M4 ([02](02-geometria-y-layout.md)).
 - **L5 — Completada:** `DrawList` independiente del backend, `paint` puro en orden de pintor, quads SDF instanciados con radio, borde, blur y clip por instancia, lotes alternos de cajas y texto, render offscreen para capturas, e iconos Lucide en un atlas de máscaras ([04](04-renderer-y-texto.md)).
 - **L6 — Completada para el alcance actual:** arquitectura Elm (`App` con `update`/`view`, runtime en `runtime.rs`), árbol tipo DOM `Element<Msg>`, estilos con clases tipo Tailwind resueltas contra el tema Kai, y componentes Button, TextField (alcance base de la web: variantes, densidades, adornos e iconos, password, required, helper, read-only), Card y Stat con las clases de Kai web ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
+- **Modelo y tema AppKit (Pasos 0–15 y 17 de [12](12-modelo-appkit.md); el tema se elige por versión de macOS, todavía sin leer colores de AppKit en runtime):** `ControlProps` (tamaño heredable, estado, botón por defecto, equivalentes de teclado), estado de ventana *key*/*main*, cadena de responders (`responder.rs`), variantes `appkit:`/`dark:`/`window-inactive:`/`control-*`, `Theme::appkit_static` y `Theme::appkit_current`, mezcla en gamma. La demo elige tema con `KAI_THEME`; la galería (`cargo run --example gallery`) muestra todos los controles en los 5 tamaños, con los dos temas, claro/oscuro y ventana activa/inactiva ([11](11-tema-appkit.md)).
+- **Librería y ejemplos (Paso 0 de [13](13-hoja-de-ruta-plataforma.md)):** crate de librería `kai` con la demo en `src/demo.rs`; `cargo run` y `cargo run --example demo` abren la demo; `fixtures/external-app` usa solo la API pública y el CI la compila junto con `cargo doc -D warnings`.
+- **Identificación (Paso 2 de 13):** `.test_id(..)` en `Element` y `TextField`, expuesto como `author_id` de AccessKit (`accessibilityIdentifier` en macOS) sin cambiar el `WidgetId`; en debug se reportan `key` y `test_id` duplicados con las rutas de ambos.
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 95 tests, Clippy `-D warnings`, job de CI en macOS (más un job de MSRV 1.89), benchmark y capturas offscreen como tests `#[ignore]` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 211 tests (205 normales y 6 `#[ignore]` de benchmark y capturas), Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
 ```text
-kai-ui-desktop/src/
-├── main.rs            demo (App: Model/Msg/update/view)
-├── runtime.rs         runtime Elm: ventana, eventos → mensajes, frame
-├── element.rs         árbol tipo DOM Element<Msg>, ids, FocusOrder
-├── components.rs      Button, TextField, Card… con clases de Kai web
-├── tw.rs              parser de clases tipo Tailwind → Style
-├── style.rs           Style tipo CSS → taffy::Style, texto heredable
-├── theme.rs           tokens de kai-ui-web/src/theme/tokens.css
-├── layout.rs          Layout: Taffy, scroll, clip, z-index, hit-test
-├── render/            DrawList, paint, texto, atlas de iconos, backend wgpu (quad.wgsl)
-├── icons/             catálogo Lucide generado (scripts/gen-icons.mjs, assets/icons/)
-├── text_field.rs      edición, IME y portapapeles de los inputs
-├── ui_engine.rs       intents y dispatch de foco/activación/texto
-├── platform_adapter.rs  winit → intents Kai
-├── a11y.rs            árbol AccessKit desde el layout
-└── geometry.rs, signal.rs, grid_layout.rs
+kai-ui-desktop/
+├── src/
+│   ├── lib.rs             crate `kai`: API pública e internos #[doc(hidden)]
+│   ├── main.rs            lanzador de `cargo run` (llama a demo::run_from_env)
+│   ├── demo.rs            demo (App: Model/Msg/update/view), sus tests y capturas
+│   ├── gallery.rs         galería de controles por tamaño, tema, apariencia y ventana
+│   ├── runtime.rs         runtime Elm: ventana, eventos → mensajes, frame, tema en vivo
+│   ├── element.rs         árbol tipo DOM Element<Msg>, ids, test_id, validate_ids, FocusOrder
+│   ├── components.rs      Button, TextField, Card… con clases Kai web y AppKit
+│   ├── responder.rs       acciones, cadena de responders, equivalentes de teclado
+│   ├── tw.rs              parser de clases tipo Tailwind → Style
+│   ├── style.rs           Style tipo CSS → taffy::Style, texto heredable
+│   ├── theme.rs, theme/   tema Kai (tokens.css) y AppKit (appkit.rs, generation.rs)
+│   ├── layout.rs          Layout: Taffy, scroll, clip, z-index, hit-test
+│   ├── render/            DrawList, paint, texto, atlas de iconos, backend wgpu (quad.wgsl)
+│   ├── snapshot.rs        render offscreen, diff y PNG para capturas
+│   ├── background.rs      fondo animado (background.wgsl)
+│   ├── icons/             catálogo Lucide generado (scripts/gen-icons.mjs, assets/icons/)
+│   ├── text_field.rs      edición, IME y portapapeles de los inputs
+│   ├── ui_engine.rs       intents y dispatch de foco/activación/texto
+│   ├── platform_adapter.rs  winit → intents Kai
+│   ├── a11y.rs            árbol AccessKit desde el layout (test_id → author_id)
+│   └── geometry.rs, signal.rs, grid_layout.rs, fonts.rs, version.rs
+├── examples/              demo.rs y gallery.rs, binarios finos sobre `kai`
+├── fixtures/external-app/ app mínima que usa solo la API pública (compilada en CI)
+└── scripts/               snapshot-baseline.sh y generadores
 ```
 
 Las librerías mencionadas son **candidatas a evaluar**, no decisiones irreversibles. Antes de adoptarlas, verificar compatibilidad con la versión de Rust elegida, macOS, licencias, mantenimiento e integración entre sí.

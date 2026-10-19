@@ -1765,9 +1765,11 @@ cargo run --example gallery -- --theme kai
 ```
 
 **Terminado cuando.**
-- [ ] La galería abre con los dos temas y se puede alternar en vivo sin reiniciar.
-- [ ] Con la ventana realmente inactiva (clic en otra app) se ve igual que con «Simular inactiva».
-- [ ] Retorno activa el botón Default de la fila «Buttons»; Esc no hace nada (no hay cancelar).
+- [x] La galería abre con los dos temas y se puede alternar en vivo sin reiniciar.
+- [ ] Con la ventana realmente inactiva (clic en otra app) se ve igual que con «Simular inactiva». Por código pasan por el mismo camino (`App::window_override` sustituye a `WindowActivity` en layout, fondo y paint); falta la comparación a ojo.
+- [x] Retorno activa el botón Default de la fila «Buttons»; Esc no hace nada (no hay cancelar).
+
+**Implementado.** `src/gallery.rs`, `examples/gallery.rs` y, en `runtime.rs`, `App::theme() -> Option<Theme>` (todavía no existe `ThemeSource`; el runtime compara el `Theme` entero, que es `Copy + PartialEq`) y `App::window_override() -> Option<WindowActivity>`. Diferencias con lo propuesto: sin fila «Pressed» ni «Con foco» en Fields; `switches: [bool; 2]` (la fila deshabilitada no tiene estado); cada control de la cuadrícula lleva `test_id` `gallery.<sección>.<fila>.<tamaño>` ([13](13-hoja-de-ruta-plataforma.md), Paso 2). Tests: los tres de arriba más `return_activates_the_single_default_button`, `args_pick_theme_appearance_window_and_section`, `theme_follows_the_model`, `every_cell_has_a_unique_test_id_on_its_control` y `snapshot_gallery` (`#[ignore]`, PNG en `target/snapshots/gallery/`).
 
 **Riesgos y reversión.** `App::theme` agrega una comparación por `update`; insignificante. Revertir con `git revert` (la demo no depende de la galería).
 
@@ -2051,7 +2053,7 @@ Inventario de hoy (`rg` sobre `src/`): `button(` 10 y `button_sized(` 8 en `main
 - [ ] P16 `Theme::appkit` en runtime con *fallback*; observadores; criterios A2 (colores) y A6.
 
 **Etapa 4 — Prototipo**
-- [ ] P17 Galería con todos los controles × 5 tamaños × tema × apariencia × ventana.
+- [x] P17 Galería con todos los controles × 5 tamaños × tema × apariencia × ventana.
 - [ ] P18 36 capturas doradas con diff y tolerancia.
 - [ ] P19 Oráculo AppKit: IoU ≥ 0,98 y color ≤ 2/255 en push, default, borderless y text field; cifras [C] de 11 confirmadas o corregidas.
 

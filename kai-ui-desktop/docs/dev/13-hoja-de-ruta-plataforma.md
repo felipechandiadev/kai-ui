@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: cerrar el Paso 0 (examples y visibilidad de la API) y empezar el Paso 2 (`test_id` + AccessKit + duplicados), que no depende de nada más.
+- **Siguiente paso concreto**: los Pasos 0 (examples y visibilidad de la API) y 2 (`test_id` + AccessKit + duplicados) están hechos. Sigue el Paso 3 (consultas por rol, nombre, texto y `test_id`), que solo depende del 2; el Paso 1 (`App` v2) puede ir en paralelo.
 
 ## 2. Evaluación de 09
 
@@ -94,17 +94,17 @@ Estado del código a la fecha de este documento (rama `main` más el árbol de t
 
 | Pieza | Archivo | Estado | Uso en esta hoja de ruta |
 |---|---|---|---|
-| Crate como librería `kai` + binario demo | `Cargo.toml` (`[lib] name = "kai"`), `src/lib.rs` | Hecho (Paso 1 de 12). Paquete aún `kai-ui-desktop-prototype`, `publish = false`. | Base del Paso 0. |
-| Runtime Elm | `runtime.rs` (`App`: `title`, `update`, `view`, `background`; `run`, `build_view`) | Una ventana, sin efectos async. | Paso 1 (App v2). |
-| Árbol `Element<Msg>`, ids por ruta o `key`, `FocusOrder`, `find`, `path_to` | `element.rs` | Hecho. Sin detección de keys duplicadas. | Pasos 2–3. |
+| Crate como librería `kai` + binario demo | `Cargo.toml` (`[lib] name = "kai"`), `src/lib.rs`, `src/demo.rs`, `examples/{demo,gallery}.rs`, `fixtures/external-app` | Hecho (Paso 1 de 12 y Paso 0). Internos `#[doc(hidden)]`; paquete aún `kai-ui-desktop-prototype`, `publish = false`. | Base de todo lo demás. |
+| Runtime Elm | `runtime.rs` (`App`: `title`, `update`, `view`, `background`, `theme`, `window_override`; `run`, `build_view`) | Una ventana, sin efectos async. | Paso 1 (App v2). |
+| Árbol `Element<Msg>`, ids por ruta o `key`, `test_id`, `FocusOrder`, `find`, `path_to` | `element.rs` | Hecho. `validate_ids` reporta `key` y `test_id` duplicados (Paso 2). | Paso 3. |
 | Intents y reducciones de UI | `ui_engine.rs` (`Intent`, `UiCommand`, `FocusOrigin`, `UiModel`) | `UiCommand` ya renombrado. | Paso 4 (`TestApp` usa `Intent` reales). |
 | Cadena de responders y equivalentes de teclado | `responder.rs` (`Action`, incluido `Action::Command(&'static str)`; `KeyRoute::Command`; `chain`) | Hecho; el extremo «App» es el enganche del registro. | Pasos 7–8. |
-| Accesibilidad | `a11y.rs` (roles, nombre, descripción, `Toggled` desde `pressed`) | Hecho; sin `author_id`. | Paso 2 (`test_id` → `author_id`). |
+| Accesibilidad | `a11y.rs` (roles, nombre, descripción, `Toggled` desde `pressed`) | Hecho; `test_id` → `author_id` (Paso 2). | Pasos 3–4. |
 | Capturas offscreen y diff | `snapshot.rs` (`render`, `diff`, `diff_image`, PNG con feature `snapshots`) | Hecho. | Paso 4 (capturas por elemento). |
 | Tema Kai y AppKit | `theme.rs`, `theme/appkit.rs`, `theme/generation.rs` (`ThemeKind`, `Appearance`, `appkit_static`, `appkit_for`, `appkit_current`) | Hecho para estático; demo con `KAI_THEME`. | Paso 17 (`[theme] kind`). |
 | Componentes | `components.rs` (Button, TextField, Card, `group_box`, Stat, Badge, Alert, IconButton, Switch) | Hecho para el alcance actual. | Paso 5 (convención de ids), Paso 14 (nuevos). |
 | Estilos tipo Tailwind | `tw.rs`, `style.rs` (clases desconocidas en `layout::StyleCache::unknown`) | Hecho; validación solo en ejecución. | Paso 26 (`tw!`). |
-| Tests | ~200 atributos `#[test]` en `src/` (incluye `#[ignore]` de benchmark y capturas) | Verdes. | Etapa 1 los hace más legibles. |
+| Tests | 211 tests en `src/` (205 normales y 6 `#[ignore]` de benchmark y capturas) | Verdes. | Etapa 1 los hace más legibles. |
 | Fondo animado | `background.rs`, `background.wgsl` | Hecho. | Sin relación directa. |
 
 ### 5.2 Lo que falta (resumen)
@@ -367,6 +367,7 @@ Reglas de la pista C:
 - **Tests**: los de la demo se mueven con ella; un job de CI compila `fixtures/external-app`.
 - **Hecho cuando**: `fixtures/external-app` compila y abre ventana usando solo la API pública; `cargo run --example demo` reproduce la demo; las capturas de `snapshot_demo` no cambian; `cargo doc` sin warnings sobre la API pública.
 - **Riesgos y reversión**: reducir visibilidad puede romper tests internos; mitigar moviendo esos tests al módulo que prueban. Revertible.
+- **Estado**: hecho. La demo vive en `src/demo.rs` (`run_from_env`); `cargo run` y `cargo run --example demo` la abren igual. Los módulos internos quedan `#[doc(hidden)] pub` en vez de `pub(crate)`, porque las capturas y los tests todavía los usan; pasarán a `pub(crate)` cuando exista `kai::testing` (Pasos 3–4). El CI corre `cargo doc -D warnings` y compila `fixtures/external-app`.
 
 #### Paso 1 — Contrato `App` v2
 
@@ -413,6 +414,7 @@ Reglas de la pista C:
   - `test_id_is_exposed_as_author_id` en `a11y.rs`.
 - **Hecho cuando**: los cuatro tests pasan; con Accessibility Inspector de Xcode se ve el `test_id` como identificador del botón «Enviar» de la demo.
 - **Riesgos**: falsos positivos de duplicados en listas legítimas sin key; el error indica cómo resolverlo (añadir `key`).
+- **Estado**: hecho salvo la revisión con Accessibility Inspector. Las rutas se escriben `root > 2 > 0[key="ana"]`. En debug, `build_view` imprime cada problema una sola vez (no hace panic). `TextField::test_id` pone el id en el input y `<id>.mostrar` en el ojo de contraseña (adelanto del Paso 5). Ids en la demo: `form.nombre`, `form.correo`, `form.password`, `form.enviar`, `form.limpiar` y `header.sumar`; en la galería, `gallery.<sección>.<fila>.<tamaño>`.
 
 #### Paso 3 — Consultas
 
@@ -944,12 +946,12 @@ Reglas de la pista C:
 ## 17. Checklist
 
 **Etapa 0 — Librería usable**
-- [ ] P0 `examples/demo.rs`, visibilidad de la API, `fixtures/external-app` en CI, `cargo doc` sin warnings.
+- [x] P0 `examples/demo.rs`, visibilidad de la API, `fixtures/external-app` en CI, `cargo doc` sin warnings.
 - [ ] P1 `App` v2 con `Effects` vacío; `SimpleApp` compatible.
 - [ ] P1b Devtools: log de `Msg`, inspector, tiempo por frame.
 
 **Etapa 1 — Identificación y pruebas**
-- [ ] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug.
+- [x] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug. Falta comprobarlo a mano con Accessibility Inspector.
 - [ ] P3 Consultas `get/query/all_by_{role,label,text,test_id}` y `within`.
 - [ ] P4 `Session` extraída del runtime; `TestApp` con acciones, aserciones, log de `Msg` y capturas por elemento.
 - [ ] P5 Convención de sub-ids en componentes; roles `Switch` y `Alert` si hacen falta.
