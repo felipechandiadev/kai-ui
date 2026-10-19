@@ -137,3 +137,29 @@ icon(Icon::Search).class("size-5 text-secondary stroke-[1.5]")
 - `card()` (`.fs-card`): `bg-background`, borde `border/70`, `rounded-lg`, `shadow-sm`, `overflow-hidden`. `card_header(título, subtítulo)`, `card_content()` y `card_actions()` (separador superior, acciones alineadas a la derecha).
 - `stat(etiqueta, valor, pista)`: tarjeta compacta de estadística.
 - `heading`, `paragraph` y `caption`: texto con rol y estilos de la tipografía del tema.
+
+### Ids de prueba y partes
+
+Un componente con `.test_id("x")` nombra solo sus partes internas, así un test las encuentra sin conocer su estructura (convención de [13 §6.4](13-hoja-de-ruta-plataforma.md#64-convención-de-sub-ids-en-componentes)):
+
+| Componente | Partes |
+|---|---|
+| `TextField` | `x` es la raíz (delega el foco); `x.input`, `x.label` (etiqueta estática), `x.floating` (etiqueta sobre el borde), `x.shell` (caja con borde), `x.placeholder` (placeholder de dos colores de un campo requerido vacío), `x.helper`, `x.start`, `x.end` y `x.toggle` (ojo de contraseña). Una parte que el campo no dibuja no existe. |
+| `card()` | `x.header`, `x.title`, `x.subtitle`, `x.content` y `x.actions`, de `card_header`, `card_content` y `card_actions`. |
+| `group_box` | `x.label` (título AppKit, fuera de la caja), `x.box`, y `x.header`, `x.title` y `x.content` de la card interior. |
+| `stat` | `x.label`, `x.value` y `x.hint`. |
+| `alert` | `x.icon` y `x.message`. |
+| `switch_labeled` | `x.track` (la pista, `Role::Switch`) y `x.label`. Un `switch(..)` sin label es la pista. |
+| `button`, `icon_button`, `badge` | Solo `x`. |
+
+```rust
+card().test_id("form").children([card_header("Formulario", None), card_content()]);
+// form.header, form.title, form.content
+
+let app = TestApp::new(Demo::default());
+app.screen().get_by_test_id("form.password.toggle");
+```
+
+- **Componentes propios.** `.part("nombre")` marca una parte y `.parts_root()` marca la raíz del componente. `assign_ids` le da a cada parte `<id del ancestro más cercano con test_id propio>.<nombre>`: las partes anidadas no se encadenan (`x.title`, no `x.header.title`). Si la raíz no tiene id, sus partes no toman el de un ancestro; así dos campos sin id dentro de `card().test_id("form")` no chocan. Un `test_id` explícito siempre gana sobre la parte.
+- **`TestApp`.** `value`, `is_focused` e `is_enabled` sobre la raíz de un `TextField` actúan sobre su input, así que `By::test_id("form.nombre")` sirve igual que `By::test_id("form.nombre.input")`.
+- **Sin layout.** `Element::find_test_id("x.title")` busca en el árbol después de `assign_ids`, para tests de componentes que no necesitan `Screen`.

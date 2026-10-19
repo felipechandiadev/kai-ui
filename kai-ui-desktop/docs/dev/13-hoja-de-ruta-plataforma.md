@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: los Pasos 0 a 4 están hechos, salvo el 1b: examples y visibilidad de la API, `App` v2, `test_id` con AccessKit, consultas `Screen`/`By`, y `Session` + `TestApp`. Siguen el Paso 5 (convención de sub-ids en componentes) y el Paso 6 (migrar a `TestApp` y `Screen` los tests que quedan en `components.rs` y `gallery.rs`). El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: la Etapa 1 está cerrada; los Pasos 0 a 6 están hechos, salvo el 1b: examples y visibilidad de la API, `App` v2, `test_id` con AccessKit, consultas `Screen`/`By`, `Session` + `TestApp`, sub-ids por convención en los componentes y tests que localizan por id o consulta. Sigue el Paso 7 (registro de comandos), que abre la Etapa 2. El Paso 1b (devtools) puede ir antes si hace falta depurar.
 
 ## 2. Evaluación de 09
 
@@ -160,13 +160,22 @@ Un componente con `test_id("x")` nombra sus partes internas solo, para que el te
 
 | Componente | Partes generadas |
 |---|---|
-| `TextField` | `x` (raíz), `x.input`, `x.label`, `x.helper`, `x.toggle` (password), `x.start`, `x.end` (adornos) |
-| `Button`, `IconButton` | `x` |
-| `Switch` | `x` (pista), `x.label` |
-| `Card` | `x`, `x.header`, `x.title`, `x.content`, `x.actions` |
-| `Alert`, `Badge`, `Stat` | `x`, más `x.value`/`x.hint` en `Stat` |
+| `TextField` | `x` (raíz), `x.input`, `x.label` (estática), `x.floating` (sobre el borde), `x.shell` (caja con borde), `x.placeholder` (placeholder de dos colores de un campo requerido vacío), `x.helper`, `x.toggle` (password), `x.start`, `x.end` (adornos) |
+| `Button`, `IconButton`, `Badge` | `x` |
+| `Switch` | `switch_labeled`: `x` (raíz), `x.track` (pista, `Role::Switch`), `x.label`. Sin label: `x` es la pista |
+| `Card` | `x`, `x.header`, `x.title`, `x.subtitle`, `x.content`, `x.actions` |
+| `group_box` | `x`, `x.label` (título AppKit, fuera de la caja), `x.box`, `x.header`, `x.title`, `x.content` |
+| `Stat` | `x`, `x.label`, `x.value`, `x.hint` |
+| `Alert` | `x` (sigue con `Role::Status`), `x.icon`, `x.message` |
 | Botón con `on_command` (Paso 8) | `test_id` = id del comando si no se indica otro |
 | Widgets nuevos (Paso 14) | Documentan sus partes en [05](05-widgets-y-tema.md) al nacer |
+
+Reglas de derivación (`Element::assign_ids`):
+- Una parte (`.part("title")`) toma el id del ancestro más cercano con `test_id` propio: el título de una card es `x.title`, no `x.header.title`.
+- Un `test_id` explícito siempre gana sobre la parte.
+- Un componente con partes es una frontera (`.parts_root()`): si no tiene id, sus partes no heredan el de un ancestro. Así dos `TextField` sin id dentro de `card().test_id("form")` no producen dos `form.input`.
+- Los ids derivados se recalculan en cada `assign_ids` y `validate_ids` los revisa igual que a los explícitos.
+- `Alert` no usa `Role::Alert`: en AccessKit es una región viva que interrumpe al lector, y el banner de la demo es informativo.
 
 ## 7. Contratos centrales
 
@@ -415,7 +424,7 @@ Reglas de la pista C:
   - `test_id_is_exposed_as_author_id` en `a11y.rs`.
 - **Hecho cuando**: los cuatro tests pasan; con Accessibility Inspector de Xcode se ve el `test_id` como identificador del botón «Enviar» de la demo.
 - **Riesgos**: falsos positivos de duplicados en listas legítimas sin key; el error indica cómo resolverlo (añadir `key`).
-- **Estado**: hecho salvo la revisión con Accessibility Inspector. Las rutas se escriben `root > 2 > 0[key="ana"]`. En debug, `build_view` imprime cada problema una sola vez (no hace panic). `TextField::test_id` pone el id en el input y `<id>.mostrar` en el ojo de contraseña (adelanto del Paso 5). Ids en la demo: `form.nombre`, `form.correo`, `form.password`, `form.enviar`, `form.limpiar` y `header.sumar`; en la galería, `gallery.<sección>.<fila>.<tamaño>`.
+- **Estado**: hecho salvo la revisión con Accessibility Inspector. Las rutas se escriben `root > 2 > 0[key="ana"]`. En debug, `build_view` imprime cada problema una sola vez (no hace panic). `TextField::test_id` ponía el id en el input y `<id>.mostrar` en el ojo de contraseña; desde el Paso 5 el id es de la raíz, el input es `<id>.input` y el ojo `<id>.toggle`. Ids en la demo: `form.nombre`, `form.correo`, `form.password`, `form.enviar`, `form.limpiar` y `header.sumar`; en la galería, `gallery.<sección>.<fila>.<tamaño>`.
 
 #### Paso 3 — Consultas
 
@@ -512,6 +521,13 @@ Reglas de la pista C:
 - **Roles nuevos** (si el paso los necesita para las consultas): `Role::Switch` para el Switch (hoy `Button` + `pressed`), `Role::Alert` para Alert (hoy `Status`). Se mapean en `a11y.rs` a los roles AccessKit correspondientes.
 - **Tests**: por componente, un test que encuentra cada sub-parte por `test_id`.
 - **Hecho cuando**: [05](05-widgets-y-tema.md) documenta las sub-partes de cada componente y todos tienen su test.
+- **Estado**: hecho, con estos cambios de diseño:
+  - **Mecanismo general**: `Element` tiene `.part("nombre")` y `.parts_root()`, que también sirven para los componentes de una app. `assign_ids` deriva los ids con las reglas de §6.4, y `Element::find_test_id` busca en el árbol sin layout.
+  - **`TextField`**: el id pasa del input a la raíz, que delega el foco. `TestApp` resuelve esa raíz a su input en `value`, `is_focused` e `is_enabled`, así que `By::test_id("form.nombre")` sigue funcionando; `By::label("Nombre")` devuelve el input (`form.nombre.input`). El ojo de contraseña es `x.toggle`; se suman `x.floating`, `x.shell` y `x.placeholder`.
+  - **`Role::Switch`**: la pista de un switch se publica como `Switch` de AccessKit con `Toggled`, y en `switch_labeled` toma como nombre el texto del label. `Role::Alert` no se agregó (ver §6.4).
+  - **Demo**: ids nuevos `contador` y `form` en sus cards, `form.notificaciones` en el switch y `contenido` en el área con scroll.
+  - **Tests**: `parts_derive_from_the_nearest_explicit_test_id`, `explicit_test_id_wins_over_part`, `assign_ids_twice_keeps_derived_ids` y `parts_without_owner_get_no_test_id` en `element.rs`; `text_field_parts`, `card_parts`, `stat_parts`, `alert_parts` y `switch_parts_and_role` en `components.rs`; `labeled_switch_is_a_switch_named_after_its_label` en `a11y.rs`. La línea base de capturas no cambió.
+  - **Pendiente a mano**: revisar con VoiceOver el switch con nombre y los `author_id` nuevos.
 
 #### Paso 6 — Migrar los tests existentes
 
@@ -528,6 +544,7 @@ Reglas de la pista C:
   let enviar = app.get_by_role(Role::Button).name("Enviar");
   ```
 - **Hecho cuando**: `rg 'path\[path.len\(\) - 2\]'` no devuelve resultados en tests, y ninguna búsqueda de localización usa clases.
+- **Estado**: hecho. Los tests de `TextField` en `components.rs` construyen el campo con `.test_id("campo")` y lo recorren por sus partes; `group_box` usa `g.label`, `g.box`, `g.header` y `g.content`. Las únicas búsquedas por clase que quedan son la máscara y el relleno de la etiqueta flotante, y se hacen dentro de `campo.floating`. En la demo, la cabecera se busca con `By::role(Role::Header)`, el área con scroll con `contenido`, y la fila de `mix_c_buttons_line_up...` con `campo.shell` y `enviar`. El test de contornos de `runtime.rs` usa ids explícitos. Se mantienen los índices sobre árboles literales que el propio test construye (`layout.rs`, `element.rs`, `paint.rs`, `ui_engine.rs`, `query.rs` y el test de acciones de `runtime.rs`) y las aserciones de estilo sobre partes ya localizadas.
 
 ### Etapa 2 — Núcleo de comandos (hito M2a)
 
@@ -984,8 +1001,8 @@ Reglas de la pista C:
 - [x] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug. Falta comprobarlo a mano con Accessibility Inspector.
 - [x] P3 Consultas `get/query/all` con `By::{role,name,label,text,test_id}` y `within`.
 - [x] P4 `Session` extraída del runtime; `TestApp` con acciones, aserciones, log de `Msg` y capturas por elemento. Falta la prueba a mano en ventana.
-- [ ] P5 Convención de sub-ids en componentes; roles `Switch` y `Alert` si hacen falta.
-- [ ] P6 Tests migrados; cero búsquedas frágiles.
+- [x] P5 Convención de sub-ids en componentes; `Role::Switch` (Alert sigue con `Status`). Falta revisarlo con VoiceOver.
+- [x] P6 Tests migrados; cero búsquedas frágiles.
 
 **Etapa 2 — Comandos**
 - [ ] P7 Registro con `Query` y `Action`, duplicados y disponibilidad.
