@@ -375,7 +375,7 @@ impl Theme {
     /// `[28, 32, 36, 44, 52]`) by 0 (strict), 1/2 (A), 3/4 (B) or all the
     /// way (C), rounded. In C a regular button is as tall as a field (36),
     /// a small one as a compact field (32) and a mini one smaller (28).
-    /// Mixed themes in light also get a white window ([`MIX_LIGHT_WINDOW`]);
+    /// Mixed themes in light also get a white window (`MIX_LIGHT_WINDOW`);
     /// strict keeps the measured one. Padding, font and radius stay
     /// AppKit's. Idempotent; the Kai theme only records `mix`.
     pub fn with_mix(self, mix: MixStyle) -> Theme {

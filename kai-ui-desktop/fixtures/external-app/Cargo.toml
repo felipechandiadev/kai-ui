@@ -1,0 +1,11 @@
+[package]
+name = "kai-external-app"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+publish = false
+
+# Minimal app outside the crate: it must build with Kai's public API only
+# (docs/dev/13-hoja-de-ruta-plataforma.md, Paso 0). CI runs `cargo check`.
+[dependencies]
+kai = { package = "kai-ui-desktop-prototype", path = "../.." }

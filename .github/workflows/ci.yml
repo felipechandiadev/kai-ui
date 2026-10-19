@@ -41,6 +41,11 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       # Pure tests only: no window, GPU surface or clipboard access.
       - run: cargo test --locked
+      - run: cargo doc --locked --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # An app outside the crate that only uses the public API.
+      - run: cargo check --locked --manifest-path fixtures/external-app/Cargo.toml --target-dir target
 
   desktop-msrv:
     runs-on: macos-latest

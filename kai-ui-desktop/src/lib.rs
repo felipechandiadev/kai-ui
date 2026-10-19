@@ -1,31 +1,50 @@
 //! Kai UI for desktop: Elm-style element tree, Tailwind-like classes, taffy
 //! layout and a wgpu renderer.
 //!
-//! The demo binary (`src/main.rs`) and future `examples/` use this crate as
-//! `kai`. See `docs/dev/12-modelo-appkit.md` (Paso 1).
+//! Apps implement [`runtime::App`] and call [`runtime::run`]; views are
+//! built from [`element`] and [`components`], styled with classes resolved
+//! against a [`theme`]. The demo binary (`cargo run`) and `examples/` use
+//! this crate as `kai`. See `docs/dev/12-modelo-appkit.md` (Paso 1) and
+//! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0).
+//!
+//! Hidden modules are internal: they stay public only because captures and
+//! tests still reach into them, until `kai::testing` (13, Paso 3).
 
-pub mod a11y;
 pub mod background;
 pub mod components;
+pub mod element;
+pub mod icons;
+pub mod runtime;
+pub mod snapshot;
+pub mod theme;
+pub mod version;
+
+#[doc(hidden)]
+pub mod a11y;
 #[doc(hidden)]
 pub mod demo;
-pub mod element;
-pub mod fonts;
 #[doc(hidden)]
 pub mod gallery;
+#[doc(hidden)]
 pub mod geometry;
+#[doc(hidden)]
 pub mod grid_layout;
-pub mod icons;
+#[doc(hidden)]
 pub mod layout;
-pub mod platform_adapter;
+#[doc(hidden)]
 pub mod render;
+#[doc(hidden)]
 pub mod responder;
-pub mod runtime;
+#[doc(hidden)]
 pub mod signal;
-pub mod snapshot;
+#[doc(hidden)]
 pub mod style;
+#[doc(hidden)]
 pub mod text_field;
-pub mod theme;
+#[doc(hidden)]
 pub mod tw;
+#[doc(hidden)]
 pub mod ui_engine;
-pub mod version;
+
+pub(crate) mod fonts;
+pub(crate) mod platform_adapter;

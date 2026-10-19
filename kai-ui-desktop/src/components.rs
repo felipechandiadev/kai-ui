@@ -70,7 +70,7 @@ pub enum BezelStyle {
     /// `.push`: bezel with a shadow; fixed height per control size.
     #[default]
     Push,
-    /// `fill` background without shadow or border (toolbar style) [C].
+    /// `fill` background without shadow or border (toolbar style) \[C\].
     Bordered,
     /// `isBordered = false`: only the title, in the accent color.
     Borderless,
@@ -106,7 +106,7 @@ const APPKIT_BORDERLESS: &str = "bg-transparent text-control-accent hover:bg-fil
      active:text-accent-pressed window-inactive:text-control-text px-1";
 const APPKIT_DESTRUCTIVE_TEXT: &str = "text-system-red";
 
-/// AppKit classes of a button (11 §6.2, §6.4, §7; [C] values are checked
+/// AppKit classes of a button (11 §6.2, §6.4, §7; \[C\] values are checked
 /// against the oracle in Paso 19).
 pub fn appkit_button_classes(bezel: BezelStyle, accent: bool, destructive: bool) -> String {
     let look = match bezel {

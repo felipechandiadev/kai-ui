@@ -309,7 +309,7 @@ pub struct TypeTokens {
     pub styles: TextStyles,
 }
 
-/// One value per [`ControlSize`](crate::element::ControlSize), indexed by
+/// One value per [`crate::element::ControlSize`], indexed by
 /// `ControlSize::index()`: mini, small, regular, large, extra large.
 pub type BySize = [f32; 5];
 
