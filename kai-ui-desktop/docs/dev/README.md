@@ -13,6 +13,10 @@ Esta documentación describe la implementación gradual de un framework de inter
 7. [Calidad y distribución](06-calidad-y-distribucion.md)
 8. [Evaluación de craft-libs](07-integracion-craft-libs.md)
 9. [Accesibilidad (AccessKit)](08-accesibilidad.md)
+10. [Framework, registro de comandos y MCP](09-framework-y-plataforma.md)
+11. [Mapas interactivos](10-mapas.md)
+12. [Tema AppKit para macOS](11-tema-appkit.md)
+13. [Guía: modelo AppKit como estándar de Kai](12-modelo-appkit.md)
 
 ## Orden recomendado
 

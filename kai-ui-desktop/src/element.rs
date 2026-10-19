@@ -101,6 +101,7 @@ pub struct Element<Msg> {
     /// Accessible name; buttons default to their text content.
     pub label: Option<String>,
     pub disabled: bool,
+    pub is_pressed: bool,
     /// Required form field, exposed to assistive technology.
     pub required: bool,
     /// Accessible description (e.g. helper text).
@@ -150,6 +151,7 @@ impl<Msg> Element<Msg> {
             role: None,
             label: None,
             disabled: false,
+            is_pressed: false,
             required: false,
             description: None,
             delegates_focus: false,
@@ -194,6 +196,11 @@ impl<Msg> Element<Msg> {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    pub fn pressed(mut self, pressed: bool) -> Self {
+        self.is_pressed = pressed;
         self
     }
 

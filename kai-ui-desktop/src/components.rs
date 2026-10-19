@@ -136,6 +136,7 @@ pub struct TextField<Msg> {
     read_only: bool,
     disabled: bool,
     select_on_focus: bool,
+    always_show_label: bool,
     placeholder_color: Option<String>,
     on_input: Option<Rc<dyn Fn(String) -> Msg>>,
     on_submit: Option<Msg>,
@@ -159,6 +160,7 @@ impl<Msg> TextField<Msg> {
             read_only: false,
             disabled: false,
             select_on_focus: false,
+            always_show_label: false,
             placeholder_color: None,
             on_input: None,
             on_submit: None,
@@ -256,6 +258,11 @@ impl<Msg> TextField<Msg> {
         self
     }
 
+    pub fn always_show_label(mut self, always_show_label: bool) -> Self {
+        self.always_show_label = always_show_label;
+        self
+    }
+
     /// Theme color token for the placeholder (`primary`, `error/60`…).
     pub fn placeholder_color(mut self, token: impl Into<String>) -> Self {
         self.placeholder_color = Some(token.into());
@@ -296,7 +303,7 @@ impl<Msg> TextField<Msg> {
             "cursor-text"
         };
         let mut root = div()
-            .class("group flex flex-col w-full min-w-0")
+            .class("group flex flex-col w-full min-w-[180px]")
             .delegates_focus();
         if inline {
             let fade_shell = self.disabled && self.inline_leading.is_none();
@@ -332,7 +339,14 @@ impl<Msg> TextField<Msg> {
                                     "ml-0.5 text-[13px] leading-5 text-error",
                                 )),
                             div()
-                                .class("flex flex-1 min-w-0 items-center gap-2 px-3")
+                                .class(&format!(
+                                    "flex flex-1 items-center gap-2 px-3{}",
+                                    if self.disabled && !fade_shell {
+                                        " opacity-50"
+                                    } else {
+                                        ""
+                                    }
+                                ))
                                 .children(row),
                         ]),
                 );
@@ -403,7 +417,7 @@ impl<Msg> TextField<Msg> {
         } else {
             "text-foreground"
         };
-        let visibility = if self.value.is_empty() {
+        let visibility = if self.value.is_empty() && !self.always_show_label {
             "hidden group-focus-within:flex"
         } else {
             "flex"
@@ -556,7 +570,7 @@ fn adornment<Msg>(
 /// the input when pressed.
 fn password_toggle<Msg>(revealed: bool, on_toggle: Msg, disabled: bool) -> Element<Msg> {
     let state = if revealed {
-        "bg-primary/10 text-primary"
+        "text-primary"
     } else {
         "text-secondary group-focus-within:text-primary"
     };
@@ -578,6 +592,7 @@ fn password_toggle<Msg>(revealed: bool, on_toggle: Msg, disabled: bool) -> Eleme
         })
         .focus_on_press(false)
         .disabled(disabled)
+        .pressed(revealed)
         .on_click(on_toggle)
         .child(icon(if revealed { Icon::EyeOff } else { Icon::Eye }).class("size-5"))
 }
@@ -644,11 +659,241 @@ pub fn caption<Msg>(content: impl Into<String>) -> Element<Msg> {
     text(content).class("text-sm text-muted-foreground")
 }
 
+/// `.fs-badge` variants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BadgeVariant {
+    Primary,
+    Secondary,
+    Success,
+    Error,
+    Warning,
+    Info,
+    PrimaryOutlined,
+    SecondaryOutlined,
+    SuccessOutlined,
+    ErrorOutlined,
+    WarningOutlined,
+    InfoOutlined,
+}
+
+pub fn badge_classes(variant: BadgeVariant) -> String {
+    let variant_classes = match variant {
+        BadgeVariant::Primary => "bg-primary text-white",
+        BadgeVariant::Secondary => "bg-secondary text-white",
+        BadgeVariant::Success => "bg-success text-white",
+        BadgeVariant::Error => "bg-error text-white",
+        BadgeVariant::Warning => "bg-warning text-foreground",
+        BadgeVariant::Info => "bg-info text-white",
+        BadgeVariant::PrimaryOutlined => "border border-primary text-primary bg-transparent",
+        BadgeVariant::SecondaryOutlined => "border border-secondary text-secondary bg-transparent",
+        BadgeVariant::SuccessOutlined => "border border-success text-success bg-transparent",
+        BadgeVariant::ErrorOutlined => "border border-error text-error bg-transparent",
+        BadgeVariant::WarningOutlined => "border border-warning text-warning bg-transparent",
+        BadgeVariant::InfoOutlined => "border border-info text-info bg-transparent",
+    };
+    format!(
+        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs leading-4 font-medium {variant_classes}"
+    )
+}
+
+/// `.fs-badge` pill indicator.
+pub fn badge<Msg>(label: impl Into<String>, variant: BadgeVariant) -> Element<Msg> {
+    div()
+        .class(&badge_classes(variant))
+        .role(Role::Status)
+        .child(text(label))
+}
+
+/// `.fs-alert` variants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AlertVariant {
+    Success,
+    Info,
+    Warning,
+    Error,
+}
+
+/// `.fs-alert` message box with Lucide icon and semantic border/background.
+pub fn alert<Msg>(variant: AlertVariant, message: impl Into<String>) -> Element<Msg> {
+    let (icon_kind, border_and_bg, icon_color) = match variant {
+        AlertVariant::Success => (
+            Icon::CircleCheckBig,
+            "border border-success bg-success/20",
+            "text-success",
+        ),
+        AlertVariant::Info => (Icon::Info, "border border-info bg-info/20", "text-info"),
+        AlertVariant::Warning => (
+            Icon::TriangleAlert,
+            "border border-warning bg-warning/20",
+            "text-warning",
+        ),
+        AlertVariant::Error => (
+            Icon::CircleAlert,
+            "border border-error bg-error/20",
+            "text-error",
+        ),
+    };
+    div()
+        .class(&format!(
+            "relative flex items-center gap-3 w-full p-4 rounded-lg text-sm leading-5 {border_and_bg}"
+        ))
+        .role(Role::Status)
+        .children([
+            icon(icon_kind).class(&format!("size-5 shrink-0 {icon_color}")),
+            text(message).class("flex-1 text-sm font-normal text-foreground"),
+        ])
+}
+
+/// `.fs-icon-button` variants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconButtonVariant {
+    Action,
+    Primary,
+    Secondary,
+    Neutral,
+    Text,
+    Outlined,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconButtonSize {
+    Sm,
+    Md,
+    Lg,
+}
+
+/// Icon button sized to medium (h-10).
+pub fn icon_button<Msg>(
+    icon_kind: Icon,
+    label: impl Into<String>,
+    variant: IconButtonVariant,
+) -> Element<Msg> {
+    icon_button_sized(icon_kind, label, variant, IconButtonSize::Md)
+}
+
+/// Sized icon button with accessible label and interaction classes.
+pub fn icon_button_sized<Msg>(
+    icon_kind: Icon,
+    label: impl Into<String>,
+    variant: IconButtonVariant,
+    size: IconButtonSize,
+) -> Element<Msg> {
+    let (size_class, icon_class) = match size {
+        IconButtonSize::Sm => ("size-7 rounded", "size-4"),
+        IconButtonSize::Md => ("size-10 rounded-md", "size-5"),
+        IconButtonSize::Lg => ("size-12 rounded-lg", "size-6"),
+    };
+    let variant_classes = match variant {
+        IconButtonVariant::Action => "text-secondary hover:bg-primary/10 active:bg-primary/20",
+        IconButtonVariant::Primary => "bg-primary text-white hover:bg-accent active:bg-active",
+        IconButtonVariant::Secondary => {
+            "bg-secondary text-foreground hover:bg-secondary/80 active:bg-secondary/70"
+        }
+        IconButtonVariant::Neutral => "text-foreground hover:bg-neutral active:bg-border",
+        IconButtonVariant::Text => "text-primary hover:bg-primary/10 active:bg-primary/20",
+        IconButtonVariant::Outlined => {
+            "border border-border text-foreground hover:bg-neutral active:bg-border"
+        }
+    };
+    div()
+        .class(&format!(
+            "inline-flex items-center justify-center shrink-0 cursor-pointer focus:ring-2 \
+             focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed {size_class} \
+             {variant_classes}"
+        ))
+        .role(Role::Button)
+        .label(label)
+        .child(icon(icon_kind).class(icon_class))
+}
+
+/// `.fs-switch` density.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SwitchDensity {
+    #[default]
+    Default,
+    Compact,
+}
+
+/// Standard toggle switch.
+pub fn switch<Msg>(checked: bool, on_toggle: Msg) -> Element<Msg> {
+    switch_with_options(checked, on_toggle, false, SwitchDensity::Default)
+}
+
+/// Switch with optional label and density configuration.
+pub fn switch_labeled<Msg>(
+    label: &str,
+    checked: bool,
+    on_toggle: Msg,
+    disabled: bool,
+    density: SwitchDensity,
+) -> Element<Msg> {
+    let compact = density == SwitchDensity::Compact;
+    let label_class = if compact {
+        "text-[13px] font-medium leading-tight text-foreground"
+    } else {
+        "text-sm font-medium leading-normal text-foreground"
+    };
+    div()
+        .class("inline-flex items-center gap-2")
+        .children([
+            switch_with_options(checked, on_toggle, disabled, density),
+            text(label).class(label_class),
+        ])
+}
+
+/// Configurable switch track and thumb.
+pub fn switch_with_options<Msg>(
+    checked: bool,
+    on_toggle: Msg,
+    disabled: bool,
+    density: SwitchDensity,
+) -> Element<Msg> {
+    let compact = density == SwitchDensity::Compact;
+    let (track_size, thumb_size, pad) = if compact {
+        ("w-7 h-4", "size-3", "p-0.5")
+    } else {
+        ("w-10 h-6", "size-4", "p-1")
+    };
+    let track_bg = if checked {
+        "bg-primary"
+    } else {
+        "bg-border hover:bg-muted-foreground/40"
+    };
+    let justify = if checked {
+        "justify-end"
+    } else {
+        "justify-start"
+    };
+    let interaction = if disabled {
+        "opacity-50 cursor-not-allowed"
+    } else {
+        "cursor-pointer"
+    };
+    div()
+        .class(&format!(
+            "relative inline-flex items-center shrink-0 rounded-full focus:ring-2 \
+             focus:ring-primary/40 {track_size} {pad} {track_bg} {justify} {interaction}"
+        ))
+        .role(Role::Button)
+        .label(if checked {
+            "Activado"
+        } else {
+            "Desactivado"
+        })
+        .focus_on_press(false)
+        .disabled(disabled)
+        .pressed(checked)
+        .on_click(on_toggle)
+        .child(div().class(&format!("rounded-full bg-white shadow-sm {thumb_size}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ButtonSize, ButtonVariant, FieldDensity, FieldVariant, LabelLayout, TextField, button,
-        button_classes, card, card_actions, card_content, card_header, stat,
+        AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
+        IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge,
+        badge_classes, button, button_classes, card, card_actions, card_content, card_header,
+        icon_button_sized, stat, switch_labeled, switch_with_options,
     };
     use crate::element::{Element, FocusOrder, Kind, Role, text};
     use crate::icons::Icon;
@@ -757,6 +1002,65 @@ mod tests {
                 }
             }
         }
+        for variant in [
+            BadgeVariant::Primary,
+            BadgeVariant::Secondary,
+            BadgeVariant::Success,
+            BadgeVariant::Error,
+            BadgeVariant::Warning,
+            BadgeVariant::Info,
+            BadgeVariant::PrimaryOutlined,
+            BadgeVariant::SecondaryOutlined,
+            BadgeVariant::SuccessOutlined,
+            BadgeVariant::ErrorOutlined,
+            BadgeVariant::WarningOutlined,
+            BadgeVariant::InfoOutlined,
+        ] {
+            assert_known(&badge_classes(variant));
+            assert_tree_known(&badge("Badge", variant));
+        }
+
+        for variant in [
+            AlertVariant::Success,
+            AlertVariant::Info,
+            AlertVariant::Warning,
+            AlertVariant::Error,
+        ] {
+            assert_tree_known(&alert(variant, "Mensaje de alerta"));
+        }
+
+        for variant in [
+            IconButtonVariant::Action,
+            IconButtonVariant::Primary,
+            IconButtonVariant::Secondary,
+            IconButtonVariant::Neutral,
+            IconButtonVariant::Text,
+            IconButtonVariant::Outlined,
+        ] {
+            for size in [
+                IconButtonSize::Sm,
+                IconButtonSize::Md,
+                IconButtonSize::Lg,
+            ] {
+                assert_tree_known(&icon_button_sized(Icon::Search, "Buscar", variant, size));
+            }
+        }
+
+        for density in [SwitchDensity::Default, SwitchDensity::Compact] {
+            for checked in [false, true] {
+                for disabled in [false, true] {
+                    assert_tree_known(&switch_with_options(checked, Msg::Toggle, disabled, density));
+                    assert_tree_known(&switch_labeled(
+                        "Notificaciones",
+                        checked,
+                        Msg::Toggle,
+                        disabled,
+                        density,
+                    ));
+                }
+            }
+        }
+
         assert_tree_known(
             &TextField::new("Monto", "")
                 .start_symbol("$")

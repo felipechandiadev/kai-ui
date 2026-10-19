@@ -9,8 +9,7 @@
 //! after their text content, text elements are labels. Buttons and inputs
 //! are leaves; hidden (`display: none`) subtrees are omitted.
 
-use accesskit::{
-    Action, ActionData, ActionRequest, Affine, Node, NodeId, Rect as AccessRect, Role, TreeId,
+use accesskit::{Action, ActionData, ActionRequest, Affine, Node, NodeId, Rect as AccessRect, Role, TreeId,
     TreeInfo, TreeUpdate,
 };
 
@@ -164,6 +163,9 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             node.add_action(Action::Click);
             if matches!(source.content, Content::Input { .. }) {
                 node.add_action(Action::ReplaceSelectedText);
+            }
+            if source.is_pressed && role == Role::Button {
+                node.set_toggled(accesskit::Toggled::True);
             }
         }
     }
@@ -347,6 +349,11 @@ mod tests {
                 .required(true)
                 .description("Mínimo 8 caracteres"),
             input("fijo", "Código").read_only(true),
+            div()
+                .role(crate::element::Role::Button)
+                .label("Ver")
+                .pressed(true)
+                .on_click(Msg::Clicked),
         ]);
         tree.assign_ids();
         let ids: Vec<WidgetId> = tree.children.iter().map(|child| child.id).collect();
@@ -360,7 +367,7 @@ mod tests {
         let root = node(&update, node_id(tree.id));
         assert_eq!(
             root.children(),
-            &[node_id(ids[1]), node_id(ids[2]), node_id(ids[3])],
+            &[node_id(ids[1]), node_id(ids[2]), node_id(ids[3]), node_id(ids[4])],
             "decorative icons are omitted"
         );
         let alert = node(&update, node_id(ids[1]));
@@ -377,6 +384,10 @@ mod tests {
         assert_eq!(code.role(), Role::TextInput);
         assert!(code.is_read_only());
         assert_eq!(code.value(), Some("fijo"));
+
+        let toggle = node(&update, node_id(ids[4]));
+        assert_eq!(toggle.role(), Role::Button);
+        assert_eq!(toggle.toggled(), Some(accesskit::Toggled::True));
     }
 
     #[test]

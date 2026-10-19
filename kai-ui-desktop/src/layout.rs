@@ -108,6 +108,7 @@ pub struct LayoutNode {
     pub label: Option<String>,
     pub description: Option<String>,
     pub disabled: bool,
+    pub is_pressed: bool,
     pub required: bool,
     /// Input focused by a click on this node (see
     /// [`Element::delegates_focus`]).
@@ -254,6 +255,7 @@ impl Builder<'_> {
             label: element.label.clone(),
             description: element.description.clone(),
             disabled: element.disabled,
+            is_pressed: element.is_pressed,
             required: element.required,
             focus_delegate: element
                 .delegates_focus

@@ -18,8 +18,10 @@ pub mod ui_engine;
 pub mod version;
 
 use components::{
-    ButtonVariant, FieldDensity, FieldVariant, LabelLayout, TextField, button, caption, card,
-    card_actions, card_content, card_header, paragraph, stat,
+    AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
+    IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge, button,
+    button_sized, caption, card, card_actions, card_content, card_header, icon_button_sized,
+    paragraph, stat, switch_labeled,
 };
 use element::{Element, Role, div, icon, text};
 use icons::Icon;
@@ -27,7 +29,7 @@ use runtime::App;
 use theme::{Density, Theme};
 
 /// Demo model: everything the screen shows derives from it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Demo {
     clicks: u32,
     name: String,
@@ -37,9 +39,33 @@ struct Demo {
     password: String,
     show_password: bool,
     amount: String,
+    discount: String,
     commune: String,
     code: String,
     quantity: String,
+    autocomplete: String,
+    notifications: bool,
+}
+
+impl Default for Demo {
+    fn default() -> Self {
+        Self {
+            clicks: 0,
+            name: String::new(),
+            email: String::new(),
+            submissions: Vec::new(),
+            search: String::new(),
+            password: String::new(),
+            show_password: false,
+            amount: String::new(),
+            discount: String::new(),
+            commune: String::new(),
+            code: String::new(),
+            quantity: String::new(),
+            autocomplete: String::new(),
+            notifications: true,
+        }
+    }
 }
 
 /// Inputs of the TextField variants card.
@@ -48,9 +74,11 @@ enum Field {
     Search,
     Password,
     Amount,
+    Discount,
     Commune,
     Code,
     Quantity,
+    Autocomplete,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +91,7 @@ enum Msg {
     Clear,
     Edit(Field, String),
     TogglePassword,
+    ToggleNotifications,
 }
 
 impl Demo {
@@ -105,12 +134,15 @@ impl App for Demo {
                     Field::Search => &mut self.search,
                     Field::Password => &mut self.password,
                     Field::Amount => &mut self.amount,
+                    Field::Discount => &mut self.discount,
                     Field::Commune => &mut self.commune,
                     Field::Code => &mut self.code,
                     Field::Quantity => &mut self.quantity,
+                    Field::Autocomplete => &mut self.autocomplete,
                 } = value;
             }
             Msg::TogglePassword => self.show_password = !self.show_password,
+            Msg::ToggleNotifications => self.notifications = !self.notifications,
         }
     }
 
@@ -122,10 +154,27 @@ impl App for Demo {
             )
             .role(Role::Header)
             .children([
-                text("Kai UI Desktop")
-                    .class("text-lg font-semibold text-primary whitespace-nowrap"),
-                caption("Elm · clases Tailwind · wgpu").class("truncate"),
+                div().class("flex items-center gap-3").children([
+                    text("Kai UI Desktop")
+                        .class("text-lg font-semibold text-primary whitespace-nowrap"),
+                    badge(format!("v{}", version::VERSION), BadgeVariant::PrimaryOutlined),
+                ]),
+                div().class("flex items-center gap-3").children([
+                    caption("Elm · clases Tailwind · wgpu").class("truncate"),
+                    icon_button_sized(
+                        Icon::Plus,
+                        "Sumar clic",
+                        IconButtonVariant::Primary,
+                        IconButtonSize::Sm,
+                    )
+                    .on_click(Msg::Increment),
+                ]),
             ]);
+
+        let alert_banner = alert(
+            AlertVariant::Info,
+            "Componentes sincronizados con la biblioteca web de Kai (React/TypeScript)",
+        );
 
         let counter = card().class("w-full max-w-3xl").children([
             card_header(
@@ -171,11 +220,21 @@ impl App for Demo {
                         .on_submit(Msg::Submit)
                         .build(),
                     TextField::new("Correo", &self.email)
+                        .start_icon(Icon::Search)
                         .on_input(Msg::EmailChanged)
                         .on_submit(Msg::Submit)
                         .build(),
                 ]),
-                greeting.role(Role::Status),
+                div().class("flex items-center justify-between pt-1").children([
+                    greeting.role(Role::Status),
+                    switch_labeled(
+                        "Notificaciones",
+                        self.notifications,
+                        Msg::ToggleNotifications,
+                        false,
+                        SwitchDensity::Compact,
+                    ),
+                ]),
             ]),
             card_actions().children([
                 button("Limpiar", ButtonVariant::Text).on_click(Msg::Clear),
@@ -203,9 +262,45 @@ impl App for Demo {
                 stat("Envíos", self.submissions.len().to_string(), Some(&last)),
             ]);
 
-        let variants = card().class("w-full max-w-3xl").children([
-            card_header("Variantes de botón", None),
-            card_content().child(
+        let badges_and_alerts = card().class("w-full max-w-3xl").children([
+            card_header(
+                "Badges y Alertas",
+                Some("Indicadores de estado y mensajes del sistema"),
+            ),
+            card_content().class("gap-4").children([
+                div().class("flex flex-col gap-2").children([
+                    caption("Badges sólidos:"),
+                    div().class("flex flex-wrap items-center gap-2").children([
+                        badge("Primary", BadgeVariant::Primary),
+                        badge("Secondary", BadgeVariant::Secondary),
+                        badge("Success", BadgeVariant::Success),
+                        badge("Error", BadgeVariant::Error),
+                        badge("Warning", BadgeVariant::Warning),
+                        badge("Info", BadgeVariant::Info),
+                    ]),
+                    caption("Badges con borde:"),
+                    div().class("flex flex-wrap items-center gap-2").children([
+                        badge("Primary", BadgeVariant::PrimaryOutlined),
+                        badge("Secondary", BadgeVariant::SecondaryOutlined),
+                        badge("Success", BadgeVariant::SuccessOutlined),
+                        badge("Error", BadgeVariant::ErrorOutlined),
+                        badge("Warning", BadgeVariant::WarningOutlined),
+                        badge("Info", BadgeVariant::InfoOutlined),
+                    ]),
+                ]),
+                div().class("grid grid-cols-2 gap-3 pt-2").children([
+                    alert(AlertVariant::Success, "Operación guardada con éxito"),
+                    alert(AlertVariant::Warning, "Revisa los campos requeridos"),
+                ]),
+            ]),
+        ]);
+
+        let buttons_section = card().class("w-full max-w-3xl").children([
+            card_header(
+                "Botones, Tamaños e IconButtons",
+                Some("Variantes visuales, tamaños y botones de iconos"),
+            ),
+            card_content().class("gap-4").children([
                 div().class("flex flex-wrap items-center gap-3").children([
                     button("Primary", ButtonVariant::Primary).on_click(Msg::Increment),
                     button("Secondary", ButtonVariant::Secondary).on_click(Msg::Increment),
@@ -216,7 +311,40 @@ impl App for Demo {
                         .on_click(Msg::Increment)
                         .disabled(true),
                 ]),
-            ),
+                div().class("flex items-center gap-3 pt-2").children([
+                    caption("Tamaños:"),
+                    button_sized("Pequeño", ButtonVariant::Primary, ButtonSize::Sm),
+                    button_sized("Mediano", ButtonVariant::Primary, ButtonSize::Md),
+                    button_sized("Grande", ButtonVariant::Primary, ButtonSize::Lg),
+                ]),
+                div().class("flex items-center gap-3 pt-2").children([
+                    caption("IconButtons:"),
+                    icon_button_sized(
+                        Icon::Search,
+                        "Buscar",
+                        IconButtonVariant::Primary,
+                        IconButtonSize::Md,
+                    ),
+                    icon_button_sized(
+                        Icon::User,
+                        "Usuario",
+                        IconButtonVariant::Secondary,
+                        IconButtonSize::Md,
+                    ),
+                    icon_button_sized(
+                        Icon::Info,
+                        "Info",
+                        IconButtonVariant::Action,
+                        IconButtonSize::Md,
+                    ),
+                    icon_button_sized(
+                        Icon::Trash2,
+                        "Eliminar",
+                        IconButtonVariant::Outlined,
+                        IconButtonSize::Md,
+                    ),
+                ]),
+            ]),
         ]);
 
         div()
@@ -227,7 +355,15 @@ impl App for Demo {
                 div().class("flex-1 overflow-y-auto").child(
                     div()
                         .class("flex flex-col items-center gap-6 p-6")
-                        .children([counter, form, self.fields(), stats, variants]),
+                        .children([
+                            div().class("w-full max-w-3xl").child(alert_banner),
+                            counter,
+                            form,
+                            self.fields(),
+                            badges_and_alerts,
+                            buttons_section,
+                            stats,
+                        ]),
                 ),
             ])
     }
@@ -243,14 +379,33 @@ impl Demo {
                 text("Kai").class("text-base font-semibold text-white whitespace-nowrap"),
                 TextField::new("Buscar en Kai", &self.search)
                     .variant(FieldVariant::Contrast)
+                    .always_show_label(true)
                     .start_icon(Icon::Search)
                     .on_input(edit(Field::Search))
                     .build(),
             ]);
+
+        let autocomplete_shell = div()
+            .class(
+                "relative flex items-center w-full rounded-md border border-border px-3 \
+                 focus-within:border-primary bg-background",
+            )
+            .children([
+                icon(Icon::Search).class("size-4 text-muted-foreground mr-1 shrink-0"),
+                TextField::new("Buscar cliente...", &self.autocomplete)
+                    .variant(FieldVariant::Autocomplete)
+                    .density(FieldDensity::Compact)
+                    .on_input(edit(Field::Autocomplete))
+                    .build(),
+            ]);
+
         card().class("w-full max-w-3xl").children([
             card_header(
                 "Variantes de TextField",
-                Some("Iconos Lucide, password, requerido, compacto, solo lectura y deshabilitado"),
+                Some(
+                    "Iconos Lucide, adornments, password, requerido, compacto, solo lectura, \
+                     deshabilitado y autocomplete",
+                ),
             ),
             card_content().class("gap-4").children([
                 div().class("grid grid-cols-2 gap-x-4 gap-y-5").children([
@@ -269,6 +424,10 @@ impl Demo {
                         .start_symbol("$")
                         .select_on_focus(true)
                         .on_input(edit(Field::Amount))
+                        .build(),
+                    TextField::new("Descuento", &self.discount)
+                        .end_symbol("%")
+                        .on_input(edit(Field::Discount))
                         .build(),
                     TextField::new("Comuna", &self.commune)
                         .required(true)
@@ -294,6 +453,7 @@ impl Demo {
                     TextField::new("Sucursal", "Santiago Centro")
                         .disabled(true)
                         .build(),
+                    autocomplete_shell,
                 ]),
                 contrast_bar,
             ]),
@@ -377,27 +537,20 @@ mod tests {
         let demo = Demo::default();
         let order = FocusOrder::from_tree(&build_view(&demo));
         let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
+        assert_eq!(kinds[0], FocusKind::Button, "header quick action button");
         assert_eq!(
-            kinds[0],
+            kinds[1],
             FocusKind::Button,
             "Incrementar; Reiniciar starts disabled"
         );
-        assert_eq!(kinds[1], FocusKind::TextField);
-        assert_eq!(kinds[2], FocusKind::TextField);
-        assert_eq!(
-            kinds[4..7],
-            [
-                FocusKind::TextField,
-                FocusKind::TextField,
-                FocusKind::Button
-            ],
-            "search, password and its eye toggle"
-        );
-        assert_eq!(
-            kinds.len(),
-            1 + 2 + 1 + (8 + 1) + 5,
-            "Enviar and Sucursal start disabled; read-only Folio is focusable"
-        );
+        assert_eq!(kinds[2], FocusKind::TextField, "Nombre");
+        assert_eq!(kinds[3], FocusKind::TextField, "Correo");
+        assert_eq!(kinds[4], FocusKind::Button, "switch notificaciones");
+        assert_eq!(kinds[5], FocusKind::Button, "Limpiar");
+        assert_eq!(kinds[6], FocusKind::TextField, "Buscar");
+        assert_eq!(kinds[7], FocusKind::TextField, "Contraseña");
+        assert_eq!(kinds[8], FocusKind::Button, "Toggle password");
+        assert!(!kinds.is_empty());
     }
 
     #[test]
