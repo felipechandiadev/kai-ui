@@ -1609,6 +1609,12 @@ mod tests {
         assert!(app.session().palette_open());
         assert!(app.is_focused(search()));
         assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
+        let dialog = app
+            .screen()
+            .get(By::role(Role::Dialog).name("Paleta de comandos"))
+            .test_id()
+            .map(str::to_owned);
+        assert_eq!(dialog.as_deref(), Some("kai.paleta"));
         let rows = |app: &TestApp<Demo>| -> Vec<String> {
             let screen = app.screen();
             let panel = screen.get(By::test_id("kai.paleta"));

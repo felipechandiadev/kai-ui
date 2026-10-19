@@ -1456,7 +1456,7 @@ pub fn command_palette<Msg>(
                     "rounded-lg border-border bg-background shadow-lg",
                     "rounded-[10px] border-separator bg-window shadow-lg",
                 ))
-                .role(Role::Group)
+                .role(Role::Dialog)
                 .label("Paleta de comandos")
                 .test_id("kai.paleta")
                 .children([
@@ -1469,6 +1469,51 @@ pub fn command_palette<Msg>(
                         .label("Buscar comandos")
                         .test_id("kai.paleta.buscar"),
                     list,
+                ]),
+        )
+}
+
+/// Modal dialog: a backdrop over the whole window and a centered panel with
+/// [`Role::Dialog`], named after `title`, holding the title, `body` and a
+/// row of `actions` (right-aligned, in the given order). Who shows it keeps
+/// focus inside; the dialog itself sends no messages.
+/// Parts: `panel`, `title`, `body` and `actions`.
+pub fn dialog<Msg>(
+    title: &str,
+    body: Element<Msg>,
+    actions: impl IntoIterator<Item = Element<Msg>>,
+) -> Element<Msg> {
+    let style = |layout: &str, kai: &str, appkit: &str| format!("{layout} {}", themed(kai, appkit));
+    div()
+        .class(&style(
+            "absolute inset-0 z-50 flex justify-center items-start pt-24",
+            "bg-foreground/20",
+            "bg-label/10",
+        ))
+        .parts_root()
+        .child(
+            div()
+                .class(&style(
+                    "flex flex-col w-[420px] border overflow-hidden",
+                    "gap-4 p-6 rounded-lg border-border bg-background shadow-lg",
+                    "gap-3 p-5 rounded-[10px] border-separator bg-window shadow-lg",
+                ))
+                .role(Role::Dialog)
+                .label(title)
+                .part("panel")
+                .children([
+                    text(title)
+                        .class(&themed(
+                            "text-lg leading-[1.4] font-semibold text-foreground",
+                            "text-headline text-label",
+                        ))
+                        .role(Role::Heading)
+                        .part("title"),
+                    body.part("body"),
+                    div()
+                        .class("flex justify-end gap-2")
+                        .part("actions")
+                        .children(actions),
                 ]),
         )
 }
@@ -1712,7 +1757,7 @@ mod tests {
         AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, FieldBezel,
         FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity,
         TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
-        card_content, card_header, group_box, icon_button_sized, stat, switch_labeled,
+        card_content, card_header, dialog, group_box, icon_button_sized, stat, switch_labeled,
         switch_with_options,
     };
     use crate::element::{ControlSize, Element, FocusOrder, Kind, Role, div, text};
@@ -1726,6 +1771,7 @@ mod tests {
     use crate::render::DrawOp;
     use crate::render::paint::{PaintInput, paint};
     use crate::style::Display;
+    use crate::testing::By;
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
     use crate::tw::{ClassList, State};
 
@@ -1782,6 +1828,35 @@ mod tests {
             }
         });
         found
+    }
+
+    #[test]
+    fn dialog_is_a_modal_panel_named_after_its_title() {
+        let tree = assigned(
+            div().child(
+                dialog(
+                    "¿Reiniciar el contador?",
+                    text("Se pierden los clics"),
+                    [
+                        button("Permitir", ButtonVariant::Secondary).on_click(Msg::Submit),
+                        button("Rechazar", ButtonVariant::Primary).on_click(Msg::Toggle),
+                    ],
+                )
+                .test_id("confirmar"),
+            ),
+        );
+        assert_tree_known(&tree);
+        let layout = crate::testing::layout_of(&tree);
+        let screen = crate::testing::Screen::new(&layout);
+        let panel = screen.get(By::role(Role::Dialog).name("¿Reiniciar el contador?"));
+        assert_eq!(panel.test_id(), Some("confirmar.panel"));
+        let part = |name: &str| tree.find_test_id(&format!("confirmar.{name}")).unwrap();
+        assert_eq!(part("title").role, Some(Role::Heading));
+        assert_eq!(part("body").kind, Kind::Text("Se pierden los clics".into()));
+        assert_eq!(part("actions").children.len(), 2);
+        screen
+            .within(panel)
+            .get(By::role(Role::Button).name("Rechazar"));
     }
 
     /// `field` with test id `campo` and its ids assigned, so its parts are

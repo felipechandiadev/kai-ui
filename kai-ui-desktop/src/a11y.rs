@@ -115,6 +115,7 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Switch => Role::Switch,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::Image => Role::Image,
+        KaiRole::Dialog => Role::Dialog,
     }
 }
 
@@ -178,6 +179,9 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     }
     if source.required {
         node.set_required();
+    }
+    if role == Role::Dialog {
+        node.set_modal();
     }
     if let Some(description) = &source.description {
         node.set_description(description.as_str());
@@ -358,6 +362,22 @@ mod tests {
         assert_eq!(switch.toggled(), Some(accesskit::Toggled::True));
         assert_eq!(switch.author_id(), Some("avisos.track"));
         assert!(switch.children().is_empty());
+    }
+
+    #[test]
+    fn dialogs_are_modal_and_named_after_their_title() {
+        let mut tree: Element<Msg> = div().child(
+            crate::components::dialog("Confirmar", crate::element::text("¿Seguro?"), Vec::new())
+                .test_id("d"),
+        );
+        tree.assign_ids();
+        let panel = tree.find_test_id("d.panel").unwrap().id;
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let dialog = node(&update, node_id(panel));
+        assert_eq!(dialog.role(), Role::Dialog);
+        assert_eq!(dialog.label(), Some("Confirmar"));
+        assert!(dialog.is_modal());
     }
 
     #[test]

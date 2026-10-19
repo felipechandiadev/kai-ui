@@ -171,6 +171,8 @@ pub enum Role {
     Switch,
     TextInput,
     Image,
+    /// Modal panel over the window; its name is its title.
+    Dialog,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
