@@ -13,6 +13,7 @@
 //! reach into them, until those tests move to `kai::testing` (13, Paso 6).
 
 pub mod background;
+pub mod commands;
 pub mod components;
 pub mod element;
 pub mod icons;

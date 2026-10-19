@@ -90,6 +90,18 @@ impl KeyEquivalent {
         }
     }
 
+    /// Command + Shift + `key`.
+    pub const fn cmd_shift(key: Key) -> Self {
+        Self {
+            key,
+            modifiers: Modifiers {
+                command: true,
+                shift: true,
+                ..Modifiers::NONE
+            },
+        }
+    }
+
     /// Menu-style label (`⌘S`, `↩`, `⎋`), exposed to assistive technology.
     pub fn label(&self) -> String {
         let m = self.modifiers;

@@ -2,6 +2,7 @@
 //! (`cargo run`) and `examples/demo.rs` (`cargo run --example demo`).
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
+use crate::commands::{Action, Availability, CommandError, CommandRegistry, Query, Shortcut};
 use crate::components::{
     AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
     IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge, button,
@@ -14,6 +15,7 @@ use crate::runtime::{self, SimpleApp};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
+use crate::ui_engine::Key;
 use crate::version;
 
 /// Demo model: everything the screen shows derives from it.
@@ -123,8 +125,122 @@ impl Demo {
     }
 }
 
+#[derive(Clone, Default)]
+struct Incrementar;
+
+impl Action for Incrementar {
+    type App = Demo;
+    const ID: &'static str = "contador.incrementar";
+    const TITLE: &'static str = "Incrementar";
+    fn description() -> &'static str {
+        "Suma un clic al contador"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Increment
+    }
+}
+
+#[derive(Clone, Default)]
+struct Reiniciar;
+
+impl Action for Reiniciar {
+    type App = Demo;
+    const ID: &'static str = "contador.reiniciar";
+    const TITLE: &'static str = "Reiniciar";
+    fn description() -> &'static str {
+        "Vuelve el contador a cero"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.clicks == 0 {
+            Availability::disabled("El contador ya está en cero")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Reset
+    }
+}
+
+#[derive(Clone, Default)]
+struct Enviar;
+
+impl Action for Enviar {
+    type App = Demo;
+    const ID: &'static str = "form.enviar";
+    const TITLE: &'static str = "Enviar";
+    fn description() -> &'static str {
+        "Registra el nombre y limpia el formulario"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.can_submit() {
+            Availability::Enabled
+        } else {
+            Availability::disabled("Falta el nombre")
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Submit
+    }
+}
+
+#[derive(Clone, Default)]
+struct Limpiar;
+
+impl Action for Limpiar {
+    type App = Demo;
+    const ID: &'static str = "form.limpiar";
+    const TITLE: &'static str = "Limpiar";
+    fn description() -> &'static str {
+        "Borra el nombre y el correo"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Clear
+    }
+}
+
+#[derive(Clone, Default)]
+struct AlternarContrasena;
+
+impl Action for AlternarContrasena {
+    type App = Demo;
+    const ID: &'static str = "form.alternar_contrasena";
+    const TITLE: &'static str = "Mostrar u ocultar contraseña";
+    fn into_msg(self) -> Msg {
+        Msg::TogglePassword
+    }
+}
+
+/// The last name sent, if any.
+struct Saludo;
+
+impl Query for Saludo {
+    type App = Demo;
+    type Output = Option<String>;
+    const ID: &'static str = "form.ultimo_envio";
+    const TITLE: &'static str = "Último envío";
+    fn run(demo: &Demo, _: Self) -> Result<Option<String>, CommandError> {
+        Ok(demo.submissions.last().cloned())
+    }
+}
+
 impl SimpleApp for Demo {
     type Msg = Msg;
+
+    fn commands(registry: &mut CommandRegistry<Self>) {
+        registry
+            .action::<Incrementar>()
+            .shortcut(Shortcut::cmd(Key::Char('i')))
+            .menu("Contador");
+        registry
+            .action::<Reiniciar>()
+            .shortcut(Shortcut::cmd(Key::Char('0')))
+            .menu("Contador");
+        registry.action::<Enviar>().menu("Formulario");
+        registry.action::<Limpiar>().menu("Formulario");
+        registry.action::<AlternarContrasena>().menu("Formulario");
+        registry.query::<Saludo>();
+    }
 
     fn title(&self) -> String {
         let base = format!("Kai UI Desktop v{}", version::VERSION);
@@ -727,8 +843,9 @@ mod tests {
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
     };
 
-    use super::{Demo, Field, Msg};
+    use super::{Demo, Field, Msg, Saludo};
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
+    use crate::commands::{Availability, Query};
     use crate::element::{FocusKind, FocusOrder, Kind, Role, WidgetId};
     use crate::geometry::Size;
     use crate::layout::testing::FixedMeasure;
@@ -1291,6 +1408,51 @@ mod tests {
         assert!(app.app().show_password);
         assert!(app.is_focused(By::test_id("form.password")));
         assert_eq!(app.value(By::test_id("form.password")), "abc");
+    }
+
+    fn availability(app: &TestApp<Demo>, id: &str) -> Availability {
+        let commands = app.session().commands();
+        let command = commands.iter().find(|command| command.id == id);
+        command.expect("comando registrado").availability.clone()
+    }
+
+    #[test]
+    fn availability_follows_update() {
+        let mut app = TestApp::new(Demo::default());
+        let ids: Vec<&str> = app.session().commands().iter().map(|c| c.id).collect();
+        assert_eq!(
+            ids,
+            [
+                "contador.incrementar",
+                "contador.reiniciar",
+                "form.enviar",
+                "form.limpiar",
+                "form.alternar_contrasena",
+                "form.ultimo_envio",
+                "kai.paleta",
+            ]
+        );
+        let reset = "contador.reiniciar";
+        assert_eq!(
+            availability(&app, reset),
+            Availability::disabled("El contador ya está en cero")
+        );
+        app.click(By::test_id("header.sumar"));
+        assert!(availability(&app, reset).is_enabled());
+        assert!(!availability(&app, "form.enviar").is_enabled());
+        app.type_text(By::test_id("form.nombre"), "Ana");
+        assert!(availability(&app, "form.enviar").is_enabled());
+    }
+
+    #[test]
+    fn query_runs_without_msg() {
+        let mut app = TestApp::new(Demo::default());
+        assert_eq!(Saludo::run(app.app(), Saludo), Ok(None));
+        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.press(Key::Enter, Modifiers::NONE);
+        let sent = app.messages().len();
+        assert_eq!(Saludo::run(app.app(), Saludo), Ok(Some("Ana".to_owned())));
+        assert_eq!(app.messages().len(), sent, "a query sends nothing");
     }
 
     /// Scroll offsets that bring the card titled `title` to the top of the

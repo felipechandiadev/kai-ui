@@ -150,6 +150,11 @@ impl<A: App> TestApp<A> {
         self.session.app()
     }
 
+    #[cfg(test)]
+    pub(crate) fn session(&self) -> &Session<A> {
+        &self.session
+    }
+
     /// Theme in use (the app's own when it asks for one).
     pub fn theme(&self) -> &Theme {
         self.session.theme()

@@ -34,6 +34,7 @@ use winit::{
 };
 
 use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
+use crate::commands::CommandRegistry;
 use crate::element::{Element, Kind, WidgetId};
 use crate::geometry::{PhysicalPoint, ScaleFactor};
 use crate::layout::{Content, Layout, WindowActivity};
@@ -105,6 +106,13 @@ pub trait App: 'static {
     fn window_override(&self) -> Option<WindowActivity> {
         None
     }
+
+    /// Declare the app's commands, once at startup (see [`crate::commands`]).
+    fn commands(_registry: &mut CommandRegistry<Self>)
+    where
+        Self: Sized,
+    {
+    }
 }
 
 /// An [`App`] whose `update` has no effects; every `SimpleApp` is an `App`.
@@ -128,6 +136,13 @@ pub trait SimpleApp: 'static {
     /// See [`App::window_override`].
     fn window_override(&self) -> Option<WindowActivity> {
         None
+    }
+
+    /// See [`App::commands`].
+    fn commands(_registry: &mut CommandRegistry<Self>)
+    where
+        Self: Sized,
+    {
     }
 }
 
@@ -157,6 +172,10 @@ impl<T: SimpleApp> App for T {
 
     fn window_override(&self) -> Option<WindowActivity> {
         SimpleApp::window_override(self)
+    }
+
+    fn commands(registry: &mut CommandRegistry<Self>) {
+        <T as SimpleApp>::commands(registry);
     }
 }
 
@@ -193,19 +212,23 @@ pub fn build_view<A: App>(app: &A) -> Element<A::Msg> {
     let mut tree = app.view();
     tree.assign_ids();
     if cfg!(debug_assertions) {
-        report_id_problems(tree.validate_ids());
+        report_once("Ids inválidos", tree.validate_ids());
     }
     tree
 }
 
-fn report_id_problems(problems: Vec<String>) {
+/// Debug builds: print each problem once per thread, after `context`.
+pub(crate) fn report_once(context: &str, problems: Vec<String>) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
     thread_local! {
         static REPORTED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     }
     REPORTED.with_borrow_mut(|reported| {
         for problem in problems {
             if !reported.contains(&problem) {
-                eprintln!("Ids inválidos: {problem}");
+                eprintln!("{context}: {problem}");
                 reported.insert(problem);
             }
         }

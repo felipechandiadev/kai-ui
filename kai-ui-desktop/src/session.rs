@@ -13,6 +13,7 @@ use cosmic_text::{FontSystem, Metrics};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
+use crate::commands::{CommandRegistry, CommandState};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -24,7 +25,7 @@ use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::runtime::{
-    App, action_message, build_view, cursor_for, pointer_target, selects_on_focus,
+    App, action_message, build_view, cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -54,6 +55,8 @@ pub(crate) struct Outbox {
     pub cursor: Option<Cursor>,
     pub title: Option<String>,
     pub theme: Option<Theme>,
+    /// Commands whose availability changed (for the menu bar).
+    pub commands: Option<Vec<CommandState>>,
 }
 
 pub(crate) struct Session<A: App> {
@@ -86,6 +89,9 @@ pub(crate) struct Session<A: App> {
     /// Every message sent to `update`, when recording.
     log: Option<Vec<A::Msg>>,
     outbox: Outbox,
+    registry: CommandRegistry<A>,
+    /// Availability of every command after the last `update`.
+    commands: Vec<CommandState>,
 }
 
 impl<A: App> Session<A> {
@@ -98,6 +104,8 @@ impl<A: App> Session<A> {
         clipboard: Box<dyn ClipboardPort>,
     ) -> Self {
         let _effects = app.init();
+        let registry = CommandRegistry::of();
+        report_once("Comandos inválidos", registry.validate());
         let tree = build_view(&app);
         let mut session = Self {
             theme,
@@ -124,6 +132,8 @@ impl<A: App> Session<A> {
             measure,
             log: None,
             outbox: Outbox::default(),
+            registry,
+            commands: Vec::new(),
         };
         session.rebuild();
         session.relayout();
@@ -194,6 +204,12 @@ impl<A: App> Session<A> {
         self.log.as_deref().unwrap_or_default()
     }
 
+    /// Every command and its availability after the last `update`.
+    #[cfg(test)]
+    pub fn commands(&self) -> &[CommandState] {
+        &self.commands
+    }
+
     pub fn take_outbox(&mut self) -> Outbox {
         std::mem::take(&mut self.outbox)
     }
@@ -218,6 +234,11 @@ impl<A: App> Session<A> {
 
     /// Run `view`, then reconcile focus and input editors with the new tree.
     fn rebuild(&mut self) {
+        let commands = self.registry.states(&self.app);
+        if commands != self.commands {
+            self.outbox.commands = Some(commands.clone());
+            self.commands = commands;
+        }
         self.tree = build_view(&self.app);
         self.background = self.app.background();
         if let Some(theme) = self.app.theme()
