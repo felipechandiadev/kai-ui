@@ -42,9 +42,9 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **L6 — Completada para el alcance actual:** arquitectura Elm (`App` con `update`/`view`, runtime en `runtime.rs`), árbol tipo DOM `Element<Msg>`, estilos con clases tipo Tailwind resueltas contra el tema Kai, y componentes Button, TextField (alcance base de la web: variantes, densidades, adornos e iconos, password, required, helper, read-only), Card y Stat con las clases de Kai web ([03](03-eventos-y-estado.md), [05](05-widgets-y-tema.md)).
 - **Modelo y tema AppKit (Pasos 0–15 y 17 de [12](12-modelo-appkit.md); el tema se elige por versión de macOS, todavía sin leer colores de AppKit en runtime):** `ControlProps` (tamaño heredable, estado, botón por defecto, equivalentes de teclado), estado de ventana *key*/*main*, cadena de responders (`responder.rs`), variantes `appkit:`/`dark:`/`window-inactive:`/`control-*`, `Theme::appkit_static` y `Theme::appkit_current`, mezcla en gamma. La demo elige tema con `KAI_THEME`; la galería (`cargo run --example gallery`) muestra todos los controles en los 5 tamaños, con los dos temas, claro/oscuro y ventana activa/inactiva ([11](11-tema-appkit.md)).
 - **Librería y ejemplos (Paso 0 de [13](13-hoja-de-ruta-plataforma.md)):** crate de librería `kai` con la demo en `src/demo.rs`; `cargo run` y `cargo run --example demo` abren la demo; `fixtures/external-app` usa solo la API pública y el CI la compila junto con `cargo doc -D warnings`.
-- **Identificación (Paso 2 de 13):** `.test_id(..)` en `Element` y `TextField`, expuesto como `author_id` de AccessKit (`accessibilityIdentifier` en macOS) sin cambiar el `WidgetId`; en debug se reportan `key` y `test_id` duplicados con las rutas de ambos.
+- **Identificación y consultas (Pasos 2 y 3 de 13):** `.test_id(..)` en `Element` y `TextField`, expuesto como `author_id` de AccessKit (`accessibilityIdentifier` en macOS) sin cambiar el `WidgetId`; en debug se reportan `key` y `test_id` duplicados con las rutas de ambos. `kai::testing` encuentra elementos sin ventana ni GPU con `Screen` y filtros `By` (rol, nombre accesible, label, texto, `test_id`, `within`), con el mismo rol y nombre que lee VoiceOver.
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 211 tests (205 normales y 6 `#[ignore]` de benchmark y capturas), Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 219 tests (213 normales y 6 `#[ignore]` de benchmark y capturas) más un doctest, Clippy `-D warnings`, `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -70,7 +70,8 @@ kai-ui-desktop/
 │   ├── text_field.rs      edición, IME y portapapeles de los inputs
 │   ├── ui_engine.rs       intents y dispatch de foco/activación/texto
 │   ├── platform_adapter.rs  winit → intents Kai
-│   ├── a11y.rs            árbol AccessKit desde el layout (test_id → author_id)
+│   ├── a11y.rs            árbol AccessKit desde el layout; rol y nombre accesible compartidos
+│   ├── testing/           layout_of y consultas Screen/By para tests (query.rs)
 │   └── geometry.rs, signal.rs, grid_layout.rs, fonts.rs, version.rs
 ├── examples/              demo.rs y gallery.rs, binarios finos sobre `kai`
 ├── fixtures/external-app/ app mínima que usa solo la API pública (compilada en CI)

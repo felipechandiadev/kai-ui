@@ -15,7 +15,9 @@ El MSRV del crate sigue siendo 1.89 (lo impone `cosmic-text` 0.19).
 
 - `kai-ui-desktop/src/a11y.rs`:
   - `a11y_tree(&A11ySnapshot) -> TreeUpdate` genera el árbol completo desde el `Layout` del árbol `Element`: `Window` > un nodo por elemento visible. El rol sale de `Element::role` (`Main`, `Banner` para `Header`, `Group`, `Heading`, `Paragraph`, `Label`, `Status`, `Button`, `TextInput`, `Image`) o se infiere: input enmascarado → `PasswordInput` (siempre, aunque el rol explícito sea `TextInput`), input → `TextInput`, icono → `Image`, control con `on_click` → `Button`, texto → `Label`, caja → `GenericContainer`. El id de nodo es `WidgetId + 1`; el 0 es la ventana.
-  - Botones e inputs son hojas. La etiqueta de un botón es su `label` o su texto; la de un input, su `label` (la etiqueta del `TextField`) o el placeholder.
+  - El rol de Kai y el nombre accesible salen de dos funciones públicas, `effective_role` y `accessible_name`, que también usan las consultas de `kai::testing`. Así un test encuentra cada elemento con el mismo nombre que lee VoiceOver. El nombre es el `label` explícito; si no hay, en un input es el placeholder, en un botón su texto y en un texto su contenido (que se publica como `value`).
+  - Botones (también el botón por defecto, `DefaultButton`) e inputs son hojas: el texto de un botón queda dentro de su nombre y no aparece como hijo. La etiqueta de un input es su `label` (la etiqueta del `TextField`) o el placeholder.
+  - `test_id` se publica como `author_id`, que en macOS es el `accessibilityIdentifier`.
   - Un input publica `placeholder` y `value`, salvo si está enmascarado: un `PasswordInput` nunca expone su valor. `read_only` se publica con `set_read_only`, `required` con `set_required`, y `description` (el helper text del `TextField`) con `set_description`.
   - Los iconos sin `label` son decorativos (`aria-hidden`) y se omiten del árbol; con `label` se publican como `Image` con ese nombre. El botón de ojo del password se llama "Mostrar contraseña" u "Ocultar contraseña" según el estado.
   - Los controles deshabilitados se publican con `disabled` y sin acciones. Los nodos con `display: none` se omiten.
@@ -34,7 +36,7 @@ AccessKit en macOS espera píxeles físicos (divide por `backingScaleFactor`). E
 
 Tests en `a11y.rs` y `ui_engine.rs`:
 
-- Roles, nombres, valor y placeholder del campo, acciones soportadas por el botón, estado `disabled`.
+- Roles, nombres (incluido el del botón por defecto), valor y placeholder del campo, acciones soportadas por el botón, estado `disabled`, `test_id` como `author_id`.
 - Iconos decorativos omitidos y etiquetados como `Image`; password como `PasswordInput` sin valor, con `required` y descripción; read-only con su valor.
 - Transform de escala en la raíz y jerarquía que replica el árbol `Element`.
 - Foco reportado según `UiModel` y bounds que siguen al layout, al scroll y al clip.

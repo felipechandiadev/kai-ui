@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: los Pasos 0 (examples y visibilidad de la API) y 2 (`test_id` + AccessKit + duplicados) están hechos. Sigue el Paso 3 (consultas por rol, nombre, texto y `test_id`), que solo depende del 2; el Paso 1 (`App` v2) puede ir en paralelo.
+- **Siguiente paso concreto**: los Pasos 0 (examples y visibilidad de la API), 2 (`test_id` + AccessKit + duplicados) y 3 (consultas `Screen`/`By`) están hechos. Sigue el Paso 1 (`App` v2) y después el Paso 4 (`TestApp`), que necesita los dos.
 
 ## 2. Evaluación de 09
 
@@ -104,7 +104,7 @@ Estado del código a la fecha de este documento (rama `main` más el árbol de t
 | Tema Kai y AppKit | `theme.rs`, `theme/appkit.rs`, `theme/generation.rs` (`ThemeKind`, `Appearance`, `appkit_static`, `appkit_for`, `appkit_current`) | Hecho para estático; demo con `KAI_THEME`. | Paso 17 (`[theme] kind`). |
 | Componentes | `components.rs` (Button, TextField, Card, `group_box`, Stat, Badge, Alert, IconButton, Switch) | Hecho para el alcance actual. | Paso 5 (convención de ids), Paso 14 (nuevos). |
 | Estilos tipo Tailwind | `tw.rs`, `style.rs` (clases desconocidas en `layout::StyleCache::unknown`) | Hecho; validación solo en ejecución. | Paso 26 (`tw!`). |
-| Tests | 211 tests en `src/` (205 normales y 6 `#[ignore]` de benchmark y capturas) | Verdes. | Etapa 1 los hace más legibles. |
+| Tests | 219 tests en `src/` (213 normales y 6 `#[ignore]` de benchmark y capturas) más 1 doctest | Verdes. | Etapa 1 los hace más legibles. |
 | Fondo animado | `background.rs`, `background.wgsl` | Hecho. | Sin relación directa. |
 
 ### 5.2 Lo que falta (resumen)
@@ -438,6 +438,16 @@ Reglas de la pista C:
 - **Tests**: cada consulta sobre `element::sample` y sobre la demo; mensajes de error con snapshot de texto.
 - **Hecho cuando**: cualquier control de la demo se localiza con una sola línea.
 - **Riesgos**: duplicar la lógica de nombres; mitigado con la función compartida.
+- **Estado**: hecho, con un cambio de forma. Las tres variantes comparten un filtro `By` en vez de tener un `get_by_role(..)` que devuelve el resultado:
+  ```rust
+  let layout = kai::testing::layout_of(&tree);   // 1024×720, tema Kai, FixedMeasure
+  let screen = Screen::new(&layout);              // solo Layout: rol, nombre, test_id y oculto viven en LayoutNode
+  screen.get(By::role(Role::Button).name("Enviar"));
+  screen.query(By::label("Nombre"));              // Option; panic si hay varios
+  screen.all(By::role(Role::Button).name_contains("Env"));
+  screen.within(screen.get_by_test_id("cliente.42")).get(By::role(Role::Button).name("Borrar"));
+  ```
+  También hay `try_get` (devuelve el mensaje en vez de hacer panic), atajos `get_by_test_id`, `get_by_label` y `get_by_text`, y `Found` con `id`, `role`, `name`, `test_id`, `bounds`, `parent` y `path`. `By::label` solo encuentra inputs. Los candidatos de un error omiten el texto que queda dentro de un control. Rol y nombre salen de `a11y::{effective_role, accessible_name}`; al extraerlos apareció que el botón por defecto no tenía nombre accesible, y quedó corregido. Los tests de la demo ya no usan helpers frágiles. Los de `components.rs` y `gallery.rs` quedan para el Paso 6.
 
 #### Paso 4 — `TestApp`: interacción sin ventana ni GPU
 
@@ -952,7 +962,7 @@ Reglas de la pista C:
 
 **Etapa 1 — Identificación y pruebas**
 - [x] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug. Falta comprobarlo a mano con Accessibility Inspector.
-- [ ] P3 Consultas `get/query/all_by_{role,label,text,test_id}` y `within`.
+- [x] P3 Consultas `get/query/all` con `By::{role,name,label,text,test_id}` y `within`.
 - [ ] P4 `Session` extraída del runtime; `TestApp` con acciones, aserciones, log de `Msg` y capturas por elemento.
 - [ ] P5 Convención de sub-ids en componentes; roles `Switch` y `Alert` si hacen falta.
 - [ ] P6 Tests migrados; cero búsquedas frágiles.
