@@ -56,6 +56,48 @@ pub fn render_with_background<Msg>(
     background: BackgroundEffect,
     seconds: f32,
 ) -> Result<Image, String> {
+    render_with_layout(shot, background, seconds).map(|(image, _)| image)
+}
+
+/// [`render`] cropped to the bounds of element `id` in that same layout
+/// (real text), clipped to the window.
+pub fn render_element<Msg>(shot: &Shot<'_, Msg>, id: WidgetId) -> Result<Image, String> {
+    let (image, layout) = render_with_layout(shot, BackgroundEffect::NONE, 0.0)?;
+    let bounds = layout
+        .bounds(id)
+        .ok_or_else(|| format!("El elemento {id:?} no está en el layout"))?;
+    let scale = shot.scale;
+    let clamp_x = |x: f32| (x * scale).clamp(0.0, image.width as f32);
+    let clamp_y = |y: f32| (y * scale).clamp(0.0, image.height as f32);
+    let (left, top) = (
+        clamp_x(bounds.x).floor() as u32,
+        clamp_y(bounds.y).floor() as u32,
+    );
+    let (right, bottom) = (
+        clamp_x(bounds.x + bounds.width).ceil() as u32,
+        clamp_y(bounds.y + bounds.height).ceil() as u32,
+    );
+    if right <= left || bottom <= top {
+        return Err(format!("El elemento {id:?} queda fuera de la ventana"));
+    }
+    let (width, height) = (right - left, bottom - top);
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for y in top..bottom {
+        let start = ((y * image.width + left) * 4) as usize;
+        rgba.extend_from_slice(&image.rgba[start..start + (width * 4) as usize]);
+    }
+    Ok(Image {
+        width,
+        height,
+        rgba,
+    })
+}
+
+fn render_with_layout<Msg>(
+    shot: &Shot<'_, Msg>,
+    background: BackgroundEffect,
+    seconds: f32,
+) -> Result<(Image, Layout), String> {
     let tree = shot.tree;
     let mut text = TextStore::new(FontSystem::new());
     let mut styles = StyleCache::default();
@@ -116,11 +158,14 @@ pub fn render_with_background<Msg>(
     );
     let mut renderer = pollster::block_on(WgpuRenderer::new_offscreen(width, height))?;
     let rgba = renderer.render_to_rgba(&list, &mut text, shot.scale)?;
-    Ok(Image {
-        width,
-        height,
-        rgba,
-    })
+    Ok((
+        Image {
+            width,
+            height,
+            rgba,
+        },
+        layout,
+    ))
 }
 
 /// 24-bit bottom-up BMP (alpha dropped).

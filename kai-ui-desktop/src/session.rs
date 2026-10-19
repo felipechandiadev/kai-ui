@@ -15,6 +15,7 @@ use crate::a11y;
 use crate::background::BackgroundEffect;
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
+use crate::layout::testing::FixedMeasure;
 use crate::layout::{
     Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure, WindowActivity,
     text_style,
@@ -39,6 +40,7 @@ pub(crate) const FOCUS_REVEAL_MARGIN: f32 = 4.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Measure {
     Real,
+    Fixed,
 }
 
 /// What the window has to do after an event. Every field is the latest
@@ -128,8 +130,36 @@ impl<A: App> Session<A> {
         session
     }
 
+    pub fn app(&self) -> &A {
+        &self.app
+    }
+
     pub fn theme(&self) -> &Theme {
         &self.theme
+    }
+
+    pub fn tree(&self) -> &Element<A::Msg> {
+        &self.tree
+    }
+
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
+    pub fn scroll(&self) -> &ScrollOffsets {
+        &self.scroll
+    }
+
+    pub fn viewport(&self) -> Size {
+        self.viewport
+    }
+
+    pub fn ui(&self) -> &UiModel {
+        &self.ui
+    }
+
+    pub fn focused(&self) -> Option<WidgetId> {
+        *self.ui.focused.get()
     }
 
     pub fn background(&self) -> BackgroundEffect {
@@ -149,8 +179,35 @@ impl<A: App> Session<A> {
         self.styles.unknown()
     }
 
+    /// Current contents of input `id`'s editor (what the user typed, even
+    /// before the app echoes it back).
+    pub fn field_value(&self, id: WidgetId) -> Option<String> {
+        self.text_fields.get(&id).map(TextFieldState::text)
+    }
+
+    /// Start recording every message sent to `update`.
+    pub fn record_messages(&mut self) {
+        self.log.get_or_insert_with(Vec::new);
+    }
+
+    pub fn messages(&self) -> &[A::Msg] {
+        self.log.as_deref().unwrap_or_default()
+    }
+
     pub fn take_outbox(&mut self) -> Outbox {
         std::mem::take(&mut self.outbox)
+    }
+
+    /// Scroll so `id` (plus the focus ring margin) is visible; returns
+    /// whether some offset changed.
+    pub fn reveal(&mut self, id: WidgetId) -> bool {
+        let changed = self
+            .layout
+            .reveal(id, FOCUS_REVEAL_MARGIN, &mut self.scroll);
+        if changed {
+            self.invalidate();
+        }
+        changed
     }
 
     /// Window content size in logical points.
@@ -214,8 +271,10 @@ impl<A: App> Session<A> {
 
     fn relayout(&mut self) {
         let interaction = self.interaction();
+        let mut fixed = FixedMeasure;
         let measure: &mut dyn TextMeasure = match self.measure {
             Measure::Real => &mut self.text,
+            Measure::Fixed => &mut fixed,
         };
         self.layout = Layout::compute(
             &self.tree,

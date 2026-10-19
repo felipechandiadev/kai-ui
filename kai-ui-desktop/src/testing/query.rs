@@ -266,6 +266,11 @@ impl<'a> Screen<'a> {
         self.get(By::text(text))
     }
 
+    pub(crate) fn by_id(&self, id: WidgetId) -> Option<Found<'a>> {
+        let index = self.layout.nodes().iter().position(|node| node.id == id)?;
+        Some(self.found(index))
+    }
+
     fn found(&self, index: usize) -> Found<'a> {
         Found {
             layout: self.layout,
@@ -396,7 +401,7 @@ impl<'a> Found<'a> {
         positions.join(" > ")
     }
 
-    fn describe(&self) -> String {
+    pub(crate) fn describe(&self) -> String {
         let mut text = format!("{:?}", self.role());
         if let Some(name) = self.name() {
             text.push_str(&format!(" {name:?}"));

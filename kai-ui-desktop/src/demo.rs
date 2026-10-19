@@ -730,7 +730,7 @@ mod tests {
     use crate::render::text::TextStore;
     use crate::runtime::{SimpleApp, build_view};
     use crate::snapshot::{self, Shot};
-    use crate::testing::{By, Screen, layout_of};
+    use crate::testing::{By, Key, Modifiers, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
 
     /// Two-field rows (`grid-cols-1 sm:grid-cols-2`): side by side from
@@ -1214,6 +1214,70 @@ mod tests {
             screen.get_by_test_id("header.sumar").name().as_deref(),
             Some("Sumar clic")
         );
+    }
+
+    #[test]
+    fn typing_a_name_enables_send_and_the_click_submits_it() {
+        let mut app = TestApp::new(Demo::default());
+        let send = || By::test_id("form.enviar");
+        assert!(!app.is_enabled(send()));
+        app.click(send());
+        assert_eq!(app.messages(), [], "a disabled button sends nothing");
+
+        app.type_text(By::label("Nombre"), "Ana");
+        assert_eq!(app.value(By::label("Nombre")), "Ana");
+        assert_eq!(
+            app.messages(),
+            ["A", "An", "Ana"].map(|name| Msg::NameChanged(name.to_owned()))
+        );
+        assert!(app.is_enabled(send()));
+        app.screen().get(By::text("Hola, Ana 👋"));
+
+        app.click(send());
+        assert_eq!(app.messages().last(), Some(&Msg::Submit));
+        assert_eq!(app.app().submissions, ["Ana"]);
+        assert_eq!(app.value(By::label("Nombre")), "");
+        assert!(!app.is_enabled(send()));
+        app.screen().get(By::text("Último: Ana"));
+    }
+
+    #[test]
+    fn return_in_the_name_field_submits_through_the_default_button() {
+        let mut app = TestApp::new(Demo::default());
+        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.messages().last(), Some(&Msg::Submit));
+        assert_eq!(app.app().submissions, ["Ana"]);
+    }
+
+    #[test]
+    fn tab_moves_through_the_form_in_order_showing_the_ring() {
+        let mut app = TestApp::new(Demo::default());
+        app.click(By::test_id("form.nombre"));
+        assert!(app.is_focused(By::test_id("form.nombre")));
+        assert!(!app.focus_visible(), "a click does not show the ring");
+
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("form.correo")));
+        assert!(app.focus_visible());
+
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Tab, shift);
+        assert!(app.is_focused(By::test_id("form.nombre")));
+    }
+
+    #[test]
+    fn the_password_eye_toggles_and_leaves_focus_in_the_field() {
+        let mut app = TestApp::new(Demo::default());
+        app.type_text(By::test_id("form.password"), "abc");
+        assert!(!app.app().show_password);
+        app.click(By::test_id("form.password.mostrar"));
+        assert!(app.app().show_password);
+        assert!(app.is_focused(By::test_id("form.password")));
+        assert_eq!(app.value(By::test_id("form.password")), "abc");
     }
 
     /// Scroll offsets that bring the card titled `title` to the top of the

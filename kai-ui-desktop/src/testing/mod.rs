@@ -1,6 +1,7 @@
 //! Testing API: lay out a tree without a window, fonts or GPU and find
 //! elements the way users and assistive technologies see them (by role,
-//! accessible name, label, text or `test_id`). See
+//! accessible name, label, text or `test_id`); drive a whole app with
+//! [`TestApp`] (clicks, typing, keys, message log, element captures). See
 //! `docs/dev/13-hoja-de-ruta-plataforma.md` (Pasos 3 and 4).
 //!
 //! ```
@@ -18,9 +19,13 @@
 //! assert_eq!(send.test_id(), Some("form.enviar"));
 //! ```
 
+mod app;
 mod query;
 
+pub use app::{MemoryClipboard, TestApp, TestAppBuilder};
 pub use query::{By, Found, Screen};
+
+pub use crate::ui_engine::{Key, Modifiers};
 
 use crate::element::Element;
 use crate::geometry::Size;

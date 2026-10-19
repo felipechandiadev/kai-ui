@@ -7,10 +7,10 @@
 //! this crate as `kai`. See `docs/dev/12-modelo-appkit.md` (Paso 1) and
 //! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0).
 //!
-//! Tests find elements by role, accessible name or `test_id` with
-//! [`testing`]. Hidden modules are internal: they stay public only because
-//! captures and tests still reach into them, until `kai::testing` covers
-//! interaction too (13, Paso 4).
+//! Tests find elements by role, accessible name or `test_id` and drive
+//! whole apps (clicks, typing, keys) with [`testing`]. Hidden modules are
+//! internal: they stay public only because captures and older tests still
+//! reach into them, until those tests move to `kai::testing` (13, Paso 6).
 
 pub mod background;
 pub mod components;

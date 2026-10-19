@@ -501,6 +501,7 @@ mod tests {
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::runtime::build_view;
+    use crate::testing::{By, TestApp};
     use crate::theme::{AppKitGeneration, Appearance};
 
     fn themes() -> [Theme; 4] {
@@ -718,5 +719,23 @@ mod tests {
         assert!(gallery.theme().unwrap().is_appkit());
         gallery.update(Msg::SetTheme(GalleryTheme::Kai));
         assert!(!gallery.theme().unwrap().is_appkit());
+    }
+
+    #[test]
+    fn theme_buttons_switch_the_theme_in_use() {
+        let mut app = TestApp::new(Gallery::default());
+        assert!(app.theme().is_appkit());
+        app.click(By::role(Role::Button).name("Kai"));
+        assert_eq!(app.messages(), [Msg::SetTheme(GalleryTheme::Kai)]);
+        assert!(!app.theme().is_appkit());
+        app.click(By::role(Role::Button).name("Oscuro"));
+        assert_eq!(
+            app.theme().appearance,
+            Appearance::Light,
+            "Kai has a single appearance"
+        );
+        app.click(By::role(Role::Button).name("AppKit"));
+        assert!(app.theme().is_appkit());
+        assert_eq!(app.theme().appearance, Appearance::Dark);
     }
 }
