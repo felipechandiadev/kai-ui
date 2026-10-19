@@ -155,6 +155,8 @@ pub enum Role {
     /// Live region announcing state changes.
     Status,
     Button,
+    /// On/off toggle (`NSSwitch`); its state is the control state.
+    Switch,
     TextInput,
     Image,
 }

@@ -88,7 +88,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
         Content::Text(text) => Some(node.label.clone().unwrap_or_else(|| text.clone())),
         Content::Icon(_) => node.label.clone(),
         Content::Box => node.label.clone().or_else(|| {
-            (effective_role(node) == KaiRole::Button).then(|| {
+            matches!(effective_role(node), KaiRole::Button | KaiRole::Switch).then(|| {
                 let mut parts = Vec::new();
                 text_content(layout, index, &mut parts);
                 parts.join(" ")
@@ -112,6 +112,7 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Status => Role::Status,
         KaiRole::Button if node.is_default => Role::DefaultButton,
         KaiRole::Button => Role::Button,
+        KaiRole::Switch => Role::Switch,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::Image => Role::Image,
     }
@@ -143,7 +144,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     let mut node = Node::new(role);
     let leaf = matches!(
         role,
-        Role::Button | Role::DefaultButton | Role::TextInput | Role::PasswordInput
+        Role::Button | Role::DefaultButton | Role::Switch | Role::TextInput | Role::PasswordInput
     );
     if !matches!(source.content, Content::Text(_))
         && let Some(name) = accessible_name(layout, index)
@@ -191,7 +192,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 node.add_action(Action::ReplaceSelectedText);
             }
             if let Some(state) = source.control_state
-                && matches!(role, Role::Button | Role::DefaultButton)
+                && matches!(role, Role::Button | Role::DefaultButton | Role::Switch)
             {
                 node.set_toggled(match state {
                     ControlState::Off => accesskit::Toggled::False,
@@ -333,6 +334,30 @@ mod tests {
         assert_eq!(author_id(sample::button()), Some("demo.probar"));
         assert_eq!(author_id(sample::field()), Some("demo.campo"));
         assert_eq!(author_id(sample::heading()), None);
+    }
+
+    #[test]
+    fn labeled_switch_is_a_switch_named_after_its_label() {
+        let mut tree: Element<Msg> = div().child(
+            crate::components::switch_labeled(
+                "Notificaciones",
+                true,
+                Msg::Clicked,
+                false,
+                crate::components::SwitchDensity::Default,
+            )
+            .test_id("avisos"),
+        );
+        tree.assign_ids();
+        let track = tree.find_test_id("avisos.track").unwrap().id;
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let switch = node(&update, node_id(track));
+        assert_eq!(switch.role(), Role::Switch);
+        assert_eq!(switch.label(), Some("Notificaciones"));
+        assert_eq!(switch.toggled(), Some(accesskit::Toggled::True));
+        assert_eq!(switch.author_id(), Some("avisos.track"));
+        assert!(switch.children().is_empty());
     }
 
     #[test]

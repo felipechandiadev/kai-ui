@@ -446,7 +446,9 @@ impl<Msg> TextField<Msg> {
         }
     }
 
-    /// Test id of the input itself; the password eye gets `<id>.mostrar`.
+    /// Test id of the field; its parts get `<id>.input`, `.label` (static
+    /// label), `.floating` (label on the border), `.shell` (bordered box),
+    /// `.helper`, `.start`, `.end` and `.toggle` (password eye).
     pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
         self.test_id = Some(test_id.into());
         self
@@ -578,16 +580,14 @@ impl<Msg> TextField<Msg> {
 
         let mut row = Vec::new();
         if let Some(start) = self.start.take() {
-            row.push(adornment(start, compact, muted, false));
+            row.push(adornment(start, compact, muted, false).part("start"));
         }
         row.push(self.input_body(compact, inline, muted));
         if let Some(end) = self.end.take() {
-            row.push(adornment(end, compact, muted, true));
+            row.push(adornment(end, compact, muted, true).part("end"));
         }
         if let Some((revealed, on_toggle)) = self.password.take() {
-            let mut toggle = password_toggle(revealed, on_toggle, self.disabled);
-            toggle.test_id = self.test_id.as_ref().map(|id| format!("{id}.mostrar"));
-            row.push(toggle);
+            row.push(password_toggle(revealed, on_toggle, self.disabled).part("toggle"));
         }
 
         let cursor = if self.disabled {
@@ -597,7 +597,9 @@ impl<Msg> TextField<Msg> {
         };
         let mut root = div()
             .class("group flex flex-col w-full min-w-[180px]")
-            .delegates_focus();
+            .delegates_focus()
+            .parts_root();
+        root.test_id = self.test_id.take();
         if compact {
             // AppKit: a compact field is a small control.
             root = root.control_size(ControlSize::Small);
@@ -605,6 +607,7 @@ impl<Msg> TextField<Msg> {
         if inline {
             let fade_shell = self.disabled && self.inline_leading.is_none();
             let shell = div()
+                .part("shell")
                 .class(&themed(
                     &format!(
                         "flex items-stretch w-full min-w-0 h-control-compact rounded-md border \
@@ -634,6 +637,7 @@ impl<Msg> TextField<Msg> {
                         .children([
                             div()
                                 .class("flex shrink-0 self-center px-2 border-r border-border")
+                                .part("label")
                                 .children(label_texts(
                                     &self.label,
                                     self.required,
@@ -683,6 +687,7 @@ impl<Msg> TextField<Msg> {
                 format!("{} {APPKIT_FIELD_RING}", self.appkit_shell())
             };
             let mut shell = div()
+                .part("shell")
                 .class(&themed(
                     &format!(
                         "relative flex items-center gap-2 w-full min-w-0 px-3 rounded-md {height} \
@@ -697,7 +702,7 @@ impl<Msg> TextField<Msg> {
                 // AppKit reuses the static label above the field.
                 root = root
                     .class("gap-1")
-                    .child(div().class("flex").children(label_texts(
+                    .child(div().class("flex").part("label").children(label_texts(
                         &self.label,
                         self.required,
                         &themed(
@@ -734,6 +739,7 @@ impl<Msg> TextField<Msg> {
                 root = root.class(&themed("mt-1.5", spacing)).child(
                     div()
                         .class(&themed("hidden", static_label))
+                        .part("label")
                         .children(label_texts(
                             &self.label,
                             self.required,
@@ -745,7 +751,11 @@ impl<Msg> TextField<Msg> {
             root = root.child(shell);
         }
         if let Some(helper) = &self.helper_text {
-            root = root.child(text(helper).class("mt-1 text-xs text-muted-foreground"));
+            root = root.child(
+                text(helper)
+                    .class("mt-1 text-xs text-muted-foreground")
+                    .part("helper"),
+            );
         }
         root
     }
@@ -866,6 +876,7 @@ impl<Msg> TextField<Msg> {
                 ),
                 &appkit,
             ))
+            .part("floating")
             .children(texts)
     }
 
@@ -946,8 +957,8 @@ impl<Msg> TextField<Msg> {
             self.select_on_focus && !self.disabled && self.variant != FieldVariant::Autocomplete,
         )
         .required(self.required)
-        .disabled(self.disabled);
-        field.test_id = self.test_id.clone();
+        .disabled(self.disabled)
+        .part("input");
         if let Some(helper) = &self.helper_text {
             field = field.description(helper.clone());
         }
@@ -1123,8 +1134,13 @@ const APPKIT_BOX: &str = "flex flex-col bg-fill-4 border-[0.5px] border-separato
 const APPKIT_BOX_TITLE: &str = "text-subheadline font-normal text-label";
 
 /// `.fs-card`; a group box with the AppKit theme.
+/// Parts: `header`, `title`, `subtitle`, `content` and `actions`, from
+/// [`card_header`], [`card_content`] and [`card_actions`].
 pub fn card<Msg>() -> Element<Msg> {
-    div().class(&themed(KAI_CARD, APPKIT_BOX)).role(Role::Group)
+    div()
+        .class(&themed(KAI_CARD, APPKIT_BOX))
+        .role(Role::Group)
+        .parts_root()
 }
 
 /// `.fs-card__header` with `.fs-card__title` and `.fs-card__subtitle`.
@@ -1134,37 +1150,48 @@ pub fn card_header<Msg>(title: &str, subtitle: Option<&str>) -> Element<Msg> {
             "flex flex-col gap-0.5 px-4 pt-4 pb-3",
             "flex flex-col gap-0.5 px-3 pt-3",
         ))
+        .part("header")
         .child(
             text(title)
                 .class(&themed(
                     "text-lg leading-[1.4] font-semibold text-foreground",
                     "text-headline text-label",
                 ))
-                .role(Role::Heading),
+                .role(Role::Heading)
+                .part("title"),
         );
     if let Some(subtitle) = subtitle {
-        header = header.child(text(subtitle).class(&themed(
-            "text-sm leading-5 text-muted-foreground",
-            "text-subheadline text-secondary-label",
-        )));
+        header = header.child(
+            text(subtitle)
+                .class(&themed(
+                    "text-sm leading-5 text-muted-foreground",
+                    "text-subheadline text-secondary-label",
+                ))
+                .part("subtitle"),
+        );
     }
     header
 }
 
 /// `.fs-card__content`.
 pub fn card_content<Msg>() -> Element<Msg> {
-    div().class(&themed(
-        "flex flex-col gap-3 p-4",
-        "flex flex-col gap-control p-3",
-    ))
+    div()
+        .class(&themed(
+            "flex flex-col gap-3 p-4",
+            "flex flex-col gap-control p-3",
+        ))
+        .part("content")
 }
 
 /// `.fs-card__actions`.
 pub fn card_actions<Msg>() -> Element<Msg> {
-    div().class(&themed(
-        "flex flex-wrap items-center justify-end gap-2 border-t border-border/70 px-4 pt-3 pb-4",
-        "flex flex-wrap items-center justify-end gap-control px-3 pb-3 border-0",
-    ))
+    div()
+        .class(&themed(
+            "flex flex-wrap items-center justify-end gap-2 border-t border-border/70 px-4 pt-3 \
+             pb-4",
+            "flex flex-wrap items-center justify-end gap-control px-3 pb-3 border-0",
+        ))
+        .part("actions")
 }
 
 /// `NSBox` with its title: in AppKit the title sits above the box, outside
@@ -1175,7 +1202,10 @@ pub fn group_box<Msg>(
     content: impl IntoIterator<Item = Element<Msg>>,
 ) -> Element<Msg> {
     let mut boxed = card();
-    let mut root = div().class(&themed("flex flex-col", "flex flex-col gap-1"));
+    boxed.parts_root = false;
+    let mut root = div()
+        .class(&themed("flex flex-col", "flex flex-col gap-1"))
+        .parts_root();
     if let Some(title) = title {
         root = root.child(
             text(title)
@@ -1189,14 +1219,23 @@ pub fn group_box<Msg>(
     root.child(boxed.child(card_content().children(content)))
 }
 
-/// Compact statistics tile (`StatisticsCard`).
+/// Compact statistics tile (`StatisticsCard`); parts `label`, `value` and
+/// `hint`.
 pub fn stat<Msg>(label: &str, value: impl Into<String>, hint: Option<&str>) -> Element<Msg> {
     let mut tile = card().class("p-4 gap-1").children([
-        text(label).class("text-sm leading-5 font-medium text-muted-foreground"),
-        text(value).class("text-2xl font-semibold text-foreground"),
+        text(label)
+            .class("text-sm leading-5 font-medium text-muted-foreground")
+            .part("label"),
+        text(value)
+            .class("text-2xl font-semibold text-foreground")
+            .part("value"),
     ]);
     if let Some(hint) = hint {
-        tile = tile.child(text(hint).class("text-xs text-muted-foreground"));
+        tile = tile.child(
+            text(hint)
+                .class("text-xs text-muted-foreground")
+                .part("hint"),
+        );
     }
     tile
 }
@@ -1296,9 +1335,14 @@ pub fn alert<Msg>(variant: AlertVariant, message: impl Into<String>) -> Element<
             "relative flex items-center gap-3 w-full p-4 rounded-lg text-sm leading-5 {border_and_bg}"
         ))
         .role(Role::Status)
+        .parts_root()
         .children([
-            icon(icon_kind).class(&format!("size-5 shrink-0 {icon_color}")),
-            text(message).class("flex-1 text-sm font-normal text-foreground"),
+            icon(icon_kind)
+                .class(&format!("size-5 shrink-0 {icon_color}"))
+                .part("icon"),
+            text(message)
+                .class("flex-1 text-sm font-normal text-foreground")
+                .part("message"),
         ])
 }
 
@@ -1461,10 +1505,15 @@ pub fn switch_labeled<Msg>(
     } else {
         "text-sm font-medium leading-normal text-foreground"
     };
-    div().class("inline-flex items-center gap-2").children([
-        switch_with_options(checked, on_toggle, disabled, density),
-        text(label).class(label_class),
-    ])
+    div()
+        .class("inline-flex items-center gap-2")
+        .parts_root()
+        .children([
+            switch_with_options(checked, on_toggle, disabled, density)
+                .label(label)
+                .part("track"),
+            text(label).class(label_class).part("label"),
+        ])
 }
 
 /// Configurable switch track and thumb.
@@ -1521,7 +1570,7 @@ pub fn switch_with_options<Msg>(
                  {appkit_track} {justify} {appkit_interaction}"
             ),
         ))
-        .role(Role::Button)
+        .role(Role::Switch)
         .label(if checked { "Activado" } else { "Desactivado" })
         .focus_on_press(false)
         .disabled(disabled)
@@ -2741,5 +2790,132 @@ mod tests {
             ClassList::parse(&autocomplete.children[1].class, &theme).resolve(State::default());
         assert_eq!(shell.border_width.top, 0.0);
         assert_eq!(shell.background, theme.color("transparent"));
+    }
+
+    fn assigned(mut tree: Element<Msg>) -> Element<Msg> {
+        tree.assign_ids();
+        assert_eq!(tree.validate_ids(), Vec::<String>::new());
+        tree
+    }
+
+    fn part<'a>(tree: &'a Element<Msg>, test_id: &str) -> &'a Element<Msg> {
+        tree.find_test_id(test_id)
+            .unwrap_or_else(|| panic!("sin {test_id}"))
+    }
+
+    #[test]
+    fn text_field_parts() {
+        let field = assigned(
+            TextField::new("Contraseña", "secreto")
+                .test_id("campo")
+                .start_icon(Icon::User)
+                .end_symbol("$")
+                .password(false, Msg::Toggle)
+                .helper_text("Mínimo 8")
+                .build(),
+        );
+        assert!(field.delegates_focus);
+        assert_eq!(field.test_id.as_deref(), Some("campo"));
+        assert!(matches!(
+            part(&field, "campo.input").kind,
+            Kind::Input { .. }
+        ));
+        assert_eq!(part(&field, "campo.label").text_content(), "Contraseña");
+        assert_eq!(part(&field, "campo.floating").text_content(), "Contraseña");
+        assert_eq!(part(&field, "campo.start").kind, Kind::Icon(Icon::User));
+        assert_eq!(part(&field, "campo.end").kind, Kind::Text("$".to_owned()));
+        assert_eq!(part(&field, "campo.toggle").role, Some(Role::Button));
+        assert_eq!(part(&field, "campo.helper").text_content(), "Mínimo 8");
+        let shell = part(&field, "campo.shell");
+        assert!(shell.find_test_id("campo.input").is_some());
+
+        let compact = assigned(
+            TextField::new("RUT", "")
+                .test_id("rut")
+                .density(FieldDensity::Compact)
+                .label_layout(LabelLayout::Inline)
+                .build(),
+        );
+        assert_eq!(part(&compact, "rut.label").text_content(), "RUT");
+        assert!(
+            part(&compact, "rut.shell")
+                .find_test_id("rut.input")
+                .is_some()
+        );
+
+        let anonymous: Element<Msg> = assigned(TextField::new("Nombre", "").build());
+        let mut ids = Vec::new();
+        anonymous.walk(&mut |e| ids.extend(e.test_id.clone()));
+        assert!(ids.is_empty(), "{ids:?}");
+    }
+
+    #[test]
+    fn card_parts() {
+        let card =
+            assigned(
+                card().test_id("x").children([
+                    card_header("Título", Some("Subtítulo")),
+                    card_content().child(text("Cuerpo")),
+                    card_actions()
+                        .child(button("Aceptar", ButtonVariant::Primary).test_id("x.aceptar")),
+                ]),
+            );
+        assert_eq!(part(&card, "x.title").text_content(), "Título");
+        assert_eq!(part(&card, "x.title").role, Some(Role::Heading));
+        assert_eq!(part(&card, "x.subtitle").text_content(), "Subtítulo");
+        assert_eq!(part(&card, "x.header").text_content(), "Título Subtítulo");
+        assert_eq!(part(&card, "x.content").text_content(), "Cuerpo");
+        assert!(part(&card, "x.actions").find_test_id("x.aceptar").is_some());
+
+        let boxed = assigned(group_box(Some("Grupo"), [text("Dentro")]).test_id("g"));
+        assert_eq!(part(&boxed, "g.content").text_content(), "Dentro");
+        assert_eq!(part(&boxed, "g.title").text_content(), "Grupo");
+    }
+
+    #[test]
+    fn stat_parts() {
+        let tile = assigned(stat("Clics", "3", Some("hoy")).test_id("clics"));
+        assert_eq!(part(&tile, "clics.label").text_content(), "Clics");
+        assert_eq!(part(&tile, "clics.value").text_content(), "3");
+        assert_eq!(part(&tile, "clics.hint").text_content(), "hoy");
+    }
+
+    #[test]
+    fn alert_parts() {
+        let banner = assigned(alert(AlertVariant::Warning, "Cuidado").test_id("aviso"));
+        assert_eq!(banner.role, Some(Role::Status));
+        assert_eq!(
+            part(&banner, "aviso.icon").kind,
+            Kind::Icon(Icon::TriangleAlert)
+        );
+        assert_eq!(part(&banner, "aviso.message").text_content(), "Cuidado");
+    }
+
+    #[test]
+    fn switch_parts_and_role() {
+        let labeled = assigned(
+            switch_labeled(
+                "Notificaciones",
+                true,
+                Msg::Toggle,
+                false,
+                SwitchDensity::Default,
+            )
+            .test_id("avisos"),
+        );
+        let track = part(&labeled, "avisos.track");
+        assert_eq!(track.role, Some(Role::Switch));
+        assert_eq!(track.label.as_deref(), Some("Notificaciones"));
+        assert!(track.is_pressed());
+        assert_eq!(
+            part(&labeled, "avisos.label").text_content(),
+            "Notificaciones"
+        );
+
+        let bare = assigned(
+            switch_with_options(false, Msg::Toggle, false, SwitchDensity::Default).test_id("solo"),
+        );
+        assert_eq!(bare.role, Some(Role::Switch));
+        assert_eq!(bare.label.as_deref(), Some("Desactivado"));
     }
 }

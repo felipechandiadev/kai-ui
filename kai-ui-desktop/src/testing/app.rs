@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::{By, Screen, VIEWPORT};
+use super::{By, Found, Screen, VIEWPORT};
 use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::platform_adapter::adapt_key_input;
@@ -230,7 +230,8 @@ impl<A: App> TestApp<A> {
     /// Contents of a text input (what its editor holds).
     #[track_caller]
     pub fn value(&self, by: By) -> String {
-        let found = self.screen().get(by);
+        let screen = self.screen();
+        let found = self.control_of(screen.get(by));
         self.session
             .field_value(found.id())
             .unwrap_or_else(|| panic!("{} no es un campo de texto", found.describe()))
@@ -238,13 +239,15 @@ impl<A: App> TestApp<A> {
 
     #[track_caller]
     pub fn is_focused(&self, by: By) -> bool {
-        self.session.focused() == Some(self.id_of(by))
+        let screen = self.screen();
+        self.session.focused() == Some(self.control_of(screen.get(by)).id())
     }
 
     /// Neither the element nor an ancestor is disabled.
     #[track_caller]
     pub fn is_enabled(&self, by: By) -> bool {
-        let mut node = Some(self.screen().get(by));
+        let screen = self.screen();
+        let mut node = Some(self.control_of(screen.get(by)));
         while let Some(found) = node {
             if found.node().disabled {
                 return false;
@@ -281,6 +284,23 @@ impl<A: App> TestApp<A> {
     #[track_caller]
     fn id_of(&self, by: By) -> WidgetId {
         self.screen().get(by).id()
+    }
+
+    /// The input a field root stands for (the one a click focuses, or its
+    /// `<id>.input` part when disabled); any other element, itself.
+    fn control_of<'a>(&'a self, found: Found<'a>) -> Found<'a> {
+        let screen = Screen::new(self.session.layout());
+        if let Some(delegate) = found.node().focus_delegate {
+            return screen.by_id(delegate).unwrap_or(found);
+        }
+        found
+            .test_id()
+            .and_then(|id| {
+                screen
+                    .within(found)
+                    .query(By::test_id(format!("{id}.input")))
+            })
+            .unwrap_or(found)
     }
 
     fn center_of(&self, id: WidgetId) -> Point {

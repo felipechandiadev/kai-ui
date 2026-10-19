@@ -214,30 +214,33 @@ impl SimpleApp for Demo {
             "Componentes sincronizados con la biblioteca web de Kai (React/TypeScript)",
         );
 
-        let counter = card().class("w-full max-w-3xl").children([
-            card_header(
-                "Contador reactivo",
-                Some("El estado vive en el modelo; cada mensaje vuelve a ejecutar la vista"),
-            ),
-            card_content().children([
-                div().class("flex items-end gap-2").children([
-                    text(self.clicks.to_string())
-                        .class("text-3xl font-bold text-foreground")
-                        .role(Role::Status),
-                    caption(if self.clicks == 1 { "clic" } else { "clics" }).class("pb-1"),
-                ]),
-                paragraph(
-                    "Los botones usan las mismas clases que Kai web: hover, foco con anillo, \
-                     estado activo y deshabilitado.",
+        let counter = card()
+            .class("w-full max-w-3xl")
+            .test_id("contador")
+            .children([
+                card_header(
+                    "Contador reactivo",
+                    Some("El estado vive en el modelo; cada mensaje vuelve a ejecutar la vista"),
                 ),
-            ]),
-            card_actions().children([
-                button("Reiniciar", ButtonVariant::Outlined)
-                    .on_click(Msg::Reset)
-                    .disabled(self.clicks == 0),
-                button("Incrementar", ButtonVariant::Primary).on_click(Msg::Increment),
-            ]),
-        ]);
+                card_content().children([
+                    div().class("flex items-end gap-2").children([
+                        text(self.clicks.to_string())
+                            .class("text-3xl font-bold text-foreground")
+                            .role(Role::Status),
+                        caption(if self.clicks == 1 { "clic" } else { "clics" }).class("pb-1"),
+                    ]),
+                    paragraph(
+                        "Los botones usan las mismas clases que Kai web: hover, foco con anillo, \
+                     estado activo y deshabilitado.",
+                    ),
+                ]),
+                card_actions().children([
+                    button("Reiniciar", ButtonVariant::Outlined)
+                        .on_click(Msg::Reset)
+                        .disabled(self.clicks == 0),
+                    button("Incrementar", ButtonVariant::Primary).on_click(Msg::Increment),
+                ]),
+            ]);
 
         let greeting = if self.name.trim().is_empty() {
             caption("Escribe tu nombre para ver la vista reaccionar.")
@@ -245,7 +248,7 @@ impl SimpleApp for Demo {
             text(format!("Hola, {} 👋", self.name.trim()))
                 .class("text-base font-medium text-primary")
         };
-        let form = card().class("w-full max-w-3xl").children([
+        let form = card().class("w-full max-w-3xl").test_id("form").children([
             card_header(
                 "Formulario controlado",
                 Some("Cada tecla emite un mensaje con el nuevo valor"),
@@ -277,7 +280,8 @@ impl SimpleApp for Demo {
                             Msg::ToggleNotifications,
                             false,
                             SwitchDensity::Compact,
-                        ),
+                        )
+                        .test_id("form.notificaciones"),
                     ]),
             ]),
             card_actions().children([
@@ -899,7 +903,7 @@ mod tests {
             repeat: false,
         });
         let mut demo = Demo::default();
-        let name = find(&demo, By::test_id("form.nombre"));
+        let name = find(&demo, By::test_id("form.nombre.input"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let mut model = UiModel::default();
         dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
@@ -913,7 +917,7 @@ mod tests {
         assert_eq!(result.activated.map(|a| a.widget), Some(send));
 
         // «Correo» keeps its on_submit.
-        let email = find(&demo, By::test_id("form.correo"));
+        let email = find(&demo, By::test_id("form.correo.input"));
         dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
         let result = dispatch(&mut model, &order, return_key);
         assert_eq!(result.activated, None);
@@ -1198,17 +1202,23 @@ mod tests {
             screen.get(By::role(Role::Button).name("Limpiar")).test_id(),
             Some("form.limpiar")
         );
-        assert_eq!(screen.get_by_label("Nombre").test_id(), Some("form.nombre"));
-        assert_eq!(screen.get_by_label("Correo").test_id(), Some("form.correo"));
+        assert_eq!(
+            screen.get_by_label("Nombre").test_id(),
+            Some("form.nombre.input")
+        );
+        assert_eq!(
+            screen.get_by_label("Correo").test_id(),
+            Some("form.correo.input")
+        );
         assert_eq!(
             screen.get_by_label("Contraseña").test_id(),
-            Some("form.password")
+            Some("form.password.input")
         );
         assert_eq!(
             screen
                 .get(By::role(Role::Button).name("Mostrar contraseña"))
                 .test_id(),
-            Some("form.password.mostrar")
+            Some("form.password.toggle")
         );
         assert_eq!(
             screen.get_by_test_id("header.sumar").name().as_deref(),
@@ -1274,7 +1284,7 @@ mod tests {
         let mut app = TestApp::new(Demo::default());
         app.type_text(By::test_id("form.password"), "abc");
         assert!(!app.app().show_password);
-        app.click(By::test_id("form.password.mostrar"));
+        app.click(By::test_id("form.password.toggle"));
         assert!(app.app().show_password);
         assert!(app.is_focused(By::test_id("form.password")));
         assert_eq!(app.value(By::test_id("form.password")), "abc");
@@ -2031,7 +2041,7 @@ mod tests {
         ] {
             filled.update(Msg::Edit(field, value.to_owned()));
         }
-        let password = find(&filled, By::test_id("form.password"));
+        let password = find(&filled, By::test_id("form.password.input"));
         let tree = build_view(&filled);
         snapshot(
             out,
