@@ -291,6 +291,7 @@ mod tests {
             shortcut: None,
             menu,
             needs_input: false,
+            exposed: false,
             availability: Availability::Enabled,
         }
     }

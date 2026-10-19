@@ -184,5 +184,7 @@ pub struct CommandState {
     /// An action that `{}` does not satisfy: only scripts and agents can
     /// run it, so menus and the palette leave it out.
     pub needs_input: bool,
+    /// Listed for agents ([`CommandBuilder::expose`]).
+    pub exposed: bool,
     pub availability: Availability,
 }

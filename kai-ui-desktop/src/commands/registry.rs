@@ -45,6 +45,10 @@ struct Entry<A: App> {
     input_schema: Option<fn() -> Value>,
     output_schema: Option<fn() -> Value>,
     needs_input: bool,
+    /// Listed for agents (13 §7.4); nothing is by default.
+    exposed: bool,
+    /// Query whose output answers the caller after this action's `update`.
+    returns: Option<&'static str>,
 }
 
 /// Every command of an app, declared once in [`App::commands`]:
@@ -73,6 +77,20 @@ impl<A: App> CommandBuilder<'_, A> {
     /// Menu bar menu that lists it.
     pub fn menu(self, menu: &'static str) -> Self {
         self.entry.menu = Some(menu);
+        self
+    }
+
+    /// Let agents see and call it (MCP). Nothing is exposed by default.
+    pub fn expose(self) -> Self {
+        self.entry.exposed = true;
+        self
+    }
+
+    /// Answer whoever called this action (a script, an agent) with the
+    /// output of query `Q`, run without input after `update`.
+    pub fn returns<Q: Query<App = A>>(self) -> Self {
+        self.entry.returns = Some(Q::ID);
+        self.entry.output_schema = Some(output_schema::<Q::Output>);
         self
     }
 }
@@ -124,6 +142,8 @@ impl<A: App> CommandRegistry<A> {
             input_schema: None,
             output_schema: None,
             needs_input: false,
+            exposed: false,
+            returns: None,
         });
         registry
     }
@@ -150,6 +170,8 @@ impl<A: App> CommandRegistry<A> {
             input_schema: Some(input_schema::<T>),
             output_schema: None,
             needs_input: decode::<T>(T::ID, empty()).is_err(),
+            exposed: false,
+            returns: None,
         })
     }
 
@@ -169,6 +191,8 @@ impl<A: App> CommandRegistry<A> {
             input_schema: Some(input_schema::<T>),
             output_schema: Some(output_schema::<T::Output>),
             needs_input: decode::<T>(T::ID, empty()).is_err(),
+            exposed: false,
+            returns: None,
         })
     }
 
@@ -198,6 +222,7 @@ impl<A: App> CommandRegistry<A> {
                 shortcut: entry.shortcut,
                 menu: entry.menu,
                 needs_input: entry.needs_input,
+                exposed: entry.exposed,
                 availability: (entry.available)(app),
             })
             .collect()
@@ -263,14 +288,21 @@ impl<A: App> CommandRegistry<A> {
         self.entry(id).ok()?.input_schema.map(|schema| schema())
     }
 
-    /// JSON Schema 2020-12 of the output of query `id`.
+    /// The query that answers whoever calls action `id`
+    /// ([`CommandBuilder::returns`]).
+    pub fn returns(&self, id: &str) -> Option<&'static str> {
+        self.entry(id).ok()?.returns
+    }
+
+    /// JSON Schema 2020-12 of the output of query `id`, or of the query
+    /// that answers action `id`.
     pub fn output_schema(&self, id: &str) -> Option<Value> {
         self.entry(id).ok()?.output_schema.map(|schema| schema())
     }
 
     /// The app's commands as JSON, in registration order, without the
-    /// framework's `kai.*`: id, title, description, kind, safety and the
-    /// schemas of input and (queries) output.
+    /// framework's `kai.*`: id, title, description, kind, safety, whether
+    /// agents see it, and the schemas of input and output.
     pub(super) fn descriptions(&self) -> Vec<Value> {
         self.entries
             .iter()
@@ -286,6 +318,7 @@ impl<A: App> CommandRegistry<A> {
                     CommandKind::Query => "query",
                 };
                 command.insert("kind".into(), json!(kind));
+                command.insert("exposed".into(), json!(entry.exposed));
                 if let Some(safety) = entry.safety {
                     let safety = match safety {
                         Safety::Mutating => "mutating",
@@ -360,6 +393,29 @@ impl<A: App> CommandRegistry<A> {
                     "comando \"{}\" ({}): necesita entrada, así que no puede tener atajo ni menú",
                     entry.id, entry.origin
                 ));
+            }
+            if let Some(query) = entry.returns {
+                let target = self.entries.iter().find(|other| other.id == query);
+                let problem = if entry.kind != CommandKind::Action {
+                    Some("solo una acción responde con una consulta".to_owned())
+                } else {
+                    match target {
+                        None => Some(format!("responde con \"{query}\", que no está registrada")),
+                        Some(target) if target.kind != CommandKind::Query => {
+                            Some(format!("responde con \"{query}\", que no es una consulta"))
+                        }
+                        Some(target) if target.needs_input => {
+                            Some(format!("responde con \"{query}\", que necesita entrada"))
+                        }
+                        Some(_) => None,
+                    }
+                };
+                if let Some(problem) = problem {
+                    problems.push(format!(
+                        "comando \"{}\" ({}): {problem}",
+                        entry.id, entry.origin
+                    ));
+                }
             }
         }
         problems
@@ -632,6 +688,35 @@ mod tests {
         let schema = registry.input_schema(AddMany::ID).unwrap();
         assert_eq!(schema["required"], json!(["amount"]));
         assert_eq!(registry.input_schema(PALETTE), None);
+    }
+
+    #[test]
+    fn exposed_actions_can_answer_with_a_query() {
+        let mut registry = registry(|r| {
+            r.action::<Add>().expose().returns::<Total>();
+            r.action::<Reset>();
+            r.query::<Total>().expose();
+        });
+        assert_eq!(registry.validate(), Vec::<String>::new());
+        let states = registry.states(&Counter(0));
+        let exposed: Vec<bool> = states.iter().map(|state| state.exposed).collect();
+        assert_eq!(exposed, [true, false, true]);
+        assert_eq!(registry.returns(Add::ID), Some(Total::ID));
+        assert_eq!(registry.returns(Reset::ID), None);
+        assert_eq!(registry.output_schema(Add::ID).unwrap()["type"], "integer");
+        assert_eq!(registry.descriptions()[1]["exposed"], false);
+
+        registry = super::CommandRegistry::default();
+        registry.action::<Add>().returns::<Total>();
+        let problems = registry.validate();
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("\"contador.total\", que no está registrada"));
+
+        registry = super::CommandRegistry::default();
+        registry.query::<Total>().returns::<Total>();
+        let problems = registry.validate();
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("solo una acción responde con una consulta"));
     }
 
     #[test]

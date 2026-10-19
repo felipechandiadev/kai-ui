@@ -3,6 +3,7 @@
   "commands": [
     {
       "description": "Suma un clic al contador",
+      "exposed": true,
       "id": "contador.incrementar",
       "inputSchema": {
         "additionalProperties": false,
@@ -15,6 +16,7 @@
     },
     {
       "description": "Suma varios clics al contador",
+      "exposed": true,
       "id": "contador.sumar",
       "inputSchema": {
         "additionalProperties": false,
@@ -37,6 +39,7 @@
     },
     {
       "description": "Vuelve el contador a cero",
+      "exposed": true,
       "id": "contador.reiniciar",
       "inputSchema": {
         "additionalProperties": false,
@@ -49,6 +52,7 @@
     },
     {
       "description": "Registra el nombre y limpia el formulario",
+      "exposed": true,
       "id": "form.enviar",
       "inputSchema": {
         "additionalProperties": false,
@@ -56,11 +60,18 @@
         "type": "object"
       },
       "kind": "action",
+      "outputSchema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "safety": "mutating",
       "title": "Enviar"
     },
     {
       "description": "Borra el nombre y el correo",
+      "exposed": true,
       "id": "form.limpiar",
       "inputSchema": {
         "additionalProperties": false,
@@ -72,6 +83,7 @@
       "title": "Limpiar"
     },
     {
+      "exposed": false,
       "id": "form.alternar_contrasena",
       "inputSchema": {
         "additionalProperties": false,
@@ -83,6 +95,7 @@
       "title": "Mostrar u ocultar contraseña"
     },
     {
+      "exposed": true,
       "id": "form.ultimo_envio",
       "inputSchema": {
         "additionalProperties": false,

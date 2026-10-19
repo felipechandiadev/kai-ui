@@ -258,16 +258,23 @@ impl SimpleApp for Demo {
         registry
             .action::<Incrementar>()
             .shortcut(Shortcut::cmd(Key::Char('i')))
-            .menu("Contador");
-        registry.action::<Sumar>();
+            .menu("Contador")
+            .expose();
+        registry.action::<Sumar>().expose();
         registry
             .action::<Reiniciar>()
             .shortcut(Shortcut::cmd(Key::Char('0')))
-            .menu("Contador");
-        registry.action::<Enviar>().menu("Formulario");
-        registry.action::<Limpiar>().menu("Formulario");
+            .menu("Contador")
+            .expose();
+        registry
+            .action::<Enviar>()
+            .menu("Formulario")
+            .returns::<Saludo>()
+            .expose();
+        registry.action::<Limpiar>().menu("Formulario").expose();
+        // Showing the password is the user's business, not an agent's.
         registry.action::<AlternarContrasena>().menu("Formulario");
-        registry.query::<Saludo>();
+        registry.query::<Saludo>().expose();
     }
 
     fn title(&self) -> String {
@@ -1944,9 +1951,29 @@ mod tests {
         let error = app.call("form.enviar", json!({})).unwrap_err();
         assert_eq!(error.message, "Falta el nombre");
         app.type_text(By::test_id("form.nombre"), "Ana");
-        app.call("form.enviar", json!({})).unwrap();
+        // «Enviar» answers with «Último envío», read after its update.
+        assert_eq!(app.call("form.enviar", json!({})), Ok(json!("Ana")));
         assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!("Ana")));
+        assert_eq!(app.call("form.limpiar", json!({})), Ok(json!(null)));
         assert!(app.call("contador.nada", json!({})).is_err());
+
+        let exposed: Vec<&str> = app
+            .commands()
+            .iter()
+            .filter(|command| command.exposed)
+            .map(|command| command.id)
+            .collect();
+        assert_eq!(
+            exposed,
+            [
+                "contador.incrementar",
+                "contador.sumar",
+                "contador.reiniciar",
+                "form.enviar",
+                "form.limpiar",
+                "form.ultimo_envio",
+            ]
+        );
     }
 
     /// Lines that differ between `expected` and `actual`, numbered; `None`

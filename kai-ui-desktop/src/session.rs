@@ -463,14 +463,20 @@ impl<A: App> Session<A> {
 
     /// Run command `id` on a JSON `input`, as a script or an agent does: a
     /// query returns its output; an action that can run sends its message
-    /// and returns `null`.
+    /// and returns the output of its `returns` query, or `null`.
     pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
         if self.registry.has_query(id) {
             return self.registry.run_query(&self.app, id, input);
         }
         let msg = self.registry.message_from(&self.app, id, input)?;
         self.send(msg);
-        Ok(Value::Null)
+        match self.registry.returns(id) {
+            Some(query) => {
+                self.registry
+                    .run_query(&self.app, query, Value::Object(Default::default()))
+            }
+            None => Ok(Value::Null),
+        }
     }
 
     /// Whether the command palette is open.
