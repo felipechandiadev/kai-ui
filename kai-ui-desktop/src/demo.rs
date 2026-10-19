@@ -321,7 +321,7 @@ impl SimpleApp for Demo {
                         IconButtonSize::Sm,
                     )
                     .test_id("header.sumar")
-                    .on_click(Msg::Increment),
+                    .on_command(Incrementar),
                 ]),
             ]);
 
@@ -352,7 +352,7 @@ impl SimpleApp for Demo {
                 ]),
                 card_actions().children([
                     button("Reiniciar", ButtonVariant::Outlined).on_command(Reiniciar),
-                    button("Incrementar", ButtonVariant::Primary).on_click(Msg::Increment),
+                    button("Incrementar", ButtonVariant::Primary).on_command(Incrementar),
                 ]),
             ]);
 
@@ -399,14 +399,10 @@ impl SimpleApp for Demo {
                     ]),
             ]),
             card_actions().children([
-                button("Limpiar", ButtonVariant::Text)
-                    .test_id("form.limpiar")
-                    .on_click(Msg::Clear),
+                button("Limpiar", ButtonVariant::Text).on_command(Limpiar),
                 button("Enviar", ButtonVariant::Primary)
-                    .test_id("form.enviar")
-                    .on_click(Msg::Submit)
-                    .default_button(true)
-                    .disabled(!self.can_submit()),
+                    .on_command(Enviar)
+                    .default_button(true),
             ]),
         ]);
 
@@ -693,7 +689,7 @@ impl Demo {
                             .build(),
                         TextField::new("Contraseña", &self.password)
                             .test_id("form.password")
-                            .password(self.show_password, Msg::TogglePassword)
+                            .password_command(self.show_password, AlternarContrasena)
                             .required(true)
                             .helper_text("Mínimo 8 caracteres")
                             .on_input(edit(Field::Password))
@@ -841,7 +837,9 @@ mod tests {
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
     };
 
-    use super::{Demo, Enviar, Field, Incrementar, Msg, Reiniciar, Saludo};
+    use super::{
+        AlternarContrasena, Demo, Enviar, Field, Incrementar, Limpiar, Msg, Reiniciar, Saludo,
+    };
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::commands::{Availability, PALETTE};
     use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
@@ -1693,6 +1691,185 @@ mod tests {
             [Msg::Increment],
             "the click hit nothing below"
         );
+    }
+
+    /// A way to run a command: as a script, with the mouse, the keyboard,
+    /// the menu bar or the palette.
+    #[derive(Clone, Copy, Debug)]
+    enum Via {
+        Invoke,
+        Button(&'static str),
+        Key(Key, Modifiers),
+        Menu,
+        /// Open the palette, type this and press Return.
+        Palette(&'static str),
+    }
+
+    struct Case {
+        id: &'static str,
+        setup: fn(&mut TestApp<Demo>),
+        invoke: fn(&mut TestApp<Demo>),
+        vias: Vec<Via>,
+    }
+
+    /// Run `via` on a fresh demo after `setup`; the model and the messages
+    /// sent by `via` alone.
+    fn run_via(case: &Case, via: Via) -> (Demo, Vec<Msg>) {
+        let mut app = TestApp::new(Demo::default());
+        (case.setup)(&mut app);
+        let before = app.messages().len();
+        match via {
+            Via::Invoke => (case.invoke)(&mut app),
+            Via::Button(test_id) => app.click(By::test_id(test_id)),
+            Via::Key(key, modifiers) => app.press(key, modifiers),
+            Via::Menu => {
+                let menu = menu_model(app.commands());
+                let entry = menu
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .find(|e| e.id == case.id);
+                assert!(entry.is_some(), "{} no está en el menú", case.id);
+                app.perform(case.id);
+            }
+            Via::Palette(query) => {
+                app.press(Key::Char('p'), CMD_SHIFT);
+                app.type_text(search(), query);
+                app.press(Key::Enter, Modifiers::NONE);
+            }
+        }
+        (app.app().clone(), app.messages()[before..].to_vec())
+    }
+
+    fn type_name(app: &mut TestApp<Demo>) {
+        app.type_text(By::test_id("form.nombre"), "Ana");
+    }
+
+    fn cases() -> Vec<Case> {
+        vec![
+            Case {
+                id: "contador.incrementar",
+                setup: |_| {},
+                invoke: |app| app.invoke(Incrementar).unwrap(),
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("header.sumar"),
+                    Via::Button("contador.incrementar"),
+                    Via::Key(Key::Char('i'), CMD),
+                    Via::Menu,
+                    Via::Palette("Incrementar"),
+                ],
+            },
+            Case {
+                id: "contador.reiniciar",
+                setup: |app| app.invoke(Incrementar).unwrap(),
+                invoke: |app| app.invoke(Reiniciar).unwrap(),
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("contador.reiniciar"),
+                    Via::Key(Key::Char('0'), CMD),
+                    Via::Menu,
+                    Via::Palette("Reiniciar"),
+                ],
+            },
+            Case {
+                id: "form.enviar",
+                setup: type_name,
+                invoke: |app| app.invoke(Enviar).unwrap(),
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("form.enviar"),
+                    // Return in «Nombre»: «Enviar» is the default button.
+                    Via::Key(Key::Enter, Modifiers::NONE),
+                    Via::Menu,
+                    Via::Palette("Enviar"),
+                ],
+            },
+            Case {
+                id: "form.limpiar",
+                setup: type_name,
+                invoke: |app| app.invoke(Limpiar).unwrap(),
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("form.limpiar"),
+                    Via::Menu,
+                    Via::Palette("Limpiar"),
+                ],
+            },
+            Case {
+                id: "form.alternar_contrasena",
+                setup: |_| {},
+                invoke: |app| app.invoke(AlternarContrasena).unwrap(),
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("form.password.toggle"),
+                    Via::Menu,
+                    Via::Palette("contraseña"),
+                ],
+            },
+        ]
+    }
+
+    #[test]
+    fn every_action_does_the_same_from_every_via() {
+        for case in cases() {
+            let mut setup = TestApp::new(Demo::default());
+            (case.setup)(&mut setup);
+            let before = setup.app().clone();
+            let (expected, messages) = run_via(&case, Via::Invoke);
+            assert_eq!(messages.len(), 1, "{}: un mensaje", case.id);
+            assert_ne!(expected, before, "{} cambia el modelo", case.id);
+            for &via in &case.vias[1..] {
+                let (model, sent) = run_via(&case, via);
+                assert_eq!(sent, messages, "{} vía {via:?}", case.id);
+                assert_eq!(model, expected, "{} vía {via:?}", case.id);
+            }
+        }
+    }
+
+    #[test]
+    fn disabled_actions_do_nothing_from_any_via() {
+        let disabled = [
+            Case {
+                id: "contador.reiniciar",
+                setup: |_| {},
+                invoke: |app| {
+                    let error = app.invoke(Reiniciar).unwrap_err();
+                    assert_eq!(error.message, "El contador ya está en cero");
+                },
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("contador.reiniciar"),
+                    Via::Key(Key::Char('0'), CMD),
+                    Via::Menu,
+                    Via::Palette("Reiniciar"),
+                ],
+            },
+            Case {
+                id: "form.enviar",
+                setup: |app| app.click(By::test_id("form.nombre")),
+                invoke: |app| {
+                    let error = app.invoke(Enviar).unwrap_err();
+                    assert_eq!(error.message, "Falta el nombre");
+                },
+                vias: vec![
+                    Via::Invoke,
+                    Via::Button("form.enviar"),
+                    Via::Key(Key::Enter, Modifiers::NONE),
+                    Via::Menu,
+                    Via::Palette("Enviar"),
+                ],
+            },
+        ];
+        for case in disabled {
+            let mut setup = TestApp::new(Demo::default());
+            (case.setup)(&mut setup);
+            let before = setup.app().clone();
+            for &via in &case.vias {
+                let (model, sent) = run_via(&case, via);
+                assert_eq!(sent, [], "{} vía {via:?}", case.id);
+                assert_eq!(model, before, "{} vía {via:?}", case.id);
+            }
+        }
     }
 
     #[test]

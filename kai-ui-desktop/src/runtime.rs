@@ -232,7 +232,8 @@ pub fn build_view_with<A: App>(app: &A, commands: &[CommandState]) -> Element<A:
 }
 
 /// Disable controls whose command is not available, and give them the
-/// command's id as default `test_id` and its title as default name.
+/// command's id as default `test_id` (parts keep theirs, `<owner>.<part>`)
+/// and its title as default name.
 fn bind_commands<Msg>(element: &mut Element<Msg>, commands: &[CommandState]) {
     if let Some(id) = element.command {
         match commands.iter().find(|command| command.id == id) {
@@ -245,7 +246,9 @@ fn bind_commands<Msg>(element: &mut Element<Msg>, commands: &[CommandState]) {
                     }
                     Availability::Hidden => element.disabled = true,
                 }
-                element.test_id.get_or_insert_with(|| id.to_owned());
+                if element.part.is_none() {
+                    element.test_id.get_or_insert_with(|| id.to_owned());
+                }
                 if element.label.is_none() && element.text_content().is_empty() {
                     element.label = Some(command.title.to_owned());
                 }

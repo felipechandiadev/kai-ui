@@ -1,5 +1,6 @@
 //! An app that only uses Kai's public API.
 
+use kai::commands::{Action, Availability, CommandRegistry};
 use kai::components::{ButtonVariant, TextField, button, card, card_content, heading, paragraph};
 use kai::element::{Element, div};
 use kai::runtime::{self, App, Effects};
@@ -17,8 +18,31 @@ enum Msg {
     Greet,
 }
 
+#[derive(Clone, Default)]
+struct Saludar;
+
+impl Action for Saludar {
+    type App = Greeter;
+    const ID: &'static str = "saludo.saludar";
+    const TITLE: &'static str = "Saludar";
+    fn available(greeter: &Greeter) -> Availability {
+        if greeter.name.trim().is_empty() {
+            Availability::disabled("Falta el nombre")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Greet
+    }
+}
+
 impl App for Greeter {
     type Msg = Msg;
+
+    fn commands(registry: &mut CommandRegistry<Self>) {
+        registry.action::<Saludar>().menu("Saludo");
+    }
 
     fn title(&self) -> String {
         "Kai — app externa".to_owned()
@@ -48,7 +72,7 @@ impl App for Greeter {
                             .on_input(Msg::NameChanged)
                             .on_submit(Msg::Greet)
                             .build(),
-                        button("Saludar", ButtonVariant::Primary).on_click(Msg::Greet),
+                        button("Saludar", ButtonVariant::Primary).on_command(Saludar),
                         paragraph(self.greeting.clone().unwrap_or_default()),
                     ]),
                 ),

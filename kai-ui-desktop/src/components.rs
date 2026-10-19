@@ -8,8 +8,10 @@
 
 use std::rc::Rc;
 
+use crate::commands::Action;
 use crate::element::{ControlSize, Element, KeyEquivalent, Role, div, icon, input, text};
 use crate::icons::Icon;
+use crate::runtime::App;
 
 /// One class string per theme: prefixes every class of `kai` with `kai:` and
 /// every class of `appkit` with `appkit:`. Classes that already name a theme
@@ -407,6 +409,8 @@ pub struct TextField<Msg> {
     start: Option<Adornment<Msg>>,
     end: Option<Adornment<Msg>>,
     password: Option<(bool, Msg)>,
+    /// Command the eye runs ([`TextField::password_command`]).
+    password_command: Option<&'static str>,
     required: bool,
     helper_text: Option<String>,
     read_only: bool,
@@ -433,6 +437,7 @@ impl<Msg> TextField<Msg> {
             start: None,
             end: None,
             password: None,
+            password_command: None,
             required: false,
             helper_text: None,
             read_only: false,
@@ -525,6 +530,18 @@ impl<Msg> TextField<Msg> {
         self
     }
 
+    /// [`TextField::password`] whose eye runs `command`, like a button
+    /// with [`Element::on_command`]: it is disabled while the action is
+    /// not available.
+    pub fn password_command<C>(mut self, revealed: bool, command: C) -> Self
+    where
+        C: Action,
+        C::App: App<Msg = Msg>,
+    {
+        self.password_command = Some(C::ID);
+        self.password(revealed, command.into_msg())
+    }
+
     /// Red asterisk next to the label and the placeholder.
     pub fn required(mut self, required: bool) -> Self {
         self.required = required;
@@ -588,7 +605,9 @@ impl<Msg> TextField<Msg> {
             row.push(adornment(end, compact, muted, true).part("end"));
         }
         if let Some((revealed, on_toggle)) = self.password.take() {
-            row.push(password_toggle(revealed, on_toggle, self.disabled).part("toggle"));
+            let mut toggle = password_toggle(revealed, on_toggle, self.disabled).part("toggle");
+            toggle.command = self.password_command;
+            row.push(toggle);
         }
 
         let cursor = if self.disabled {
