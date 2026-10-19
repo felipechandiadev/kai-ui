@@ -728,6 +728,7 @@ mod tests {
     use crate::render::text::TextStore;
     use crate::runtime::{App, build_view};
     use crate::snapshot::{self, Shot};
+    use crate::testing::{By, Screen, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
 
     /// Two-field rows (`grid-cols-1 sm:grid-cols-2`): side by side from
@@ -760,7 +761,7 @@ mod tests {
                     &mut FixedMeasure,
                 );
                 let bounds = |label| {
-                    let input = input_labeled(&demo, Some(label));
+                    let input = find(&demo, By::label(label));
                     // The field's shell: the input's grid cell ancestor.
                     let path = tree.path_to(input).unwrap();
                     let cell = path.iter().rev().find(|id| {
@@ -896,7 +897,7 @@ mod tests {
             repeat: false,
         });
         let mut demo = Demo::default();
-        let name = by_test_id(&demo, "form.nombre");
+        let name = find(&demo, By::test_id("form.nombre"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let mut model = UiModel::default();
         dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
@@ -904,13 +905,13 @@ mod tests {
         assert_eq!(empty.activated, None, "«Enviar» is disabled without a name");
 
         demo.update(Msg::NameChanged("Ana".to_owned()));
-        let send = by_test_id(&demo, "form.enviar");
+        let send = find(&demo, By::test_id("form.enviar"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let result = dispatch(&mut model, &order, return_key.clone());
         assert_eq!(result.activated.map(|a| a.widget), Some(send));
 
         // «Correo» keeps its on_submit.
-        let email = by_test_id(&demo, "form.correo");
+        let email = find(&demo, By::test_id("form.correo"));
         dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
         let result = dispatch(&mut model, &order, return_key);
         assert_eq!(result.activated, None);
@@ -956,7 +957,7 @@ mod tests {
                 &mut FixedMeasure,
             )
         };
-        let button = element_with_text(&demo, "Incrementar");
+        let button = find(&demo, By::role(Role::Button).name("Incrementar"));
         let ring = |layout: &Layout| layout.node(button).unwrap().style.ring.width;
         let mut model = UiModel::default();
 
@@ -971,7 +972,7 @@ mod tests {
         assert_eq!(ring(&compute(&model)), 2.0, "Tab: ring");
 
         // A clicked text field looks exactly as one reached with Tab.
-        let name = input_labeled(&demo, Some("Nombre"));
+        let name = find(&demo, By::label("Nombre"));
         let path = tree.path_to(name).unwrap();
         let field_look = |layout: &Layout| {
             path.iter()
@@ -1162,78 +1163,62 @@ mod tests {
         assert!(ops > 0);
     }
 
-    fn element_with_text(demo: &Demo, label: &str) -> WidgetId {
-        let tree = build_view(demo);
-        let mut found = None;
-        tree.walk(&mut |element| {
-            if matches!(&element.kind, Kind::Text(text) if text == label) {
-                found = Some(element.id);
-            }
-        });
-        let path = tree.path_to(found.expect("label exists")).unwrap();
-        path[path.len() - 2]
+    /// The single element of the demo's view matching `by`.
+    #[track_caller]
+    fn find(demo: &Demo, by: By) -> WidgetId {
+        let layout = layout_of(&build_view(demo));
+        Screen::new(&layout).get(by).id()
     }
 
-    fn by_test_id(demo: &Demo, test_id: &str) -> WidgetId {
-        let tree = build_view(demo);
-        let mut found = None;
-        tree.walk(&mut |element| {
-            if element.test_id.as_deref() == Some(test_id) {
-                found = Some(element.id);
-            }
-        });
-        found.unwrap_or_else(|| panic!("no element with test_id {test_id:?}"))
+    /// Header block of the card titled `title`.
+    fn card_header_of(demo: &Demo, title: &str) -> WidgetId {
+        let layout = layout_of(&build_view(demo));
+        let screen = Screen::new(&layout);
+        screen.get_by_text(title).parent().unwrap().id()
+    }
+
+    /// Row of the «Secondary» IconButtons. It is not focusable, so
+    /// `demo-variants-focus` draws no ring; kept so the baseline stays put.
+    fn secondary_icon_row(demo: &Demo) -> WidgetId {
+        let layout = layout_of(&build_view(demo));
+        let screen = Screen::new(&layout);
+        let captions = screen.all(By::text("Secondary"));
+        captions.last().unwrap().parent().unwrap().id()
     }
 
     #[test]
     fn test_ids_are_unique_and_point_at_the_controls() {
-        let demo = Demo::default();
-        let tree = build_view(&demo);
+        let tree = build_view(&Demo::default());
         assert_eq!(tree.validate_ids(), Vec::<String>::new());
-        let kind = |test_id| {
-            let id = by_test_id(&demo, test_id);
-            let element = tree.find(id).unwrap();
-            (element.role, element.label.clone())
-        };
+        let layout = layout_of(&tree);
+        let screen = Screen::new(&layout);
+        let send = screen.get_by_test_id("form.enviar");
+        assert_eq!(send.role(), Role::Button);
+        assert_eq!(send.name().as_deref(), Some("Enviar"));
         assert_eq!(
-            kind("form.nombre"),
-            (Some(Role::TextInput), Some("Nombre".to_owned()))
+            screen.get(By::role(Role::Button).name("Enviar")).id(),
+            send.id()
         );
         assert_eq!(
-            kind("form.password"),
-            (Some(Role::TextInput), Some("Contraseña".to_owned()))
+            screen.get(By::role(Role::Button).name("Limpiar")).test_id(),
+            Some("form.limpiar")
+        );
+        assert_eq!(screen.get_by_label("Nombre").test_id(), Some("form.nombre"));
+        assert_eq!(screen.get_by_label("Correo").test_id(), Some("form.correo"));
+        assert_eq!(
+            screen.get_by_label("Contraseña").test_id(),
+            Some("form.password")
         );
         assert_eq!(
-            kind("form.password.mostrar"),
-            (Some(Role::Button), Some("Mostrar contraseña".to_owned()))
+            screen
+                .get(By::role(Role::Button).name("Mostrar contraseña"))
+                .test_id(),
+            Some("form.password.mostrar")
         );
         assert_eq!(
-            by_test_id(&demo, "form.enviar"),
-            element_with_text(&demo, "Enviar")
+            screen.get_by_test_id("header.sumar").name().as_deref(),
+            Some("Sumar clic")
         );
-        assert_eq!(
-            by_test_id(&demo, "form.limpiar"),
-            element_with_text(&demo, "Limpiar")
-        );
-        assert_eq!(kind("header.sumar").0, Some(Role::Button));
-    }
-
-    fn first_input(demo: &Demo) -> WidgetId {
-        input_labeled(demo, None)
-    }
-
-    fn input_labeled(demo: &Demo, label: Option<&str>) -> WidgetId {
-        let tree = build_view(demo);
-        let mut found = None;
-        tree.walk(&mut |element| {
-            if found.is_none()
-                && matches!(element.kind, Kind::Input { .. })
-                && label.is_none_or(|label| element.label.as_deref() == Some(label))
-            {
-                found = Some(element.id);
-            }
-        });
-        found.unwrap()
     }
 
     /// Scroll offsets that bring the card titled `title` to the top of the
@@ -1253,7 +1238,7 @@ mod tests {
             &mut text,
         );
         let content = tree.children[1].id;
-        let card = element_with_text(demo, title);
+        let card = card_header_of(demo, title);
         let top = layout.bounds(card).unwrap().y - layout.bounds(content).unwrap().y;
         ScrollOffsets::from([(content, top - 40.0)])
     }
@@ -1466,7 +1451,7 @@ mod tests {
                                 &demo,
                                 wide,
                                 &Interaction {
-                                    focused: Some(element_with_text(&demo, "Secondary")),
+                                    focused: Some(secondary_icon_row(&demo)),
                                     focus_visible: true,
                                     ..Interaction::default()
                                 },
@@ -1808,7 +1793,7 @@ mod tests {
         );
         // 28 pt above the title: the card's top edge plus a margin.
         let header = layout.bounds(tree.children[0].id).unwrap();
-        let title = layout.bounds(element_with_text(demo, title)).unwrap().y - 28.0;
+        let title = layout.bounds(card_header_of(demo, title)).unwrap().y - 28.0;
         let top = title.max(header.y + header.height);
         crop(&full, (top * 2.0) as u32, (height * 2.0) as u32)
     }
@@ -1914,8 +1899,8 @@ mod tests {
             ..Demo::default()
         };
         typed.update(Msg::NameChanged("Ana".to_owned()));
-        let hovered_button = element_with_text(&typed, "Incrementar");
-        let field = first_input(&typed);
+        let hovered_button = find(&typed, By::role(Role::Button).name("Incrementar"));
+        let field = find(&typed, By::label("Nombre"));
         let tree = build_view(&typed);
         snapshot(
             out,
@@ -1952,7 +1937,7 @@ mod tests {
             wide,
             2.0,
             &Interaction {
-                focused: Some(element_with_text(&typed, "Secondary")),
+                focused: Some(secondary_icon_row(&typed)),
                 // Reached with Tab: the ring is drawn.
                 focus_visible: true,
                 ..Interaction::default()
@@ -1991,7 +1976,7 @@ mod tests {
         ] {
             filled.update(Msg::Edit(field, value.to_owned()));
         }
-        let password = by_test_id(&filled, "form.password");
+        let password = find(&filled, By::test_id("form.password"));
         let tree = build_view(&filled);
         snapshot(
             out,

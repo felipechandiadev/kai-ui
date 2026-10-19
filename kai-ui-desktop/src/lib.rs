@@ -7,8 +7,10 @@
 //! this crate as `kai`. See `docs/dev/12-modelo-appkit.md` (Paso 1) and
 //! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0).
 //!
-//! Hidden modules are internal: they stay public only because captures and
-//! tests still reach into them, until `kai::testing` (13, Paso 3).
+//! Tests find elements by role, accessible name or `test_id` with
+//! [`testing`]. Hidden modules are internal: they stay public only because
+//! captures and tests still reach into them, until `kai::testing` covers
+//! interaction too (13, Paso 4).
 
 pub mod background;
 pub mod components;
@@ -16,6 +18,7 @@ pub mod element;
 pub mod icons;
 pub mod runtime;
 pub mod snapshot;
+pub mod testing;
 pub mod theme;
 pub mod version;
 
