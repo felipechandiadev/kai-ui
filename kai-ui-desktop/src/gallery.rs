@@ -223,9 +223,13 @@ impl Gallery {
             Section::All => div()
                 .class("flex flex-col gap-8")
                 .children(Section::CONTENT.map(|section| self.titled(section))),
-            Section::Buttons => sized_grid(&BUTTON_ROWS, button_cell),
-            Section::Fields => sized_grid(&FIELD_ROWS, |row, size| self.field_cell(row, size)),
-            Section::Toggles => sized_grid(&TOGGLE_ROWS, |row, size| self.toggle_cell(row, size)),
+            Section::Buttons => sized_grid(section, &BUTTON_ROWS, button_cell),
+            Section::Fields => {
+                sized_grid(section, &FIELD_ROWS, |row, size| self.field_cell(row, size))
+            }
+            Section::Toggles => sized_grid(section, &TOGGLE_ROWS, |row, size| {
+                self.toggle_cell(row, size)
+            }),
             Section::Boxes => boxes(),
             Section::Text => text_styles(),
             Section::Colors => self.colors(),
@@ -348,9 +352,37 @@ impl Gallery {
     }
 }
 
+/// `gallery.<section>.<row>.<size>`, e.g. `gallery.fields.con-valor.small`.
+pub fn cell_test_id(section: Section, row: &str, size: ControlSize) -> String {
+    format!(
+        "gallery.{}.{}.{}",
+        slug(section.name()),
+        slug(row),
+        slug(size_name(size))
+    )
+}
+
+fn slug(name: &str) -> String {
+    name.to_lowercase().replace(' ', "-")
+}
+
+/// Gives `test_id` to the first control of the subtree (document order).
+fn tag_first_control<Msg>(element: &mut Element<Msg>, test_id: &str) -> bool {
+    if element.is_control() {
+        element.test_id = Some(test_id.to_owned());
+        return true;
+    }
+    element
+        .children
+        .iter_mut()
+        .any(|child| tag_first_control(child, test_id))
+}
+
 /// A row per entry of `rows`, a column per control size with its name on
-/// top. Cells are built by `cell(row, size)`.
+/// top. Cells are built by `cell(row, size)`; their first control gets
+/// [`cell_test_id`].
 fn sized_grid<Msg>(
+    section: Section,
     rows: &[&'static str],
     cell: impl Fn(&'static str, ControlSize) -> Element<Msg>,
 ) -> Element<Msg> {
@@ -370,7 +402,11 @@ fn sized_grid<Msg>(
                 .role(Role::Group)
                 .label(row)
                 .child(text(row).class("w-28 text-sm text-secondary-label"))
-                .children(ControlSize::ALL.map(|size| div().class(column).child(cell(row, size))))
+                .children(ControlSize::ALL.map(|size| {
+                    let mut control = cell(row, size);
+                    tag_first_control(&mut control, &cell_test_id(section, row, size));
+                    div().class(column).child(control)
+                }))
         }))
 }
 
@@ -528,6 +564,37 @@ mod tests {
                 "{section:?}"
             );
         }
+    }
+
+    #[test]
+    fn every_cell_has_a_unique_test_id_on_its_control() {
+        let gallery = Gallery::default();
+        let tree = build_view(&gallery);
+        assert_eq!(tree.validate_ids(), Vec::<String>::new());
+        let mut tagged = Vec::new();
+        tree.walk(&mut |element| {
+            if let Some(test_id) = &element.test_id {
+                assert!(element.is_control(), "{test_id} is not a control");
+                tagged.push(test_id.clone());
+            }
+        });
+        for (section, rows) in [
+            (Section::Buttons, &BUTTON_ROWS[..]),
+            (Section::Fields, &FIELD_ROWS[..]),
+            (Section::Toggles, &TOGGLE_ROWS[..]),
+        ] {
+            for row in rows {
+                for size in ControlSize::ALL {
+                    let id = cell_test_id(section, row, size);
+                    assert!(tagged.contains(&id), "{id} missing");
+                }
+            }
+        }
+        assert!(tagged.contains(&"gallery.fields.con-valor.xl".to_owned()));
+        assert_eq!(
+            tagged.len(),
+            ControlSize::ALL.len() * (BUTTON_ROWS.len() + FIELD_ROWS.len() + TOGGLE_ROWS.len())
+        );
     }
 
     #[test]

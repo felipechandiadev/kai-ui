@@ -152,6 +152,8 @@ pub struct LayoutNode {
     pub content: Content,
     pub role: Option<Role>,
     pub label: Option<String>,
+    /// See [`Element::test_id`].
+    pub test_id: Option<String>,
     pub description: Option<String>,
     pub disabled: bool,
     /// Effective control size (own or inherited).
@@ -331,6 +333,7 @@ impl Builder<'_> {
             content,
             role: element.role,
             label: element.label.clone(),
+            test_id: element.test_id.clone(),
             description: element.description.clone(),
             disabled: element.disabled,
             control_size,

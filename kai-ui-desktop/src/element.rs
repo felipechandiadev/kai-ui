@@ -11,6 +11,7 @@
 //! text-editing state survive rebuilds as long as the structure does. Use
 //! keys for lists whose items can move.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -228,6 +229,10 @@ pub struct Element<Msg> {
     pub role: Option<Role>,
     /// Accessible name; buttons default to their text content.
     pub label: Option<String>,
+    /// Stable id for tests and UI automation (AccessKit `author_id`, macOS
+    /// `accessibilityIdentifier`). Unique per window; not part of the
+    /// [`WidgetId`].
+    pub test_id: Option<String>,
     pub disabled: bool,
     /// Size, on/off/mixed state, default button and key equivalent.
     pub control: ControlProps,
@@ -279,6 +284,7 @@ impl<Msg> Element<Msg> {
             children: Vec::new(),
             role: None,
             label: None,
+            test_id: None,
             disabled: false,
             control: ControlProps::default(),
             required: false,
@@ -320,6 +326,14 @@ impl<Msg> Element<Msg> {
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Stable id for tests and automation, e.g. `"form.enviar"` or
+    /// `"cliente.42.borrar"`: lowercase segments separated by `.`, no
+    /// personal data (assistive tools can read it), `kai.*` reserved.
+    pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
+        self.test_id = Some(test_id.into());
         self
     }
 
@@ -470,6 +484,51 @@ impl<Msg> Element<Msg> {
                 None => hash(id, &(index as u64).to_le_bytes()),
             };
             child.assign(child_id);
+        }
+    }
+
+    /// Keys repeated among siblings (they collide into one [`WidgetId`]) and
+    /// test ids repeated in the tree, each reported with the paths of both
+    /// elements, e.g. `root > 2 > 0[key="ana"]`. Empty when ids are sound.
+    pub fn validate_ids(&self) -> Vec<String> {
+        let mut problems = Vec::new();
+        self.validate("root", &mut HashMap::new(), &mut problems);
+        problems
+    }
+
+    fn validate<'a>(
+        &'a self,
+        path: &str,
+        test_ids: &mut HashMap<&'a str, String>,
+        problems: &mut Vec<String>,
+    ) {
+        if let Some(test_id) = &self.test_id {
+            match test_ids.get(test_id.as_str()) {
+                Some(first) => {
+                    problems.push(format!("test_id \"{test_id}\" repetido: {first} y {path}"));
+                }
+                None => {
+                    test_ids.insert(test_id, path.to_owned());
+                }
+            }
+        }
+        let mut keys: HashMap<&str, String> = HashMap::new();
+        for (index, child) in self.children.iter().enumerate() {
+            let child_path = match &child.key {
+                Some(key) => format!("{path} > {index}[key=\"{key}\"]"),
+                None => format!("{path} > {index}"),
+            };
+            if let Some(key) = &child.key {
+                match keys.get(key.as_str()) {
+                    Some(first) => problems.push(format!(
+                        "key \"{key}\" repetida entre hermanos: {first} y {child_path}"
+                    )),
+                    None => {
+                        keys.insert(key, child_path.clone());
+                    }
+                }
+            }
+            child.validate(&child_path, test_ids, problems);
         }
     }
 
@@ -927,5 +986,59 @@ mod tests {
         assert_eq!(field.on_submit, Some(Msg::Submitted));
         let _ = div::<Msg>().class("").class("p-4").class("m-2");
         assert_eq!(div::<Msg>().class("p-4").class("m-2").class, "p-4 m-2");
+    }
+
+    fn ids(tree: &Element<Msg>) -> Vec<WidgetId> {
+        let mut ids = Vec::new();
+        tree.walk(&mut |element| ids.push(element.id));
+        ids
+    }
+
+    #[test]
+    fn test_id_does_not_change_widget_ids() {
+        let plain = sample::tree();
+        let mut tagged = sample::tree();
+        tagged.test_id = Some("app".to_owned());
+        for (index, child) in tagged.children.iter_mut().enumerate() {
+            child.test_id = Some(format!("app.{index}"));
+        }
+        tagged.assign_ids();
+        assert_eq!(ids(&plain), ids(&tagged));
+        assert!(tagged.validate_ids().is_empty());
+    }
+
+    #[test]
+    fn duplicate_keys_are_reported_with_both_paths() {
+        let tree: Element<Msg> = div().child(div().children([
+            text("Ana").key("ana"),
+            text("Luis").key("luis"),
+            text("Ana bis").key("ana"),
+        ]));
+        assert_eq!(
+            tree.validate_ids(),
+            vec![
+                "key \"ana\" repetida entre hermanos: root > 0 > 0[key=\"ana\"] y \
+                 root > 0 > 2[key=\"ana\"]"
+                    .to_owned()
+            ]
+        );
+        let cousins: Element<Msg> = div().children([
+            div().child(text("a").key("x")),
+            div().child(text("b").key("x")),
+        ]);
+        assert!(cousins.validate_ids().is_empty(), "keys are per parent");
+    }
+
+    #[test]
+    fn duplicate_test_ids_are_reported() {
+        let tree: Element<Msg> = div().children([
+            div().test_id("form.enviar"),
+            div().child(div().test_id("form.enviar")),
+            div().test_id("form.limpiar"),
+        ]);
+        assert_eq!(
+            tree.validate_ids(),
+            vec!["test_id \"form.enviar\" repetido: root > 0 y root > 1 > 0".to_owned()]
+        );
     }
 }

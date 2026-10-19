@@ -152,6 +152,9 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             }
         }
     }
+    if let Some(test_id) = &source.test_id {
+        node.set_author_id(test_id.as_str());
+    }
     if source.required {
         node.set_required();
     }
@@ -298,6 +301,19 @@ mod tests {
         width: 1024.0,
         height: 720.0,
     };
+
+    #[test]
+    fn test_id_is_exposed_as_author_id() {
+        let mut tree = sample::tree();
+        tree.children[2].test_id = Some("demo.probar".to_owned());
+        tree.children[5].test_id = Some("demo.campo".to_owned());
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let author_id = |id| node(&update, node_id(id)).author_id();
+        assert_eq!(author_id(sample::button()), Some("demo.probar"));
+        assert_eq!(author_id(sample::field()), Some("demo.campo"));
+        assert_eq!(author_id(sample::heading()), None);
+    }
 
     #[test]
     fn tree_mirrors_elements_with_roles_names_values_and_scaled_root() {

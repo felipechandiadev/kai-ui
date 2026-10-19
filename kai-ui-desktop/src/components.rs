@@ -416,6 +416,7 @@ pub struct TextField<Msg> {
     placeholder_color: Option<String>,
     on_input: Option<Rc<dyn Fn(String) -> Msg>>,
     on_submit: Option<Msg>,
+    test_id: Option<String>,
 }
 
 impl<Msg> TextField<Msg> {
@@ -441,7 +442,14 @@ impl<Msg> TextField<Msg> {
             placeholder_color: None,
             on_input: None,
             on_submit: None,
+            test_id: None,
         }
+    }
+
+    /// Test id of the input itself; the password eye gets `<id>.mostrar`.
+    pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
+        self.test_id = Some(test_id.into());
+        self
     }
 
     /// Shown while the field is empty and unfocused; defaults to the label.
@@ -577,7 +585,9 @@ impl<Msg> TextField<Msg> {
             row.push(adornment(end, compact, muted, true));
         }
         if let Some((revealed, on_toggle)) = self.password.take() {
-            row.push(password_toggle(revealed, on_toggle, self.disabled));
+            let mut toggle = password_toggle(revealed, on_toggle, self.disabled);
+            toggle.test_id = self.test_id.as_ref().map(|id| format!("{id}.mostrar"));
+            row.push(toggle);
         }
 
         let cursor = if self.disabled {
@@ -937,6 +947,7 @@ impl<Msg> TextField<Msg> {
         )
         .required(self.required)
         .disabled(self.disabled);
+        field.test_id = self.test_id.clone();
         if let Some(helper) = &self.helper_text {
             field = field.description(helper.clone());
         }

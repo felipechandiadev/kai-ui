@@ -14,7 +14,8 @@
 //! is not reduced. Those frames reuse the last prepared draws unless
 //! something else changed (`dirty`).
 
-use std::collections::{BTreeMap, HashMap};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::sync::Arc;
 use std::time::Instant;
@@ -104,11 +105,30 @@ pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Build the tree for the current model with ids assigned.
+/// Build the tree for the current model with ids assigned. Debug builds
+/// report duplicate keys and test ids (see [`Element::validate_ids`]), each
+/// problem once per thread.
 pub fn build_view<A: App>(app: &A) -> Element<A::Msg> {
     let mut tree = app.view();
     tree.assign_ids();
+    if cfg!(debug_assertions) {
+        report_id_problems(tree.validate_ids());
+    }
     tree
+}
+
+fn report_id_problems(problems: Vec<String>) {
+    thread_local! {
+        static REPORTED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    }
+    REPORTED.with_borrow_mut(|reported| {
+        for problem in problems {
+            if !reported.contains(&problem) {
+                eprintln!("Ids inválidos: {problem}");
+                reported.insert(problem);
+            }
+        }
+    });
 }
 
 /// Nearest control (clickable or editable element, enabled or not) on a

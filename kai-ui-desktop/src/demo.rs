@@ -204,6 +204,7 @@ impl App for Demo {
                         IconButtonVariant::Primary,
                         IconButtonSize::Sm,
                     )
+                    .test_id("header.sumar")
                     .on_click(Msg::Increment),
                 ]),
             ]);
@@ -255,10 +256,12 @@ impl App for Demo {
                     .children([
                         // Return here activates «Enviar», the default button.
                         TextField::new("Nombre", &self.name)
+                            .test_id("form.nombre")
                             .start_icon(Icon::User)
                             .on_input(Msg::NameChanged)
                             .build(),
                         TextField::new("Correo", &self.email)
+                            .test_id("form.correo")
                             .start_icon(Icon::Search)
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
@@ -278,8 +281,11 @@ impl App for Demo {
                     ]),
             ]),
             card_actions().children([
-                button("Limpiar", ButtonVariant::Text).on_click(Msg::Clear),
+                button("Limpiar", ButtonVariant::Text)
+                    .test_id("form.limpiar")
+                    .on_click(Msg::Clear),
                 button("Enviar", ButtonVariant::Primary)
+                    .test_id("form.enviar")
                     .on_click(Msg::Submit)
                     .default_button(true)
                     .disabled(!self.can_submit()),
@@ -563,6 +569,7 @@ impl Demo {
                             .on_input(edit(Field::Search))
                             .build(),
                         TextField::new("Contraseña", &self.password)
+                            .test_id("form.password")
                             .password(self.show_password, Msg::TogglePassword)
                             .required(true)
                             .helper_text("Mínimo 8 caracteres")
@@ -713,7 +720,7 @@ mod tests {
 
     use super::{Demo, Field, Msg};
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-    use crate::element::{FocusKind, FocusOrder, Kind, WidgetId};
+    use crate::element::{FocusKind, FocusOrder, Kind, Role, WidgetId};
     use crate::geometry::Size;
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
@@ -889,7 +896,7 @@ mod tests {
             repeat: false,
         });
         let mut demo = Demo::default();
-        let name = input_labeled(&demo, Some("Nombre"));
+        let name = by_test_id(&demo, "form.nombre");
         let order = FocusOrder::from_tree(&build_view(&demo));
         let mut model = UiModel::default();
         dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
@@ -897,13 +904,13 @@ mod tests {
         assert_eq!(empty.activated, None, "«Enviar» is disabled without a name");
 
         demo.update(Msg::NameChanged("Ana".to_owned()));
-        let send = element_with_text(&demo, "Enviar");
+        let send = by_test_id(&demo, "form.enviar");
         let order = FocusOrder::from_tree(&build_view(&demo));
         let result = dispatch(&mut model, &order, return_key.clone());
         assert_eq!(result.activated.map(|a| a.widget), Some(send));
 
         // «Correo» keeps its on_submit.
-        let email = input_labeled(&demo, Some("Correo"));
+        let email = by_test_id(&demo, "form.correo");
         dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
         let result = dispatch(&mut model, &order, return_key);
         assert_eq!(result.activated, None);
@@ -1165,6 +1172,50 @@ mod tests {
         });
         let path = tree.path_to(found.expect("label exists")).unwrap();
         path[path.len() - 2]
+    }
+
+    fn by_test_id(demo: &Demo, test_id: &str) -> WidgetId {
+        let tree = build_view(demo);
+        let mut found = None;
+        tree.walk(&mut |element| {
+            if element.test_id.as_deref() == Some(test_id) {
+                found = Some(element.id);
+            }
+        });
+        found.unwrap_or_else(|| panic!("no element with test_id {test_id:?}"))
+    }
+
+    #[test]
+    fn test_ids_are_unique_and_point_at_the_controls() {
+        let demo = Demo::default();
+        let tree = build_view(&demo);
+        assert_eq!(tree.validate_ids(), Vec::<String>::new());
+        let kind = |test_id| {
+            let id = by_test_id(&demo, test_id);
+            let element = tree.find(id).unwrap();
+            (element.role, element.label.clone())
+        };
+        assert_eq!(
+            kind("form.nombre"),
+            (Some(Role::TextInput), Some("Nombre".to_owned()))
+        );
+        assert_eq!(
+            kind("form.password"),
+            (Some(Role::TextInput), Some("Contraseña".to_owned()))
+        );
+        assert_eq!(
+            kind("form.password.mostrar"),
+            (Some(Role::Button), Some("Mostrar contraseña".to_owned()))
+        );
+        assert_eq!(
+            by_test_id(&demo, "form.enviar"),
+            element_with_text(&demo, "Enviar")
+        );
+        assert_eq!(
+            by_test_id(&demo, "form.limpiar"),
+            element_with_text(&demo, "Limpiar")
+        );
+        assert_eq!(kind("header.sumar").0, Some(Role::Button));
     }
 
     fn first_input(demo: &Demo) -> WidgetId {
@@ -1940,7 +1991,7 @@ mod tests {
         ] {
             filled.update(Msg::Edit(field, value.to_owned()));
         }
-        let password = input_labeled(&filled, Some("Contraseña"));
+        let password = by_test_id(&filled, "form.password");
         let tree = build_view(&filled);
         snapshot(
             out,
