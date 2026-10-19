@@ -233,6 +233,15 @@ pub struct Element<Msg> {
     /// `accessibilityIdentifier`). Unique per window; not part of the
     /// [`WidgetId`].
     pub test_id: Option<String>,
+    /// Name of this element inside its component (`"input"`, `"header"`…).
+    /// Without its own `test_id`, it gets `<owner>.<part>` (see
+    /// [`Element::assign_ids`]).
+    pub part: Option<&'static str>,
+    /// Component root: parts below it derive from its `test_id`, or get
+    /// none when it has no id.
+    pub parts_root: bool,
+    /// `test_id` was derived from `part`, not set by the app.
+    derived_test_id: bool,
     pub disabled: bool,
     /// Size, on/off/mixed state, default button and key equivalent.
     pub control: ControlProps,
@@ -285,6 +294,9 @@ impl<Msg> Element<Msg> {
             role: None,
             label: None,
             test_id: None,
+            part: None,
+            parts_root: false,
+            derived_test_id: false,
             disabled: false,
             control: ControlProps::default(),
             required: false,
@@ -334,6 +346,19 @@ impl<Msg> Element<Msg> {
     /// personal data (assistive tools can read it), `kai.*` reserved.
     pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
         self.test_id = Some(test_id.into());
+        self.derived_test_id = false;
+        self
+    }
+
+    /// Name this element inside its component; see [`Element::part`].
+    pub fn part(mut self, part: &'static str) -> Self {
+        self.part = Some(part);
+        self
+    }
+
+    /// Mark a component root; see [`Element::parts_root`].
+    pub fn parts_root(mut self) -> Self {
+        self.parts_root = true;
         self
     }
 
@@ -471,9 +496,46 @@ impl<Msg> Element<Msg> {
     }
 
     /// Give every element an id derived from its parent's id and its key or
-    /// index among siblings. Call once on the root after `view`.
+    /// index among siblings, and a `test_id` to every [`Element::part`]
+    /// without one: `<owner>.<part>`, where the owner is the nearest
+    /// ancestor with its own `test_id` or that is a
+    /// [`Element::parts_root`] (a root without id gives its parts none).
+    /// Call on the root after `view`; calling it again gives the same ids.
     pub fn assign_ids(&mut self) {
         self.assign(hash(0x6b61_6920_7569, b"root"));
+        self.derive_test_ids(None);
+    }
+
+    fn derive_test_ids(&mut self, owner: Option<&str>) {
+        if self.derived_test_id {
+            self.test_id = None;
+            self.derived_test_id = false;
+        }
+        let own = self.test_id.clone();
+        if own.is_none()
+            && let (Some(part), Some(owner)) = (self.part, owner)
+        {
+            self.test_id = Some(format!("{owner}.{part}"));
+            self.derived_test_id = true;
+        }
+        let next = match &own {
+            Some(own) => Some(own.as_str()),
+            None if self.parts_root => None,
+            None => owner,
+        };
+        for child in &mut self.children {
+            child.derive_test_ids(next);
+        }
+    }
+
+    /// The element with this `test_id` (own or derived), in document order.
+    pub fn find_test_id(&self, test_id: &str) -> Option<&Element<Msg>> {
+        if self.test_id.as_deref() == Some(test_id) {
+            return Some(self);
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.find_test_id(test_id))
     }
 
     fn assign(&mut self, id: u64) {
@@ -1039,6 +1101,91 @@ mod tests {
         assert_eq!(
             tree.validate_ids(),
             vec!["test_id \"form.enviar\" repetido: root > 0 y root > 1 > 0".to_owned()]
+        );
+    }
+
+    /// A card-like component: root, header with a title, content.
+    fn widget(test_id: Option<&str>) -> Element<Msg> {
+        let mut root = div().parts_root().children([
+            div().part("header").child(text("Título").part("title")),
+            div().part("content").child(text("Cuerpo")),
+        ]);
+        root.test_id = test_id.map(str::to_owned);
+        root
+    }
+
+    fn test_ids(tree: &Element<Msg>) -> Vec<String> {
+        let mut out = Vec::new();
+        tree.walk(&mut |element| out.extend(element.test_id.clone()));
+        out
+    }
+
+    #[test]
+    fn parts_derive_from_the_nearest_explicit_test_id() {
+        let mut tree: Element<Msg> = div()
+            .test_id("pantalla")
+            .children([widget(Some("x")), div().child(text("y").part("nota"))]);
+        tree.assign_ids();
+        assert_eq!(
+            test_ids(&tree),
+            [
+                "pantalla",
+                "x",
+                "x.header",
+                "x.title",
+                "x.content",
+                "pantalla.nota"
+            ]
+        );
+        assert_eq!(
+            tree.find_test_id("x.title").map(|e| e.text_content()),
+            Some("Título".to_owned())
+        );
+        assert!(tree.validate_ids().is_empty());
+    }
+
+    #[test]
+    fn explicit_test_id_wins_over_part() {
+        let mut card = widget(Some("x"));
+        card.children[1] = div().part("content").test_id("x.cuerpo");
+        let mut tree: Element<Msg> = div().child(card);
+        tree.assign_ids();
+        assert_eq!(test_ids(&tree), ["x", "x.header", "x.title", "x.cuerpo"]);
+    }
+
+    #[test]
+    fn assign_ids_twice_keeps_derived_ids() {
+        let mut tree: Element<Msg> = div().children([widget(Some("a")), widget(Some("b"))]);
+        tree.assign_ids();
+        let first = test_ids(&tree);
+        tree.assign_ids();
+        assert_eq!(test_ids(&tree), first);
+
+        tree.children[1].test_id = Some("a".to_owned());
+        tree.assign_ids();
+        assert_eq!(
+            tree.validate_ids(),
+            [
+                "test_id \"a\" repetido: root > 0 y root > 1",
+                "test_id \"a.header\" repetido: root > 0 > 0 y root > 1 > 0",
+                "test_id \"a.title\" repetido: root > 0 > 0 > 0 y root > 1 > 0 > 0",
+                "test_id \"a.content\" repetido: root > 0 > 1 y root > 1 > 1",
+            ]
+        );
+    }
+
+    #[test]
+    fn parts_without_owner_get_no_test_id() {
+        let mut tree: Element<Msg> = div().child(widget(None));
+        tree.assign_ids();
+        assert!(test_ids(&tree).is_empty());
+
+        let mut inside: Element<Msg> = div().test_id("form").child(widget(None));
+        inside.assign_ids();
+        assert_eq!(
+            test_ids(&inside),
+            ["form"],
+            "a component root without id does not borrow its ancestor's"
         );
     }
 }
