@@ -24,7 +24,7 @@ mod app;
 mod mcp;
 mod query;
 
-pub use app::{MemoryClipboard, TestApp, TestAppBuilder};
+pub use app::{AgentReply, Confirm, MemoryClipboard, TestApp, TestAppBuilder};
 #[cfg(feature = "mcp")]
 pub use mcp::McpClient;
 pub use query::{By, Found, Screen};

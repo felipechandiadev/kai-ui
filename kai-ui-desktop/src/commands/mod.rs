@@ -10,6 +10,7 @@
 //! unit struct; it takes `{}` and is published as a closed empty object.
 //! Other inputs use `#[serde(deny_unknown_fields)]`.
 
+mod audit;
 mod registry;
 mod schema;
 
@@ -23,6 +24,7 @@ use serde::de::DeserializeOwned;
 use crate::element::KeyEquivalent;
 use crate::runtime::App;
 
+pub use audit::{AUDIT_CAPACITY, AuditEntry, AuditLog, Origin, Outcome, REDACTED, redact};
 pub use registry::{CommandBuilder, CommandRegistry};
 pub use schema::{DIALECT, describe, describe_json};
 

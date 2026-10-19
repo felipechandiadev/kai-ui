@@ -6,11 +6,9 @@
 //! the same `Session` through `kai::testing::TestApp` without a window or
 //! GPU. Nothing here knows about winit.
 
-use std::collections::{BTreeMap, HashMap};
+mod calls;
 
-use accesskit::{ActionRequest, TreeUpdate};
-use cosmic_text::{FontSystem, Metrics};
-use serde_json::Value;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
@@ -36,6 +34,10 @@ use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
 use crate::theme::Theme;
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
+use accesskit::{ActionRequest, TreeUpdate};
+use cosmic_text::{FontSystem, Metrics};
+
+pub(crate) use calls::{AgentCall, CONFIRMATION};
 
 /// Extra room kept visible around a focused element when scrolling to it
 /// (focus rings are 2px wide with a 2px offset).
@@ -98,6 +100,8 @@ pub(crate) struct Session<A: App> {
     /// Availability of every command after the last `update`.
     commands: Vec<CommandState>,
     palette: Option<Palette>,
+    /// Agent calls, their confirmation dialog and the audit log.
+    agents: calls::Agents,
 }
 
 /// The command palette while it is open: an overlay the session appends to
@@ -188,6 +192,7 @@ impl<A: App> Session<A> {
             registry,
             commands,
             palette: None,
+            agents: calls::Agents::default(),
         };
         session.rebuild();
         session.relayout();
@@ -297,7 +302,9 @@ impl<A: App> Session<A> {
             self.commands = commands;
         }
         self.tree = build_view_with(&self.app, &self.commands);
+        self.add_agent_status();
         self.add_palette();
+        self.add_confirmation();
         self.background = self.app.background();
         if let Some(theme) = self.app.theme()
             && theme != self.theme
@@ -305,9 +312,13 @@ impl<A: App> Session<A> {
             self.theme = theme;
             self.outbox.theme = Some(theme);
         }
-        // While the palette is open only it takes focus and keys, and its
-        // own shortcut closes it.
-        let overlay = self.palette.as_ref().and(self.tree.children.last());
+        // While the palette or the confirmation dialog is open only it
+        // takes focus and keys. The palette's own shortcut closes it; the
+        // dialog takes no shortcuts.
+        let confirming = self.confirmation_open();
+        let overlay = (self.palette.is_some() || confirming)
+            .then(|| self.tree.children.last())
+            .flatten();
         self.focus_order = FocusOrder::from_tree(overlay.unwrap_or(&self.tree));
         self.focus_order.set_commands(
             self.commands
@@ -315,7 +326,7 @@ impl<A: App> Session<A> {
                 .filter(|command| {
                     command.kind == CommandKind::Action && command.availability.is_enabled()
                 })
-                .filter(|command| overlay.is_none() || command.id == PALETTE)
+                .filter(|command| !confirming && (overlay.is_none() || command.id == PALETTE))
                 .filter_map(|command| command.shortcut.map(|shortcut| (command.id, shortcut)))
                 .collect(),
         );
@@ -423,8 +434,12 @@ impl<A: App> Session<A> {
 
     /// Run command `id` as a shortcut, the menu bar or the palette do: an
     /// app action sends its message when it is enabled, `kai.paleta` opens
-    /// or closes the palette. Returns whether something ran.
+    /// or closes the palette. Returns whether something ran: nothing does
+    /// while the confirmation dialog is open.
     pub fn perform_command(&mut self, id: &str) -> bool {
+        if self.confirmation_open() {
+            return false;
+        }
         if id == PALETTE {
             if self.palette.is_some() {
                 self.close_palette();
@@ -459,24 +474,6 @@ impl<A: App> Session<A> {
     /// Whether `id` is a registered query.
     pub fn has_query(&self, id: &str) -> bool {
         self.registry.has_query(id)
-    }
-
-    /// Run command `id` on a JSON `input`, as a script or an agent does: a
-    /// query returns its output; an action that can run sends its message
-    /// and returns the output of its `returns` query, or `null`.
-    pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
-        if self.registry.has_query(id) {
-            return self.registry.run_query(&self.app, id, input);
-        }
-        let msg = self.registry.message_from(&self.app, id, input)?;
-        self.send(msg);
-        match self.registry.returns(id) {
-            Some(query) => {
-                self.registry
-                    .run_query(&self.app, query, Value::Object(Default::default()))
-            }
-            None => Ok(Value::Null),
-        }
     }
 
     /// Whether the command palette is open.
@@ -706,6 +703,10 @@ impl<A: App> Session<A> {
             })
         };
         if let Some(activation) = result.activated
+            && let Some(decision) = self.confirmation_button(activation.widget)
+        {
+            self.decide(decision);
+        } else if let Some(activation) = result.activated
             && let Some(id) = palette_row(activation.widget)
         {
             self.run_from_palette(id);
@@ -718,6 +719,8 @@ impl<A: App> Session<A> {
         }
         if let Some(Action::Command(id)) = result.action {
             self.perform_command(id);
+        } else if self.confirmation_open() && result.action == Some(Action::CancelOperation) {
+            self.decide(calls::Decision::Deny);
         } else if self.palette.is_some() && result.action == Some(Action::CancelOperation) {
             self.close_palette();
         } else if let Some(action) = result.action
@@ -817,6 +820,12 @@ impl<A: App> Session<A> {
             && !self.hover_path.contains(&palette.panel)
         {
             self.close_palette();
+            return;
+        }
+        if pressed
+            && let Some(panel) = self.confirmation_panel()
+            && !self.hover_path.contains(&panel)
+        {
             return;
         }
         if pressed {

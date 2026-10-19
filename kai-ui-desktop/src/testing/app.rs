@@ -4,16 +4,17 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc;
 
 use serde_json::Value;
 
 use super::{By, Found, Screen, VIEWPORT};
-use crate::commands::{Action, Availability, CommandError, CommandState, Query};
+use crate::commands::{Action, AuditLog, Availability, CommandError, CommandState, Query};
 use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::platform_adapter::adapt_key_input;
 use crate::runtime::App;
-use crate::session::{Measure, Session};
+use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
 use crate::text_field::ClipboardPort;
 use crate::theme::{Density, Theme};
@@ -88,6 +89,8 @@ impl<A: App> TestAppBuilder<A> {
         let mut app = TestApp {
             session,
             clipboard: self.clipboard,
+            confirm: Confirm::Ask,
+            next_agent_call: 1,
         };
         app.frame();
         app
@@ -132,6 +135,45 @@ impl<A: App> TestAppBuilder<A> {
 pub struct TestApp<A: App> {
     session: Session<A>,
     clipboard: MemoryClipboard,
+    confirm: Confirm,
+    next_agent_call: u64,
+}
+
+/// What the person does when an agent's call opens the confirmation
+/// dialog in a [`TestApp`]: the test app clicks that button.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Confirm {
+    /// Leave the dialog open; the test answers it.
+    #[default]
+    Ask,
+    AllowOnce,
+    AllowForSession,
+    Deny,
+}
+
+/// The answer to [`TestApp::agent_call`], once there is one.
+#[derive(Debug)]
+pub struct AgentReply {
+    id: u64,
+    answer: mpsc::Receiver<Result<Value, CommandError>>,
+    result: RefCell<Option<Result<Value, CommandError>>>,
+}
+
+impl AgentReply {
+    /// Id to cancel the call with ([`TestApp::cancel_agent_call`]).
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// The result, or `None` while the call waits (for confirmation or
+    /// behind another one).
+    pub fn result(&self) -> Option<Result<Value, CommandError>> {
+        let mut result = self.result.borrow_mut();
+        if result.is_none() {
+            *result = self.answer.try_recv().ok();
+        }
+        result.clone()
+    }
 }
 
 impl<A: App> TestApp<A> {
@@ -277,13 +319,96 @@ impl<A: App> TestApp<A> {
         self.session.commands()
     }
 
-    /// Run command `id` on a JSON `input`, the way an agent will: a query
-    /// returns its output, an action returns `null` once its message went
-    /// through `update`. Without parameters the input is `{}`.
+    /// Run command `id` on a JSON `input`, as a script does: a query
+    /// returns its output, an action returns `null` (or the output of its
+    /// `returns` query) once its message went through `update`. Without
+    /// parameters the input is `{}`. Actions land in the [`audit_log`]
+    /// as [`Origin::Script`]; nothing asks for confirmation.
+    ///
+    /// [`audit_log`]: Self::audit_log
+    /// [`Origin::Script`]: crate::commands::Origin::Script
     pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
         let output = self.session.call(id, input)?;
         self.frame();
         Ok(output)
+    }
+
+    /// Run command `id` as agent `client` would over MCP: only exposed
+    /// commands, and a `Destructive` action opens the confirmation dialog
+    /// (`kai.confirmar`). What happens then follows [`on_confirmation`];
+    /// with [`Confirm::Ask`] the dialog stays open for the test to click.
+    /// The reply arrives when the call ran, was rejected or cancelled.
+    ///
+    /// [`on_confirmation`]: Self::on_confirmation
+    pub fn agent_call(&mut self, client: &str, id: &str, input: Value) -> AgentReply {
+        let call_id = self.next_agent_call;
+        self.next_agent_call += 1;
+        let (sender, answer) = mpsc::channel();
+        self.run_agent_call(AgentCall {
+            id: call_id,
+            client: client.to_owned(),
+            command: id.to_owned(),
+            input,
+            reply: Box::new(move |result| {
+                let _ = sender.send(result);
+            }),
+        });
+        AgentReply {
+            id: call_id,
+            answer,
+            result: RefCell::new(None),
+        }
+    }
+
+    pub(crate) fn run_agent_call(&mut self, call: AgentCall) {
+        self.session.agent_call(call);
+        self.frame();
+        self.answer_confirmations();
+    }
+
+    /// The agent stopped waiting for call `id` (time limit or
+    /// cancellation): its dialog closes, or it leaves the queue.
+    pub fn cancel_agent_call(&mut self, id: u64) {
+        self.session.cancel_agent_call(id);
+        self.frame();
+        self.answer_confirmations();
+    }
+
+    /// What the person does when the confirmation dialog opens from now
+    /// on; [`Confirm::Ask`] (the default) leaves it open.
+    pub fn on_confirmation(&mut self, confirm: Confirm) {
+        self.confirm = confirm;
+        self.answer_confirmations();
+    }
+
+    /// An agent called `client` connected: the indicator `kai.agente`
+    /// appears.
+    pub fn agent_connected(&mut self, client: &str) {
+        self.session.agent_connected(client);
+        self.frame();
+    }
+
+    /// Actions run through JSON so far, by scripts and agents.
+    pub fn audit_log(&self) -> &AuditLog {
+        self.session.audit_log()
+    }
+
+    /// Click the button of the [`Confirm`] policy while a dialog is open.
+    fn answer_confirmations(&mut self) {
+        let part = match self.confirm {
+            Confirm::Ask => return,
+            Confirm::AllowOnce => "una_vez",
+            Confirm::AllowForSession => "sesion",
+            Confirm::Deny => "rechazar",
+        };
+        while self.session.confirmation_open() {
+            let recorded = self.audit_log().len();
+            self.click(By::test_id(format!("{CONFIRMATION}.{part}")));
+            assert!(
+                self.audit_log().len() > recorded,
+                "el diálogo de confirmación no respondió al clic"
+            );
+        }
     }
 
     /// Press and release the primary button at `point`, whatever is there.

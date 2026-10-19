@@ -47,7 +47,7 @@
         "type": "object"
       },
       "kind": "action",
-      "safety": "mutating",
+      "safety": "destructive",
       "title": "Reiniciar"
     },
     {
