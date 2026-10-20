@@ -118,6 +118,7 @@ fn render_with_layout<Msg>(
             value,
             masked,
             read_only,
+            rows,
             ..
         } = &element.kind
             && let Some(node) = layout.node(element.id)
@@ -127,10 +128,14 @@ fn render_with_layout<Msg>(
                 fonts,
                 Metrics::new(node.text.font_size, node.text.line_height),
             );
+            field.set_multiline(fonts, rows.is_some());
             field.set_masked(fonts, *masked);
             field.set_read_only(fonts, *read_only);
+            if let Some(line) = node.text_box {
+                field.set_width(fonts, line.width);
+                field.set_height(fonts, line.height);
+            }
             field.set_text(fonts, value);
-            field.set_width(fonts, node.text_box.map_or(1.0, |line| line.width));
             let view = field.view(fonts);
             decorations.push((element.id, view.decorations));
             text.set_buffer(

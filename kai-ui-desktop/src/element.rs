@@ -242,7 +242,17 @@ pub enum Kind {
         read_only: bool,
         /// Select the whole value when the input gains focus.
         select_on_focus: bool,
+        /// Several wrapped lines ([`Element::multiline`]).
+        rows: Option<Rows>,
     },
+}
+
+/// Visible lines of a multiline input: it grows with its text from `min`
+/// to `max` lines and scrolls beyond.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rows {
+    pub min: u16,
+    pub max: u16,
 }
 
 pub struct Handlers<Msg> {
@@ -374,6 +384,7 @@ pub fn input<Msg>(value: impl Into<String>, placeholder: impl Into<String>) -> E
         masked: false,
         read_only: false,
         select_on_focus: false,
+        rows: None,
     })
 }
 
@@ -590,6 +601,19 @@ impl<Msg> Element<Msg> {
         } = &mut self.kind
         {
             *select_on_focus = on;
+        }
+        self
+    }
+
+    /// Inputs only: wrapped lines where Return breaks the line and ⌘Return
+    /// submits; the input is `min` to `max` lines tall, following its text.
+    pub fn multiline(mut self, min: u16, max: u16) -> Self {
+        if let Kind::Input { rows, .. } = &mut self.kind {
+            let min = min.max(1);
+            *rows = Some(Rows {
+                min,
+                max: max.max(min),
+            });
         }
         self
     }
@@ -876,6 +900,8 @@ struct FocusEntry {
     focus_on_press: bool,
     /// Text field with `on_submit`: it keeps Return for itself.
     submits: bool,
+    /// [`Element::multiline`] input: Return breaks the line.
+    multiline: bool,
     /// [`Element::claims_escape`].
     cancels: bool,
     /// Nearest [`Element::focus_group`] ancestor.
@@ -910,6 +936,7 @@ impl FocusOrder {
                 kind,
                 focus_on_press: element.focus_on_press,
                 submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
+                multiline: matches!(element.kind, Kind::Input { rows: Some(_), .. }),
                 cancels: element.claims_escape,
                 group: group.map(|(id, _)| id),
                 selects: group.is_some_and(|(_, behavior)| behavior == FocusGroup::Select),
@@ -992,6 +1019,11 @@ impl FocusOrder {
     /// Whether `id` is a text field with `on_submit`.
     pub fn submits(&self, id: WidgetId) -> bool {
         self.entry(id).is_some_and(|entry| entry.submits)
+    }
+
+    /// Whether `id` is a [`Element::multiline`] input.
+    pub fn multiline(&self, id: WidgetId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.multiline)
     }
 
     /// Whether `id` keeps Escape ([`Element::claims_escape`]).

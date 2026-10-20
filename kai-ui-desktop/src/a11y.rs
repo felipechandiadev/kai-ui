@@ -68,6 +68,7 @@ pub fn a11y_tree(snapshot: &A11ySnapshot<'_>) -> TreeUpdate {
 /// AccessKit tree and the `testing` queries.
 pub fn effective_role(node: &LayoutNode) -> KaiRole {
     node.role.unwrap_or(match node.content {
+        Content::Input { lines: Some(_), .. } => KaiRole::TextArea,
         Content::Input { .. } => KaiRole::TextInput,
         Content::Icon(_) => KaiRole::Image,
         _ if node.control => KaiRole::Button,
@@ -207,6 +208,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             placeholder,
             masked,
             read_only,
+            ..
         } => {
             node.set_placeholder(placeholder.as_str());
             if !masked {

@@ -319,7 +319,7 @@ fn key_commands(
         let focus = FocusContext {
             is_text: kind == Some(FocusKind::TextField),
             claims_return: kind == Some(FocusKind::Button)
-                || focused.is_some_and(|id| order.submits(id)),
+                || focused.is_some_and(|id| order.submits(id) || order.multiline(id)),
             claims_escape: focused.is_some_and(|id| order.cancels(id)),
         };
         match key_equivalent_route(order.equivalents(), order.commands(), pressed, focus) {
@@ -376,7 +376,10 @@ fn key_commands(
                 let unconsumed = match standard_action(key, modifiers) {
                     // The field has no undo stack yet.
                     Some(action @ (Action::Undo | Action::Redo)) => Some(action),
-                    _ if pressed == KeyEquivalent::RETURN && !order.submits(field) => {
+                    _ if pressed == KeyEquivalent::RETURN
+                        && !order.submits(field)
+                        && !order.multiline(field) =>
+                    {
                         Some(Action::InsertNewline)
                     }
                     _ => None,
@@ -440,6 +443,7 @@ fn text_key_commands(
                 | Key::ArrowDown
                 | Key::Backspace
                 | Key::Delete
+                | Key::Enter
         )
     {
         return Vec::new();
@@ -839,6 +843,34 @@ mod tests {
         dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
         let enter = dispatch(&mut model, &order, plain(Key::Enter));
         assert_eq!(enter.action, Some(Action::InsertNewline));
+    }
+
+    #[test]
+    fn a_multiline_field_keeps_return_from_the_default_button() {
+        let (mut tree, _) = tree_with_default_and_cancel();
+        tree.children[0] = input("", "Notas")
+            .on_input(sample::Msg::Edited)
+            .multiline(3, 3);
+        tree.assign_ids();
+        let notes = tree.children[0].id;
+        let order = FocusOrder::from_tree(&tree);
+        let mut model = UiModel::default();
+        dispatch(&mut model, &order, Intent::SetFocus(Some(notes)));
+
+        let enter = dispatch(&mut model, &order, plain(Key::Enter));
+        assert_eq!(enter.activated, None);
+        assert_eq!(enter.action, None, "the field consumes the line break");
+        assert_eq!(enter.text_actions.len(), 1);
+        let held = dispatch(
+            &mut model,
+            &order,
+            Intent::Text(TextIntent::KeyDown {
+                key: Key::Enter,
+                modifiers: Modifiers::NONE,
+                repeat: true,
+            }),
+        );
+        assert_eq!(held.text_actions.len(), 1, "a held Return repeats");
     }
 
     #[test]

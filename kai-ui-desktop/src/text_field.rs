@@ -1,7 +1,8 @@
-//! Single-line editable text field state over `cosmic-text`.
+//! Editable text field state over `cosmic-text`: one line that scrolls
+//! sideways, or several wrapped lines that scroll vertically (text areas).
 //!
 //! Coordinates returned by [`TextFieldView`] are logical points relative to the
-//! field's text origin, with the horizontal scroll already applied.
+//! field's text origin, with the scroll already applied.
 
 use std::ops::Range;
 
@@ -76,6 +77,7 @@ pub struct Preedit {
 pub struct TextFieldDecorations {
     pub has_content: bool,
     pub scroll_x: f32,
+    pub scroll_y: f32,
     pub caret: Option<Rect>,
     pub selection: Vec<Rect>,
     pub preedit_underline: Vec<Rect>,
@@ -91,8 +93,12 @@ pub struct TextFieldState {
     editor: Editor<'static>,
     preedit: Option<Preedit>,
     scroll_x: f32,
+    scroll_y: f32,
     width: f32,
+    height: f32,
     line_height: f32,
+    /// Wrapped lines, Return inserts a line break (text areas).
+    multiline: bool,
     /// Draw one bullet per character and refuse to copy (password fields).
     masked: bool,
     /// Allow navigation, selection and copy but no edits.
@@ -113,6 +119,7 @@ struct DisplayMetrics {
     selection: Vec<Rect>,
     preedit_underline: Vec<Rect>,
     content_width: f32,
+    content_height: f32,
 }
 
 impl TextFieldState {
@@ -125,8 +132,11 @@ impl TextFieldState {
             editor: Editor::new(buffer),
             preedit: None,
             scroll_x: 0.0,
+            scroll_y: 0.0,
             width: 1.0,
+            height: metrics.line_height,
             line_height: metrics.line_height,
+            multiline: false,
             masked: false,
             read_only: false,
             display_cache: None,
@@ -135,6 +145,45 @@ impl TextFieldState {
 
     fn invalidate_display_cache(&mut self) {
         self.display_cache = None;
+    }
+
+    pub fn is_multiline(&self) -> bool {
+        self.multiline
+    }
+
+    /// Switch between one scrolling line and wrapped lines.
+    pub fn set_multiline(&mut self, font_system: &mut FontSystem, multiline: bool) {
+        if multiline != self.multiline {
+            self.multiline = multiline;
+            self.scroll_x = 0.0;
+            self.scroll_y = 0.0;
+            self.fit_buffer();
+            self.after_edit(font_system);
+        }
+    }
+
+    /// One line never wraps and shows a line's height; wrapped lines are all
+    /// laid out at the field width and scrolled here, not by the buffer.
+    fn fit_buffer(&mut self) {
+        let (multiline, width, line_height) = (self.multiline, self.width, self.line_height);
+        self.editor.with_buffer_mut(|buffer| {
+            if multiline {
+                buffer.set_wrap(Wrap::Word);
+                buffer.set_size(Some(width), None);
+            } else {
+                buffer.set_wrap(Wrap::None);
+                buffer.set_size(None, Some(line_height));
+            }
+        });
+        self.invalidate_display_cache();
+    }
+
+    fn normalize(&self, text: &str) -> String {
+        if self.multiline {
+            multi_line(text)
+        } else {
+            single_line(text)
+        }
     }
 
     pub fn editor(&self) -> &Editor<'static> {
@@ -206,11 +255,16 @@ impl TextFieldState {
 
     /// Where a key moves the caret, with the macOS bindings: ⌥ by word, ⌘
     /// to the line ends (← →) or the text ends (↑ ↓). A masked field has no
-    /// words, so ⌥ goes to the ends as well.
+    /// words, so ⌥ goes to the ends as well. With several lines, ↑ ↓ move
+    /// by visual line and ⌥↑ ⌥↓ to the paragraph ends.
     fn motion(&self, key: Key, modifiers: Modifiers) -> Option<Motion> {
         let word = modifiers.option && !modifiers.command;
         let line = modifiers.command && !modifiers.option;
         Some(match key {
+            Key::ArrowUp if word && self.multiline => Motion::ParagraphStart,
+            Key::ArrowDown if word && self.multiline => Motion::ParagraphEnd,
+            Key::ArrowUp if !line && self.multiline => Motion::Up,
+            Key::ArrowDown if !line && self.multiline => Motion::Down,
             Key::ArrowLeft if line => Motion::Home,
             Key::ArrowRight if line => Motion::End,
             Key::ArrowLeft if word && self.masked => Motion::BufferStart,
@@ -276,6 +330,14 @@ impl TextFieldState {
             self.delete(key, modifiers, font_system);
             self.after_edit(font_system);
             return TextFieldEffect::changed();
+        }
+        if key == Key::Enter {
+            // ⌘Return submits a text area; one line never takes Return.
+            let breaks = self.multiline && !self.read_only && !modifiers.command;
+            return TextFieldEffect {
+                changed: breaks && self.insert_text(font_system, "\n"),
+                status: None,
+            };
         }
         let Some(motion) = self.motion(key, modifiers) else {
             return TextFieldEffect::default();
@@ -354,21 +416,32 @@ impl TextFieldState {
     /// app) when it differs, dropping the selection and placing the caret at
     /// the end. Returns whether the text changed.
     pub fn set_text(&mut self, font_system: &mut FontSystem, text: &str) -> bool {
-        let text = single_line(text);
+        let text = self.normalize(text);
         let current = self.text();
         if text == current {
             return false;
         }
-        let cursor = self.editor.cursor();
-        let caret_byte = cursor.index.min(current.len());
+        let caret = self.offset(self.editor.cursor()).min(current.len());
         self.editor.with_buffer_mut(|buffer| {
             buffer.set_text(&text, &ui_font_attrs(), Shaping::Advanced, None);
         });
-        let clamped = caret_byte.min(text.len());
-        self.editor.set_cursor(Cursor::new(0, clamped));
+        self.editor.set_cursor(cursor_at(&text, caret));
         self.editor.set_selection(Selection::None);
         self.after_edit(font_system);
         true
+    }
+
+    /// Byte offset of `cursor` in [`TextFieldState::text`].
+    fn offset(&self, cursor: Cursor) -> usize {
+        self.editor.with_buffer(|buffer| {
+            let before: usize = buffer
+                .lines
+                .iter()
+                .take(cursor.line)
+                .map(|line| line.text().len() + 1)
+                .sum();
+            before + cursor.index
+        })
     }
 
     /// Font size and line height from the input's computed style.
@@ -379,10 +452,9 @@ impl TextFieldState {
             return;
         }
         self.line_height = metrics.line_height;
-        self.editor.with_buffer_mut(|buffer| {
-            buffer.set_metrics(metrics);
-            buffer.set_size(None, Some(metrics.line_height));
-        });
+        self.editor
+            .with_buffer_mut(|buffer| buffer.set_metrics(metrics));
+        self.fit_buffer();
         self.after_edit(font_system);
     }
 
@@ -394,11 +466,29 @@ impl TextFieldState {
         self.scroll_x
     }
 
-    /// Visible text width in logical points.
+    pub fn scroll_y(&self) -> f32 {
+        self.scroll_y
+    }
+
+    /// Visible text width in logical points; wrapped lines rewrap.
     pub fn set_width(&mut self, font_system: &mut FontSystem, width: f32) {
         let width = width.max(1.0);
         if width != self.width {
             self.width = width;
+            if self.multiline {
+                self.fit_buffer();
+                self.after_edit(font_system);
+            } else {
+                self.reveal_caret(font_system);
+            }
+        }
+    }
+
+    /// Visible text height in logical points (wrapped lines scroll in it).
+    pub fn set_height(&mut self, font_system: &mut FontSystem, height: f32) {
+        let height = height.max(self.line_height);
+        if height != self.height {
+            self.height = height;
             self.reveal_caret(font_system);
         }
     }
@@ -410,9 +500,9 @@ impl TextFieldState {
     }
 
     /// Insert committed text, replacing the selection. Line breaks become
-    /// spaces because the field is single-line. Returns whether text changed.
+    /// spaces in a single-line field. Returns whether text changed.
     pub fn insert_text(&mut self, font_system: &mut FontSystem, text: &str) -> bool {
-        let text = single_line(text);
+        let text = self.normalize(text);
         if text.is_empty() {
             return false;
         }
@@ -424,17 +514,17 @@ impl TextFieldState {
 
     /// Place the caret at a point relative to the text origin.
     pub fn click(&mut self, font_system: &mut FontSystem, local: Point) {
-        let local = self.on_line(local);
+        let at = self.in_buffer(local);
         if self.masked {
-            if let Some(cursor) = self.masked_hit(font_system, local) {
+            if let Some(cursor) = self.masked_hit(font_system, at) {
                 self.editor.set_cursor(cursor);
             }
         } else {
             self.editor.action(
                 font_system,
                 Action::Click {
-                    x: (local.x + self.scroll_x) as i32,
-                    y: local.y as i32,
+                    x: at.x as i32,
+                    y: at.y as i32,
                 },
             );
         }
@@ -454,8 +544,8 @@ impl TextFieldState {
             self.select_all(font_system);
             return;
         }
-        let local = self.on_line(local);
-        let (x, y) = ((local.x + self.scroll_x) as i32, local.y as i32);
+        let at = self.in_buffer(local);
+        let (x, y) = (at.x as i32, at.y as i32);
         let action = if count == 2 {
             Action::DoubleClick { x, y }
         } else {
@@ -467,9 +557,9 @@ impl TextFieldState {
 
     /// Extend the selection to a point relative to the text origin.
     pub fn drag(&mut self, font_system: &mut FontSystem, local: Point) {
-        let local = self.on_line(local);
+        let at = self.in_buffer(local);
         if self.masked {
-            if let Some(cursor) = self.masked_hit(font_system, local) {
+            if let Some(cursor) = self.masked_hit(font_system, at) {
                 if self.editor.selection() == Selection::None {
                     self.editor
                         .set_selection(Selection::Normal(self.editor.cursor()));
@@ -480,28 +570,33 @@ impl TextFieldState {
             self.editor.action(
                 font_system,
                 Action::Drag {
-                    x: (local.x + self.scroll_x) as i32,
-                    y: local.y as i32,
+                    x: at.x as i32,
+                    y: at.y as i32,
                 },
             );
         }
         self.after_edit(font_system);
     }
 
+    /// A point relative to the text origin in unscrolled buffer coordinates.
     /// Pointer positions above or below the single line (clicks delegated
     /// from the field's outline) still target it.
-    fn on_line(&self, local: Point) -> Point {
+    fn in_buffer(&self, local: Point) -> Point {
+        let y = if self.multiline {
+            (local.y + self.scroll_y).max(0.0)
+        } else {
+            local.y.clamp(0.0, (self.line_height - 1.0).max(0.0))
+        };
         Point {
-            x: local.x,
-            y: local.y.clamp(0.0, (self.line_height - 1.0).max(0.0)),
+            x: local.x + self.scroll_x,
+            y,
         }
     }
 
     /// Hit-test the bullets actually on screen and map back to the real text.
-    fn masked_hit(&mut self, font_system: &mut FontSystem, local: Point) -> Option<Cursor> {
-        let scroll_x = self.scroll_x;
+    fn masked_hit(&mut self, font_system: &mut FontSystem, at: Point) -> Option<Cursor> {
         let display = self.cached_display(font_system);
-        let hit = display.buffer.hit(local.x + scroll_x, local.y)?;
+        let hit = display.buffer.hit(at.x, at.y)?;
         let text = self.text();
         Some(Cursor::new(0, unmasked_index(&text, hit.index)))
     }
@@ -513,7 +608,7 @@ impl TextFieldState {
     }
 
     pub fn view(&mut self, font_system: &mut FontSystem) -> TextFieldView {
-        let scroll_x = self.scroll_x;
+        let (scroll_x, scroll_y) = (self.scroll_x, self.scroll_y);
         let line_height = self.line_height;
         let display = self.cached_display(font_system);
         let metrics = measure_display(display, line_height);
@@ -524,13 +619,15 @@ impl TextFieldState {
             .any(|line| !line.text().is_empty());
         let scroll = |rect: Rect| Rect {
             x: rect.x - scroll_x,
+            y: rect.y - scroll_y,
             ..rect
         };
         TextFieldView {
             buffer: display.buffer.clone(),
             decorations: TextFieldDecorations {
                 has_content,
-                scroll_x: self.scroll_x,
+                scroll_x,
+                scroll_y,
                 caret: metrics.caret.map(scroll),
                 selection: metrics.selection.into_iter().map(scroll).collect(),
                 preedit_underline: metrics.preedit_underline.into_iter().map(scroll).collect(),
@@ -540,10 +637,23 @@ impl TextFieldState {
 
     fn reveal_caret(&mut self, font_system: &mut FontSystem) {
         let line_height = self.line_height;
+        let (multiline, width, height) = (self.multiline, self.width, self.height);
         let display = self.cached_display(font_system);
         let metrics = measure_display(display, line_height);
-        let caret_x = metrics.caret.map_or(0.0, |caret| caret.x);
-        self.scroll_x = scroll_to_reveal(self.scroll_x, caret_x, self.width, metrics.content_width);
+        if multiline {
+            let caret_y = metrics.caret.map_or(0.0, |caret| caret.y);
+            self.scroll_x = 0.0;
+            self.scroll_y = scroll_span_to_reveal(
+                self.scroll_y,
+                caret_y,
+                line_height,
+                height,
+                metrics.content_height,
+            );
+        } else {
+            let caret_x = metrics.caret.map_or(0.0, |caret| caret.x);
+            self.scroll_x = scroll_to_reveal(self.scroll_x, caret_x, width, metrics.content_width);
+        }
     }
 
     fn cached_display(&mut self, font_system: &mut FontSystem) -> &DisplayState {
@@ -602,9 +712,11 @@ fn measure_display(display: &DisplayState, line_height: f32) -> DisplayMetrics {
         selection: Vec::new(),
         preedit_underline: Vec::new(),
         content_width: 0.0,
+        content_height: 0.0,
     };
     for run in display.buffer.layout_runs() {
         metrics.content_width = metrics.content_width.max(run.line_w);
+        metrics.content_height = metrics.content_height.max(run.line_top + run.line_height);
         if let Some(cursor) = display.caret
             && let Some(x) = run.cursor_position(&cursor)
         {
@@ -658,6 +770,27 @@ fn single_line(text: &str) -> String {
     out
 }
 
+/// Text for several lines: `\r\n` and `\r` become `\n`, other control
+/// characters are dropped.
+fn multi_line(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .chars()
+        .map(|character| if character == '\r' { '\n' } else { character })
+        .filter(|character| *character == '\n' || !character.is_control())
+        .collect()
+}
+
+/// The editor cursor at byte `offset` of `text` (lines split at `\n`).
+fn cursor_at(text: &str, offset: usize) -> Cursor {
+    let mut offset = offset.min(text.len());
+    while !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    let before = &text[..offset];
+    let start = before.rfind('\n').map_or(0, |index| index + 1);
+    Cursor::new(before.matches('\n').count(), offset - start)
+}
+
 /// Byte index in the bullet string for byte `index` of `text`.
 fn masked_index(text: &str, index: usize) -> usize {
     text[..index.min(text.len())].chars().count() * BULLET.len_utf8()
@@ -689,6 +822,21 @@ pub fn scroll_to_reveal(
     }
     let max = (content_width.max(caret_end) - viewport).max(0.0);
     next.clamp(0.0, max)
+}
+
+/// Vertical scroll that keeps the span `[start, start + extent)` (the
+/// caret's line) inside a viewport of `viewport` points, moving as little
+/// as possible.
+fn scroll_span_to_reveal(scroll: f32, start: f32, extent: f32, viewport: f32, content: f32) -> f32 {
+    let end = start + extent;
+    let mut next = scroll;
+    if start < next {
+        next = start;
+    }
+    if end > next + viewport {
+        next = end - viewport;
+    }
+    next.clamp(0.0, (content.max(end) - viewport).max(0.0))
 }
 
 #[cfg(test)]
@@ -996,6 +1144,83 @@ mod tests {
         let effect = field.apply(key(Key::Enter, false), &mut fonts, &mut clipboard);
         assert_eq!(effect, TextFieldEffect::default());
         assert_eq!(field.text(), "x");
+    }
+
+    fn area(font_system: &mut FontSystem, width: f32, rows: f32) -> TextFieldState {
+        let mut area = field(font_system, width);
+        area.set_multiline(font_system, true);
+        area.set_height(font_system, rows * 22.0);
+        area
+    }
+
+    #[test]
+    fn return_breaks_lines_in_a_text_area_but_not_with_command() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut area = area(&mut fonts, 300.0, 3.0);
+        area.insert_text(&mut fonts, "uno");
+        assert!(
+            area.apply(key(Key::Enter, false), &mut fonts, &mut clipboard)
+                .changed
+        );
+        area.insert_text(&mut fonts, "dos\r\ntres\u{7}");
+        assert_eq!(area.text(), "uno\ndos\ntres");
+        assert_eq!(area.editor().cursor().line, 2);
+
+        let submit = area.apply(with(Key::Enter, COMMAND), &mut fonts, &mut clipboard);
+        assert!(!submit.changed);
+        assert_eq!(area.text(), "uno\ndos\ntres");
+
+        area.set_read_only(&mut fonts, true);
+        area.apply(key(Key::Enter, false), &mut fonts, &mut clipboard);
+        assert_eq!(area.text(), "uno\ndos\ntres");
+    }
+
+    #[test]
+    fn arrows_move_by_line_and_the_caret_survives_controlled_updates() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut area = area(&mut fonts, 300.0, 3.0);
+        area.insert_text(&mut fonts, "uno\ndos\ntres");
+        let at = |area: &TextFieldState| {
+            let cursor = area.editor().cursor();
+            (cursor.line, cursor.index)
+        };
+        area.apply(key(Key::ArrowUp, false), &mut fonts, &mut clipboard);
+        assert_eq!(area.editor().cursor().line, 1);
+        area.apply(with(Key::ArrowUp, COMMAND), &mut fonts, &mut clipboard);
+        assert_eq!(at(&area), (0, 0));
+        area.apply(key(Key::ArrowDown, false), &mut fonts, &mut clipboard);
+        area.apply(with(Key::ArrowRight, COMMAND), &mut fonts, &mut clipboard);
+        assert_eq!(at(&area), (1, 3));
+
+        assert!(area.set_text(&mut fonts, "UNO\nDOS\nTRES"));
+        assert_eq!(at(&area), (1, 3), "the caret keeps its offset across lines");
+    }
+
+    #[test]
+    fn long_text_wraps_and_scrolls_vertically_to_the_caret() {
+        let mut fonts = FontSystem::new();
+        let mut area = area(&mut fonts, 120.0, 2.0);
+        let long = "Texto suficientemente largo para ocupar varias líneas del área";
+        area.insert_text(&mut fonts, long);
+        let view = area.view(&mut fonts);
+        assert!(view.buffer.layout_runs().count() > 2, "wraps at the width");
+        let decorations = view.decorations;
+        assert_eq!(decorations.scroll_x, 0.0);
+        assert!(decorations.scroll_y > 0.0, "scrolls to the last line");
+        let caret = decorations.caret.expect("caret");
+        assert!(caret.y >= 0.0 && caret.y + caret.height <= 44.0 + 0.01);
+
+        area.click(&mut fonts, Point { x: 0.0, y: 0.0 });
+        let first_visible = area.editor().cursor();
+        assert!(first_visible.index > 0, "clicks map through the scroll");
+        area.apply(
+            with(Key::ArrowUp, COMMAND),
+            &mut fonts,
+            &mut MockClipboard::default(),
+        );
+        assert_eq!(area.scroll_y(), 0.0);
     }
 
     #[test]

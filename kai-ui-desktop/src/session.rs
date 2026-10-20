@@ -453,12 +453,14 @@ impl<A: App> Session<A> {
                 value,
                 masked,
                 read_only,
+                rows,
                 ..
             } = &element.kind
             {
                 let field = fields
                     .entry(element.id)
                     .or_insert_with(|| TextFieldState::new(font_system, Metrics::new(16.0, 24.0)));
+                field.set_multiline(font_system, rows.is_some());
                 field.set_masked(font_system, *masked);
                 field.set_read_only(font_system, *read_only);
                 if field.preedit().is_none() {
@@ -514,6 +516,7 @@ impl<A: App> Session<A> {
                 );
                 if let Some(line) = node.text_box {
                     field.set_width(font_system, line.width);
+                    field.set_height(font_system, line.height);
                 }
             }
         }
@@ -962,15 +965,15 @@ impl<A: App> Session<A> {
             .view(&mut self.text.font_system)
             .decorations
             .caret
-            .map_or(Point::default(), |caret| Point {
-                x: caret.x,
-                y: caret.y,
+            .unwrap_or(Rect {
+                height: line.height,
+                ..Rect::default()
             });
         self.outbox.ime_cursor_area = Some(Rect {
             x: line.x + caret.x,
             y: line.y + caret.y,
             width: 0.0,
-            height: line.height,
+            height: caret.height,
         });
     }
 
@@ -1078,17 +1081,18 @@ impl<A: App> Session<A> {
     }
 
     fn apply_text_intent(&mut self, id: WidgetId, intent: TextIntent) {
+        let Some(field) = self.text_fields.get_mut(&id) else {
+            return;
+        };
+        // Return submits one line; several lines take ⌘Return.
         let submit = matches!(
             intent,
             TextIntent::KeyDown {
                 key: Key::Enter,
                 repeat: false,
-                ..
-            }
+                modifiers,
+            } if modifiers.command || !field.is_multiline()
         );
-        let Some(field) = self.text_fields.get_mut(&id) else {
-            return;
-        };
         let before = field.text();
         let effect = field.apply(intent, &mut self.text.font_system, &mut *self.clipboard);
         let after = field.text();

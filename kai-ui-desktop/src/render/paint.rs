@@ -251,11 +251,17 @@ impl Painter<'_> {
             .iter()
             .find(|(id, _)| *id == node.id)
             .map_or(&empty, |(_, decorations)| *decorations);
-        let interior = Rect {
-            x: line.x,
-            y: node.padding_box.y,
-            width: line.width,
-            height: node.padding_box.height,
+        // Several lines scroll under their own box; one line keeps the
+        // padding so tall glyphs are not cut.
+        let interior = if matches!(node.content, Content::Input { lines: Some(_), .. }) {
+            line
+        } else {
+            Rect {
+                x: line.x,
+                y: node.padding_box.y,
+                width: line.width,
+                height: node.padding_box.height,
+            }
         };
         let clip = match node.clip {
             None => interior,
@@ -300,7 +306,7 @@ impl Painter<'_> {
                 TextId::value(node.id),
                 Point {
                     x: line.x - field.scroll_x,
-                    y: line.y,
+                    y: line.y - field.scroll_y,
                 },
                 text_color,
             );

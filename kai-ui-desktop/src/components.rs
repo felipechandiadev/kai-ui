@@ -9,8 +9,10 @@
 use std::rc::Rc;
 
 mod search;
+mod text_area;
 
 pub use search::{SearchField, search_field};
+pub use text_area::{TextArea, text_area};
 
 use crate::commands::Action;
 use crate::element::{
@@ -427,6 +429,10 @@ pub struct TextField<Msg> {
     on_input: Option<Rc<dyn Fn(String) -> Msg>>,
     on_submit: Option<Msg>,
     test_id: Option<String>,
+    /// Several lines ([`TextArea`]).
+    rows: Option<(u16, u16)>,
+    /// Character count shown under the field ([`TextArea::counter`]).
+    counter: Option<String>,
 }
 
 impl<Msg> TextField<Msg> {
@@ -454,6 +460,8 @@ impl<Msg> TextField<Msg> {
             on_input: None,
             on_submit: None,
             test_id: None,
+            rows: None,
+            counter: None,
         }
     }
 
@@ -702,10 +710,12 @@ impl<Msg> TextField<Msg> {
                 ),
                 FieldVariant::Autocomplete => ("border-0", "bg-transparent"),
             };
-            let height = if compact {
-                "h-control-compact"
+            let (height, align) = if self.rows.is_some() {
+                ("py-2", "items-stretch")
+            } else if compact {
+                ("h-control-compact", "items-center")
             } else {
-                "h-control"
+                ("h-control", "items-center")
             };
             let appkit_shell = if self.variant == FieldVariant::Autocomplete {
                 "border-0 bg-transparent px-1".to_owned()
@@ -716,12 +726,10 @@ impl<Msg> TextField<Msg> {
                 .part("shell")
                 .class(&themed(
                     &format!(
-                        "relative flex items-center gap-2 w-full min-w-0 px-3 rounded-md {height} \
+                        "relative flex {align} gap-2 w-full min-w-0 px-3 rounded-md {height} \
                          {border} {surface} {cursor}"
                     ),
-                    &format!(
-                        "relative flex items-center gap-1 w-full min-w-0 {appkit_shell} {cursor}"
-                    ),
+                    &format!("relative flex {align} gap-1 w-full min-w-0 {appkit_shell} {cursor}"),
                 ))
                 .children(row);
             if compact {
@@ -776,14 +784,26 @@ impl<Msg> TextField<Msg> {
             }
             root = root.child(shell);
         }
-        if let Some(helper) = &self.helper_text {
-            root = root.child(
-                text(helper)
-                    .class("mt-1 text-xs text-muted-foreground")
-                    .part("helper"),
-            );
+        let helper = self.helper_text.as_ref().map(|helper| {
+            text(helper)
+                .class("mt-1 text-xs text-muted-foreground")
+                .part("helper")
+        });
+        match self.counter.take() {
+            Some(count) => root.child(
+                div()
+                    .class("flex items-start justify-between gap-2")
+                    .children(
+                        helper.into_iter().chain([text(count)
+                            .class(&themed(
+                                "ml-auto mt-1 text-xs text-muted-foreground",
+                                "ml-auto mt-1 text-xs text-secondary-label",
+                            ))
+                            .part("counter")]),
+                    ),
+            ),
+            None => root.children(helper),
         }
-        root
     }
 
     /// AppKit outline by bezel; disabled fields use the faint fill.
@@ -796,6 +816,9 @@ impl<Msg> TextField<Msg> {
             "bg-field hover:border-tertiary-label mix-c:hover:border-secondary-label"
         };
         let shape = match self.bezel {
+            _ if self.rows.is_some() => {
+                "py-1 rounded-field-square border-[0.5px] border-separator px-1"
+            }
             FieldBezel::Square => {
                 "h-field-square rounded-field-square border-[0.5px] border-separator px-1"
             }
@@ -988,11 +1011,21 @@ impl<Msg> TextField<Msg> {
         if let Some(helper) = &self.helper_text {
             field = field.description(helper.clone());
         }
+        if let Some((min, max)) = self.rows {
+            field = field.multiline(min, max).role(Role::TextArea);
+        }
         field.handlers.on_input = self.on_input.take();
         field.handlers.on_submit = self.on_submit.take();
 
+        let align = if self.rows.is_some() {
+            "items-stretch"
+        } else {
+            "items-center"
+        };
         let mut body = div()
-            .class("relative flex flex-1 min-w-0 self-stretch items-center")
+            .class(&format!(
+                "relative flex flex-1 min-w-0 self-stretch {align}"
+            ))
             .child(field);
         if overlay {
             body = body.child(

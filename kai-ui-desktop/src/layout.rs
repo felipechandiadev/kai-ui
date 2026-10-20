@@ -15,7 +15,9 @@ use std::collections::HashMap;
 
 use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
-use crate::element::{ControlSize, ControlState, Element, KeyEquivalent, Kind, Role, WidgetId};
+use crate::element::{
+    ControlSize, ControlState, Element, KeyEquivalent, Kind, Role, Rows, WidgetId,
+};
 use crate::geometry::{Insets, Point, Rect, Size};
 use crate::icons::Icon;
 use crate::render::TextId;
@@ -135,6 +137,9 @@ pub enum Content {
         placeholder: String,
         masked: bool,
         read_only: bool,
+        /// Multiline inputs, with their value: they are as tall as its
+        /// wrapped lines, within the rows.
+        lines: Option<(Rows, String)>,
     },
 }
 
@@ -314,16 +319,19 @@ impl Builder<'_> {
             Kind::Text(content) => Content::Text(content.clone()),
             Kind::Icon(icon) => Content::Icon(*icon),
             Kind::Input {
+                value,
                 placeholder,
                 masked,
                 read_only,
+                rows,
                 ..
             } => {
-                text.nowrap = true;
+                text.nowrap = rows.is_none();
                 Content::Input {
                     placeholder: placeholder.clone(),
                     masked: *masked,
                     read_only: *read_only,
+                    lines: rows.map(|rows| (rows, value.clone())),
                 }
             }
         };
@@ -453,14 +461,30 @@ fn measure_leaf(
             }
         }
         Some(Leaf::Input(index)) => {
+            let node = &nodes[index];
             let available_width = match available.width {
                 AvailableSpace::Definite(width) => width,
                 _ => INPUT_INTRINSIC_WIDTH,
             };
-            Size {
-                width: INPUT_INTRINSIC_WIDTH.min(available_width),
-                height: nodes[index].text.line_height,
-            }
+            let width = INPUT_INTRINSIC_WIDTH.min(available_width);
+            let line_height = node.text.line_height;
+            let height = match &node.content {
+                Content::Input {
+                    lines: Some((rows, value)),
+                    ..
+                } => {
+                    let wrapped = text.measure(
+                        TextId::content(node.id),
+                        value,
+                        text_style(&node.text),
+                        Some(known.width.unwrap_or(width)),
+                    );
+                    let count = (wrapped.height / line_height).round().max(1.0);
+                    count.clamp(f32::from(rows.min), f32::from(rows.max)) * line_height
+                }
+                _ => line_height,
+            };
+            Size { width, height }
         }
     };
     // Rounded up so pixel-snapped layout never trims the last glyph.
@@ -773,19 +797,30 @@ fn place(
                 }
                 node.text_box = Some(content_box);
             }
-            Content::Input { placeholder, .. } => {
+            Content::Input {
+                placeholder, lines, ..
+            } => {
                 let line_height = node.text.line_height;
                 text.measure(
                     TextId::placeholder(node.id),
                     placeholder,
                     text_style(&node.text),
-                    None,
+                    lines.as_ref().map(|_| content_box.width),
                 );
-                node.text_box = Some(Rect {
-                    x: content_box.x,
-                    y: content_box.y + ((content_box.height - line_height) / 2.0).max(0.0),
-                    width: content_box.width.max(0.0),
-                    height: line_height,
+                // One line is centered; several fill the box from the top.
+                node.text_box = Some(if lines.is_some() {
+                    Rect {
+                        width: content_box.width.max(0.0),
+                        height: content_box.height.max(line_height),
+                        ..content_box
+                    }
+                } else {
+                    Rect {
+                        x: content_box.x,
+                        y: content_box.y + ((content_box.height - line_height) / 2.0).max(0.0),
+                        width: content_box.width.max(0.0),
+                        height: line_height,
+                    }
                 });
             }
         }
@@ -829,8 +864,8 @@ pub mod testing {
     use crate::render::TextId;
     use crate::render::text::TextStyle;
 
-    /// Deterministic measurement: every character is half the font size wide
-    /// and wrapping breaks at any character.
+    /// Deterministic measurement: every character is half the font size wide,
+    /// wrapping breaks at any character and `\n` starts a line.
     #[derive(Default)]
     pub struct FixedMeasure;
 
@@ -843,21 +878,21 @@ pub mod testing {
             max_width: Option<f32>,
         ) -> Size {
             let char_width = style.font_size * (0.5 + style.letter_spacing);
-            let full = text.chars().count() as f32 * char_width;
-            match max_width.filter(|_| style.wrap) {
-                Some(max) if full > max => {
-                    let per_line = (max / char_width).floor().max(1.0);
-                    let lines = (text.chars().count() as f32 / per_line).ceil();
-                    Size {
-                        width: per_line * char_width,
-                        height: lines * style.line_height,
+            let mut size = Size::default();
+            for paragraph in text.split('\n') {
+                let full = paragraph.chars().count() as f32 * char_width;
+                let (width, lines) = match max_width.filter(|_| style.wrap) {
+                    Some(max) if full > max => {
+                        let per_line = (max / char_width).floor().max(1.0);
+                        let lines = (paragraph.chars().count() as f32 / per_line).ceil();
+                        (per_line * char_width, lines)
                     }
-                }
-                _ => Size {
-                    width: full,
-                    height: style.line_height,
-                },
+                    _ => (full, 1.0),
+                };
+                size.width = size.width.max(width);
+                size.height += lines * style.line_height;
             }
+            size
         }
     }
 }

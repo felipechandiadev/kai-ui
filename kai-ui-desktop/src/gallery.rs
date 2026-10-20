@@ -7,6 +7,7 @@ use crate::components::{
     BezelStyle, Button, SidebarGroup, SidebarItem, SwitchDensity, TextField, card, card_actions,
     card_content, card_header, checkbox_with_options, group_box, paragraph, search_field,
     segmented, segmented_with_options, select, select_with_options, sidebar, switch_with_options,
+    text_area,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::icons::Icon;
@@ -76,6 +77,8 @@ pub struct Gallery {
     pub force_inactive: bool,
     pub section: Section,
     pub text: String,
+    /// Text of the Textarea row.
+    pub notes: String,
     pub switches: [bool; 2],
     /// Checkboxes of the Selection section: off, on and mixed rows.
     pub checks: [ControlState; 3],
@@ -96,6 +99,7 @@ impl Default for Gallery {
             force_inactive: false,
             section: Section::All,
             text: "Texto".to_owned(),
+            notes: "Primera línea\nsegunda línea".to_owned(),
             switches: [false, true],
             checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
             segment: 0,
@@ -113,6 +117,7 @@ pub enum Msg {
     ToggleInactive,
     Show(Section),
     Edit(String),
+    Notes(String),
     Switch(usize),
     Check(usize),
     Segment(usize),
@@ -135,13 +140,14 @@ const BUTTON_ROWS: [&str; 7] = [
 ];
 
 /// Rows of the Fields section.
-const FIELD_ROWS: [&str; 6] = [
+const FIELD_ROWS: [&str; 7] = [
     "Placeholder",
     "Con valor",
     "Read-only",
     "Disabled",
     "Password",
     "Search",
+    "Textarea",
 ];
 
 /// Rows of the Toggles section.
@@ -345,6 +351,14 @@ impl Gallery {
             return search_field(self.text.clone(), Msg::Edit)
                 .control_size(size)
                 .build();
+        }
+        if row == "Textarea" {
+            return text_area("Notas", self.notes.clone())
+                .rows(2)
+                .max_length(80)
+                .on_input(Msg::Notes)
+                .build()
+                .control_size(size);
         }
         let field = match row {
             "Placeholder" => TextField::new("Campo", "")
@@ -593,6 +607,7 @@ impl SimpleApp for Gallery {
             Msg::ToggleInactive => self.force_inactive = !self.force_inactive,
             Msg::Show(section) => self.section = section,
             Msg::Edit(value) => self.text = value,
+            Msg::Notes(value) => self.notes = value,
             Msg::Switch(index) => self.switches[index] = !self.switches[index],
             // A mixed checkbox turns on, as `NSButton` without
             // `allowsMixedState`.
@@ -751,8 +766,8 @@ mod tests {
         let sizes = ControlSize::ALL.len();
         let disabled_buttons = 1;
         // Placeholder, value, read-only and password fields, the password
-        // toggle, and the search field with its clear button.
-        let field_controls = 7;
+        // toggle, the search field with its clear button, and the text area.
+        let field_controls = 8;
         let enabled_switches = 2;
         // Three checkboxes, the three segments of one control and two
         // selects.
