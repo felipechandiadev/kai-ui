@@ -9,6 +9,7 @@
 mod calls;
 
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::time::Instant;
 
 use crate::a11y;
@@ -37,6 +38,7 @@ use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
 use crate::theme::Theme;
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
+use crate::virtual_rows::{self, Viewport};
 use accesskit::{ActionRequest, TreeUpdate};
 use cosmic_text::{FontSystem, Metrics};
 
@@ -126,6 +128,11 @@ pub(crate) struct Session<A: App> {
     timers: Vec<Timer<A::Msg>>,
     /// The time tests set; `None` follows the real clock.
     clock: Option<Instant>,
+    /// Row the keys are moving to in a virtual list: the next rebuild
+    /// builds it wherever it is.
+    row_pin: Option<(WidgetId, usize)>,
+    /// Rows built for each virtual list in the last rebuild.
+    row_windows: Vec<(WidgetId, Range<usize>)>,
 }
 
 struct Timer<Msg> {
@@ -306,6 +313,8 @@ impl<A: App> Session<A> {
             modal_focus: None,
             timers: Vec::new(),
             clock: None,
+            row_pin: None,
+            row_windows: Vec::new(),
         };
         session.apply_effects(effects);
         session.rebuild();
@@ -496,7 +505,12 @@ impl<A: App> Session<A> {
             self.outbox.commands = Some(commands.clone());
             self.commands = commands;
         }
+        let pin = self
+            .row_pin
+            .take()
+            .or_else(|| self.focused_row().map(|(list, index, ..)| (list, index)));
         self.tree = build_view_with(&self.app, &self.commands);
+        self.build_rows(pin);
         self.track_modal();
         self.add_agent_status();
         self.add_inspector();
@@ -578,6 +592,147 @@ impl<A: App> Session<A> {
             self.outbox.title = Some(title.clone());
             self.title = title;
         }
+    }
+
+    /// The virtual list around the focus, the index of the focused row,
+    /// the row count and the row height.
+    fn focused_row(&self) -> Option<(WidgetId, usize, usize, f32)> {
+        let path = self.tree.path_to(self.focused()?)?;
+        virtual_rows::row_on_path(&self.tree, &path)
+    }
+
+    /// Build the rows of every virtual list for its scroll offset and last
+    /// laid-out height, plus `pin` (a list and a row index).
+    fn build_rows(&mut self, pin: Option<(WidgetId, usize)>) {
+        let layout = &self.layout;
+        let scroll = &self.scroll;
+        self.row_windows = virtual_rows::materialize(&mut self.tree, &|id| Viewport {
+            offset: scroll.get(&id).copied().unwrap_or(0.0),
+            height: layout.node(id).map(|node| node.padding_box.height),
+            pinned: pin.filter(|(list, _)| *list == id).map(|(_, index)| index),
+        });
+        if !self.row_windows.is_empty() {
+            self.tree.assign_ids();
+        }
+    }
+
+    /// Whether the last layout shows rows of a virtual list that the last
+    /// rebuild did not build (first layout, resize, clamped offset).
+    fn rows_stale(&self) -> bool {
+        self.row_windows.iter().any(|(id, built)| {
+            let (Some(node), Some(rows)) = (
+                self.layout.node(*id),
+                self.tree
+                    .find(*id)
+                    .and_then(|list| list.virtual_rows.as_ref()),
+            ) else {
+                return false;
+            };
+            let viewport = Viewport {
+                offset: node.scroll.map_or(0.0, |scroll| scroll.offset),
+                height: Some(node.padding_box.height),
+                pinned: None,
+            };
+            virtual_rows::visible_range(rows.count, rows.row_height, viewport) != *built
+        })
+    }
+
+    /// Scroll virtual list `list` so its row `index` is in view, by index
+    /// times row height (the row needs not be built). Returns whether the
+    /// offset changed.
+    pub fn reveal_row(&mut self, list: WidgetId, index: usize) -> bool {
+        let Some(height) = self
+            .tree
+            .find(list)
+            .and_then(|list| list.virtual_rows.as_ref())
+            .map(|rows| rows.row_height)
+        else {
+            return false;
+        };
+        let Some(node) = self.layout.node(list) else {
+            return false;
+        };
+        let Some(scroll) = node.scroll else {
+            return false;
+        };
+        let view = node.padding_box.height;
+        let top = index as f32 * height;
+        let bottom = top + height;
+        let next = if top < scroll.offset {
+            top
+        } else if bottom > scroll.offset + view {
+            bottom - view
+        } else {
+            scroll.offset
+        };
+        let next = next.clamp(0.0, scroll.max);
+        if next == scroll.offset {
+            return false;
+        }
+        self.scroll.insert(list, next);
+        self.invalidate();
+        true
+    }
+
+    /// ↑/↓, Home/End and PageUp/PageDown on a row of a virtual list: build
+    /// and reveal the row they reach and focus it (its first focusable
+    /// element), activating it in a selecting group. Text fields keep
+    /// their keys.
+    fn row_key(&mut self, intent: &Intent) -> bool {
+        let Intent::Text(TextIntent::KeyDown { key, modifiers, .. }) = intent else {
+            return false;
+        };
+        if *modifiers != Modifiers::NONE
+            || self
+                .focused()
+                .is_none_or(|id| self.focus_order.kind(id) != Some(FocusKind::Button))
+        {
+            return false;
+        }
+        let Some((list, index, count, height)) = self.focused_row() else {
+            return false;
+        };
+        let page = self.layout.node(list).map_or(1, |node| {
+            ((node.padding_box.height / height).floor() as usize).max(1)
+        });
+        let last = count.saturating_sub(1);
+        let target = match key {
+            Key::ArrowUp => index.saturating_sub(1),
+            Key::ArrowDown => (index + 1).min(last),
+            Key::Home => 0,
+            Key::End => last,
+            Key::PageUp => index.saturating_sub(page),
+            Key::PageDown => (index + page).min(last),
+            _ => return false,
+        };
+        if target == index {
+            return true;
+        }
+        self.reveal_row(list, target);
+        self.row_pin = Some((list, target));
+        self.rebuild();
+        self.relayout();
+        let Some(row) = self.tree.find(list).and_then(|list| {
+            list.children
+                .iter()
+                .find(|row| row.row_index == Some(target))
+        }) else {
+            return true;
+        };
+        let focus = self.focus_order.ids().find(|id| row.find(*id).is_some());
+        let Some(focus) = focus else {
+            return true;
+        };
+        self.apply_intent(Intent::SetFocus(Some(focus)));
+        if self.focus_order.selects(focus)
+            && let Some(msg) = self
+                .handler(focus)
+                .and_then(|handlers| handlers.on_click.clone())
+        {
+            self.send(msg);
+        }
+        self.invalidate();
+        true
     }
 
     /// Follow the app's [`Element::modal`] panel: remember the focus when
@@ -1122,7 +1277,7 @@ impl<A: App> Session<A> {
             self.invalidate();
             return;
         }
-        if self.palette_key(&intent) || self.popup_key(&intent) {
+        if self.palette_key(&intent) || self.popup_key(&intent) || self.row_key(&intent) {
             return;
         }
         let previous_focus = *self.ui.focused.get();
@@ -1406,6 +1561,11 @@ impl<A: App> Session<A> {
         }
         let built = Instant::now();
         self.relayout();
+        if self.rows_stale() {
+            self.keep_scroll_offsets();
+            self.rebuild();
+            self.relayout();
+        }
         if self.refresh_hover() {
             self.relayout();
         }
@@ -1414,6 +1574,23 @@ impl<A: App> Session<A> {
             layout: built.elapsed(),
             ..FrameTimes::default()
         };
+        self.keep_scroll_offsets();
+
+        self.decorations.clear();
+        for (id, field) in &mut self.text_fields {
+            let Some(node) = self.layout.node(*id) else {
+                continue;
+            };
+            let view = field.view(&mut self.text.font_system);
+            self.text
+                .set_buffer(TextId::value(*id), view.buffer, text_style(&node.text));
+            self.decorations.push((*id, view.decorations));
+        }
+    }
+
+    /// Remember the offsets of the last layout (clamped to its content)
+    /// and forget containers that are gone.
+    fn keep_scroll_offsets(&mut self) {
         for (id, scroll) in self
             .layout
             .nodes()
@@ -1427,17 +1604,6 @@ impl<A: App> Session<A> {
                 .node(*id)
                 .is_some_and(|node| node.scroll.is_some())
         });
-
-        self.decorations.clear();
-        for (id, field) in &mut self.text_fields {
-            let Some(node) = self.layout.node(*id) else {
-                continue;
-            };
-            let view = field.view(&mut self.text.font_system);
-            self.text
-                .set_buffer(TextId::value(*id), view.buffer, text_style(&node.text));
-            self.decorations.push((*id, view.decorations));
-        }
     }
 
     /// Draw list of the last prepared frame; the background layer is not

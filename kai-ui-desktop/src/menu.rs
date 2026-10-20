@@ -171,6 +171,8 @@ mod native {
             Key::ArrowDown => Code::ArrowDown,
             Key::Home => Code::Home,
             Key::End => Code::End,
+            Key::PageUp => Code::PageUp,
+            Key::PageDown => Code::PageDown,
             Key::Backspace => Code::Backspace,
             Key::Delete => Code::Delete,
             Key::Escape => Code::Escape,

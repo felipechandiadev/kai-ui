@@ -139,6 +139,8 @@ impl KeyEquivalent {
             Key::ArrowDown => out.push('↓'),
             Key::Home => out.push('↖'),
             Key::End => out.push('↘'),
+            Key::PageUp => out.push('⇞'),
+            Key::PageDown => out.push('⇟'),
             Key::Period => out.push('.'),
             Key::A => out.push('A'),
             Key::C => out.push('C'),
@@ -302,6 +304,26 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
     }
 }
 
+/// `count` rows of `row_height` points that `render` builds by index;
+/// see [`Element::virtual_rows`].
+pub struct VirtualRows<Msg> {
+    pub count: usize,
+    pub row_height: f32,
+    pub render: Rc<dyn Fn(usize) -> Element<Msg>>,
+    /// Row that is always built (the selected one), so Tab enters there.
+    pub selected: Option<usize>,
+}
+
+impl<Msg> fmt::Debug for VirtualRows<Msg> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtualRows")
+            .field("count", &self.count)
+            .field("row_height", &self.row_height)
+            .field("selected", &self.selected)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The list of a pop-up button ([`Element::options`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -359,6 +381,13 @@ pub struct Element<Msg> {
     pub options: Option<Options>,
     /// App-modal panel ([`Element::modal`]).
     pub modal: bool,
+    /// Rows the session builds as they scroll into view
+    /// ([`Element::virtual_rows`]).
+    pub virtual_rows: Option<VirtualRows<Msg>>,
+    /// Rows of a table or list in all, built or not (accessibility).
+    pub row_count: Option<usize>,
+    /// Place of this row in its table or list, from 0.
+    pub row_index: Option<usize>,
     pub handlers: Handlers<Msg>,
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
@@ -414,6 +443,9 @@ impl<Msg> Element<Msg> {
             focus_group: None,
             options: None,
             modal: false,
+            virtual_rows: None,
+            row_count: None,
+            row_index: None,
             handlers: Handlers::default(),
             command: None,
         }
@@ -698,6 +730,44 @@ impl<Msg> Element<Msg> {
                 .and_then(|handler| handler(action))
                 .or_else(|| (action == Action::CancelOperation).then(|| on_dismiss.clone()))
         }));
+        self
+    }
+
+    /// Make this a scroll container of `count` rows, each `row_height`
+    /// points tall, that the session builds with `render` only while they
+    /// are in view (plus a margin), between spacers as tall as the rest.
+    /// The element needs a height and `overflow-y-auto`; its own children
+    /// are replaced. Rows get `key(index)` and [`Element::row_index`];
+    /// the focused row and `selected` stay built when they scroll away.
+    /// With focus on a row, ↑/↓, Home/End and PageUp/PageDown move by
+    /// index, building and revealing the row they reach (and activating it
+    /// in a [`Element::selecting_focus_group`]).
+    pub fn virtual_rows(
+        mut self,
+        count: usize,
+        row_height: f32,
+        selected: Option<usize>,
+        render: Rc<dyn Fn(usize) -> Element<Msg>>,
+    ) -> Self {
+        self.virtual_rows = Some(VirtualRows {
+            count,
+            row_height: row_height.max(1.0),
+            render,
+            selected: selected.filter(|index| *index < count),
+        });
+        self.row_count = Some(count);
+        self
+    }
+
+    /// Rows of the table or list in all, for assistive technology.
+    pub fn row_count(mut self, count: usize) -> Self {
+        self.row_count = Some(count);
+        self
+    }
+
+    /// Place of this row in its table or list, from 0.
+    pub fn row_index(mut self, index: usize) -> Self {
+        self.row_index = Some(index);
         self
     }
 

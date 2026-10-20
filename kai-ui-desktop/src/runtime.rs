@@ -294,12 +294,18 @@ fn run_with<A: App>(
 /// Build the tree for the current model with ids assigned, its controls
 /// bound to commands ([`Element::on_command`]) following their current
 /// availability. Debug builds report duplicate keys and test ids (see
-/// [`Element::validate_ids`]), each problem once per thread.
+/// [`Element::validate_ids`]), each problem once per thread. Virtual lists
+/// get their first rows, as before their first layout.
 pub fn build_view<A: App>(app: &A) -> Element<A::Msg> {
-    build_view_with(app, &CommandRegistry::<A>::of().states(app))
+    let mut tree = build_view_with(app, &CommandRegistry::<A>::of().states(app));
+    if !crate::virtual_rows::materialize(&mut tree, &|_| Default::default()).is_empty() {
+        tree.assign_ids();
+    }
+    tree
 }
 
-/// [`build_view`] with the command states the session already computed.
+/// [`build_view`] with the command states the session already computed,
+/// virtual lists still without rows.
 pub fn build_view_with<A: App>(app: &A, commands: &[CommandState]) -> Element<A::Msg> {
     let mut tree = app.view();
     bind_commands(&mut tree, commands);

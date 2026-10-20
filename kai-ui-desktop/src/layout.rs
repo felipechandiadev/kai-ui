@@ -174,6 +174,10 @@ pub struct LayoutNode {
     pub control: bool,
     /// Pop-up button: whether its list is open (see [`Element::options`]).
     pub expanded: Option<bool>,
+    /// See [`Element::row_count`].
+    pub row_count: Option<usize>,
+    /// See [`Element::row_index`].
+    pub row_index: Option<usize>,
     pub style: Style,
     pub text: ComputedText,
     /// Product of the opacities of this node and its ancestors.
@@ -357,6 +361,8 @@ impl Builder<'_> {
                 .flatten(),
             control: element.is_control(),
             expanded: element.options.as_ref().map(|options| options.open),
+            row_count: element.row_count,
+            row_index: element.row_index,
             opacity: inherited.opacity * style.opacity,
             hidden: inherited.hidden || style.display == Display::None,
             pointer_events: inherited.pointer_events && style.pointer_events,

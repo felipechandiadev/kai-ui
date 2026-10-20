@@ -528,6 +528,27 @@ impl<A: App> TestApp<A> {
         }
     }
 
+    /// Move the pointer over the element and turn the wheel by `delta_y`
+    /// points, as the window gets it: negative moves toward the end of the
+    /// content, positive toward its start.
+    #[track_caller]
+    pub fn scroll_wheel(&mut self, over: By, delta_y: f32) {
+        self.hover(over);
+        self.session.scroll_by(delta_y);
+        self.frame();
+    }
+
+    /// Scroll virtual list `list` ([`Element::virtual_rows`]) until its
+    /// row `index` is in view, built or not, as the scroll bar would.
+    ///
+    /// [`Element::virtual_rows`]: crate::element::Element::virtual_rows
+    #[track_caller]
+    pub fn reveal_row(&mut self, list: By, index: usize) {
+        let id = self.id_of(list);
+        self.session.reveal_row(id, index);
+        self.frame();
+    }
+
     /// Scroll the element into view and move the pointer to its center,
     /// without pressing.
     #[track_caller]

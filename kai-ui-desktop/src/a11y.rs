@@ -246,6 +246,21 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     if matches!(role, Role::MenuListOption | Role::TreeItem | Role::Row) {
         node.set_selected(source.control_state == Some(ControlState::On));
     }
+    if let Some(count) = source.row_count {
+        node.set_row_count(count);
+    }
+    if let Some(index) = source.row_index {
+        node.set_row_index(index);
+    }
+    if role == Role::ColumnHeader {
+        match source.control_state {
+            Some(ControlState::On) => node.set_sort_direction(accesskit::SortDirection::Ascending),
+            Some(ControlState::Mixed) => {
+                node.set_sort_direction(accesskit::SortDirection::Descending);
+            }
+            _ => {}
+        }
+    }
     if let Some(description) = &source.description {
         node.set_description(description.as_str());
     }

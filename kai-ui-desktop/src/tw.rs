@@ -569,7 +569,14 @@ impl Parser<'_> {
             "max-h" => vec![Decl::MaxHeight(self.height(value)?)],
             "z" => vec![Decl::Z(value.parse().ok()?)],
             "grid-cols" => vec![Decl::GridColumns(value.parse().ok().filter(|n| *n > 0)?)],
-            "flex" | "grow" | "shrink" => return None,
+            "grow" => vec![Decl::Grow(
+                arbitrary(value)
+                    .unwrap_or(value)
+                    .parse()
+                    .ok()
+                    .filter(|grow: &f32| *grow >= 0.0)?,
+            )],
+            "flex" | "shrink" => return None,
             "bg" => vec![Decl::Background(self.color(value)?)],
             "border" => vec![self.border(Sides::All, value)?],
             "border-x" | "border-y" | "border-t" | "border-r" | "border-b" | "border-l" => {

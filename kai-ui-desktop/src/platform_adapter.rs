@@ -86,6 +86,8 @@ fn map_key(key: KeyCode) -> Key {
         KeyCode::ArrowDown => Key::ArrowDown,
         KeyCode::Home => Key::Home,
         KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
         KeyCode::Backspace => Key::Backspace,
         KeyCode::Delete => Key::Delete,
         KeyCode::KeyA => Key::A,

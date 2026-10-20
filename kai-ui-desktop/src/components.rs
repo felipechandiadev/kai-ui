@@ -10,12 +10,14 @@ use std::rc::Rc;
 
 mod dialog;
 mod search;
+mod table;
 mod text_area;
 mod toast;
 mod toolbar;
 
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use search::{SearchField, search_field};
+pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
 pub use text_area::{TextArea, text_area};
 pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};
 pub use toolbar::{
