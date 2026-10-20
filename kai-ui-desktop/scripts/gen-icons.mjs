@@ -52,6 +52,33 @@ const ICONS = [
   "image-plus",
   "map-pin",
   "map",
+  // DSP: sidebar sections, as in its web app.
+  "layout-dashboard",
+  "compass",
+  "folder-kanban",
+  "list-todo",
+  "files",
+  "calendar-days",
+  "mail",
+  "file-text",
+  "wallet",
+  "scale",
+  "users",
+  "map-pinned",
+  "route",
+  "columns-3",
+  "inbox",
+  // DSP: app shell.
+  "menu",
+  "circle-user",
+  "panel-left-open",
+  "panel-left-close",
+  "log-out",
+  // DSP: documents and norms.
+  "book-open",
+  "library",
+  "tags",
+  "file-pen",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");
