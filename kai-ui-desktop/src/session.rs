@@ -6,6 +6,8 @@
 //! the same `Session` through `kai::testing::TestApp` without a window or
 //! GPU. Nothing here knows about winit.
 
+#[cfg(test)]
+mod busy_tests;
 mod calls;
 
 use std::any::Any;
@@ -128,6 +130,11 @@ pub(crate) struct Session<A: App> {
     /// Origin of the event being handled; `None` is the keyboard (intents
     /// applied from outside without one).
     source: Option<MsgSource>,
+    /// What started the event being handled, for the tasks it performs:
+    /// the clicked control or the command.
+    task_origin: Option<TaskOrigin>,
+    /// Cursor last asked for over the content.
+    pointer_cursor: Cursor,
     devtools: Devtools,
     /// View and layout times of the last frame.
     frame: FrameTimes,
@@ -159,6 +166,8 @@ pub(crate) struct Session<A: App> {
     file_drag: bool,
     /// The time tests set; `None` follows the real clock.
     clock: Option<Instant>,
+    /// When the session started: time zero of [`Motion`](crate::element::Motion).
+    epoch: Instant,
     /// Row the keys are moving to in a virtual list: the next rebuild
     /// builds it wherever it is.
     row_pin: Option<(WidgetId, usize)>,
@@ -286,13 +295,33 @@ struct Timer<Msg> {
     msg: Msg,
 }
 
+/// What started an [`Effects::perform`] task: it stays busy until the
+/// task, and those its message performs, deliver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaskOrigin {
+    /// A clicked control.
+    Widget(WidgetId),
+    /// A command, from a shortcut, the menu bar, the palette, a button
+    /// bound to it, a script or an agent.
+    Command(&'static str),
+}
+
+/// Reason a busy command gives in menus, the palette and to agents.
+pub const COMMAND_BUSY: &str = "En curso";
+
+struct WaitingTask<Msg> {
+    key: Option<String>,
+    origin: Option<TaskOrigin>,
+    done: TaskDone<Msg>,
+}
+
 /// [`Effects::perform`] tasks on the pool, by id, with what turns each
 /// result into a message; a replaced or cancelled task leaves this map and
 /// its result is dropped when it lands.
 struct Tasks<Msg> {
     inbox: Arc<Inbox>,
     next: u64,
-    waiting: HashMap<u64, (Option<String>, TaskDone<Msg>)>,
+    waiting: HashMap<u64, WaitingTask<Msg>>,
     /// Images loading on the pool for the [`ImageStore`].
     images: HashMap<u64, ImageSource>,
     /// Map tiles loading on the pool for the [`TileStore`].
@@ -314,7 +343,12 @@ impl<Msg> Default for Tasks<Msg> {
 impl<Msg> Tasks<Msg> {
     fn forget(&mut self, key: &str) {
         self.waiting
-            .retain(|_, (pending, _)| pending.as_deref() != Some(key));
+            .retain(|_, task| task.key.as_deref() != Some(key));
+    }
+
+    /// Origins of the tasks still running.
+    fn origins(&self) -> impl Iterator<Item = TaskOrigin> + '_ {
+        self.waiting.values().filter_map(|task| task.origin)
     }
 
     fn spawn(&mut self, task: crate::runtime::Task) -> u64 {
@@ -485,6 +519,8 @@ impl<A: App> Session<A> {
             log: None,
             sources: Vec::new(),
             source: None,
+            task_origin: None,
+            pointer_cursor: Cursor::Default,
             devtools: Devtools::from_env(),
             frame: FrameTimes::default(),
             inspector: false,
@@ -505,6 +541,7 @@ impl<A: App> Session<A> {
             file_pick: None,
             file_drag: false,
             clock: None,
+            epoch: Instant::now(),
             row_pin: None,
             row_windows: Vec::new(),
             tooltips: HashMap::new(),
@@ -551,6 +588,12 @@ impl<A: App> Session<A> {
         self.now()
     }
 
+    /// Time zero of [`Motion`](crate::element::Motion): with the clock at `epoch() + t`, moving
+    /// elements paint as at `t` seconds.
+    pub fn epoch(&self) -> Instant {
+        self.epoch
+    }
+
     fn apply_effects(&mut self, effects: Effects<A::Msg>) {
         for effect in effects.into_vec() {
             match effect {
@@ -566,7 +609,10 @@ impl<A: App> Session<A> {
                         self.tasks.forget(key);
                     }
                     let id = self.tasks.spawn(task);
-                    self.tasks.waiting.insert(id, (key, done));
+                    let origin = self.task_origin;
+                    self.tasks
+                        .waiting
+                        .insert(id, WaitingTask { key, origin, done });
                 }
                 Effect::Cancel(key) => {
                     self.timers
@@ -618,11 +664,16 @@ impl<A: App> Session<A> {
                 ran = true;
                 continue;
             }
-            let Some((_, done)) = self.tasks.waiting.remove(&id) else {
+            let Some(WaitingTask { origin, done, .. }) = self.tasks.waiting.remove(&id) else {
                 continue;
             };
             if let Some(output) = output {
-                self.with_source(MsgSource::Task, |session| session.send(done(output)));
+                self.with_source(MsgSource::Task, |session| {
+                    session.with_task_origin(origin, |session| session.send(done(output)));
+                });
+                ran = true;
+            } else if origin.is_some() {
+                self.invalidate();
                 ran = true;
             }
         }
@@ -868,6 +919,82 @@ impl<A: App> Session<A> {
         result
     }
 
+    /// Run `f` with the tasks it performs started by `origin`.
+    fn with_task_origin<R>(
+        &mut self,
+        origin: Option<TaskOrigin>,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let outer = std::mem::replace(&mut self.task_origin, origin);
+        let result = f(self);
+        self.task_origin = outer;
+        result
+    }
+
+    /// Whether a task that command `id` started is still running.
+    pub fn command_busy(&self, id: &str) -> bool {
+        self.tasks
+            .origins()
+            .any(|origin| matches!(origin, TaskOrigin::Command(command) if command == id))
+    }
+
+    /// Whether a task that control `id` started is still running, or the
+    /// app marked it [`Element::busy`](crate::element::Element::busy).
+    pub fn busy(&self, id: WidgetId) -> bool {
+        self.tree.find(id).is_some_and(|element| element.busy)
+    }
+
+    /// The message of action `id` for `input` if it can run now: not
+    /// while a task it started runs.
+    pub(crate) fn command_message(
+        &self,
+        id: &str,
+        input: serde_json::Value,
+    ) -> Result<A::Msg, CommandError> {
+        if self.command_busy(id) {
+            self.registry.availability(&self.app, id)?;
+            return Err(CommandError::new(COMMAND_BUSY));
+        }
+        self.registry.message_from(&self.app, id, input)
+    }
+
+    /// The `&'static` id of registered command `id`.
+    fn command_origin(&self, id: &str) -> Option<TaskOrigin> {
+        self.command_state(id)
+            .map(|command| TaskOrigin::Command(command.id))
+    }
+
+    /// A busy command is disabled in menus and the palette ([`COMMAND_BUSY`]);
+    /// the buttons bound to it turn busy.
+    fn mark_busy_commands(&self, commands: &mut [CommandState]) {
+        for command in commands {
+            if self.command_busy(command.id) {
+                command.busy = true;
+                command.availability = Availability::disabled(COMMAND_BUSY);
+            }
+        }
+    }
+
+    /// Mark busy the controls whose tasks run, unless they opt out
+    /// ([`Element::busy_feedback`](crate::element::Element::busy_feedback)).
+    fn mark_busy_widgets(&mut self) {
+        let widgets: Vec<WidgetId> = self
+            .tasks
+            .origins()
+            .filter_map(|origin| match origin {
+                TaskOrigin::Widget(id) => Some(id),
+                TaskOrigin::Command(_) => None,
+            })
+            .collect();
+        for id in widgets {
+            if let Some(element) = self.tree.find_mut(id)
+                && element.busy_feedback
+            {
+                element.busy = true;
+            }
+        }
+    }
+
     /// Every command and its availability after the last `update`.
     pub fn commands(&self) -> &[CommandState] {
         &self.commands
@@ -904,7 +1031,8 @@ impl<A: App> Session<A> {
 
     /// Run `view`, then reconcile focus and input editors with the new tree.
     fn rebuild(&mut self) {
-        let commands = self.registry.states(&self.app);
+        let mut commands = self.registry.states(&self.app);
+        self.mark_busy_commands(&mut commands);
         if commands != self.commands {
             self.outbox.commands = Some(commands.clone());
             self.commands = commands;
@@ -915,6 +1043,7 @@ impl<A: App> Session<A> {
             .or_else(|| self.focused_row().map(|(list, index, ..)| (list, index)));
         self.tree = build_view_with(&self.app, &self.commands);
         self.build_rows(pin);
+        self.mark_busy_widgets();
         self.images.resolve(&mut self.tree);
         self.sync_maps();
         self.tooltips.clear();
@@ -1291,9 +1420,10 @@ impl<A: App> Session<A> {
             }
             return true;
         }
-        match self.registry.message(&self.app, id) {
+        match self.command_message(id, serde_json::json!({})) {
             Ok(msg) => {
-                self.send(msg);
+                let origin = self.command_origin(id);
+                self.with_task_origin(origin, |session| session.send(msg));
                 true
             }
             Err(_) => false,
@@ -1309,9 +1439,15 @@ impl<A: App> Session<A> {
     /// action that can run now; otherwise say why not.
     pub fn send_command(&mut self, id: &str, msg: A::Msg) -> Result<(), CommandError> {
         let availability = self.registry.availability(&self.app, id)?;
+        if self.command_busy(id) {
+            return Err(CommandError::new(COMMAND_BUSY));
+        }
         match availability {
             Availability::Enabled => {
-                self.with_source(MsgSource::Script, |session| session.send(msg));
+                let origin = self.command_origin(id);
+                self.with_source(MsgSource::Script, |session| {
+                    session.with_task_origin(origin, |session| session.send(msg));
+                });
                 Ok(())
             }
             Availability::Disabled { reason } => Err(CommandError::new(reason)),
@@ -1721,12 +1857,16 @@ impl<A: App> Session<A> {
             self.map_hover = area;
             self.invalidate();
         }
-        if changed || area_changed {
-            self.outbox.cursor = Some(if self.map_hover.is_some() {
-                Cursor::Pointer
-            } else {
-                cursor_for(&self.layout, &self.hover_path)
-            });
+        let cursor = if self.map_hover.is_some() {
+            Cursor::Pointer
+        } else {
+            cursor_for(&self.layout, &self.hover_path)
+        };
+        // The control under the pointer can change its cursor without
+        // moving: it turned busy, or its task delivered.
+        if changed || area_changed || cursor != self.pointer_cursor {
+            self.pointer_cursor = cursor;
+            self.outbox.cursor = Some(cursor);
         }
         changed || area_changed
     }
@@ -1858,11 +1998,16 @@ impl<A: App> Session<A> {
             }
             self.invalidate();
         } else if let Some(activation) = result.activated
+            && self.busy(activation.widget)
+        {
+            // A busy control takes no clicks until its task delivers.
+        } else if let Some(activation) = result.activated
             && let Some(msg) = self
                 .handler(activation.widget)
                 .and_then(|handlers| handlers.on_click.clone())
         {
-            self.send(msg);
+            let origin = Some(TaskOrigin::Widget(activation.widget));
+            self.with_task_origin(origin, |session| session.send(msg));
         } else if let Some(activation) = result.activated
             && let Some(id) = self
                 .tree
@@ -2036,10 +2181,10 @@ impl<A: App> Session<A> {
         self.report_maps();
     }
 
-    /// Whether a map glides or zooms on its own or its labels fade in: the
-    /// window needs frames.
+    /// Whether a map glides or zooms on its own, its labels fade in, or an
+    /// element in view moves ([`Motion`](crate::element::Motion)): the window needs frames.
     pub fn animating(&self) -> bool {
-        self.labels_fading || self.maps.values().any(CameraState::animating)
+        self.labels_fading || self.maps.values().any(CameraState::animating) || self.moving()
     }
 
     /// Send `on_view_change` for every map whose gesture settled; returns
@@ -2629,6 +2774,27 @@ impl<A: App> Session<A> {
             window: self.activity(),
             text_fields: &text_fields,
             background: self.background,
+            time: self.motion_time(),
         })
+    }
+
+    /// Seconds since the session started, for [`Motion`](crate::element::Motion); `None` when the
+    /// user asked macOS to reduce motion, so moving elements stay put.
+    fn motion_time(&self) -> Option<f32> {
+        (!self.theme.prefs.reduce_motion).then(|| {
+            self.now()
+                .saturating_duration_since(self.epoch)
+                .as_secs_f32()
+        })
+    }
+
+    /// Whether an element in view moves by the clock ([`Motion`](crate::element::Motion)).
+    fn moving(&self) -> bool {
+        !self.theme.prefs.reduce_motion
+            && self
+                .layout
+                .nodes()
+                .iter()
+                .any(|node| node.motion.is_some() && !node.hidden)
     }
 }

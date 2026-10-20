@@ -491,14 +491,15 @@ pub fn build_view_with<A: App>(app: &A, commands: &[CommandState]) -> Element<A:
     tree
 }
 
-/// Disable controls whose command is not available, and give them the
-/// command's id as default `test_id` (parts keep theirs, `<owner>.<part>`)
-/// and its title as default name.
+/// Disable controls whose command is not available (busy while a task it
+/// started runs), and give them the command's id as default `test_id`
+/// (parts keep theirs, `<owner>.<part>`) and its title as default name.
 fn bind_commands<Msg>(element: &mut Element<Msg>, commands: &[CommandState]) {
     if let Some(id) = element.command {
         match commands.iter().find(|command| command.id == id) {
             Some(command) => {
                 match &command.availability {
+                    _ if command.busy && element.busy_feedback => element.busy = true,
                     Availability::Enabled => {}
                     Availability::Disabled { reason } => {
                         element.disabled = true;
@@ -791,6 +792,7 @@ impl<A: App> WindowState<A> {
                 Cursor::Pointer => CursorIcon::Pointer,
                 Cursor::Text => CursorIcon::Text,
                 Cursor::NotAllowed => CursorIcon::NotAllowed,
+                Cursor::Wait => CursorIcon::Wait,
             });
         }
         if let Some(title) = outbox.title {

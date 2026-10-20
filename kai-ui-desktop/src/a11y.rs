@@ -21,6 +21,10 @@ use crate::ui_engine::{Intent, TextIntent};
 
 pub const WINDOW_ID: NodeId = NodeId(0);
 
+/// Description of a busy node ([`Element::busy`](crate::element::Element::busy))
+/// with no description of its own.
+pub const BUSY_DESCRIPTION: &str = "Cargando";
+
 pub fn node_id(widget: WidgetId) -> NodeId {
     NodeId(widget.0 + 1)
 }
@@ -156,6 +160,7 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Tooltip => Role::Tooltip,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
+        KaiRole::ProgressIndicator => Role::ProgressIndicator,
     }
 }
 
@@ -270,8 +275,14 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     if let Some(description) = &source.description {
         node.set_description(description.as_str());
     }
+    if source.busy {
+        node.set_busy();
+        if source.description.is_none() {
+            node.set_description(BUSY_DESCRIPTION);
+        }
+    }
     if source.control {
-        if source.disabled {
+        if source.disabled || source.busy {
             node.set_disabled();
         } else {
             node.add_action(Action::Focus);
@@ -361,7 +372,10 @@ fn access_rect(rect: Rect) -> AccessRect {
 mod tests {
     use accesskit::{Action, ActionData, ActionRequest, Affine, NodeId, Role, TreeId};
 
-    use super::{A11ySnapshot, WINDOW_ID, a11y_tree, intents_for_action, node_id, widget_id};
+    use super::{
+        A11ySnapshot, BUSY_DESCRIPTION, WINDOW_ID, a11y_tree, intents_for_action, node_id,
+        widget_id,
+    };
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, FocusOrder, WidgetId, div, icon, input};
     use crate::geometry::Size;
@@ -453,6 +467,51 @@ mod tests {
         assert_eq!(switch.toggled(), Some(accesskit::Toggled::True));
         assert_eq!(switch.author_id(), Some("avisos.track"));
         assert!(switch.children().is_empty());
+    }
+
+    #[test]
+    fn busy_button_keeps_its_name_and_says_it_is_loading() {
+        use crate::components::{ButtonVariant, button};
+
+        let mut tree: Element<Msg> = div().child(
+            button("Guardar", ButtonVariant::Primary)
+                .on_click(Msg::Clicked)
+                .busy(true)
+                .test_id("guardar"),
+        );
+        tree.assign_ids();
+        let id = tree.children[0].id;
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let button = node(&update, node_id(id));
+        assert_eq!(button.role(), Role::Button);
+        assert_eq!(button.label(), Some("Guardar"));
+        assert!(button.is_busy());
+        assert!(button.is_disabled(), "takes no clicks while busy");
+        assert_eq!(button.description(), Some(BUSY_DESCRIPTION));
+        assert!(!button.supports_action(Action::Click));
+    }
+
+    #[test]
+    fn dot_progress_is_a_progress_indicator_named_loading() {
+        use crate::components::{DOT_PROGRESS_LABEL, DotProgress};
+
+        let mut tree: Element<Msg> = div()
+            .child(DotProgress::new().test_id("carga").build())
+            .child(DotProgress::new().label("Subiendo").build());
+        tree.assign_ids();
+        let (plain, named) = (tree.children[0].id, tree.children[1].id);
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        assert_eq!(
+            node(&update, node_id(plain)).role(),
+            Role::ProgressIndicator
+        );
+        assert_eq!(
+            node(&update, node_id(plain)).label(),
+            Some(DOT_PROGRESS_LABEL)
+        );
+        assert_eq!(node(&update, node_id(named)).label(), Some("Subiendo"));
     }
 
     #[test]

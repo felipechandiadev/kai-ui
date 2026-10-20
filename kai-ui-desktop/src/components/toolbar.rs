@@ -42,6 +42,7 @@ pub fn toolbar_item<Msg>(glyph: Icon, label: impl Into<String>) -> Element<Msg> 
              selected:bg-choice/20 selected:text-label keyboard-focus:ring-focus window-inactive:ring-0 \
              window-inactive:text-tertiary-label disabled:text-disabled-control-text",
         ))
+        .class("busy:cursor-wait")
         .role(Role::Button)
         .tooltip(label.as_str())
         .label(label)

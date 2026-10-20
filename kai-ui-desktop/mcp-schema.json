@@ -444,6 +444,19 @@
         "type": "object"
       },
       "title": "Vista del mapa"
+    },
+    {
+      "description": "Espera un momento en una tarea; mientras, el comando está en curso",
+      "exposed": true,
+      "id": "botones.simular_espera",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Simular espera"
     }
   ],
   "format": 1

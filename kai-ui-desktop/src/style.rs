@@ -116,6 +116,8 @@ pub enum Cursor {
     Pointer,
     Text,
     NotAllowed,
+    /// `cursor-wait`: over a busy control.
+    Wait,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -189,6 +191,9 @@ pub struct Style {
     pub z_index: i32,
 
     pub background: Option<Color>,
+    /// `bg-current`: the background is the text color (CSS
+    /// `currentColor`); layout fills `background` once it knows it.
+    pub background_current: bool,
     pub border_color: Option<Color>,
     pub radius: f32,
     pub shadow: Option<Shadow>,
@@ -233,6 +238,7 @@ impl Default for Style {
             inset: Edges::all(Length::Auto),
             z_index: 0,
             background: None,
+            background_current: false,
             border_color: None,
             radius: 0.0,
             shadow: None,

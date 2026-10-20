@@ -15,15 +15,16 @@ use crate::commands::{
 };
 use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
-    CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, FieldBezel, FieldDensity,
-    FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, Sidebar,
-    SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table, TextField, Toast, alert,
-    avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
-    checkbox, checkbox_with_options, color_field, group_box, heading, icon_button,
-    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
-    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
-    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
-    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
+    CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, DotProgress, DotSize, FieldBezel,
+    FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot,
+    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table,
+    TextField, Toast, alert, avatar, badge, button, button_sized, caption, card, card_actions,
+    card_content, card_header, checkbox, checkbox_with_options, color_field, dot_progress,
+    group_box, heading, icon_button, icon_button_sized, paragraph, search_field, segmented,
+    segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
+    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
+    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
+    virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
@@ -114,7 +115,14 @@ struct Demo {
     encuadre: Option<(LatLonBounds, u64)>,
     /// Mapa: the sector being edited and its draft.
     edicion: Option<(String, PolygonDraft)>,
+    /// Botones: the last wait that ended, and how many background syncs
+    /// run.
+    espera: Option<&'static str>,
+    sincronizando: u32,
 }
+
+/// How long the «Acciones con espera» buttons wait.
+const ESPERA: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl Default for Demo {
     fn default() -> Self {
@@ -167,6 +175,8 @@ impl Default for Demo {
             area: None,
             encuadre: None,
             edicion: None,
+            espera: None,
+            sincronizando: 0,
         }
     }
 }
@@ -683,6 +693,17 @@ enum Msg {
         code: String,
         anillo: Vec<LatLon>,
     },
+    /// Botones: wait [`ESPERA`] on a task; the button that sent it is busy
+    /// meanwhile.
+    Esperar(&'static str),
+    /// The wait of that name ended.
+    EsperaLista(&'static str),
+    /// Save, then reload: two chained tasks.
+    GuardarYRecargar,
+    Recargar,
+    /// A wait whose button stays usable.
+    Sincronizar,
+    Sincronizado,
 }
 
 impl Demo {
@@ -761,6 +782,23 @@ impl Demo {
                 draft.apply(edit);
             }
         }
+    }
+}
+
+/// Waits a moment on a task: its buttons, menu item and palette row are
+/// busy until it ends.
+#[derive(Clone, Deserialize, JsonSchema)]
+struct SimularEspera;
+
+impl Action for SimularEspera {
+    type App = Demo;
+    const ID: &'static str = "botones.simular_espera";
+    const TITLE: &'static str = "Simular espera";
+    fn description() -> &'static str {
+        "Espera un momento en una tarea; mientras, el comando está en curso"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Esperar("comando")
     }
 }
 
@@ -1159,6 +1197,7 @@ impl App for Demo {
         registry.action::<SeleccionarArea>().expose();
         registry.action::<EditarGeometria>().expose();
         registry.query::<VistaDelMapa>().expose();
+        registry.action::<SimularEspera>().menu("Botones").expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -1231,6 +1270,27 @@ impl App for Demo {
                 };
                 return self.show_toast(toast);
             }
+            Msg::Esperar(name) => {
+                return Effects::perform(
+                    || std::thread::sleep(ESPERA),
+                    move |()| Msg::EsperaLista(name),
+                );
+            }
+            Msg::EsperaLista(name) => self.espera = Some(name),
+            Msg::GuardarYRecargar => {
+                return Effects::perform(|| std::thread::sleep(ESPERA / 2), |()| Msg::Recargar);
+            }
+            Msg::Recargar => {
+                return Effects::perform(
+                    || std::thread::sleep(ESPERA / 2),
+                    |()| Msg::EsperaLista("guardar y recargar"),
+                );
+            }
+            Msg::Sincronizar => {
+                self.sincronizando += 1;
+                return Effects::perform(|| std::thread::sleep(ESPERA), |()| Msg::Sincronizado);
+            }
+            Msg::Sincronizado => self.sincronizando = self.sincronizando.saturating_sub(1),
             Msg::Increment => self.clicks += 1,
             Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
             Msg::Reset => self.clicks = 0,
@@ -1617,7 +1677,12 @@ impl App for Demo {
                 stats,
             ],
             Seccion::Campos => vec![self.fields(), self.more_fields()],
-            Seccion::Botones => vec![buttons_section, self.appkit_buttons(), self.control_sizes()],
+            Seccion::Botones => vec![
+                buttons_section,
+                self.waiting_buttons(),
+                self.appkit_buttons(),
+                self.control_sizes(),
+            ],
             Seccion::Seleccion => vec![self.selection()],
             Seccion::Contenedores => self.containers(),
             Seccion::Badges => vec![badges_and_alerts],
@@ -1691,6 +1756,79 @@ impl Demo {
             "w-40 sm:w-52 shrink-0"
         })
         .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
+    }
+
+    /// Buttons that start a task (`Effects::perform`): busy, with the dots
+    /// over their label, until it ends. A chained save and reload, one
+    /// that opts out, one bound to a command, one the app keeps loading,
+    /// and `DotProgress` alone in its three sizes.
+    fn waiting_buttons(&self) -> Element<Msg> {
+        let variants = [
+            ("Primary", ButtonVariant::Primary),
+            ("Secondary", ButtonVariant::Secondary),
+            ("Outlined", ButtonVariant::Outlined),
+            ("Text", ButtonVariant::Text),
+            ("Danger", ButtonVariant::Danger),
+        ];
+        let status = match (self.espera, self.sincronizando) {
+            (_, 1..) => format!("Sincronizando ({})…", self.sincronizando),
+            (Some(name), _) => format!("Terminó: {name}"),
+            (None, _) => "Pulsa un botón: espera 1,5 s".to_owned(),
+        };
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("botones.espera")
+            .children([
+                card_header(
+                    "Acciones con espera",
+                    Some(
+                        "El botón que lanza una tarea muestra los puntos y no responde \
+                         hasta que termina",
+                    ),
+                ),
+                card_content().class("gap-4").children([
+                    div()
+                        .class("flex flex-wrap items-center gap-3")
+                        .children(variants.map(|(name, variant)| {
+                            button(name, variant)
+                                .on_click(Msg::Esperar(name))
+                                .test_id(format!("espera.{}", name.to_lowercase()))
+                        })),
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        Button::new("Guardar y recargar")
+                            .accent(true)
+                            .on_click(Msg::GuardarYRecargar)
+                            .build()
+                            .test_id("espera.recargar"),
+                        Button::new("Sincronizar en segundo plano")
+                            .busy_feedback(false)
+                            .on_click(Msg::Sincronizar)
+                            .build()
+                            .test_id("espera.sincronizar"),
+                        button("Simular espera (comando)", ButtonVariant::Outlined)
+                            .on_command(SimularEspera),
+                        Button::new("Cargando")
+                            .loading(true)
+                            .build()
+                            .test_id("espera.cargando"),
+                    ]),
+                    div()
+                        .class("flex items-center gap-6 pt-2 text-primary")
+                        .children([
+                            caption("DotProgress:"),
+                            DotProgress::new()
+                                .size(DotSize::Sm)
+                                .test_id("espera.puntos.sm")
+                                .build(),
+                            dot_progress().test_id("espera.puntos.md"),
+                            DotProgress::new()
+                                .size(DotSize::Lg)
+                                .test_id("espera.puntos.lg")
+                                .build(),
+                        ]),
+                    caption(status).role(Role::Status).test_id("espera.estado"),
+                ]),
+            ])
     }
 
     /// Buttons of the AppKit API (`Button::new`): the three bezels, accent,
@@ -2747,7 +2885,7 @@ mod tests {
 
     use super::{
         Campo, CargarUrl, Dialogo, ImageSource, LatLon, LatLonBounds, MapView, PLAZA_DE_ARMAS,
-        SECTORES, SortDirection, VISTA_INICIAL, VarianteAviso, sector_inicial,
+        SECTORES, SimularEspera, SortDirection, VISTA_INICIAL, VarianteAviso, sector_inicial,
     };
 
     use cosmic_text::{
@@ -3258,6 +3396,7 @@ mod tests {
                 window: Default::default(),
                 text_fields: &[],
                 background: Default::default(),
+                time: None,
             });
             samples.push(start.elapsed());
             ops += list.ops.len();
@@ -3536,6 +3675,68 @@ mod tests {
         );
     }
 
+    #[test]
+    fn waiting_buttons_show_the_dots_until_their_task_ends() {
+        let mut app = TestApp::new(Demo::at(Seccion::Botones));
+        let primary = By::test_id("espera.primary");
+        let width = app.screen().get(primary.clone()).bounds().width;
+        app.click(primary.clone());
+        assert!(app.is_busy(primary.clone()));
+        assert!(!app.is_busy(By::test_id("espera.secondary")));
+        assert_eq!(app.screen().get(primary.clone()).bounds().width, width);
+        assert_eq!(
+            app.screen().get(primary.clone()).name().as_deref(),
+            Some("Primary")
+        );
+        app.click(primary.clone());
+        let waits = app.messages().iter();
+        assert_eq!(
+            waits.filter(|msg| **msg == Msg::Esperar("Primary")).count(),
+            1
+        );
+        app.run_until_idle();
+        assert!(!app.is_busy(primary));
+        app.screen().get(By::text("Terminó: Primary"));
+        assert!(app.is_busy(By::test_id("espera.cargando")), "loading(true)");
+    }
+
+    #[test]
+    fn a_chained_save_and_a_background_sync_in_the_demo() {
+        let mut app = TestApp::new(Demo::at(Seccion::Botones));
+        app.click(By::test_id("espera.recargar"));
+        app.run_next_tasks();
+        assert!(app.messages().contains(&Msg::Recargar));
+        assert!(app.is_busy(By::test_id("espera.recargar")));
+        app.run_until_idle();
+        assert!(!app.is_busy(By::test_id("espera.recargar")));
+        app.screen().get(By::text("Terminó: guardar y recargar"));
+
+        let sync = By::test_id("espera.sincronizar");
+        app.click(sync.clone());
+        app.click(sync.clone());
+        assert!(!app.is_busy(sync));
+        app.screen().get(By::text("Sincronizando (2)…"));
+        app.run_until_idle();
+        assert_eq!(app.app().sincronizando, 0);
+    }
+
+    #[test]
+    fn the_wait_command_is_in_course_everywhere_while_it_runs() {
+        const ID: &str = <SimularEspera as crate::commands::Action>::ID;
+        let mut app = TestApp::new(Demo::at(Seccion::Botones));
+        let bound = By::test_id(ID);
+        assert!(app.perform(ID));
+        assert!(app.is_busy(bound.clone()));
+        assert_eq!(
+            app.available::<SimularEspera>(),
+            Availability::disabled(crate::session::COMMAND_BUSY)
+        );
+        assert!(!app.perform(ID));
+        app.run_until_idle();
+        assert!(!app.is_busy(bound));
+        assert_eq!(app.available::<SimularEspera>(), Availability::Enabled);
+    }
+
     /// Every public constructor of `components` shows up in the demo,
     /// found by role, name or test id in some section (an overlay after
     /// the click that opens it). Items that only feed a constructor (data,
@@ -3544,11 +3745,12 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 13] = [
+        const SOURCES: [&str; 14] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
+            include_str!("components/progress.rs"),
             include_str!("components/search.rs"),
             include_str!("components/sidebar.rs"),
             include_str!("components/table.rs"),
@@ -3639,6 +3841,12 @@ mod tests {
                 By::role(Role::Button).name("Grande"),
             ),
             (&["Button"], Botones, None, By::test_id("botones.bordered")),
+            (
+                &["DotProgress", "dot_progress"],
+                Botones,
+                None,
+                By::role(Role::ProgressIndicator).name("Cargando"),
+            ),
             (
                 &["icon_button"],
                 Botones,
@@ -4292,6 +4500,7 @@ mod tests {
                 "areas.seleccionar",
                 "areas.editar_geometria",
                 "mapa.get_view",
+                "botones.simular_espera",
                 "kai.paleta",
             ]
         );
@@ -4330,7 +4539,7 @@ mod tests {
         let app = TestApp::new(Demo::default());
         let model = menu_model(app.commands());
         let titles: Vec<_> = model.iter().map(|group| group.title).collect();
-        assert_eq!(titles, ["Contador", "Formulario", "Ver"]);
+        assert_eq!(titles, ["Contador", "Formulario", "Ver", "Botones"]);
         assert_eq!(
             model[0].items[1],
             MenuEntry {
@@ -4450,7 +4659,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            6,
+            7,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -4817,6 +5026,7 @@ mod tests {
                 "areas.seleccionar",
                 "areas.editar_geometria",
                 "mapa.get_view",
+                "botones.simular_espera",
             ]
         );
     }
@@ -5846,13 +6056,17 @@ mod tests {
             scroll,
         })
         .expect("snapshot render");
+        write_shot(out, name, &image);
+    }
+
+    fn write_shot(out: &Out, name: &str, image: &snapshot::Image) {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(out.dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = format!("{name}{}", out.suffix);
-        snapshot::write_bmp(&dir.join(format!("{file}.bmp")), &image).unwrap();
+        snapshot::write_bmp(&dir.join(format!("{file}.bmp")), image).unwrap();
         #[cfg(feature = "snapshots")]
         if out.png {
-            snapshot::write_png(&dir.join(format!("{file}.png")), &image).unwrap();
+            snapshot::write_png(&dir.join(format!("{file}.png")), image).unwrap();
         }
         // PNG output needs `--features snapshots`.
         #[cfg(not(feature = "snapshots"))]
@@ -6683,6 +6897,29 @@ mod tests {
             &Interaction::default(),
             &none,
         );
+
+        // Two buttons waiting on their tasks and the dots alone, with the
+        // wave caught mid-jump.
+        let botones = Demo::at(Seccion::Botones);
+        let mut tree = build_view(&botones);
+        for test_id in ["espera.primary", "espera.outlined", "espera.recargar"] {
+            let id = find(&botones, By::test_id(test_id));
+            tree.find_mut(id).unwrap().busy = true;
+        }
+        let image = snapshot::render_with_background(
+            &Shot {
+                tree: &tree,
+                theme: &out.theme,
+                logical: wide,
+                scale: 2.0,
+                interaction: &Interaction::default(),
+                scroll: &scrolled_to(&out.theme, &botones, wide, "Acciones con espera"),
+            },
+            BackgroundEffect::NONE,
+            0.3,
+        )
+        .expect("snapshot render");
+        write_shot(out, "demo-botones-cargando", &image);
 
         let mut rail = Demo::at(Seccion::Tabla);
         rail.apply(Msg::ToggleSidebar);

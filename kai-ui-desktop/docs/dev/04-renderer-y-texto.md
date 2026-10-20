@@ -40,7 +40,7 @@ Convertir el árbol ya medido en una lista de operaciones visuales que Kai prese
 
 ### Paint (`render/paint.rs`)
 
-`paint(&PaintInput { layout, theme, focused, text_fields }) -> DrawList` es puro. Recorre el árbol en `paint_order` (z-index) y, por nodo, pinta en el orden de CSS:
+`paint(&PaintInput { layout, theme, focused, text_fields, time }) -> DrawList` es puro. Recorre el árbol en `paint_order` (z-index) y, por nodo, pinta en el orden de CSS:
 
 1. `box-shadow` (quad desenfocado, desplazado y expandido).
 2. `ring` de foco por fuera del borde, con `ring-offset`.
@@ -50,6 +50,12 @@ Convertir el árbol ya medido en una lista de operaciones visuales que Kai prese
 6. Barra de scroll superpuesta (4 pt, `muted-foreground` translúcido) cuando hay overflow.
 
 La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay colores literales: todo sale del `Style` resuelto, que a su vez sale del tema.
+
+**Animación al pintar.** Un elemento con `.motion(Motion::Wave { period, delay, lift })` se pinta desplazado en `y` por `offset(time) × alto`, donde `time` es `PaintInput::time` en segundos. Layout, hit-test y AccessKit no cambian: el painter dibuja una copia del nodo con sus cajas trasladadas. `Motion::wave(i)` reproduce `fs-dot-wave` de la web (lo usa `DotProgress`).
+
+- La `Session` cuenta el tiempo desde su creación (`epoch`). `animating()` es verdadero mientras haya un nodo visible con `motion`, así la ventana pide frames.
+- Con `Theme.prefs.reduce_motion`, `time` es `None`: nada se mueve y no se piden frames.
+- `TestApp` arranca el reloj en el `epoch`, así los frames son iguales en cada corrida y `advance` mueve la animación. `snapshot::render_with_background(.., seconds)` pinta los elementos en ese instante.
 
 ### Backend (`render/wgpu_backend.rs` y `quad.wgsl`)
 

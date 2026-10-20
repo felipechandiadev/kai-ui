@@ -103,7 +103,8 @@ impl<A: App> TestAppBuilder<A> {
             Box::new(self.clipboard.clone()),
         );
         session.record_messages();
-        session.set_clock(Instant::now());
+        // Animations start at time zero: frames are the same on every run.
+        session.set_clock(session.epoch());
         session.set_image_loader(self.images);
         let mut app = TestApp {
             session,
@@ -262,6 +263,17 @@ impl<A: App> TestApp<A> {
             self.session.wait_for_tasks(Duration::from_millis(50));
             self.frame();
         }
+    }
+
+    /// Wait for the next tasks to finish (five seconds at most) and send
+    /// their messages; the tasks those start may still run.
+    #[cfg(test)]
+    pub(crate) fn run_next_tasks(&mut self) {
+        assert!(
+            self.session.wait_for_tasks(Duration::from_secs(5)),
+            "ninguna tarea terminó en 5 s"
+        );
+        self.frame();
     }
 
     /// Whether some [`Effects::perform`] task has not sent its message, or
@@ -811,6 +823,16 @@ impl<A: App> TestApp<A> {
             node = found.parent();
         }
         true
+    }
+
+    /// Whether the control is busy: a task it (or its command) started
+    /// still runs, or the app marked it [`Element::busy`].
+    ///
+    /// [`Element::busy`]: crate::element::Element::busy
+    #[track_caller]
+    pub fn is_busy(&self, by: By) -> bool {
+        let screen = self.screen();
+        self.control_of(screen.get(by)).node().busy
     }
 
     /// Whether focus shows its ring (focus moved by keyboard).

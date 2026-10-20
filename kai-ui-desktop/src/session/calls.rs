@@ -258,10 +258,7 @@ impl<A: App> Session<A> {
             return;
         }
         // Bad input or an unavailable action fails now, without asking.
-        match self
-            .registry
-            .message_from(&self.app, id, pending.call.input.clone())
-        {
+        match self.command_message(id, pending.call.input.clone()) {
             Ok(_) => self.open_confirmation(pending),
             Err(error) => {
                 let outcome = Outcome::Failed(error.message.clone());
@@ -321,8 +318,9 @@ impl<A: App> Session<A> {
     }
 
     fn run_action(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
-        let msg = self.registry.message_from(&self.app, id, input)?;
-        self.send(msg);
+        let msg = self.command_message(id, input)?;
+        let origin = self.command_origin(id);
+        self.with_task_origin(origin, |session| session.send(msg));
         match self.registry.returns(id) {
             Some(query) => {
                 self.registry

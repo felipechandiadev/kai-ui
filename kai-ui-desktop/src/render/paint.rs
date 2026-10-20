@@ -35,6 +35,9 @@ pub struct PaintInput<'a> {
     /// Window background effect: drawn over the root's background color,
     /// which then paints nothing itself (the effect starts from it).
     pub background: BackgroundEffect,
+    /// Seconds on the session's clock, for [`Motion`](crate::element::Motion);
+    /// `None` paints every element where layout put it.
+    pub time: Option<f32>,
 }
 
 struct Painter<'a> {
@@ -132,6 +135,19 @@ fn origin(rect: Rect) -> Point {
     }
 }
 
+/// `node` moved down by `dy` points (up when negative), boxes only: its
+/// children keep their own place.
+fn shifted(node: &LayoutNode, dy: f32) -> LayoutNode {
+    let down = Point { x: 0.0, y: dy };
+    LayoutNode {
+        bounds: node.bounds.translated(down),
+        padding_box: node.padding_box.translated(down),
+        content_box: node.content_box.translated(down),
+        text_box: node.text_box.map(|rect| rect.translated(down)),
+        ..node.clone()
+    }
+}
+
 impl Painter<'_> {
     fn set_clip(&mut self, clip: Option<Rect>) {
         if clip == self.clip {
@@ -152,6 +168,14 @@ impl Painter<'_> {
         if node.hidden {
             return;
         }
+        let moved;
+        let node = match (node.motion, self.input.time) {
+            (Some(motion), Some(time)) => {
+                moved = shifted(node, motion.offset(time) * node.bounds.height);
+                &moved
+            }
+            _ => node,
+        };
         self.set_clip(node.clip);
         self.decorations(node);
         match &node.content {
@@ -479,6 +503,7 @@ mod tests {
             window: interaction.window,
             text_fields: fields,
             background: BackgroundEffect::NONE,
+            time: None,
         })
     }
 
@@ -514,6 +539,7 @@ mod tests {
             window: interaction.window,
             text_fields: &[],
             background,
+            time: None,
         };
         let root = layout.root().unwrap().bounds;
         let root_fill = |list: &DrawList| {

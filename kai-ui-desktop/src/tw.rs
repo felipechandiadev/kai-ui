@@ -87,6 +87,11 @@ pub struct State {
     pub viewport_width: u32,
     /// A drop zone while files are dragged over the window (`drag:`).
     pub file_drag: bool,
+    /// Working on a task it started (`busy:`); see
+    /// [`crate::element::Element::busy`].
+    pub busy: bool,
+    /// The nearest `group` ancestor is busy (`group-busy:`).
+    pub group_busy: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +103,7 @@ enum Variant {
     ControlSize(ControlSize),
     GroupHover,
     GroupFocusWithin,
+    GroupBusy,
     Hover,
     FocusWithin,
     Focus,
@@ -107,6 +113,7 @@ enum Variant {
     Mixed,
     Active,
     FileDrag,
+    Busy,
     WindowInactive,
     Disabled,
 }
@@ -122,6 +129,8 @@ impl Variant {
             "disabled" => Self::Disabled,
             "group-hover" => Self::GroupHover,
             "group-focus-within" => Self::GroupFocusWithin,
+            "group-busy" => Self::GroupBusy,
+            "busy" => Self::Busy,
             "keyboard-focus" => Self::KeyboardFocus,
             "selected" | "checked" => Self::Selected,
             "mixed" | "indeterminate" => Self::Mixed,
@@ -150,19 +159,21 @@ impl Variant {
             Self::ControlSize(_) => 5,
             Self::GroupHover => 6,
             Self::GroupFocusWithin => 7,
-            Self::Hover => 8,
-            Self::FocusWithin => 9,
-            Self::Focus => 10,
-            Self::FocusVisible => 11,
-            Self::KeyboardFocus => 12,
-            Self::Selected => 13,
-            Self::Mixed => 14,
-            Self::Active => 15,
-            Self::FileDrag => 16,
+            Self::GroupBusy => 8,
+            Self::Hover => 9,
+            Self::FocusWithin => 10,
+            Self::Focus => 11,
+            Self::FocusVisible => 12,
+            Self::KeyboardFocus => 13,
+            Self::Selected => 14,
+            Self::Mixed => 15,
+            Self::Active => 16,
+            Self::FileDrag => 17,
+            Self::Busy => 18,
             // Beats selected/active: the accent turns off.
-            Self::WindowInactive => 17,
+            Self::WindowInactive => 19,
             // Beats everything.
-            Self::Disabled => 18,
+            Self::Disabled => 20,
         }
     }
 
@@ -173,15 +184,17 @@ impl Variant {
             Self::ControlSize(size) => state.control_size == size,
             Self::GroupHover => state.group_hover,
             Self::GroupFocusWithin => state.group_focus_within,
-            Self::Hover => state.hover && !state.disabled,
+            Self::GroupBusy => state.group_busy,
+            Self::Hover => state.hover && !state.disabled && !state.busy,
             Self::FocusWithin => state.focus_within,
             Self::Focus => state.focus,
             Self::FocusVisible => state.focus_visible,
             Self::KeyboardFocus => state.keyboard_focus,
             Self::Selected => state.selected,
             Self::Mixed => state.mixed,
-            Self::Active => state.active && !state.disabled,
+            Self::Active => state.active && !state.disabled && !state.busy,
             Self::FileDrag => state.file_drag && !state.disabled,
+            Self::Busy => state.busy,
             Self::WindowInactive => state.window_inactive,
             Self::Disabled => state.disabled,
         }
@@ -309,6 +322,8 @@ enum Decl {
     Z(i32),
     GridColumns(u16),
     Background(Color),
+    /// `bg-current`.
+    BackgroundCurrent,
     BorderWidth(Sides, f32),
     BorderColor(Color),
     Radius(f32),
@@ -473,7 +488,11 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::Position(position) => style.position = position,
         Decl::Z(z) => style.z_index = z,
         Decl::GridColumns(columns) => style.grid_columns = columns,
-        Decl::Background(color) => style.background = Some(color),
+        Decl::Background(color) => {
+            style.background = Some(color);
+            style.background_current = false;
+        }
+        Decl::BackgroundCurrent => style.background_current = true,
         Decl::BorderWidth(sides, width) => set_sides(&mut style.border_width, sides, width),
         Decl::BorderColor(color) => style.border_color = Some(color),
         Decl::Radius(radius) => style.radius = radius,
@@ -588,6 +607,7 @@ impl Parser<'_> {
                     .filter(|grow: &f32| *grow >= 0.0)?,
             )],
             "flex" | "shrink" => return None,
+            "bg" if value == "current" => vec![Decl::BackgroundCurrent],
             "bg" => vec![Decl::Background(self.color(value)?)],
             "border" => vec![self.border(Sides::All, value)?],
             "border-x" | "border-y" | "border-t" | "border-r" | "border-b" | "border-l" => {
@@ -678,6 +698,7 @@ impl Parser<'_> {
             "cursor-pointer" => Decl::Cursor(Cursor::Pointer),
             "cursor-text" => Decl::Cursor(Cursor::Text),
             "cursor-not-allowed" => Decl::Cursor(Cursor::NotAllowed),
+            "cursor-wait" => Decl::Cursor(Cursor::Wait),
             "pointer-events-none" => Decl::PointerEvents(false),
             "pointer-events-auto" => Decl::PointerEvents(true),
             "object-fill" => Decl::ObjectFit(ObjectFit::Fill),

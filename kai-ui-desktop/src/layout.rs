@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
 use crate::element::{
-    ControlSize, ControlState, Element, KeyEquivalent, Kind, Role, Rows, WidgetId,
+    ControlSize, ControlState, Element, KeyEquivalent, Kind, Motion, Role, Rows, WidgetId,
 };
 use crate::geo::Camera;
 use crate::geometry::{Insets, Point, Rect, Size};
@@ -206,6 +206,10 @@ pub struct LayoutNode {
     pub text_box: Option<Rect>,
     /// Placed on a coordinate of the enclosing map.
     pub marker: Option<Marker>,
+    /// See [`Element::motion`]; the painter moves it, layout does not.
+    pub motion: Option<Motion>,
+    /// See [`Element::busy`].
+    pub busy: bool,
 }
 
 impl LayoutNode {
@@ -280,6 +284,8 @@ struct Inherited {
     pointer_events: bool,
     group_hover: bool,
     group_focus_within: bool,
+    /// The nearest `group` ancestor is busy (`group-busy:`).
+    group_busy: bool,
     control_size: ControlSize,
     /// The parent's explicit `items-*`: auto-width inline children
     /// (`inline-flex` buttons…) follow it instead of aligning to the start.
@@ -315,6 +321,8 @@ impl Builder<'_> {
             disabled: element.disabled,
             group_hover: inherited.group_hover,
             group_focus_within: inherited.group_focus_within,
+            busy: element.busy,
+            group_busy: inherited.group_busy,
             // Browser `:focus-visible`: a click focuses a text field
             // visibly, but not a button.
             focus_visible: focus && (is_text || interaction.focus_visible),
@@ -330,8 +338,11 @@ impl Builder<'_> {
         };
         let classes = self.styles.get(&element.class, self.theme);
         let is_group = classes.group;
-        let style = classes.resolve(state);
+        let mut style = classes.resolve(state);
         let mut text = inherited.text.inherit(&style.text);
+        if style.background_current {
+            style.background = Some(text.color);
+        }
         let content = match &element.kind {
             Kind::Div => Content::Box,
             Kind::Text(content) => Content::Text(content.clone()),
@@ -391,6 +402,8 @@ impl Builder<'_> {
             scroll: None,
             text_box: None,
             marker: element.marker,
+            motion: element.motion,
+            busy: element.busy,
         };
         let child_inherited = Inherited {
             text,
@@ -406,6 +419,11 @@ impl Builder<'_> {
                 focus_within
             } else {
                 inherited.group_focus_within
+            },
+            group_busy: if is_group {
+                element.busy
+            } else {
+                inherited.group_busy
             },
             control_size,
             parent_align_items: node.style.align_items,
@@ -604,6 +622,7 @@ impl Layout {
             pointer_events: true,
             group_hover: false,
             group_focus_within: false,
+            group_busy: false,
             control_size: input.theme.control_size,
             parent_align_items: None,
         };

@@ -224,6 +224,7 @@ impl<A: App> CommandRegistry<A> {
                 needs_input: entry.needs_input,
                 exposed: entry.exposed,
                 availability: (entry.available)(app),
+                busy: false,
             })
             .collect()
     }

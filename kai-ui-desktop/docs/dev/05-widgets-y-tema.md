@@ -46,11 +46,13 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 - [x] `main.rs`: demo con contador, formulario controlado, variantes de TextField, estadísticas y variantes de botón; un test garantiza que solo usa clases soportadas.
 - [x] Radios, bordes, sombras, anillos de foco y opacidad, gracias al renderer SDF ([04](04-renderer-y-texto.md)).
 - [x] Después de L6 (Paso 14 de [13](13-hoja-de-ruta-plataforma.md)): checkbox, segmented, `Select`, sidebar, toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, `Avatar`, `MediaSlot` y `ColorField`. Su detalle está en [12](12-modelo-appkit.md) (Paso 20) y en el Paso 14 de 13, junto con el lenguaje de color de la selección (token `choice`).
-- [ ] AutoComplete, formateadores del TextField, transiciones y animaciones.
+- [x] `DotProgress` (puntos en ola) y botón ocupado automático mientras corre la tarea que lanzó (abajo).
+- [ ] AutoComplete y formateadores del TextField.
+- [ ] Transiciones y animaciones: parcial. Hay animación calculada al pintar (`Motion::Wave`, la usa `DotProgress`); faltan transiciones de propiedades (color, opacidad, tamaño) y keyframes generales.
 
 ## Clases tipo Tailwind (`tw.rs`)
 
-`ClassList::parse(clases, &tema)` convierte una cadena de clases en declaraciones por variante; `resolve(State)` aplica, en orden de prioridad CSS, base → `group-hover:` → `group-focus-within:` → `hover:` → `focus-within:` → `focus:` → `active:` → `disabled:`. Con `disabled`, `hover:` y `active:` se ignoran. Las clases desconocidas se reportan (`ClassList::unknown`) en lugar de fallar en silencio.
+`ClassList::parse(clases, &tema)` convierte una cadena de clases en declaraciones por variante; `resolve(State)` aplica, en orden de prioridad CSS, base → `group-hover:` → `group-focus-within:` → `group-busy:` → `hover:` → `focus-within:` → `focus:` → `active:` → `busy:` → `disabled:`. Con `disabled` o `busy`, `hover:` y `active:` se ignoran. `busy:` aplica a un elemento ocupado (`Element::busy`, que la sesión pone mientras corre la tarea que lanzó), y `group-busy:` a los descendientes del `group` ocupado más cercano. Las clases desconocidas se reportan (`ClassList::unknown`) en lugar de fallar en silencio.
 
 | Grupo | Clases |
 |---|---|
@@ -58,12 +60,12 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 | Espaciado | `gap-*` `gap-x-*` `gap-y-*` `p*-*` `m*-*` (negativos y `mx-auto`) `inset-*` `top/right/bottom/left-*` |
 | Tamaño | `w-*` `h-*` `size-*` `min-w/h-*` `max-w/h-*` (`max-w-xs`…`7xl`) fracciones `full` `screen` `h-control` `h-control-compact` `min-h-control` `py-control` |
 | Posición y overflow | `relative` `absolute` `z-N` `overflow-visible/hidden/clip/auto/scroll` `overflow-y-auto/scroll` `grid-cols-N` |
-| Color | `bg-*` `text-*` `border-*` `ring-*` `placeholder-*` con nombre del tema (incluye `field-muted`), alfa `/N` o `[#hex]` |
+| Color | `bg-*` `text-*` `border-*` `ring-*` `placeholder-*` con nombre del tema (incluye `field-muted`), alfa `/N` o `[#hex]`; `bg-current` (fondo del color del texto, como `currentColor`) |
 | Borde y radio | `border` `border-N` `border-t/b/l/r/x/y` `rounded-*` (`sm` 2, `md` 6, `lg` 8, `xl` 12, `2xl`, `3xl`, `full`) |
 | Efectos | `shadow-sm/md/lg/xl/none` `ring` `ring-N` `ring-offset-N` `outline-none` `opacity-N` |
 | Texto | `text-xs`…`3xl` `text-[Npx]` `font-normal/medium/semibold/bold` `leading-*` `whitespace-nowrap` `truncate` |
 | Iconos | `stroke-N` `stroke-[N]` (ancho de trazo heredable) |
-| Interacción | `cursor-*` `pointer-events-none/auto` `group` |
+| Interacción | `cursor-default/pointer/text/not-allowed/wait` `pointer-events-none/auto` `group` |
 
 - El espaciado usa la unidad del tema (`--space-4 / 4`), así que `p-4` es `--space-4` y escala con la densidad; los valores arbitrarios (`w-[180px]`) no escalan.
 - `text-lg` y `text-xl` usan los tamaños de título de página y sección del tema; `leading-*` siempre gana al interlineado implícito del tamaño, sin importar el orden.
@@ -84,6 +86,25 @@ button_sized("Más", ButtonVariant::Outlined, ButtonSize::Sm)
 - Variantes: `Primary` (primary → accent en hover → active), `Secondary` (`--color-secondary`), `Outlined` (borde foreground que se rellena con accent en hover), `Text` (texto primary con fondo translúcido en hover) y `Danger` (error). Tamaños: `Sm`, `Md` (`h-control`) y `Lg`.
 - Teclado: Tab/Shift+Tab lo enfocan; Enter o Espacio (sin repetición) lo activan. Puntero: activa si se suelta sobre el mismo botón donde se presionó. Un botón deshabilitado sigue capturando el puntero, pero no recibe foco ni activa.
 - Accesibilidad: `Role::Button` con la etiqueta igual a su texto; acciones `Click` y `Focus`, o `disabled` sin acciones.
+- **Ocupado.** Mientras corre una tarea que lanzó (`Effects::perform`, ver [03](03-eventos-y-estado.md)), el botón queda `busy`. Conserva su color y su ancho, no toma hover, muestra el cursor de espera (`busy:cursor-wait`) y no recibe clics. El texto queda invisible (`group-busy:opacity-0`) debajo de tres puntos `DotProgress` Sm en el color del texto, que van en una capa `absolute inset-0 hidden group-busy:flex` con `pointer-events-none`.
+  - `Button::loading(true)` (o `Element::busy(true)`) lo deja ocupado por una razón que la sesión no ve, como esperar un socket.
+  - `Button::busy_feedback(false)` (o `Element::busy_feedback(false)`) lo deja usable mientras su tarea corre, por ejemplo para una sincronización de fondo.
+  - AccessKit lo marca `busy` y `disabled`, con la descripción «Cargando» si no tiene otra. El nombre sigue siendo su texto.
+  - `icon_button` y `toolbar_item` también quedan bloqueados y con cursor de espera, pero sin puntos.
+
+### DotProgress
+
+```rust
+DotProgress::new().size(DotSize::Lg).label("Subiendo").build()
+dot_progress()                                   // 3 puntos Md, «Cargando»
+```
+
+- Puntos (3 por defecto, `count(n)`) `rounded-full bg-current` que saltan en ola, como `DotProgress` `variant="wave"` de la web: ciclo de 1,05 s, 0,16 s entre puntos, salto del 70 % del diámetro, arriba al 25 % del ciclo y abajo al 55 %. Solo existe la variante `wave`.
+- Tamaños: `Sm` (6 pt, gap 3; el del botón ocupado), `Md` (10, gap 5) y `Lg` (16, gap 8, el de la web). La raíz suma `pt` igual al salto, así la ola no se recorta.
+- El color es el del texto heredado (`text-primary` en la raíz o en un ancestro).
+- La animación es un `Motion` que se calcula al pintar ([04](04-renderer-y-texto.md)): layout y hit-test no cambian. Con `reduce_motion` los puntos quedan quietos y la ventana no pide frames.
+- Accesibilidad: `Role::ProgressIndicator` (indeterminado) con nombre «Cargando» o el de `label(..)`. `decorative()` lo deja sin rol ni nombre, como dentro del botón.
+- Partes: `<id>.dot.<i>`.
 
 ### TextField
 

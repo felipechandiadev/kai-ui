@@ -54,7 +54,8 @@ pub fn render<Msg>(shot: &Shot<'_, Msg>) -> Result<Image, String> {
 }
 
 /// [`render`] over `background` at `seconds` of its animation (ignored
-/// when static), as the runtime draws it for an app whose
+/// when static), with moving elements ([`crate::element::Motion`]) at the
+/// same time, as the runtime draws it for an app whose
 /// [`crate::runtime::App::background`] returns `background`.
 pub fn render_with_background<Msg>(
     shot: &Shot<'_, Msg>,
@@ -176,6 +177,7 @@ fn render_with_layout<Msg>(
         window: shot.interaction.window,
         text_fields: &fields,
         background,
+        time: Some(seconds),
     });
     let mut list = list;
     list.background = list.background.map(|layer| layer.at(seconds));

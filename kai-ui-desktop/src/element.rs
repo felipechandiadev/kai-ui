@@ -244,6 +244,9 @@ pub enum Role {
     Image,
     /// Modal panel over the window; its name is its title.
     Dialog,
+    /// Work going on with no known end (`NSProgressIndicator`,
+    /// indeterminate): [`crate::components::DotProgress`].
+    ProgressIndicator,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -386,6 +389,66 @@ pub struct Options {
 /// [`Element::tooltip`] shows.
 pub const TOOLTIP_DELAY: std::time::Duration = std::time::Duration::from_millis(600);
 
+/// Movement the painter gives an element by the clock, without changing
+/// its layout or where it takes clicks (a CSS `transform` animation).
+/// While one is in view the window keeps drawing frames, unless the user
+/// asked macOS to reduce motion: then it stays still.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Motion {
+    /// Jump up `lift` times its own height and back once per `period`,
+    /// `delay` after the clock starts (the dots of `fs-dot-wave` in Kai
+    /// web).
+    Wave {
+        period: std::time::Duration,
+        delay: std::time::Duration,
+        lift: f32,
+    },
+}
+
+impl Motion {
+    pub const WAVE_PERIOD: std::time::Duration = std::time::Duration::from_millis(1050);
+    /// Delay between one dot of a wave and the next.
+    pub const WAVE_STAGGER: std::time::Duration = std::time::Duration::from_millis(160);
+
+    /// Dot `index` of a wave, as in Kai web.
+    pub fn wave(index: usize) -> Self {
+        Self::Wave {
+            period: Self::WAVE_PERIOD,
+            delay: Self::WAVE_STAGGER * index as u32,
+            lift: 0.7,
+        }
+    }
+
+    /// Vertical offset at `time` seconds, as a fraction of the element's
+    /// height; negative is up.
+    pub fn offset(self, time: f32) -> f32 {
+        match self {
+            Self::Wave {
+                period,
+                delay,
+                lift,
+            } => {
+                let period = period.as_secs_f32();
+                let elapsed = time - delay.as_secs_f32();
+                if period <= 0.0 || elapsed < 0.0 {
+                    return 0.0;
+                }
+                // Keyframes of `fs-dot-wave`: up at 25 %, down at 55 %, then
+                // still until the cycle ends; ease-in-out between them.
+                let phase = elapsed.rem_euclid(period) / period;
+                let ease = |t: f32| t * t * (3.0 - 2.0 * t);
+                if phase < 0.25 {
+                    -lift * ease(phase / 0.25)
+                } else if phase < 0.55 {
+                    -lift * (1.0 - ease((phase - 0.25) / 0.30))
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Element<Msg> {
     pub id: WidgetId,
@@ -454,6 +517,16 @@ pub struct Element<Msg> {
     /// Vertex `n` of the map's polygon editor, which the session drags
     /// and moves with the keyboard.
     pub map_vertex: Option<usize>,
+    /// See [`Motion`].
+    pub motion: Option<Motion>,
+    /// Working: it takes no clicks and its `busy:` classes apply. The
+    /// session sets it on the control whose message started a pending
+    /// [`Effects::perform`](crate::runtime::Effects::perform) task; the
+    /// app can also set it ([`Element::busy`]).
+    pub busy: bool,
+    /// Whether the session marks this control busy while a task it
+    /// started runs (on by default).
+    pub busy_feedback: bool,
 }
 
 pub fn div<Msg>() -> Element<Msg> {
@@ -527,6 +600,9 @@ impl<Msg> Element<Msg> {
             marker: None,
             map_control: None,
             map_vertex: None,
+            motion: None,
+            busy: false,
+            busy_feedback: true,
         }
     }
 
@@ -598,6 +674,27 @@ impl<Msg> Element<Msg> {
     /// The opposite of [`Element::disabled`] (`NSControl.isEnabled`).
     pub fn enabled(self, enabled: bool) -> Self {
         self.disabled(!enabled)
+    }
+
+    /// Working on something the session does not know about (a reply
+    /// over a socket, say): it takes no clicks and shows its `busy:`
+    /// classes, as while a task it started runs.
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
+        self
+    }
+
+    /// `false`: stay usable while a task this control started runs (a
+    /// sync that goes on in the background).
+    pub fn busy_feedback(mut self, on: bool) -> Self {
+        self.busy_feedback = on;
+        self
+    }
+
+    /// Animate with `motion`; see [`Motion`].
+    pub fn motion(mut self, motion: Motion) -> Self {
+        self.motion = Some(motion);
+        self
     }
 
     /// Toggle buttons: sugar for `state(On | Off)`.
@@ -1414,6 +1511,29 @@ mod tests {
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::theme::{Density, Theme};
     use crate::ui_engine::Key;
+
+    #[test]
+    fn wave_jumps_at_a_quarter_and_lands_before_the_cycle_ends() {
+        use super::Motion;
+
+        let first = Motion::wave(0);
+        let period = Motion::WAVE_PERIOD.as_secs_f32();
+        assert_eq!(first.offset(0.0), 0.0);
+        assert!((first.offset(period * 0.25) + 0.7).abs() < 1e-4, "peak");
+        assert!(first.offset(period * 0.4) < 0.0, "coming down");
+        assert_eq!(first.offset(period * 0.6), 0.0, "still until the end");
+        assert!(
+            (first.offset(period * 1.25) + 0.7).abs() < 1e-4,
+            "it repeats"
+        );
+
+        let second = Motion::wave(1);
+        let stagger = Motion::WAVE_STAGGER.as_secs_f32();
+        assert_eq!(second.offset(stagger * 0.5), 0.0, "waits for its turn");
+        for time in [0.1, 0.2, 0.3, 0.5] {
+            assert!((second.offset(time + stagger) - first.offset(time)).abs() < 1e-4);
+        }
+    }
 
     #[test]
     fn control_size_is_inherited() {

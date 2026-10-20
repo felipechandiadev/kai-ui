@@ -295,6 +295,7 @@ mod tests {
             needs_input: false,
             exposed: false,
             availability: Availability::Enabled,
+            busy: false,
         }
     }
 

@@ -16,6 +16,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 - **MCP experimental** (feature `mcp`): servidor stdio con `rmcp`, confirmación humana de acciones destructivas, auditoría e indicador de agente.
 - **Widgets:** checkbox con estado mixto, segmented, `Select`, sidebar plegable a un riel con tooltips, toolbar, search field, textarea, `Dialog` modal, toasts, tabla y lista virtualizadas (10 000 filas), edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`.
 - **Efectos async:** `Effects::perform` en un pool de 4 hilos, `after`, `keyed`/`cancel`, `pick_file` (panel de archivos de macOS) y archivos arrastrados (`on_drop_files`, variante `drag:`).
+- **`DotProgress` y botón ocupado:** puntos en ola (`DotProgress`, `dot_progress`, rol `ProgressIndicator`) con la primera animación calculada al pintar (`Motion`, respeta `reduce_motion`). El botón o comando que lanzó un `Effects::perform` queda ocupado hasta que la tarea, y las que encadene, terminan: puntos sobre el texto, mismo color y ancho, cursor de espera y sin clics. Un comando ocupado queda «En curso». Incluye `Button::loading`, `busy_feedback`, las variantes `busy:` y `group-busy:`, `bg-current`, `cursor-wait` y `TestApp::is_busy`.
 - **Imágenes:** `image(src)` desde archivo, URL (feature `net`), bytes o RGBA; atlas RGBA en GPU con radio propio, `object-*` y `aspect-*`.
 - **Geometría y mapas:** mallas con `lyon` y MSAA 4×; `kai::maps` con mapa base vectorial propio (PMTiles, MVT, estilo y etiquetas; extracto de Parral), cámara con inercia, marcadores, polígonos GeoJSON, `fit_bounds`, editor de polígonos y comandos `mapa.*` y `areas.*` en la demo.
 - **Lenguaje de color de la selección:** token `choice` (el `secondary` de Kai) y las clases `CHOICE_ACTIVE` y `CHOICE_HOVER` para toda elección activa; el select termina en `ChevronDown`.
@@ -26,7 +27,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 - La opción elegida del select ya no lleva check; se marca con el vidrio de elección.
 - `MediaSlot` ya no tiene botón de agregar ni de cámara: la imagen es el control (`ActionPlacement` eliminado).
-- La demo pasó a ser un shell con toolbar, sidebar y diez secciones; la baseline de capturas tiene 21 imágenes.
+- La demo pasó a ser un shell con toolbar, sidebar y diez secciones; la baseline de capturas tiene 22 imágenes.
+- `TestApp` arranca su reloj en el inicio de la sesión, así las animaciones dan los mismos frames en cada corrida.
 
 ### Known issues
 

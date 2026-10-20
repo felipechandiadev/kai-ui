@@ -189,4 +189,7 @@ pub struct CommandState {
     /// Listed for agents ([`CommandBuilder::expose`]).
     pub exposed: bool,
     pub availability: Availability,
+    /// A task it started still runs: disabled (`En curso`) and its buttons
+    /// busy.
+    pub busy: bool,
 }

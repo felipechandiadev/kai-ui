@@ -40,6 +40,15 @@ runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 
 En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve el reloj de los temporizadores y `on_file_pick(ruta)` responde el panel de archivos. Faltan futures (`perform` recibe una función, no un `async`) y suscripciones.
 
+**Botón ocupado.** Cada tarea de `Effects::perform` guarda qué la lanzó (`TaskOrigin`): el control clicado (`Widget(id)`) o el comando (`Command(id)`), ya venga de un atajo, del menú, de la paleta, de un botón con `on_command`, de un script o de un agente. Mientras la tarea no entrega su `Msg`, ese origen está ocupado:
+
+- La sesión marca `busy` el control en cada `rebuild` (y los botones del comando, vía `bind_commands`). El control muestra sus clases `busy:` y no recibe clics; el resto de la ventana sigue respondiendo.
+- Un comando ocupado pasa a `Disabled { reason: "En curso" }` (`session::COMMAND_BUSY`) en el menú y la paleta. `perform_command` lo rechaza, igual que `send_command`/`invoke` y las llamadas de agentes, que devuelven ese motivo.
+- El `Msg` de una tarea se envía con el origen de la tarea, así una tarea que esa respuesta lanza (guardar y luego recargar) lo hereda y el botón sigue ocupado hasta la última. `Effects::after` y `pick_file` no ocupan nada.
+- Una tarea que entra en pánico libera su origen sin enviar `Msg`.
+- `Element::busy_feedback(false)` deja usable un control mientras corre su tarea, y `Element::busy(true)` lo ocupa por una razón que la sesión no ve.
+- En `TestApp`, `is_busy(by)` lo consulta. El cursor cambia sin mover el puntero, porque la sesión vuelve a calcularlo en cada frame.
+
 - **El estado de la app vive en el modelo.** `view` se ejecuta en cada frame y produce un árbol `Element<Msg>` nuevo; los ids se derivan de la ruta (o de `key`), así que foco, hover, scroll y el caret de cada input sobreviven a la reconstrucción.
 - **Eventos como mensajes.** `on_click(msg)`, `on_input(|valor| msg)` y `on_submit(msg)` registran el mensaje que el runtime envía a `update`. El clic burbujea desde el nodo más interno de `hit_path` hasta el control más cercano, igual que un evento DOM.
 - **Inputs controlados**, como en React: el valor del árbol se copia al editor en cada frame si difiere. El editor conserva caret, selección e IME; cada edición que cambia el texto emite `on_input` con el valor nuevo, y Enter emite `on_submit`. Un input sin `on_input` es de solo lectura.

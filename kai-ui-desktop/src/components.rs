@@ -11,6 +11,7 @@ use std::rc::Rc;
 mod color;
 mod dialog;
 mod media;
+mod progress;
 mod search;
 mod sidebar;
 mod table;
@@ -22,6 +23,7 @@ pub use crate::render::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
+pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
@@ -246,12 +248,32 @@ pub fn button_sized<Msg>(
 ) -> Element<Msg> {
     let button = div()
         .class(&button_classes(variant, size))
+        .class(BUTTON_BUSY)
         .role(Role::Button)
-        .child(text(label));
+        .child(button_label(label))
+        .child(busy_dots());
     match size {
         ButtonSize::Md => button,
         _ => button.control_size(size.into()),
     }
+}
+
+/// While a button is busy ([`Element::busy`]) it keeps its color and width:
+/// no hover, the wait cursor, and the label invisible under the dots.
+const BUTTON_BUSY: &str = "group relative busy:cursor-wait";
+
+fn button_label<Msg>(label: impl Into<String>) -> Element<Msg> {
+    text(label).class("group-busy:opacity-0")
+}
+
+/// Three small dots in the text color over the label of a busy button.
+fn busy_dots<Msg>() -> Element<Msg> {
+    div()
+        .class(
+            "absolute inset-0 hidden group-busy:flex items-center justify-center \
+             pointer-events-none",
+        )
+        .child(DotProgress::new().size(DotSize::Sm).decorative().build())
 }
 
 /// Button with the AppKit model (`NSButton`): bezel, accent, default and
@@ -267,6 +289,8 @@ pub struct Button<Msg> {
     is_default: bool,
     cancel: bool,
     disabled: bool,
+    loading: bool,
+    busy_feedback: bool,
     on_click: Option<Msg>,
 }
 
@@ -281,8 +305,25 @@ impl<Msg> Button<Msg> {
             is_default: false,
             cancel: false,
             disabled: false,
+            loading: false,
+            busy_feedback: true,
             on_click: None,
         }
+    }
+
+    /// Busy for a reason the session does not see (the app waits on a
+    /// socket): dots over the label, no clicks. A task the button starts
+    /// with [`Effects::perform`](crate::runtime::Effects::perform) does
+    /// this on its own.
+    pub fn loading(mut self, on: bool) -> Self {
+        self.loading = on;
+        self
+    }
+
+    /// `false`: the button stays usable while a task it started runs.
+    pub fn busy_feedback(mut self, on: bool) -> Self {
+        self.busy_feedback = on;
+        self
     }
 
     pub fn bezel(mut self, bezel: BezelStyle) -> Self {
@@ -353,10 +394,14 @@ impl<Msg> Button<Msg> {
         );
         let mut button = div()
             .class(&classes)
+            .class(BUTTON_BUSY)
             .role(Role::Button)
-            .child(text(self.label))
+            .child(button_label(self.label))
+            .child(busy_dots())
             .default_button(self.is_default)
-            .disabled(self.disabled);
+            .disabled(self.disabled)
+            .busy(self.loading)
+            .busy_feedback(self.busy_feedback);
         if let Some(size) = self.size {
             button = button.control_size(size);
         }
@@ -1615,6 +1660,7 @@ pub fn icon_button_sized<Msg>(
                  disabled:text-disabled-control-text {mix}"
             ),
         ))
+        .class("busy:cursor-wait")
         .role(Role::Button)
         .label(label)
         .child(icon(icon_kind).class(&format!(
@@ -2097,13 +2143,13 @@ pub fn segmented_with_options<Msg>(
 #[cfg(test)]
 mod tests {
     use super::{
-        AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, CHOICE_ACTIVE,
-        CHOICE_HOVER, FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant,
-        LabelLayout, MenuFrame, SidebarGroup, SidebarItem, SwitchDensity, TextField, alert, badge,
-        badge_classes, button, button_classes, card, card_actions, card_content, card_header,
-        checkbox, checkbox_with_options, dialog, group_box, icon_button_sized, segmented,
-        segmented_with_options, select, select_menu, select_with_options, sidebar, stat,
-        switch_labeled, switch_with_options,
+        AlertVariant, BUTTON_BUSY, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
+        CHOICE_ACTIVE, CHOICE_HOVER, FieldBezel, FieldDensity, FieldVariant, IconButtonSize,
+        IconButtonVariant, LabelLayout, MenuFrame, SidebarGroup, SidebarItem, SwitchDensity,
+        TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
+        card_content, card_header, checkbox, checkbox_with_options, dialog, group_box,
+        icon_button_sized, segmented, segmented_with_options, select, select_menu,
+        select_with_options, sidebar, stat, switch_labeled, switch_with_options,
     };
     use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
@@ -2664,7 +2710,10 @@ mod tests {
             (kai(Button::new("a")), ButtonVariant::Secondary),
         ] {
             let list = ClassList::parse(&built, &theme());
-            let expected = ClassList::parse(&kai_part(variant, ButtonSize::Md), &theme());
+            let expected = ClassList::parse(
+                &format!("{} {BUTTON_BUSY}", kai_part(variant, ButtonSize::Md)),
+                &theme(),
+            );
             assert_eq!(list, expected, "{variant:?}");
         }
         let cancel: Element<Msg> = Button::new("Cancelar")
@@ -2721,6 +2770,7 @@ mod tests {
             window,
             text_fields: &[],
             background: Default::default(),
+            time: None,
         });
         let rings = list
             .ops
