@@ -464,6 +464,23 @@ impl<A: App> TestApp<A> {
     /// disabled control takes the click and sends nothing, as on screen.
     #[track_caller]
     pub fn click(&mut self, by: By) {
+        self.click_series(by, 1);
+    }
+
+    /// [`Self::click`] twice in a row: selects a word in a text input.
+    #[track_caller]
+    pub fn double_click(&mut self, by: By) {
+        self.click_series(by, 2);
+    }
+
+    /// [`Self::click`] three times in a row: selects a line in a text input.
+    #[track_caller]
+    pub fn triple_click(&mut self, by: By) {
+        self.click_series(by, 3);
+    }
+
+    #[track_caller]
+    fn click_series(&mut self, by: By, clicks: u32) {
         let id = self.id_of(by);
         if self.session.reveal(id) {
             self.frame();
@@ -486,9 +503,11 @@ impl<A: App> TestApp<A> {
         }
         self.session.pointer_moved(Some(center));
         self.frame();
-        self.session.pointer_button(true);
-        self.session.pointer_button(false);
-        self.frame();
+        for count in 1..=clicks {
+            self.session.pointer_clicks(true, count);
+            self.session.pointer_button(false);
+            self.frame();
+        }
     }
 
     /// Scroll the element into view and move the pointer to its center,
@@ -783,6 +802,30 @@ mod tests {
         app.press(key, modifiers);
         assert_eq!(app.value(By::test_id("nombre")), "AnaAna");
         assert_eq!(app.app().name, "AnaAna");
+    }
+
+    #[test]
+    fn word_editing_and_multi_clicks_reach_the_field() {
+        let clipboard = MemoryClipboard::new();
+        let mut app = TestApp::builder(Form::default())
+            .clipboard(clipboard.clone())
+            .build();
+        app.type_text(By::test_id("nombre"), "Ana Pérez");
+        let option = Modifiers {
+            option: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Backspace, option);
+        assert_eq!(app.value(By::test_id("nombre")), "Ana ");
+        assert_eq!(app.app().name, "Ana ");
+
+        app.triple_click(By::test_id("nombre"));
+        let (key, modifiers) = cmd(Key::C);
+        app.press(key, modifiers);
+        assert_eq!(clipboard.text().as_deref(), Some("Ana "));
+        let (key, modifiers) = cmd(Key::Backspace);
+        app.press(key, modifiers);
+        assert_eq!(app.value(By::test_id("nombre")), "");
     }
 
     #[test]

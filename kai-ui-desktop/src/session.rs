@@ -1168,10 +1168,23 @@ impl<A: App> Session<A> {
 
     /// Primary button pressed or released at the current pointer.
     pub fn pointer_button(&mut self, pressed: bool) {
-        self.with_source(MsgSource::Pointer, |session| session.press_pointer(pressed));
+        self.pointer_clicks(pressed, 1);
     }
 
-    fn press_pointer(&mut self, pressed: bool) {
+    /// [`Self::pointer_button`] for the `clicks`th press of a series
+    /// (2 for a double click, 3 for a triple one).
+    pub fn pointer_clicks(&mut self, pressed: bool, clicks: u32) {
+        self.with_source(MsgSource::Pointer, |session| {
+            session.press_pointer(pressed, clicks);
+        });
+    }
+
+    /// Last pointer position, in logical points.
+    pub fn cursor(&self) -> Option<Point> {
+        self.cursor
+    }
+
+    fn press_pointer(&mut self, pressed: bool, clicks: u32) {
         let target = pointer_target(&self.layout, &self.hover_path);
         if pressed
             && let Some(popup) = &self.popup
@@ -1203,7 +1216,7 @@ impl<A: App> Session<A> {
                 && let Some(local) = self.text_field_local(id)
                 && let Some(field) = self.text_fields.get_mut(&id)
             {
-                field.click(&mut self.text.font_system, local);
+                field.click_count(&mut self.text.font_system, local, clicks);
                 self.update_ime_cursor_area();
             }
         } else {

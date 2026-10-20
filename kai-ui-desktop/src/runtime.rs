@@ -46,7 +46,7 @@ use crate::session::{Measure, Session};
 use crate::style::Cursor;
 use crate::text_field::SystemClipboard;
 use crate::theme::{Appearance, Theme};
-use crate::ui_engine::Modifiers;
+use crate::ui_engine::{ClickCounter, Modifiers};
 
 const LINE_SCROLL: f32 = 40.0;
 
@@ -420,6 +420,7 @@ struct WindowState<A: App> {
     session: Session<A>,
     scale_factor: ScaleFactor,
     modifiers: Modifiers,
+    clicks: ClickCounter,
     /// `WindowEvent::Occluded` (hidden, minimized or fully covered).
     occluded: bool,
     clock: BackgroundClock,
@@ -465,6 +466,7 @@ impl<A: App> WindowState<A> {
             session,
             scale_factor,
             modifiers: Modifiers::default(),
+            clicks: ClickCounter::default(),
             occluded: false,
             clock: BackgroundClock::default(),
             background_layer: None,
@@ -735,9 +737,16 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 state: button_state,
                 button: MouseButton::Left,
                 ..
-            } => state
-                .session
-                .pointer_button(button_state == ElementState::Pressed),
+            } => {
+                let pressed = button_state == ElementState::Pressed;
+                let clicks = if pressed {
+                    let point = state.session.cursor().unwrap_or_default();
+                    state.clicks.press(Instant::now(), point)
+                } else {
+                    1
+                };
+                state.session.pointer_clicks(pressed, clicks);
+            }
             WindowEvent::Ime(ime) => state.session.apply_intent(adapt_ime_event(ime)),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 for intent in adapt_keyboard_event(&event, state.modifiers) {

@@ -1,8 +1,10 @@
 //! Platform-independent intents and command dispatch for the Kai UI MVP.
 
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use crate::element::{FocusKind, FocusOrder, KeyEquivalent, WidgetId};
+use crate::geometry::Point;
 use crate::responder::{Action, FocusContext, KeyRoute, key_equivalent_route};
 use crate::signal::Signal;
 
@@ -17,6 +19,34 @@ pub enum ActivationSource {
     /// Return for the default button, Escape for the cancel button, or a
     /// control's own shortcut.
     KeyEquivalent,
+}
+
+/// Counts the presses of a double or triple click: a press continues the
+/// series when it comes within [`Self::INTERVAL`] of the previous one and
+/// no more than [`Self::SLOP`] points away from it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ClickCounter {
+    last: Option<(Instant, Point)>,
+    count: u32,
+}
+
+impl ClickCounter {
+    /// macOS default (`NSEvent.doubleClickInterval`).
+    pub const INTERVAL: Duration = Duration::from_millis(500);
+    pub const SLOP: f32 = 4.0;
+
+    /// Record a press at `point` and return its place in the series (1, 2,
+    /// 3…).
+    pub fn press(&mut self, at: Instant, point: Point) -> u32 {
+        let continues = self.last.is_some_and(|(time, previous)| {
+            at.saturating_duration_since(time) <= Self::INTERVAL
+                && (point.x - previous.x).abs() <= Self::SLOP
+                && (point.y - previous.y).abs() <= Self::SLOP
+        });
+        self.count = if continues { self.count + 1 } else { 1 };
+        self.last = Some((at, point));
+        self.count
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -832,6 +862,22 @@ mod tests {
         assert!(!*model.focus_visible.get());
         dispatch(&mut model, &order, Intent::Activate(sample::button()));
         assert!(*model.focus_visible.get(), "assistive technology");
+    }
+
+    #[test]
+    fn click_series_continue_only_close_in_time_and_place() {
+        use super::ClickCounter;
+        use crate::geometry::Point;
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        let here = Point { x: 10.0, y: 10.0 };
+        let mut clicks = ClickCounter::default();
+        assert_eq!(clicks.press(at(0), here), 1);
+        assert_eq!(clicks.press(at(200), Point { x: 12.0, y: 9.0 }), 2);
+        assert_eq!(clicks.press(at(400), here), 3);
+        assert_eq!(clicks.press(at(1000), here), 1, "too late");
+        assert_eq!(clicks.press(at(1100), Point { x: 30.0, y: 10.0 }), 1);
     }
 
     #[test]

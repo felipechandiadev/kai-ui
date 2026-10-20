@@ -204,31 +204,81 @@ impl TextFieldState {
         }
     }
 
+    /// Where a key moves the caret, with the macOS bindings: ⌥ by word, ⌘
+    /// to the line ends (← →) or the text ends (↑ ↓). A masked field has no
+    /// words, so ⌥ goes to the ends as well.
+    fn motion(&self, key: Key, modifiers: Modifiers) -> Option<Motion> {
+        let word = modifiers.option && !modifiers.command;
+        let line = modifiers.command && !modifiers.option;
+        Some(match key {
+            Key::ArrowLeft if line => Motion::Home,
+            Key::ArrowRight if line => Motion::End,
+            Key::ArrowLeft if word && self.masked => Motion::BufferStart,
+            Key::ArrowRight if word && self.masked => Motion::BufferEnd,
+            Key::ArrowLeft if word => Motion::LeftWord,
+            Key::ArrowRight if word => Motion::RightWord,
+            Key::ArrowLeft => Motion::Left,
+            Key::ArrowRight => Motion::Right,
+            Key::ArrowUp if line => Motion::BufferStart,
+            Key::ArrowDown if line => Motion::BufferEnd,
+            Key::ArrowUp if word => Motion::BufferStart,
+            Key::ArrowDown if word => Motion::BufferEnd,
+            Key::Home | Key::ArrowUp => Motion::BufferStart,
+            Key::End | Key::ArrowDown => Motion::BufferEnd,
+            _ => return None,
+        })
+    }
+
+    /// Backspace or Delete: the selection if there is one, otherwise one
+    /// character, or up to the word (⌥) or line (⌘) boundary.
+    fn delete(&mut self, key: Key, modifiers: Modifiers, font_system: &mut FontSystem) {
+        let backward = key == Key::Backspace;
+        let reach = if modifiers.command {
+            Some(if backward { Motion::Home } else { Motion::End })
+        } else if modifiers.option {
+            Some(match (backward, self.masked) {
+                (true, true) => Motion::BufferStart,
+                (false, true) => Motion::BufferEnd,
+                (true, false) => Motion::LeftWord,
+                (false, false) => Motion::RightWord,
+            })
+        } else {
+            None
+        };
+        match reach {
+            Some(motion) if self.editor.selection() == Selection::None => {
+                self.editor
+                    .set_selection(Selection::Normal(self.editor.cursor()));
+                self.editor.action(font_system, Action::Motion(motion));
+                self.editor.delete_selection();
+            }
+            _ => {
+                let action = if backward {
+                    Action::Backspace
+                } else {
+                    Action::Delete
+                };
+                self.editor.action(font_system, action);
+            }
+        }
+    }
+
     fn key_down(
         &mut self,
         key: Key,
         modifiers: Modifiers,
         font_system: &mut FontSystem,
     ) -> TextFieldEffect {
-        let motion = match key {
-            Key::ArrowLeft => Motion::Left,
-            Key::ArrowRight => Motion::Right,
-            Key::Home | Key::ArrowUp => Motion::BufferStart,
-            Key::End | Key::ArrowDown => Motion::BufferEnd,
-            Key::Backspace | Key::Delete if self.read_only => {
+        if matches!(key, Key::Backspace | Key::Delete) {
+            if self.read_only {
                 return TextFieldEffect::default();
             }
-            Key::Backspace | Key::Delete => {
-                let action = if key == Key::Backspace {
-                    Action::Backspace
-                } else {
-                    Action::Delete
-                };
-                self.editor.action(font_system, action);
-                self.after_edit(font_system);
-                return TextFieldEffect::changed();
-            }
-            _ => return TextFieldEffect::default(),
+            self.delete(key, modifiers, font_system);
+            self.after_edit(font_system);
+            return TextFieldEffect::changed();
+        }
+        let Some(motion) = self.motion(key, modifiers) else {
+            return TextFieldEffect::default();
         };
         let anchor = match self.editor.selection() {
             Selection::Normal(anchor) if modifiers.shift => anchor,
@@ -389,6 +439,29 @@ impl TextFieldState {
             );
         }
         self.editor.set_selection(Selection::None);
+        self.after_edit(font_system);
+    }
+
+    /// The `count`th click of a series at a point: one places the caret, two
+    /// select the word under it and three the whole line. A masked field
+    /// selects everything from the second click on (its words are hidden).
+    pub fn click_count(&mut self, font_system: &mut FontSystem, local: Point, count: u32) {
+        if count <= 1 {
+            self.click(font_system, local);
+            return;
+        }
+        if self.masked {
+            self.select_all(font_system);
+            return;
+        }
+        let local = self.on_line(local);
+        let (x, y) = ((local.x + self.scroll_x) as i32, local.y as i32);
+        let action = if count == 2 {
+            Action::DoubleClick { x, y }
+        } else {
+            Action::TripleClick { x, y }
+        };
+        self.editor.action(font_system, action);
         self.after_edit(font_system);
     }
 
@@ -805,6 +878,113 @@ mod tests {
         field.apply(key(Key::Home, false), &mut fonts, &mut clipboard);
         field.apply(key(Key::Delete, false), &mut fonts, &mut clipboard);
         assert_eq!(field.text(), "bc");
+    }
+
+    fn with(key: Key, modifiers: Modifiers) -> TextIntent {
+        TextIntent::KeyDown {
+            key,
+            modifiers,
+            repeat: false,
+        }
+    }
+
+    const OPTION: Modifiers = Modifiers {
+        option: true,
+        ..Modifiers::NONE
+    };
+    const COMMAND: Modifiers = Modifiers {
+        command: true,
+        ..Modifiers::NONE
+    };
+    const SHIFT_OPTION: Modifiers = Modifiers {
+        option: true,
+        shift: true,
+        ..Modifiers::NONE
+    };
+
+    #[test]
+    fn option_moves_by_word_and_command_to_the_line_ends() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut fonts, 400.0);
+        field.insert_text(&mut fonts, "uno dos tres");
+        let mut press = |field: &mut TextFieldState, key, modifiers| {
+            field.apply(with(key, modifiers), &mut fonts, &mut clipboard);
+            field.editor().cursor().index
+        };
+        assert_eq!(press(&mut field, Key::ArrowLeft, OPTION), "uno dos ".len());
+        assert_eq!(press(&mut field, Key::ArrowLeft, OPTION), "uno ".len());
+        assert_eq!(press(&mut field, Key::ArrowRight, OPTION), "uno dos".len());
+        assert_eq!(press(&mut field, Key::ArrowLeft, COMMAND), 0);
+        assert_eq!(press(&mut field, Key::ArrowRight, COMMAND), 12);
+        assert_eq!(press(&mut field, Key::ArrowUp, COMMAND), 0);
+        assert_eq!(press(&mut field, Key::ArrowDown, COMMAND), 12);
+
+        field.apply(
+            with(Key::ArrowLeft, SHIFT_OPTION),
+            &mut fonts,
+            &mut clipboard,
+        );
+        assert_eq!(field.editor().copy_selection().as_deref(), Some("tres"));
+    }
+
+    #[test]
+    fn option_and_command_delete_up_to_the_word_or_line_start() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut fonts, 400.0);
+        field.insert_text(&mut fonts, "uno dos tres");
+        field.apply(with(Key::Backspace, OPTION), &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "uno dos ");
+        field.apply(with(Key::Backspace, OPTION), &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "uno ");
+        field.apply(with(Key::ArrowLeft, COMMAND), &mut fonts, &mut clipboard);
+        field.apply(with(Key::Delete, OPTION), &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), " ");
+
+        field.set_text(&mut fonts, "hola mundo");
+        field.apply(with(Key::ArrowRight, COMMAND), &mut fonts, &mut clipboard);
+        field.apply(with(Key::Backspace, COMMAND), &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "");
+
+        field.set_text(&mut fonts, "secreto");
+        field.set_masked(&mut fonts, true);
+        field.apply(with(Key::ArrowLeft, COMMAND), &mut fonts, &mut clipboard);
+        field.apply(with(Key::ArrowRight, OPTION), &mut fonts, &mut clipboard);
+        assert_eq!(field.editor().cursor().index, 7, "no words in a password");
+        field.apply(with(Key::Backspace, OPTION), &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "");
+    }
+
+    #[test]
+    fn double_click_selects_a_word_and_triple_click_the_line() {
+        let mut fonts = FontSystem::new();
+        let mut field = field(&mut fonts, 400.0);
+        field.insert_text(&mut fonts, "uno dos tres");
+        field.click(&mut fonts, Point { x: 0.0, y: 5.0 });
+        let x = field
+            .view(&mut fonts)
+            .buffer
+            .layout_runs()
+            .next()
+            .map(|run| {
+                let x = |index| {
+                    run.cursor_position(&cosmic_text::Cursor::new(0, index))
+                        .unwrap()
+                };
+                (x("uno d".len()) + x("uno do".len())) / 2.0
+            })
+            .unwrap();
+        let at = Point { x, y: 5.0 };
+        field.click_count(&mut fonts, at, 2);
+        assert_eq!(field.editor().copy_selection().as_deref(), Some("dos"));
+        field.click_count(&mut fonts, at, 3);
+        assert_eq!(
+            field.editor().copy_selection().as_deref(),
+            Some("uno dos tres")
+        );
+        field.click_count(&mut fonts, at, 1);
+        assert_eq!(field.editor().copy_selection(), None);
     }
 
     #[test]
