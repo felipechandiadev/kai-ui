@@ -1039,7 +1039,7 @@ impl<Msg> Element<Msg> {
     }
 
     /// Concatenated text of the subtree, used as default accessible name.
-    /// Images (an avatar's initials) have their own name and add nothing.
+    /// Images (an avatar) have their own name and add nothing.
     pub fn text_content(&self) -> String {
         fn collect<'a, Msg>(element: &'a Element<Msg>, parts: &mut Vec<&'a str>) {
             if element.role == Some(Role::Image) {

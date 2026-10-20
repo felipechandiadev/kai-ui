@@ -226,7 +226,7 @@
         "additionalProperties": false,
         "properties": {
           "url": {
-            "description": "Dirección http(s) de una imagen png, jpg o webp; vacía, vuelve a las iniciales",
+            "description": "Dirección http(s) de una imagen png, jpg o webp; vacía, vuelve al ícono",
             "type": "string"
           }
         },

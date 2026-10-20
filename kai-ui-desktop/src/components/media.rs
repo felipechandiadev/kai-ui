@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::{AlertVariant, IconButtonSize, IconButtonVariant, alert, icon_button_sized};
-use crate::element::{Element, Role, div, icon, image, text};
+use crate::element::{Element, Role, div, icon, image};
 use crate::icons::Icon;
 use crate::media::ImageSource;
 use crate::runtime::IMAGE_FILE_TYPES;
@@ -25,32 +25,20 @@ pub enum AvatarSize {
 }
 
 impl AvatarSize {
-    /// Circle, initials and placeholder icon classes.
-    fn classes(self) -> (&'static str, &'static str, &'static str) {
+    /// Circle and placeholder icon classes.
+    fn classes(self) -> (&'static str, &'static str) {
         match self {
-            Self::Xs => ("size-6", "text-[10px] leading-none", "size-4"),
-            Self::Sm => ("size-16", "text-xl leading-none", "size-7"),
-            Self::Md => ("size-24", "text-3xl leading-none", "size-10"),
-            Self::Lg => ("size-28", "text-[40px] leading-none", "size-12"),
+            Self::Xs => ("size-6", "size-4"),
+            Self::Sm => ("size-16", "size-7"),
+            Self::Md => ("size-24", "size-10"),
+            Self::Lg => ("size-28", "size-12"),
         }
     }
 }
 
-/// Up to two initials: of the first and the last word.
-pub fn initials(name: &str) -> String {
-    let mut words = name.split_whitespace();
-    let first = words.next().and_then(|word| word.chars().next());
-    let last = words.last().and_then(|word| word.chars().next());
-    first
-        .into_iter()
-        .chain(last)
-        .flat_map(char::to_uppercase)
-        .collect()
-}
-
-/// A person's picture: a circle with their initials (or the `User` icon
-/// without a name) and, on top, their image cropped to the circle once it
-/// loads. An image named after the person (`Role::Image`).
+/// A person's picture: a circle with the Lucide `User` icon and, on top,
+/// their image cropped to the circle once it loads. An image named after
+/// the person (`Role::Image`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Avatar {
     name: String,
@@ -86,13 +74,8 @@ impl Avatar {
     }
 
     pub fn build<Msg>(self) -> Element<Msg> {
-        let (circle, letters, icon_size) = self.size.classes();
-        let initials = initials(&self.name);
-        let placeholder = if initials.is_empty() {
-            icon(Icon::User).class(icon_size)
-        } else {
-            text(initials).class(&format!("font-semibold {letters}"))
-        };
+        let (circle, icon_size) = self.size.classes();
+        let placeholder = icon(Icon::User).class(icon_size);
         let mut root = div()
             .class(&format!(
                 "relative inline-flex shrink-0 items-center justify-center overflow-hidden \
@@ -232,7 +215,7 @@ impl<Msg: Clone + 'static> MediaSlot<Msg> {
         };
         let (area_class, image_class, placeholder) = match self.variant {
             MediaVariant::Avatar(size) => {
-                let (circle, _, icon_size) = size.classes();
+                let (circle, icon_size) = size.classes();
                 (
                     format!("{circle} rounded-full border-[3px] border-secondary bg-muted/70"),
                     "rounded-full object-cover",
@@ -377,13 +360,6 @@ mod tests {
     use crate::runtime::SimpleApp;
     use crate::testing::{By, TestApp};
 
-    #[test]
-    fn initials_take_the_first_and_last_word() {
-        assert_eq!(initials("Ana María López"), "AL");
-        assert_eq!(initials("  ñandú "), "Ñ");
-        assert_eq!(initials(""), "");
-    }
-
     #[derive(Clone, Debug, PartialEq)]
     enum Msg {
         Pick,
@@ -443,21 +419,26 @@ mod tests {
     }
 
     #[test]
-    fn avatars_are_images_named_after_the_person_with_initials_or_an_icon() {
+    fn avatars_are_images_named_after_the_person_with_the_user_icon() {
         let app = slots(Slots::default());
         let screen = app.screen();
         let ana = screen.get(By::role(Role::Image).name("Ana López"));
         assert_eq!(ana.test_id(), Some("ana"));
         assert_eq!(ana.bounds().width, 96.0, "medium is 6 rem");
-        screen.get(By::test_id("ana.placeholder")).node();
-        assert!(screen.query(By::text("AL")).is_some());
+        let placeholder = screen.get(By::test_id("ana.placeholder"));
+        assert!(matches!(
+            placeholder.node().content,
+            crate::layout::Content::Icon(Icon::User)
+        ));
+        assert_eq!(placeholder.bounds().width, 40.0, "size-10");
+        assert!(screen.query(By::text("AL")).is_none(), "no initials");
         let anonymous = screen.get(By::role(Role::Image).name("Usuario"));
         assert_eq!(anonymous.bounds().width, 64.0);
         assert!(screen.query(By::test_id("ana.image")).is_none());
     }
 
     #[test]
-    fn an_avatar_with_an_image_draws_it_over_the_initials() {
+    fn an_avatar_with_an_image_draws_it_over_the_icon() {
         let app = slots(Slots::default());
         app.screen().get(By::role(Role::Image).name("Bruno Díaz"));
         let images = app

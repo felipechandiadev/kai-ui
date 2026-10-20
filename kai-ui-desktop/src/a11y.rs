@@ -166,8 +166,8 @@ fn exposed(node: &LayoutNode) -> bool {
     !node.hidden && !decorative
 }
 
-/// Text of the subtree; an image (an avatar's initials) has its own name
-/// and adds nothing.
+/// Text of the subtree; an image (an avatar) has its own name and adds
+/// nothing.
 fn text_content(layout: &Layout, index: usize, parts: &mut Vec<String>) {
     let node = layout.get(index);
     if node.hidden || node.role == Some(KaiRole::Image) {

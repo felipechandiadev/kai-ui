@@ -19,8 +19,7 @@ mod toolbar;
 
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use media::{
-    ActionPlacement, Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, initials,
-    validate_image_file,
+    ActionPlacement, Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file,
 };
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};

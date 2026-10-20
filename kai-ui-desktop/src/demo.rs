@@ -515,7 +515,7 @@ enum Msg {
     ElegirImagen(Campo),
     /// The panel's answer, or a file dropped on the field.
     ImagenElegida(Campo, Option<PathBuf>),
-    /// Loads the avatar from a URL; empty, back to the initials.
+    /// Loads the avatar from a URL; empty, back to the icon.
     CargarUrl(String),
 }
 
@@ -710,7 +710,7 @@ impl Action for MostrarAviso {
 struct CargarUrl {
     #[schemars(
         description = "Dirección http(s) de una imagen png, jpg o webp; vacía, \
-                              vuelve a las iniciales"
+                              vuelve al ícono"
     )]
     url: String,
 }
@@ -1567,8 +1567,8 @@ impl Demo {
         ])
     }
 
-    /// Multimedia: avatars by size, with initials, an image or one from a
-    /// URL, and a bare `image`.
+    /// Multimedia: avatars by size, with the `User` icon, an image or one
+    /// from a URL, and a bare `image`.
     fn avatars(&self) -> Element<Msg> {
         let sizes = [
             AvatarSize::Xs,
@@ -1589,16 +1589,18 @@ impl Demo {
             .children([
                 card_header(
                     "Avatares",
-                    Some("Iniciales mientras no hay imagen; la imagen se recorta al círculo"),
+                    Some(
+                        "El ícono User de Lucide mientras no hay imagen; la imagen se recorta \
+                         al círculo",
+                    ),
                 ),
                 card_content().class("gap-4").children([
                     row(
-                        "Iniciales:",
-                        ["Ana Rojas", "Bruno Soto", "Carla Vega", "Diego"]
+                        "Sin imagen:",
+                        ["Ana Rojas", "Bruno Soto", "Carla Vega", "Diego Silva"]
                             .into_iter()
                             .zip(sizes)
                             .map(|(name, size)| Avatar::new(name).size(size).build())
-                            .chain([Avatar::new("").size(AvatarSize::Sm).build()])
                             .collect(),
                     ),
                     row(
@@ -2908,8 +2910,7 @@ mod tests {
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
         ];
-        const NOT_WIDGETS: [&str; 14] = [
-            "initials",
+        const NOT_WIDGETS: [&str; 13] = [
             "validate_image_file",
             "themed",
             "appkit_button_classes",
@@ -3211,7 +3212,7 @@ mod tests {
             .images(FakeImageLoader::new().with(URL, png([20, 120, 220, 255])))
             .build();
         let image = By::test_id("multimedia.avatar_url.image");
-        assert!(app.screen().query(image.clone()).is_none(), "initials");
+        assert!(app.screen().query(image.clone()).is_none(), "the icon");
 
         let result = app.call("multimedia.cargar_url", json!({"url": URL}));
         assert!(result.is_ok(), "{result:?}");
@@ -3224,7 +3225,7 @@ mod tests {
         app.click(By::test_id("multimedia.cargar"));
         assert_eq!(app.app().avatar_url.as_deref(), Some(URL), "trimmed");
         app.invoke(CargarUrl { url: String::new() }).unwrap();
-        assert!(app.screen().query(image).is_none(), "back to the initials");
+        assert!(app.screen().query(image).is_none(), "back to the icon");
     }
 
     #[test]
@@ -3239,7 +3240,7 @@ mod tests {
             .iter()
             .filter_map(|cell| cell.name())
             .collect();
-        assert_eq!(names[1], nombre, "the initials stay out of the cell's name");
+        assert_eq!(names[1], nombre, "the avatar stays out of the cell's name");
     }
 
     #[test]
