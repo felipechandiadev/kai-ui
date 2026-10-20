@@ -35,6 +35,7 @@ use winit::{
 
 use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
 use crate::commands::{Availability, CommandRegistry, CommandState};
+use crate::devtools::{FrameStats, FrameTimes};
 use crate::element::{Element, Kind, WidgetId};
 use crate::geometry::{PhysicalPoint, ScaleFactor};
 use crate::layout::{Content, Layout, WindowActivity};
@@ -426,6 +427,8 @@ struct WindowState<A: App> {
     background_layer: Option<BackgroundLayer>,
     /// When the next animation frame is due.
     next_frame: Option<Instant>,
+    /// Times of full frames, with `KAI_DEVTOOLS=frames`.
+    frames: Option<FrameStats>,
     #[cfg(target_os = "macos")]
     menu: Option<crate::menu::NativeMenu>,
 }
@@ -453,7 +456,9 @@ impl<A: App> WindowState<A> {
         if !unknown.is_empty() {
             eprintln!("Clases no reconocidas: {}", unknown.join(" "));
         }
+        let frames = session.devtools().frames.then(FrameStats::default);
         let mut state = Self {
+            frames,
             window,
             accessibility,
             renderer,
@@ -605,14 +610,27 @@ impl<A: App> WindowState<A> {
 
     fn render(&mut self) -> Result<(), String> {
         self.session.prepare_frame();
+        let painting = Instant::now();
         let mut list = self.session.paint_list();
+        let paint = painting.elapsed();
         let running = self.background_running();
         let seconds = self.clock.tick(Instant::now(), running);
         list.background = list.background.map(|layer| layer.at(seconds));
         self.background_layer = list.background;
+        let rendering = Instant::now();
         let presented =
             self.renderer
                 .render(&list, self.session.text_mut(), self.scale_factor.as_f32())?;
+        if let Some(frames) = &mut self.frames {
+            let times = FrameTimes {
+                paint,
+                render: rendering.elapsed(),
+                ..self.session.frame_times()
+            };
+            if let Some(summary) = frames.push(times) {
+                eprintln!("{summary}");
+            }
+        }
         if !presented {
             self.session.invalidate();
         }
@@ -773,7 +791,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             }
             UserEvent::A11y(_) => return,
             UserEvent::Menu(id) => {
-                state.session.perform_command(&id);
+                state.session.menu_command(&id);
             }
             #[cfg(feature = "mcp")]
             UserEvent::Mcp(event) => state.mcp(event),

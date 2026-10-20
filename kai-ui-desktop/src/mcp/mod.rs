@@ -322,6 +322,7 @@ mod tests {
     fn serving_code_never_prints_to_stdout() {
         let sources = [
             ("mcp/mod.rs", include_str!("mod.rs")),
+            ("devtools.rs", include_str!("../devtools.rs")),
             ("runtime.rs", include_str!("../runtime.rs")),
             ("session.rs", include_str!("../session.rs")),
             ("session/calls.rs", include_str!("../session/calls.rs")),

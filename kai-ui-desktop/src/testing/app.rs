@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::{By, Found, Screen, VIEWPORT};
 use crate::commands::{Action, AuditLog, Availability, CommandError, CommandState, Query};
+use crate::devtools::MsgSource;
 use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::platform_adapter::adapt_key_input;
@@ -308,7 +309,7 @@ impl<A: App> TestApp<A> {
     /// Run command `id` as its menu bar item does. Returns whether
     /// something ran (a disabled action does not).
     pub fn perform(&mut self, id: &str) -> bool {
-        let ran = self.session.perform_command(id);
+        let ran = self.session.menu_command(id);
         self.frame();
         ran
     }
@@ -417,6 +418,13 @@ impl<A: App> TestApp<A> {
         }
     }
 
+    /// An assistive technology's action, as AccessKit delivers it.
+    #[cfg(test)]
+    pub(crate) fn accessibility_action(&mut self, request: &accesskit::ActionRequest) {
+        self.session.accessibility_action(request);
+        self.frame();
+    }
+
     /// Press and release the primary button at `point`, whatever is there.
     #[cfg(test)]
     pub(crate) fn click_at(&mut self, point: crate::geometry::Point) {
@@ -444,6 +452,11 @@ impl<A: App> TestApp<A> {
     /// Every message sent to `update`, in order.
     pub fn messages(&self) -> &[A::Msg] {
         self.session.messages()
+    }
+
+    /// Where each message of [`Self::messages`] came from.
+    pub fn message_sources(&self) -> &[MsgSource] {
+        self.session.message_sources()
     }
 
     /// Scroll the element into view, move the pointer to its center, press

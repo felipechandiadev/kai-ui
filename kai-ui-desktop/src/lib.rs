@@ -31,6 +31,8 @@ pub mod a11y;
 #[doc(hidden)]
 pub mod demo;
 #[doc(hidden)]
+pub mod devtools;
+#[doc(hidden)]
 pub mod gallery;
 #[doc(hidden)]
 pub mod geometry;

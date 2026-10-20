@@ -15,6 +15,7 @@ use crate::commands::{
     AuditEntry, AuditLog, CommandError, CommandKind, Origin, Outcome, Safety, redact,
 };
 use crate::components::{ButtonVariant, button, dialog, themed};
+use crate::devtools::MsgSource;
 use crate::element::{Element, Role, WidgetId, div, text};
 use crate::runtime::App;
 use crate::ui_engine::Intent;
@@ -97,7 +98,9 @@ impl<A: App> Session<A> {
     /// returns the output of its `returns` query, or `null`. Actions are
     /// audited; nothing asks for confirmation.
     pub fn call(&mut self, id: &str, input: Value) -> Result<Value, CommandError> {
-        self.call_as(Origin::Script, id, input, SystemTime::now(), Instant::now())
+        self.with_source(MsgSource::Script, |session| {
+            session.call_as(Origin::Script, id, input, SystemTime::now(), Instant::now())
+        })
     }
 
     /// Run an agent's call. Commands not exposed are refused. A
@@ -272,7 +275,10 @@ impl<A: App> Session<A> {
         let origin = Origin::Agent {
             client: call.client.clone(),
         };
-        let result = self.call_as(origin, &call.command, call.input, at, started);
+        let source = MsgSource::Agent(call.client.clone());
+        let result = self.with_source(source, |session| {
+            session.call_as(origin, &call.command, call.input, at, started)
+        });
         if result.is_ok()
             && let Some(state) = self.command_state(&call.command)
             && state.kind == CommandKind::Action

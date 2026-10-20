@@ -907,7 +907,7 @@ mod tests {
     use crate::render::text::TextStore;
     use crate::runtime::{SimpleApp, build_view};
     use crate::snapshot::{self, Shot};
-    use crate::testing::{By, Confirm, Key, Modifiers, Screen, TestApp, layout_of};
+    use crate::testing::{By, Confirm, Key, Modifiers, MsgSource, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
 
     /// Two-field rows (`grid-cols-1 sm:grid-cols-2`): side by side from
@@ -2153,6 +2153,51 @@ mod tests {
         assert_eq!(app.app().clicks, 0);
         app.screen()
             .get(By::role(Role::Status).name("Agente: Cursor · Reiniciar"));
+    }
+
+    #[test]
+    fn messages_record_where_they_came_from() {
+        let mut app = TestApp::new(Demo::default());
+        app.click(By::role(Role::Button).name("Incrementar"));
+        app.press(Key::Char('i'), CMD);
+        assert!(app.perform("contador.incrementar"));
+        app.invoke(Incrementar).unwrap();
+        app.call("contador.sumar", json!({"cantidad": 2})).unwrap();
+        let button = app.screen().get(By::test_id("contador.incrementar")).id();
+        app.accessibility_action(&accesskit::ActionRequest {
+            action: accesskit::Action::Click,
+            target_tree: accesskit::TreeId::ROOT,
+            target_node: crate::a11y::node_id(button),
+            data: None,
+        });
+        app.agent_call("kai-test", "contador.reiniciar", json!({}));
+        app.click(By::test_id("kai.confirmar.una_vez"));
+
+        assert_eq!(
+            app.messages(),
+            [
+                Msg::Increment,
+                Msg::Increment,
+                Msg::Increment,
+                Msg::Increment,
+                Msg::Add(2),
+                Msg::Increment,
+                Msg::Reset,
+            ]
+        );
+        assert_eq!(
+            app.message_sources(),
+            [
+                MsgSource::Pointer,
+                MsgSource::Keyboard,
+                MsgSource::Menu,
+                MsgSource::Script,
+                MsgSource::Script,
+                MsgSource::A11y,
+                MsgSource::Agent("kai-test".into()),
+            ],
+            "an agent's call a click allowed still comes from the agent"
+        );
     }
 
     #[cfg(feature = "mcp")]

@@ -9,6 +9,7 @@
 mod calls;
 
 use std::collections::{BTreeMap, HashMap};
+use std::time::Instant;
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
@@ -16,6 +17,7 @@ use crate::commands::{
     Availability, CommandError, CommandKind, CommandRegistry, CommandState, PALETTE,
 };
 use crate::components::{PaletteItem, command_palette};
+use crate::devtools::{Devtools, FrameTimes, MsgSource, format_msg};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -95,6 +97,14 @@ pub(crate) struct Session<A: App> {
     measure: Measure,
     /// Every message sent to `update`, when recording.
     log: Option<Vec<A::Msg>>,
+    /// Where each message of `log` came from.
+    sources: Vec<MsgSource>,
+    /// Origin of the event being handled; `None` is the keyboard (intents
+    /// applied from outside without one).
+    source: Option<MsgSource>,
+    devtools: Devtools,
+    /// View and layout times of the last frame.
+    frame: FrameTimes,
     outbox: Outbox,
     registry: CommandRegistry<A>,
     /// Availability of every command after the last `update`.
@@ -185,6 +195,10 @@ impl<A: App> Session<A> {
             clipboard,
             measure,
             log: None,
+            sources: Vec::new(),
+            source: None,
+            devtools: Devtools::from_env(),
+            frame: FrameTimes::default(),
             outbox: Outbox {
                 commands: Some(commands.clone()),
                 ..Outbox::default()
@@ -261,6 +275,30 @@ impl<A: App> Session<A> {
 
     pub fn messages(&self) -> &[A::Msg] {
         self.log.as_deref().unwrap_or_default()
+    }
+
+    /// Where each recorded message came from, in the order of
+    /// [`Self::messages`].
+    pub fn message_sources(&self) -> &[MsgSource] {
+        &self.sources
+    }
+
+    pub fn devtools(&self) -> Devtools {
+        self.devtools
+    }
+
+    /// View and layout times of the last prepared frame.
+    pub fn frame_times(&self) -> FrameTimes {
+        self.frame
+    }
+
+    /// Run `f` as handling an event from `source`. Inner sources win: an
+    /// agent's call that a click allowed comes from the agent.
+    fn with_source<R>(&mut self, source: MsgSource, f: impl FnOnce(&mut Self) -> R) -> R {
+        let outer = self.source.replace(source);
+        let result = f(self);
+        self.source = outer;
+        result
     }
 
     /// Every command and its availability after the last `update`.
@@ -425,10 +463,19 @@ impl<A: App> Session<A> {
     }
 
     fn send(&mut self, msg: A::Msg) {
+        let source = self.source.clone().unwrap_or(MsgSource::Keyboard);
         if let Some(log) = &mut self.log {
             log.push(msg.clone());
+            self.sources.push(source.clone());
         }
-        let _effects = self.app.update(msg);
+        if self.devtools.msgs {
+            let line = format!("{msg:?}");
+            let started = Instant::now();
+            let _effects = self.app.update(msg);
+            eprintln!("{}", format_msg(&source, &line, started.elapsed()));
+        } else {
+            let _effects = self.app.update(msg);
+        }
         self.invalidate();
     }
 
@@ -457,13 +504,18 @@ impl<A: App> Session<A> {
         }
     }
 
+    /// [`Self::perform_command`] from the menu bar.
+    pub fn menu_command(&mut self, id: &str) -> bool {
+        self.with_source(MsgSource::Menu, |session| session.perform_command(id))
+    }
+
     /// Send `msg`, the message of action `id`, if `id` is a registered
     /// action that can run now; otherwise say why not.
     pub fn send_command(&mut self, id: &str, msg: A::Msg) -> Result<(), CommandError> {
         let availability = self.registry.availability(&self.app, id)?;
         match availability {
             Availability::Enabled => {
-                self.send(msg);
+                self.with_source(MsgSource::Script, |session| session.send(msg));
                 Ok(())
             }
             Availability::Disabled { reason } => Err(CommandError::new(reason)),
@@ -600,9 +652,11 @@ impl<A: App> Session<A> {
     }
 
     pub fn accessibility_action(&mut self, request: &ActionRequest) {
-        for intent in a11y::intents_for_action(request, &self.focus_order) {
-            self.apply_intent(intent);
-        }
+        self.with_source(MsgSource::A11y, |session| {
+            for intent in a11y::intents_for_action(request, &session.focus_order) {
+                session.apply_intent(intent);
+            }
+        });
     }
 
     /// Recompute the hover path from the current layout; returns whether it
@@ -814,6 +868,10 @@ impl<A: App> Session<A> {
 
     /// Primary button pressed or released at the current pointer.
     pub fn pointer_button(&mut self, pressed: bool) {
+        self.with_source(MsgSource::Pointer, |session| session.press_pointer(pressed));
+    }
+
+    fn press_pointer(&mut self, pressed: bool) {
         let target = pointer_target(&self.layout, &self.hover_path);
         if pressed
             && let Some(palette) = &self.palette
@@ -872,11 +930,18 @@ impl<A: App> Session<A> {
     /// offsets and the text of every input.
     pub fn prepare_frame(&mut self) {
         self.dirty = false;
+        let started = Instant::now();
         self.rebuild();
+        let built = Instant::now();
         self.relayout();
         if self.refresh_hover() {
             self.relayout();
         }
+        self.frame = FrameTimes {
+            view: built - started,
+            layout: built.elapsed(),
+            ..FrameTimes::default()
+        };
         for (id, scroll) in self
             .layout
             .nodes()
