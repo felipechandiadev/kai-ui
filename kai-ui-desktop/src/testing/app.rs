@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -14,6 +14,7 @@ use crate::commands::{Action, AuditLog, Availability, CommandError, CommandState
 use crate::devtools::MsgSource;
 use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
+use crate::media::{FakeImageLoader, ImageLoader};
 use crate::platform_adapter::adapt_key_input;
 use crate::runtime::App;
 use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
@@ -58,9 +59,17 @@ pub struct TestAppBuilder<A: App> {
     viewport: Size,
     theme: Theme,
     clipboard: MemoryClipboard,
+    images: Arc<dyn ImageLoader>,
 }
 
 impl<A: App> TestAppBuilder<A> {
+    /// Where images come from (default: an empty [`FakeImageLoader`], which
+    /// reads files and fails every URL, never touching the network).
+    pub fn images(mut self, loader: impl ImageLoader + 'static) -> Self {
+        self.images = Arc::new(loader);
+        self
+    }
+
     /// Window content size in logical points (default [`VIEWPORT`]).
     pub fn viewport(mut self, width: f32, height: f32) -> Self {
         self.viewport = Size { width, height };
@@ -89,6 +98,7 @@ impl<A: App> TestAppBuilder<A> {
         );
         session.record_messages();
         session.set_clock(Instant::now());
+        session.set_image_loader(self.images);
         let mut app = TestApp {
             session,
             clipboard: self.clipboard,
@@ -191,6 +201,7 @@ impl<A: App> TestApp<A> {
             viewport: VIEWPORT,
             theme: Theme::kai(Density::Comfortable),
             clipboard: MemoryClipboard::new(),
+            images: Arc::new(FakeImageLoader::new()),
         }
     }
 
@@ -220,8 +231,9 @@ impl<A: App> TestApp<A> {
     }
 
     /// Wait for every [`Effects::perform`] task, the ones their messages
-    /// start included, sending each message as its task finishes, with a
-    /// frame after each batch. Panics if they take more than ten seconds.
+    /// start included, and every image loading, sending each message as
+    /// its task finishes, with a frame after each batch. Panics if they
+    /// take more than ten seconds.
     ///
     /// [`Effects::perform`]: crate::runtime::Effects::perform
     pub fn run_until_idle(&mut self) {
@@ -237,7 +249,8 @@ impl<A: App> TestApp<A> {
         }
     }
 
-    /// Whether some [`Effects::perform`] task has not sent its message.
+    /// Whether some [`Effects::perform`] task has not sent its message, or
+    /// some image is still loading.
     ///
     /// [`Effects::perform`]: crate::runtime::Effects::perform
     pub fn tasks_pending(&self) -> bool {
@@ -490,6 +503,11 @@ impl<A: App> TestApp<A> {
     /// Queries over the current layout.
     pub fn screen(&self) -> Screen<'_> {
         Screen::new(self.session.layout())
+    }
+
+    /// What the current frame draws, in painter's order.
+    pub fn draw_list(&self) -> crate::render::DrawList {
+        self.session.paint_list()
     }
 
     /// Every message sent to `update`, in order.

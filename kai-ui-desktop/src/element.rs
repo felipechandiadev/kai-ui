@@ -1,8 +1,8 @@
 //! DOM-like element tree returned by an app's `view`.
 //!
 //! Every frame the app rebuilds the whole tree from its model, as in Elm. An
-//! element is a box (`div`), a text run (`text`), an icon (`icon`) or a
-//! single-line input (`input`); its look is a Tailwind-like class string (`tw`), and its
+//! element is a box (`div`), a text run (`text`), an icon (`icon`), an
+//! image (`image`) or an input (`input`); its look is a Tailwind-like class string (`tw`), and its
 //! behavior is a set of messages ([`Handlers`]) the runtime sends to the
 //! app's `update`.
 //!
@@ -17,6 +17,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::icons::Icon;
+use crate::media::{ImageSource, LoadedImage};
 use crate::responder::Action;
 use crate::ui_engine::{Key, Modifiers};
 
@@ -259,6 +260,13 @@ pub enum Kind {
         /// Several wrapped lines ([`Element::multiline`]).
         rows: Option<Rows>,
     },
+    /// Raster image ([`image`]): sized by its classes, or by its natural
+    /// size and aspect ratio; fitted by `object-*`.
+    Image {
+        source: ImageSource,
+        /// Filled in by the session once decoded; `None` draws nothing.
+        loaded: Option<LoadedImage>,
+    },
 }
 
 /// Visible lines of a multiline input: it grows with its text from `min`
@@ -425,6 +433,19 @@ pub fn icon<Msg>(icon: Icon) -> Element<Msg> {
     Element::new(Kind::Icon(icon))
 }
 
+/// Image from a file, a URL, bytes or pixels ([`ImageSource`]). The
+/// session loads it off the UI thread and draws it once ready; until then
+/// (or when it fails) it is empty, so put a placeholder behind it. Size it
+/// with `w-*`/`h-*` (one side keeps the natural aspect ratio), fit it with
+/// `object-cover`/`object-contain`, round it with `rounded-*`, and name it
+/// with [`Element::alt`] (without a name it is decorative).
+pub fn image<Msg>(source: impl Into<ImageSource>) -> Element<Msg> {
+    Element::new(Kind::Image {
+        source: source.into(),
+        loaded: None,
+    })
+}
+
 /// Controlled single-line input: it shows `value`, and edits are reported
 /// through [`Element::on_input`]; the app must feed the new value back.
 pub fn input<Msg>(value: impl Into<String>, placeholder: impl Into<String>) -> Element<Msg> {
@@ -503,6 +524,11 @@ impl<Msg> Element<Msg> {
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
+    }
+
+    /// Text alternative of an image: an [`Role::Image`] named `alt`.
+    pub fn alt(self, alt: impl Into<String>) -> Self {
+        self.role(Role::Image).label(alt)
     }
 
     /// Stable id for tests and automation, e.g. `"form.enviar"` or
@@ -923,6 +949,14 @@ impl<Msg> Element<Msg> {
         visit(self);
         for child in &self.children {
             child.walk(visit);
+        }
+    }
+
+    /// [`Element::walk`] with mutable access.
+    pub fn walk_mut(&mut self, visit: &mut impl FnMut(&mut Element<Msg>)) {
+        visit(self);
+        for child in &mut self.children {
+            child.walk_mut(visit);
         }
     }
 

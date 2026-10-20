@@ -8,12 +8,13 @@
 //! inherited overflow clip only, so borders and rings of unclipped nodes are
 //! never cut.
 
-use super::{DrawList, Mask, Quad, TRANSPARENT, TextId};
+use super::{DrawList, ImageDraw, Mask, Quad, TRANSPARENT, TextId};
 use crate::background::{BackgroundEffect, BackgroundLayer};
 use crate::element::WidgetId;
 use crate::geometry::{Point, Rect};
 use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
 use crate::render::Color;
+use crate::style::ObjectFit;
 use crate::text_field::TextFieldDecorations;
 use crate::theme::Theme;
 
@@ -78,6 +79,52 @@ fn grow(rect: Rect, amount: f32) -> Rect {
     }
 }
 
+/// Where a `width × height` image goes in `area` and which part of it
+/// shows (fractions of its size), as CSS `object-fit`: `Fill` stretches,
+/// `Cover` fills `area` cropping the centered excess, `Contain` fits it
+/// whole, centered.
+pub fn fit_image(area: Rect, width: u32, height: u32, fit: ObjectFit) -> (Rect, Rect) {
+    let whole = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0,
+    };
+    let (width, height) = (width.max(1) as f32, height.max(1) as f32);
+    let scale_x = area.width / width;
+    let scale_y = area.height / height;
+    match fit {
+        ObjectFit::Fill => (area, whole),
+        ObjectFit::Cover => {
+            let scale = scale_x.max(scale_y);
+            let shown_width = (area.width / (width * scale)).min(1.0);
+            let shown_height = (area.height / (height * scale)).min(1.0);
+            (
+                area,
+                Rect {
+                    x: (1.0 - shown_width) / 2.0,
+                    y: (1.0 - shown_height) / 2.0,
+                    width: shown_width,
+                    height: shown_height,
+                },
+            )
+        }
+        ObjectFit::Contain => {
+            let scale = scale_x.min(scale_y);
+            let (fitted_width, fitted_height) = (width * scale, height * scale);
+            (
+                Rect {
+                    x: area.x + (area.width - fitted_width) / 2.0,
+                    y: area.y + (area.height - fitted_height) / 2.0,
+                    width: fitted_width,
+                    height: fitted_height,
+                },
+                whole,
+            )
+        }
+    }
+}
+
 fn origin(rect: Rect) -> Point {
     Point {
         x: rect.x,
@@ -138,6 +185,20 @@ impl Painter<'_> {
                     ));
                 }
             }
+            Content::Image(Some(image)) => {
+                let area = node.content_box;
+                if area.width > 0.0 && area.height > 0.0 {
+                    let (rect, source) =
+                        fit_image(area, image.width, image.height, node.style.object_fit);
+                    self.list.image(ImageDraw {
+                        radius: node.style.radius.min(rect.width.min(rect.height) / 2.0),
+                        opacity: node.opacity,
+                        source,
+                        ..ImageDraw::new(rect, image.bitmap.clone())
+                    });
+                }
+            }
+            Content::Image(None) => {}
         }
         let mut children = node.children.clone();
         children.sort_by_key(|child| layout.get(*child).style.z_index);
@@ -692,6 +753,98 @@ mod tests {
             )
             .unwrap();
         assert!(text < eye, "icons keep painter's order with text");
+    }
+
+    #[test]
+    fn object_fit_crops_or_letterboxes_around_the_center() {
+        use super::fit_image;
+        use crate::style::ObjectFit;
+        let area = Rect {
+            x: 10.0,
+            y: 10.0,
+            width: 100.0,
+            height: 50.0,
+        };
+        let whole = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        };
+        assert_eq!(fit_image(area, 100, 100, ObjectFit::Fill), (area, whole));
+        assert_eq!(
+            fit_image(area, 100, 100, ObjectFit::Cover),
+            (
+                area,
+                Rect {
+                    x: 0.0,
+                    y: 0.25,
+                    width: 1.0,
+                    height: 0.5
+                }
+            )
+        );
+        assert_eq!(
+            fit_image(area, 100, 100, ObjectFit::Contain),
+            (
+                Rect {
+                    x: 35.0,
+                    y: 10.0,
+                    width: 50.0,
+                    height: 50.0
+                },
+                whole
+            )
+        );
+    }
+
+    #[test]
+    fn images_paint_rounded_faded_and_fitted_in_their_content_box() {
+        use crate::element::image;
+        use crate::media::LoadedImage;
+        use crate::render::Bitmap;
+        let bitmap = Bitmap::new(2, 1, vec![255; 8]);
+        let mut photo =
+            image(bitmap.clone()).class("w-20 h-10 p-1 rounded-full opacity-50 object-contain");
+        if let crate::element::Kind::Image { loaded, .. } = &mut photo.kind {
+            *loaded = Some(LoadedImage {
+                bitmap: bitmap.clone(),
+                width: 40,
+                height: 10,
+            });
+        }
+        let mut root: Element<Msg> = div().class("flex items-start").child(photo);
+        root.assign_ids();
+        let list = draw(&root, WINDOW, &Interaction::default(), &[]);
+        let images: Vec<_> = list
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::Image(image) => Some(image.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(images.len(), 1);
+        let drawn = &images[0];
+        assert_eq!(drawn.bitmap, bitmap);
+        assert_eq!(
+            drawn.rect,
+            Rect {
+                x: 4.0,
+                y: 11.0,
+                width: 72.0,
+                height: 18.0
+            },
+            "contained in the 72×32 content box"
+        );
+        assert_eq!(drawn.radius, 9.0, "rounded-full is half the short side");
+        assert_eq!(drawn.opacity, 0.5);
+        let unloaded: Element<Msg> =
+            image(crate::media::ImageSource::url("https://kai.test/x.png"));
+        let mut root: Element<Msg> = div().child(unloaded.class("w-10 h-10"));
+        root.assign_ids();
+        let list = draw(&root, WINDOW, &Interaction::default(), &[]);
+        assert!(!list.ops.iter().any(|op| matches!(op, DrawOp::Image(_))));
     }
 
     #[test]

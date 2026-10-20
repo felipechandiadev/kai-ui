@@ -20,9 +20,10 @@ use crate::element::{
 };
 use crate::geometry::{Insets, Point, Rect, Size};
 use crate::icons::Icon;
+use crate::media::LoadedImage;
 use crate::render::TextId;
 use crate::render::text::TextStyle;
-use crate::style::{ComputedText, Display, Overflow, Style};
+use crate::style::{ComputedText, Display, Length, Overflow, Style};
 use crate::theme::Theme;
 use crate::tw::{ClassList, State};
 
@@ -141,6 +142,8 @@ pub enum Content {
         /// wrapped lines, within the rows.
         lines: Option<(Rows, String)>,
     },
+    /// The decoded image, once the session has it.
+    Image(Option<LoadedImage>),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -235,6 +238,7 @@ enum Leaf {
     Text(usize),
     Icon(usize),
     Input(usize),
+    Image(usize),
 }
 
 pub fn text_style(text: &ComputedText) -> TextStyle {
@@ -338,6 +342,7 @@ impl Builder<'_> {
                     lines: rows.map(|rows| (rows, value.clone())),
                 }
             }
+            Kind::Image { loaded, .. } => Content::Image(loaded.clone()),
         };
         let index = self.nodes.len();
         let node = LayoutNode {
@@ -400,6 +405,18 @@ impl Builder<'_> {
         if node.style.align_self.is_none() && inherited.parent_align_items.is_some() {
             taffy_style.align_self = None;
         }
+        // A loaded image keeps its aspect ratio, and without a size of its
+        // own takes its natural one (an `<img>` is not stretched).
+        if let Content::Image(Some(image)) = &node.content {
+            let (width, height) = (image.width.max(1) as f32, image.height.max(1) as f32);
+            taffy_style.aspect_ratio.get_or_insert(width / height);
+            if node.style.width == Length::Auto && node.style.height == Length::Auto {
+                taffy_style.size = TaffySize {
+                    width: taffy::style_helpers::length(width),
+                    height: taffy::style_helpers::length(height),
+                };
+            }
+        }
         self.nodes.push(node);
         self.handles.push(None);
         if let Some(parent) = parent {
@@ -423,6 +440,9 @@ impl Builder<'_> {
             Kind::Input { .. } => self
                 .taffy
                 .new_leaf_with_context(taffy_style, Leaf::Input(index))?,
+            Kind::Image { .. } => self
+                .taffy
+                .new_leaf_with_context(taffy_style, Leaf::Image(index))?,
         };
         self.handles[index] = Some(handle);
         Ok(handle)
@@ -492,11 +512,32 @@ fn measure_leaf(
             };
             Size { width, height }
         }
+        Some(Leaf::Image(index)) => image_size(&nodes[index].content, known),
     };
     // Rounded up so pixel-snapped layout never trims the last glyph.
     TaffySize {
         width: known.width.unwrap_or(measured.width.ceil()),
         height: known.height.unwrap_or(measured.height.ceil()),
+    }
+}
+
+/// Natural size of an image in points (one pixel each), or the side its
+/// aspect ratio gives when the other one is known; empty until loaded.
+fn image_size(content: &Content, known: TaffySize<Option<f32>>) -> Size {
+    let Content::Image(Some(image)) = content else {
+        return Size::default();
+    };
+    let (width, height) = (image.width as f32, image.height as f32);
+    match (known.width, known.height) {
+        (Some(known_width), None) => Size {
+            width: known_width,
+            height: known_width * height / width,
+        },
+        (None, Some(known_height)) => Size {
+            width: known_height * width / height,
+            height: known_height,
+        },
+        _ => Size { width, height },
     }
 }
 
@@ -790,7 +831,7 @@ fn place(
     });
     if !node.hidden {
         match &node.content {
-            Content::Box | Content::Icon(_) => {}
+            Content::Box | Content::Icon(_) | Content::Image(_) => {}
             Content::Text(content) => {
                 // Re-wrap at the final width so the buffer is ready to draw.
                 if !node.text.nowrap {

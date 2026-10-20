@@ -8,6 +8,7 @@
 
 mod calls;
 
+use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ use crate::layout::{
     Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure, WindowActivity,
     text_style,
 };
+use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
@@ -133,6 +135,8 @@ pub(crate) struct Session<A: App> {
     timers: Vec<Timer<A::Msg>>,
     /// Running [`Effects::perform`] tasks.
     tasks: Tasks<A::Msg>,
+    /// Decoded images of the views, filled into the tree on rebuild.
+    images: ImageStore,
     /// The time tests set; `None` follows the real clock.
     clock: Option<Instant>,
     /// Row the keys are moving to in a virtual list: the next rebuild
@@ -233,6 +237,8 @@ struct Tasks<Msg> {
     inbox: Arc<Inbox>,
     next: u64,
     waiting: HashMap<u64, (Option<String>, TaskDone<Msg>)>,
+    /// Images loading on the pool for the [`ImageStore`].
+    images: HashMap<u64, ImageSource>,
 }
 
 impl<Msg> Default for Tasks<Msg> {
@@ -241,6 +247,7 @@ impl<Msg> Default for Tasks<Msg> {
             inbox: Arc::default(),
             next: 1,
             waiting: HashMap::new(),
+            images: HashMap::new(),
         }
     }
 }
@@ -249,6 +256,17 @@ impl<Msg> Tasks<Msg> {
     fn forget(&mut self, key: &str) {
         self.waiting
             .retain(|_, (pending, _)| pending.as_deref() != Some(key));
+    }
+
+    fn spawn(&mut self, task: crate::runtime::Task) -> u64 {
+        let id = self.next;
+        self.next += 1;
+        effects::spawn(&self.inbox, id, task);
+        id
+    }
+
+    fn pending(&self) -> bool {
+        !self.waiting.is_empty() || !self.images.is_empty()
     }
 }
 
@@ -424,6 +442,7 @@ impl<A: App> Session<A> {
             modal_focus: None,
             timers: Vec::new(),
             tasks: Tasks::default(),
+            images: ImageStore::default(),
             clock: None,
             row_pin: None,
             row_windows: Vec::new(),
@@ -474,10 +493,8 @@ impl<A: App> Session<A> {
                     if let Some(key) = &key {
                         self.tasks.forget(key);
                     }
-                    let id = self.tasks.next;
-                    self.tasks.next += 1;
+                    let id = self.tasks.spawn(task);
                     self.tasks.waiting.insert(id, (key, done));
-                    effects::spawn(&self.tasks.inbox, id, task);
                 }
                 Effect::Cancel(key) => {
                     self.timers
@@ -494,16 +511,27 @@ impl<A: App> Session<A> {
         self.tasks.inbox.set_waker(wake);
     }
 
-    /// Whether some [`Effects::perform`] task has not sent its message.
+    /// Whether some [`Effects::perform`] task has not sent its message, or
+    /// some image is still loading.
     pub fn tasks_pending(&self) -> bool {
-        !self.tasks.waiting.is_empty()
+        self.tasks.pending()
     }
 
     /// Send the message of every task that finished, in the order they
-    /// finished. Returns whether any did.
+    /// finished, and keep the images that loaded (asking for a frame).
+    /// Returns whether anything finished.
     pub fn run_tasks(&mut self) -> bool {
         let mut ran = false;
         for (id, output) in self.tasks.inbox.take() {
+            if let Some(source) = self.tasks.images.remove(&id) {
+                let result = output
+                    .and_then(|output| output.downcast::<Result<LoadedImage, String>>().ok())
+                    .map_or_else(|| Err("la carga falló".to_owned()), |result| *result);
+                self.images.finish(&source, result);
+                self.invalidate();
+                ran = true;
+                continue;
+            }
             let Some((_, done)) = self.tasks.waiting.remove(&id) else {
                 continue;
             };
@@ -518,11 +546,29 @@ impl<A: App> Session<A> {
     /// Block until a pending task finishes or `timeout` passes, then send
     /// what finished; returns whether anything did.
     pub fn wait_for_tasks(&mut self, timeout: Duration) -> bool {
-        if self.tasks.waiting.is_empty() {
+        if !self.tasks.pending() {
             return false;
         }
         self.tasks.inbox.wait(timeout);
         self.run_tasks()
+    }
+
+    /// Read images with `loader` from now on (tests use a
+    /// [`FakeImageLoader`](crate::media::FakeImageLoader)).
+    pub fn set_image_loader(&mut self, loader: Arc<dyn ImageLoader>) {
+        self.images.set_loader(loader);
+    }
+
+    /// Load the images the last `view` wants, on the pool.
+    fn start_image_loads(&mut self) {
+        for source in self.images.take_wanted() {
+            let loader = self.images.loader();
+            let job = source.clone();
+            let id = self.tasks.spawn(Box::new(move || {
+                Box::new(media::load(loader.as_ref(), &job)) as Box<dyn Any + Send>
+            }));
+            self.tasks.images.insert(id, source);
+        }
     }
 
     /// When the earliest pending timer is due.
@@ -703,6 +749,7 @@ impl<A: App> Session<A> {
             .or_else(|| self.focused_row().map(|(list, index, ..)| (list, index)));
         self.tree = build_view_with(&self.app, &self.commands);
         self.build_rows(pin);
+        self.images.resolve(&mut self.tree);
         self.tooltips.clear();
         collect_tooltips(&self.tree, &mut self.tooltips);
         if self
@@ -1844,6 +1891,7 @@ impl<A: App> Session<A> {
             ..FrameTimes::default()
         };
         self.keep_scroll_offsets();
+        self.start_image_loads();
 
         self.decorations.clear();
         for (id, field) in &mut self.text_fields {

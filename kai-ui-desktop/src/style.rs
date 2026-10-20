@@ -47,6 +47,18 @@ impl Edges<f32> {
     }
 }
 
+/// How an image fills its box (CSS `object-fit`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ObjectFit {
+    /// Stretched to the box (`object-fill`, the CSS default).
+    #[default]
+    Fill,
+    /// Covers the box, cropped around its center (`object-cover`).
+    Cover,
+    /// Whole, centered, as large as fits (`object-contain`).
+    Contain,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Display {
     #[default]
@@ -183,6 +195,7 @@ pub struct Style {
     pub cursor: Option<Cursor>,
     pub pointer_events: bool,
     pub placeholder_color: Option<Color>,
+    pub object_fit: ObjectFit,
 
     pub text: TextProps,
 }
@@ -225,6 +238,7 @@ impl Default for Style {
             cursor: None,
             pointer_events: true,
             placeholder_color: None,
+            object_fit: ObjectFit::Fill,
             text: TextProps::default(),
         }
     }

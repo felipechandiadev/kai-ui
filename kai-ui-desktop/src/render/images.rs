@@ -70,6 +70,8 @@ impl PartialEq for Bitmap {
     }
 }
 
+impl Eq for Bitmap {}
+
 impl fmt::Debug for Bitmap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Bitmap#{}({}×{})", self.id, self.width, self.height)

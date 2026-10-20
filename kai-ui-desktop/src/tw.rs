@@ -52,8 +52,8 @@ use cosmic_text::Weight;
 use crate::element::ControlSize;
 use crate::render::Color;
 use crate::style::{
-    Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, Overflow, Position,
-    Shadow, Style,
+    Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, ObjectFit, Overflow,
+    Position, Shadow, Style,
 };
 use crate::theme::{
     AppKitGeneration, Appearance, BySize, FieldLabels, MixStyle, REM, Theme, ThemeKind,
@@ -313,6 +313,7 @@ enum Decl {
     Opacity(f32),
     Cursor(Cursor),
     PointerEvents(bool),
+    ObjectFit(ObjectFit),
     Placeholder(Color),
     TextColor(Color),
     FontSize(f32, Option<f32>),
@@ -475,6 +476,7 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::Opacity(opacity) => style.opacity = opacity,
         Decl::Cursor(cursor) => style.cursor = Some(cursor),
         Decl::PointerEvents(enabled) => style.pointer_events = enabled,
+        Decl::ObjectFit(fit) => style.object_fit = fit,
         Decl::Placeholder(color) => style.placeholder_color = Some(color),
         Decl::TextColor(color) => style.text.color = Some(color),
         Decl::FontSize(size, line_height) => {
@@ -669,6 +671,9 @@ impl Parser<'_> {
             "cursor-not-allowed" => Decl::Cursor(Cursor::NotAllowed),
             "pointer-events-none" => Decl::PointerEvents(false),
             "pointer-events-auto" => Decl::PointerEvents(true),
+            "object-fill" => Decl::ObjectFit(ObjectFit::Fill),
+            "object-cover" => Decl::ObjectFit(ObjectFit::Cover),
+            "object-contain" => Decl::ObjectFit(ObjectFit::Contain),
             "whitespace-nowrap" => Decl::NoWrap(true),
             "whitespace-normal" => Decl::NoWrap(false),
             "font-normal" => Decl::Weight(t.weight_regular),
@@ -1401,6 +1406,16 @@ mod tests {
         let stroke = |class: &str| parse(class).resolve(State::default()).text.stroke_width;
         assert_eq!(stroke("stroke-1"), Some(1.0));
         assert_eq!(stroke("stroke-[2.25]"), Some(2.25));
+    }
+
+    #[test]
+    fn object_fit_classes() {
+        use crate::style::ObjectFit;
+        let fit = |classes| parse(classes).resolve(State::default()).object_fit;
+        assert_eq!(fit(""), ObjectFit::Fill);
+        assert_eq!(fit("object-cover"), ObjectFit::Cover);
+        assert_eq!(fit("object-contain"), ObjectFit::Contain);
+        assert_eq!(fit("object-cover object-fill"), ObjectFit::Fill);
     }
 
     #[test]
