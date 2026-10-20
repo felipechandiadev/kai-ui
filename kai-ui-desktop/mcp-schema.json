@@ -70,7 +70,7 @@
       "title": "Enviar"
     },
     {
-      "description": "Borra el nombre y el correo",
+      "description": "Borra el nombre, el correo, el rol y los términos",
       "exposed": true,
       "id": "form.limpiar",
       "inputSchema": {

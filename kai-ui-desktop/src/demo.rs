@@ -11,10 +11,10 @@ use crate::commands::{
 use crate::components::{
     AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
     IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge, button,
-    button_sized, caption, card, card_actions, card_content, card_header, icon_button_sized,
-    paragraph, stat, switch_labeled,
+    button_sized, caption, card, card_actions, card_content, card_header, checkbox,
+    icon_button_sized, paragraph, segmented, select, stat, switch_labeled,
 };
-use crate::element::{ControlSize, Element, Role, div, icon, text};
+use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::icons::Icon;
 use crate::runtime::{self, SimpleApp};
 use crate::theme::{
@@ -40,6 +40,9 @@ struct Demo {
     quantity: String,
     autocomplete: String,
     notifications: bool,
+    /// Form: index into [`ROLES`].
+    role: Option<usize>,
+    terms: bool,
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
@@ -62,6 +65,8 @@ impl Default for Demo {
             quantity: String::new(),
             autocomplete: String::new(),
             notifications: true,
+            role: None,
+            terms: false,
             background: BackgroundKind::None,
             background_motion: BackgroundMotion::Static,
         }
@@ -96,6 +101,9 @@ fn background_from_env(
     (kind, motion, warnings)
 }
 
+/// Options of the form's role select.
+const ROLES: [&str; 3] = ["Diseño", "Desarrollo", "Producto"];
+
 /// Inputs of the TextField variants card.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Field {
@@ -121,6 +129,8 @@ enum Msg {
     Edit(Field, String),
     TogglePassword,
     ToggleNotifications,
+    SetRole(usize),
+    ToggleTerms,
     SetBackground(BackgroundKind),
     ToggleBackgroundMotion,
 }
@@ -128,6 +138,13 @@ enum Msg {
 impl Demo {
     fn can_submit(&self) -> bool {
         !self.name.trim().is_empty()
+    }
+
+    fn clear_form(&mut self) {
+        self.name.clear();
+        self.email.clear();
+        self.role = None;
+        self.terms = false;
     }
 }
 
@@ -220,7 +237,7 @@ impl Action for Limpiar {
     const ID: &'static str = "form.limpiar";
     const TITLE: &'static str = "Limpiar";
     fn description() -> &'static str {
-        "Borra el nombre y el correo"
+        "Borra el nombre, el correo, el rol y los términos"
     }
     fn into_msg(self) -> Msg {
         Msg::Clear
@@ -298,14 +315,10 @@ impl SimpleApp for Demo {
             Msg::Submit => {
                 if self.can_submit() {
                     self.submissions.push(self.name.trim().to_owned());
-                    self.name.clear();
-                    self.email.clear();
+                    self.clear_form();
                 }
             }
-            Msg::Clear => {
-                self.name.clear();
-                self.email.clear();
-            }
+            Msg::Clear => self.clear_form(),
             Msg::Edit(field, value) => {
                 *match field {
                     Field::Search => &mut self.search,
@@ -320,6 +333,8 @@ impl SimpleApp for Demo {
             }
             Msg::TogglePassword => self.show_password = !self.show_password,
             Msg::ToggleNotifications => self.notifications = !self.notifications,
+            Msg::SetRole(index) => self.role = Some(index),
+            Msg::ToggleTerms => self.terms = !self.terms,
             Msg::SetBackground(kind) => self.background = kind,
             Msg::ToggleBackgroundMotion => {
                 self.background_motion = match self.background_motion {
@@ -421,6 +436,26 @@ impl SimpleApp for Demo {
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
                             .build(),
+                    ]),
+                div()
+                    .class("flex flex-wrap items-center justify-between gap-4")
+                    .children([
+                        div().class("flex items-center gap-2").children([
+                            text("Rol").class("text-sm font-medium text-foreground"),
+                            select(&ROLES, self.role, "Elegir rol", Msg::SetRole)
+                                .label("Rol")
+                                .test_id("form.rol"),
+                        ]),
+                        checkbox(
+                            "Acepto los términos",
+                            if self.terms {
+                                ControlState::On
+                            } else {
+                                ControlState::Off
+                            },
+                            Msg::ToggleTerms,
+                        )
+                        .test_id("form.terminos"),
                     ]),
                 div()
                     .class("flex items-center justify-between pt-1")
@@ -585,8 +620,8 @@ impl Demo {
     fn background_panel(&self) -> Element<Msg> {
         let options = [
             (BackgroundKind::None, "Ninguno"),
-            (BackgroundKind::Mesh, "Mesh gradient"),
-            (BackgroundKind::Aurora, "Aurora boreal"),
+            (BackgroundKind::Mesh, "Mesh"),
+            (BackgroundKind::Aurora, "Aurora"),
             (BackgroundKind::Glow, "Glow"),
         ];
         let animated = self.background_motion == BackgroundMotion::Animated;
@@ -599,23 +634,16 @@ impl Demo {
                 div()
                     .class("flex flex-wrap items-center justify-between gap-3")
                     .children([
-                        div()
-                            .class("flex flex-wrap items-center gap-1")
-                            .role(Role::Group)
-                            .children(options.map(|(kind, label)| {
-                                let selected = self.background == kind;
-                                button(
-                                    label,
-                                    if selected {
-                                        ButtonVariant::Primary
-                                    } else {
-                                        ButtonVariant::Outlined
-                                    },
-                                )
-                                .control_size(ControlSize::Small)
-                                .pressed(selected)
-                                .on_click(Msg::SetBackground(kind))
-                            })),
+                        segmented(
+                            &options.map(|(_, label)| label),
+                            options
+                                .iter()
+                                .position(|(kind, _)| *kind == self.background)
+                                .unwrap_or(0),
+                            |index| Msg::SetBackground(options[index].0),
+                        )
+                        .label("Efecto")
+                        .test_id("fondo.efecto"),
                         switch_labeled(
                             "Animado",
                             animated,
@@ -1173,8 +1201,8 @@ mod tests {
         let order = FocusOrder::from_tree(&build_view(&demo));
         let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
         assert_eq!(kinds[0], FocusKind::Button, "header quick action button");
-        // Background panel: four effect buttons; the "Animado" switch starts
-        // disabled (no effect).
+        // Background panel: four effect segments (one Tab stop); the
+        // "Animado" switch starts disabled (no effect).
         assert_eq!(kinds[1..5], [FocusKind::Button; 4], "background effects");
         assert_eq!(
             kinds[5],
@@ -1183,11 +1211,13 @@ mod tests {
         );
         assert_eq!(kinds[6], FocusKind::TextField, "Nombre");
         assert_eq!(kinds[7], FocusKind::TextField, "Correo");
-        assert_eq!(kinds[8], FocusKind::Button, "switch notificaciones");
-        assert_eq!(kinds[9], FocusKind::Button, "Limpiar");
-        assert_eq!(kinds[10], FocusKind::TextField, "Buscar");
-        assert_eq!(kinds[11], FocusKind::TextField, "Contraseña");
-        assert_eq!(kinds[12], FocusKind::Button, "Toggle password");
+        assert_eq!(kinds[8], FocusKind::Button, "select rol");
+        assert_eq!(kinds[9], FocusKind::Button, "checkbox términos");
+        assert_eq!(kinds[10], FocusKind::Button, "switch notificaciones");
+        assert_eq!(kinds[11], FocusKind::Button, "Limpiar");
+        assert_eq!(kinds[12], FocusKind::TextField, "Buscar");
+        assert_eq!(kinds[13], FocusKind::TextField, "Contraseña");
+        assert_eq!(kinds[14], FocusKind::Button, "Toggle password");
         // With an effect the switch joins the order.
         let mut glow = Demo::default();
         glow.update(Msg::SetBackground(BackgroundKind::Glow));
@@ -1422,6 +1452,50 @@ mod tests {
         assert_eq!(app.value(By::label("Nombre")), "");
         assert!(!app.is_enabled(send()));
         app.screen().get(By::text("Último: Ana"));
+    }
+
+    #[test]
+    fn the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them() {
+        let mut app = TestApp::new(Demo::default());
+        app.screen().get(By::text("Elegir rol"));
+        app.click(By::test_id("form.rol"));
+        app.click(By::test_id("kai.menu.1"));
+        app.click(By::test_id("form.terminos"));
+        assert_eq!(app.messages(), [Msg::SetRole(1), Msg::ToggleTerms]);
+        assert_eq!((app.app().role, app.app().terms), (Some(1), true));
+        app.screen().get(By::text("Desarrollo"));
+        assert_eq!(
+            app.screen().get_by_test_id("form.terminos").role(),
+            Role::Checkbox
+        );
+
+        app.click(By::test_id("form.limpiar"));
+        assert_eq!((app.app().role, app.app().terms), (None, false));
+        app.screen().get(By::text("Elegir rol"));
+    }
+
+    /// The effect is a segmented control: one Tab stop, arrows move between
+    /// effects and Space applies the focused one.
+    #[test]
+    fn background_effects_are_one_segmented_tab_stop() {
+        let mut app = TestApp::new(Demo::default());
+        let segment = |name: &str| By::role(Role::Radio).name(name);
+        app.press(Key::Tab, Modifiers::NONE);
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(segment("Ninguno")));
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        app.press(Key::Space, Modifiers::NONE);
+        assert_eq!(app.app().background, BackgroundKind::Mesh);
+        app.press(Key::Tab, Modifiers::NONE);
+        let focused = app.session().focused().unwrap();
+        let segments: Vec<_> = app
+            .screen()
+            .all(By::role(Role::Radio))
+            .iter()
+            .map(|segment| segment.id())
+            .collect();
+        assert_eq!(segments.len(), 4);
+        assert!(!segments.contains(&focused), "Tab leaves the group");
     }
 
     #[test]
