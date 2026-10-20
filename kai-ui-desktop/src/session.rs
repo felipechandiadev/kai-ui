@@ -35,6 +35,7 @@ use crate::layout::{
     WindowActivity, text_style,
 };
 use crate::maps::camera::CameraState;
+use crate::maps::labels::Labels;
 use crate::maps::tiles::{SourceKey, TileResult, TileStore};
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
@@ -172,6 +173,10 @@ pub(crate) struct Session<A: App> {
     tiles: TileStore,
     /// Loaded basemap tiles wait to be shown, a few per frame.
     tiles_revealing: bool,
+    /// Basemap labels of every map.
+    labels: HashMap<WidgetId, Labels>,
+    /// Some map label is fading in: frames are needed.
+    labels_fading: bool,
     /// A map with a basemap changed size in the last layout: its tiles
     /// were picked for the old one.
     maps_resized: bool,
@@ -484,6 +489,8 @@ impl<A: App> Session<A> {
             map_drag: None,
             tiles: TileStore::default(),
             tiles_revealing: false,
+            labels: HashMap::new(),
+            labels_fading: false,
             maps_resized: false,
             modifiers: Modifiers::NONE,
         };
@@ -1892,8 +1899,15 @@ impl<A: App> Session<A> {
         let maps = &mut self.maps;
         let tiles = &mut self.tiles;
         let tasks = &mut self.tasks;
+        let labels = &mut self.labels;
+        let mut fixed = FixedMeasure;
+        let measure: &mut dyn TextMeasure = match self.measure {
+            Measure::Real => &mut self.text,
+            Measure::Fixed => &mut fixed,
+        };
         let mut live = Vec::new();
         let mut revealing = false;
+        let mut fading = false;
         self.tree.walk_mut(&mut |element| {
             if let Kind::Map(spec) = &mut element.kind {
                 let camera = maps
@@ -1902,23 +1916,31 @@ impl<A: App> Session<A> {
                 camera.sync_model(spec.view, spec.animate, now);
                 spec.view = camera.view;
                 if let Some(source) = &spec.source {
-                    let (frame, loads) = tiles.frame(source, Camera::new(camera.view, camera.size));
+                    let view = Camera::new(camera.view, camera.size);
+                    let (frame, loads) = tiles.frame(source, view);
                     for load in loads {
                         let id = tasks.spawn(load.run);
                         tasks.tiles.insert(id, (load.source, load.tile));
                     }
                     revealing |= frame.revealing;
+                    let map_labels = labels.entry(element.id).or_default();
+                    map_labels.update(element.id, view, &frame, camera.still(now), now, measure);
+                    let (shown, fades) = map_labels.frame(element.id, now);
+                    fading |= fades;
+                    spec.labels = shown;
                     spec.tiles = frame;
                 }
                 live.push(element.id);
             }
         });
         maps.retain(|id, _| live.contains(id));
+        labels.retain(|id, _| live.contains(id));
         if self.map_drag.is_some_and(|id| !live.contains(&id)) {
             self.map_drag = None;
         }
         self.tiles_revealing = revealing;
-        if revealing {
+        self.labels_fading = fading;
+        if revealing || fading {
             self.invalidate();
         }
     }
@@ -1938,9 +1960,10 @@ impl<A: App> Session<A> {
         self.report_maps();
     }
 
-    /// Whether a map glides or zooms on its own: the window needs frames.
+    /// Whether a map glides or zooms on its own or its labels fade in: the
+    /// window needs frames.
     pub fn animating(&self) -> bool {
-        self.maps.values().any(CameraState::animating)
+        self.labels_fading || self.maps.values().any(CameraState::animating)
     }
 
     /// Send `on_view_change` for every map whose gesture settled; returns

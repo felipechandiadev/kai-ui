@@ -701,12 +701,12 @@ impl Layout {
     }
 
     /// Every visible map, with its padding box (the area it draws in).
-    pub(crate) fn maps_mut(&mut self) -> impl Iterator<Item = (Rect, &mut MapSpec)> {
+    pub(crate) fn maps_mut(&mut self) -> impl Iterator<Item = (WidgetId, Rect, &mut MapSpec)> {
         self.nodes
             .iter_mut()
             .filter(|node| !node.hidden)
             .filter_map(|node| match &mut node.content {
-                Content::Map(spec) => Some((node.padding_box, &mut **spec)),
+                Content::Map(spec) => Some((node.id, node.padding_box, &mut **spec)),
                 _ => None,
             })
     }

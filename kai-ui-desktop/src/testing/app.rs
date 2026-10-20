@@ -647,8 +647,17 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// Let go of the pointer after [`Self::drag_steps`].
+    #[cfg(test)]
+    pub(crate) fn release_pointer(&mut self) {
+        self.session.pointer_button(false);
+        self.frame();
+    }
+
+    /// Press at the element's center and move by `(dx, dy)` in
+    /// [`DRAG_STEPS`] steps, still pressed.
     #[track_caller]
-    fn drag_steps(&mut self, by: By, dx: f32, dy: f32) {
+    pub(crate) fn drag_steps(&mut self, by: By, dx: f32, dy: f32) {
         self.hover(by);
         let start = self.session.cursor().unwrap_or_default();
         self.session.pointer_clicks(true, 1);

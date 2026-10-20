@@ -99,6 +99,8 @@ pub enum TextPart {
     /// Input value, including IME preedit.
     Value,
     Placeholder,
+    /// A map label, by a hash of its kind and name.
+    MapLabel(u64),
 }
 
 /// Text buffer key in the renderer's text store.
@@ -127,6 +129,13 @@ impl TextId {
         Self {
             widget,
             part: TextPart::Placeholder,
+        }
+    }
+
+    pub const fn map_label(map: WidgetId, key: u64) -> Self {
+        Self {
+            widget: map,
+            part: TextPart::MapLabel(key),
         }
     }
 }

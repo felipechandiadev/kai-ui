@@ -4246,6 +4246,92 @@ mod tests {
         );
     }
 
+    /// Frames of the «Mapa» section while a drag pans Parral at zoom 15:
+    /// view, layout with real text, tiles, labels and paint. Under 4 ms per
+    /// frame in release. Run with
+    /// `cargo test --release --lib -- --ignored --nocapture bench_map_pan`.
+    #[test]
+    #[ignore = "benchmark; run explicitly in release mode"]
+    fn bench_map_pan() {
+        use crate::geometry::Point;
+        use crate::session::{Measure, Session};
+        use crate::testing::MemoryClipboard;
+        use std::time::{Duration, Instant};
+
+        let mut demo = Demo::at(Seccion::Mapa);
+        demo.vista = MapView::new(PLAZA_DE_ARMAS, 15.0);
+        let mut session = Session::new(
+            demo,
+            Theme::kai(Density::Comfortable),
+            Size {
+                width: 1024.0,
+                height: 720.0,
+            },
+            Measure::Real,
+            Box::new(MemoryClipboard::default()),
+        );
+        session.prepare_frame();
+        let limit = Instant::now() + Duration::from_secs(20);
+        while session.tasks_pending() {
+            assert!(Instant::now() < limit, "las teselas no cargaron");
+            session.wait_for_tasks(Duration::from_millis(50));
+            session.prepare_frame();
+        }
+        let map = session
+            .tree()
+            .find_test_id("mapa.vista")
+            .map(|map| map.id)
+            .unwrap();
+        let bounds = session.layout().bounds(map).unwrap();
+        let start = Point {
+            x: bounds.x + bounds.width / 2.0,
+            y: bounds.y + bounds.height / 2.0,
+        };
+        let spec = |session: &Session<Demo>| match &session.layout().node(map).unwrap().content {
+            crate::layout::Content::Map(spec) => spec.clone(),
+            other => panic!("{other:?}"),
+        };
+        let before = spec(&session);
+        assert!(!before.tiles.tiles.is_empty() && !before.labels.is_empty());
+        session.pointer_moved(Some(start));
+        session.pointer_clicks(true, 1);
+        session.prepare_frame();
+        let mut samples: Vec<Duration> = Vec::new();
+        let mut offset = 0.0;
+        for frame in 0..400 {
+            offset += if (frame / 50) % 2 == 0 { -4.0 } else { 4.0 };
+            let started = Instant::now();
+            session.pointer_moved(Some(Point {
+                x: start.x + offset,
+                y: start.y + offset / 3.0,
+            }));
+            session.prepare_frame();
+            let list = session.paint_list();
+            samples.push(started.elapsed());
+            assert!(!list.ops.is_empty());
+            if frame == 49 {
+                let during = spec(&session);
+                assert_ne!(during.view, before.view, "the drag pans");
+                let spots = |labels: &[crate::maps::labels::MapLabel]| -> Vec<_> {
+                    labels.iter().map(|label| (label.text, label.at)).collect()
+                };
+                assert_eq!(
+                    spots(&during.labels),
+                    spots(&before.labels),
+                    "labels ride along"
+                );
+            }
+        }
+        session.pointer_button(false);
+        samples.sort();
+        let p50 = samples[samples.len() / 2];
+        let p95 = samples[samples.len() * 95 / 100];
+        println!("pan del mapa: p50 {p50:?}, p95 {p95:?} por frame");
+        if !cfg!(debug_assertions) {
+            assert!(p95 < Duration::from_millis(4), "p95 {p95:?}");
+        }
+    }
+
     #[test]
     fn the_map_follows_gestures_and_agents() {
         let mut app = TestApp::new(Demo::at(Seccion::Mapa));

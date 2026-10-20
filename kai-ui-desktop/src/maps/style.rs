@@ -72,6 +72,12 @@ pub struct Palette {
     pub path: Color,
     pub rail: Color,
     pub boundary: Color,
+    /// Names of towns.
+    pub place_text: Color,
+    /// Names of neighbourhoods and streets.
+    pub minor_text: Color,
+    /// Outline around label text.
+    pub halo: Color,
 }
 
 /// `top` over the opaque `under` at `amount` of its own opacity.
@@ -108,6 +114,9 @@ impl Palette {
             path: over(label, earth, 0.3),
             rail: over(label, earth, 0.35),
             boundary: over(label, earth, 0.3),
+            place_text: over(label, earth, 0.9),
+            minor_text: over(s.secondary_label, earth, 1.0),
+            halo: earth,
         }
     }
 

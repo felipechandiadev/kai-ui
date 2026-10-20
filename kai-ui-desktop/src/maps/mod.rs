@@ -16,6 +16,7 @@
 //! single `on_view_change`. A new view from the app glides there.
 
 pub mod camera;
+pub mod labels;
 pub mod mvt;
 pub mod pmtiles;
 pub mod style;
@@ -24,6 +25,7 @@ pub mod tiles;
 use crate::element::{Element, Kind, Role, icon, text};
 use crate::geo::{LatLon, MapView};
 use crate::icons::Icon;
+use labels::MapLabel;
 use tiles::{TileFrame, TileSource};
 
 /// Credit for the map data, shown in a corner of every map.
@@ -40,6 +42,8 @@ pub struct MapSpec {
     pub source: Option<TileSource>,
     /// The tiles to draw this frame (the session fills them in).
     pub tiles: TileFrame,
+    /// The basemap's labels this frame (the session places them).
+    pub labels: Vec<MapLabel>,
 }
 
 impl MapSpec {
@@ -49,6 +53,7 @@ impl MapSpec {
             animate: true,
             source: None,
             tiles: TileFrame::default(),
+            labels: Vec::new(),
         }
     }
 }

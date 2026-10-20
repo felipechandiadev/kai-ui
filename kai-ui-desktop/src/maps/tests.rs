@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::camera::{FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
+use super::labels::{FADE, MapLabel};
 use super::mvt::Bucket;
 use super::style::{Ink, MapStyle, StyleLayer};
 use super::tiles::TileSource;
@@ -343,6 +344,51 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
         drawn(&app)
             .iter()
             .all(|(tile, clip)| tile.z == 15 && clip.is_none())
+    );
+}
+
+fn labels(app: &TestApp<Atlas>) -> Vec<MapLabel> {
+    let id = app.screen().get(mapa()).id();
+    match &app.session().layout().node(id).unwrap().content {
+        Content::Map(spec) => spec.labels.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn labels_fade_in_once_the_map_holds_still_and_ride_along_while_it_moves() {
+    let mut app = TestApp::new(Atlas {
+        basemap: Some(parral()),
+        ..Atlas::at(15.0)
+    });
+    app.run_until_idle();
+    let shown = labels(&app);
+    assert!(!shown.is_empty(), "the plaza's streets are named");
+    assert!(app.session().animating(), "they fade in");
+    app.advance(FADE);
+    let shown = labels(&app);
+    assert!(shown.iter().all(|label| label.opacity == 1.0));
+    assert!(!app.session().animating());
+
+    app.drag_steps(mapa(), -120.0, 0.0);
+    assert_eq!(
+        labels(&app),
+        shown,
+        "same labels, same places, while dragging"
+    );
+    app.advance(Duration::from_millis(150));
+    app.release_pointer();
+    app.run_until_idle();
+    app.advance(FADE);
+    let after = labels(&app);
+    assert!(!after.is_empty());
+    assert!(
+        after
+            .iter()
+            .filter(|label| shown.iter().any(|before| before.text == label.text))
+            .count()
+            > 0,
+        "the labels still in view stay"
     );
 }
 

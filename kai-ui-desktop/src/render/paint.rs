@@ -201,6 +201,12 @@ impl Painter<'_> {
             Content::Image(None) => {}
             Content::Map(spec) => {
                 crate::maps::style::paint(&mut self.list, node.padding_box, spec, self.input.theme);
+                crate::maps::labels::paint(
+                    &mut self.list,
+                    node.padding_box,
+                    spec,
+                    self.input.theme,
+                );
             }
         }
         let mut children = node.children.clone();

@@ -8,6 +8,7 @@
 //! `snapshots` feature outside this crate's own tests; BMP needs nothing.
 
 use std::path::Path;
+use std::time::Instant;
 
 use cosmic_text::{FontSystem, Metrics};
 
@@ -16,6 +17,7 @@ use crate::element::{Element, Kind, WidgetId};
 use crate::geo::Camera;
 use crate::geometry::Size;
 use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, text_style};
+use crate::maps::labels::{FADE, Labels};
 use crate::maps::tiles::TileStore;
 use crate::render::TextId;
 use crate::render::paint::{PaintInput, paint};
@@ -116,7 +118,8 @@ fn render_with_layout<Msg>(
         &mut text,
     );
     let mut tiles = TileStore::default();
-    for (area, spec) in layout.maps_mut() {
+    let now = Instant::now();
+    for (id, area, spec) in layout.maps_mut() {
         if let Some(source) = &spec.source {
             let camera = Camera::new(
                 spec.view,
@@ -126,6 +129,9 @@ fn render_with_layout<Msg>(
                 },
             );
             spec.tiles = tiles.load_now(source, camera);
+            let mut labels = Labels::default();
+            labels.update(id, camera, &spec.tiles, true, now, &mut text);
+            spec.labels = labels.frame(id, now + FADE).0;
         }
     }
     let mut decorations = Vec::new();

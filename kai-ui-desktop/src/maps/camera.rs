@@ -298,6 +298,11 @@ impl CameraState {
         self.motion.is_some()
     }
 
+    /// No drag, motion or burst under way at `now`: the view holds.
+    pub fn still(&self, now: Instant) -> bool {
+        self.drag.is_none() && self.motion.is_none() && self.settle.is_none_or(|due| due <= now)
+    }
+
     /// When a burst gesture is due to be reported.
     pub fn deadline(&self) -> Option<Instant> {
         self.settle.filter(|_| self.moved)
