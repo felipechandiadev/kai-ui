@@ -2075,15 +2075,172 @@ pub fn segmented_with_options<Msg>(
         }))
 }
 
+/// Row of a [`sidebar`]: a title, an optional icon before it and an
+/// optional badge (a count) after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SidebarItem {
+    pub label: String,
+    pub icon: Option<Icon>,
+    pub badge: Option<String>,
+}
+
+impl SidebarItem {
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            icon: None,
+            badge: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn badge(mut self, badge: impl Into<String>) -> Self {
+        self.badge = Some(badge.into());
+        self
+    }
+}
+
+/// Rows of a [`sidebar`], under a title or not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SidebarGroup {
+    pub title: Option<String>,
+    pub items: Vec<SidebarItem>,
+}
+
+impl SidebarGroup {
+    pub fn titled(title: impl Into<String>, items: impl IntoIterator<Item = SidebarItem>) -> Self {
+        Self {
+            title: Some(title.into()),
+            items: items.into_iter().collect(),
+        }
+    }
+
+    pub fn untitled(items: impl IntoIterator<Item = SidebarItem>) -> Self {
+        Self {
+            title: None,
+            items: items.into_iter().collect(),
+        }
+    }
+}
+
+/// Sidebar of sections (a source list): one row per item, `selected`
+/// counted across groups in order. It is one Tab stop that enters at the
+/// selected row, and ↑ and ↓ move the selection, sending
+/// `on_select(index)` as a click does ([`Element::selecting_focus_group`]).
+/// In AppKit the selection is the accent while the focus is inside and
+/// gray otherwise or with the window inactive, as in Finder; the gray is a
+/// translucent fill (`bg-fill-2`), because the opaque `selection-inactive`
+/// disappears on a sidebar background. Give it a width and a background
+/// with `.class(..)`. Parts: one per row, by index (`<id>.0`…).
+pub fn sidebar<Msg>(
+    groups: &[SidebarGroup],
+    selected: usize,
+    on_select: impl Fn(usize) -> Msg,
+) -> Element<Msg> {
+    let mut index = 0;
+    let sections = groups.iter().map(|group| {
+        let mut children = Vec::new();
+        if let Some(title) = &group.title {
+            children.push(
+                text(title.as_str())
+                    .class(&themed(
+                        "px-3 pb-1 text-xs font-medium text-muted-foreground",
+                        "px-2 pb-0.5 text-footnote font-semibold text-secondary-label",
+                    ))
+                    .role(Role::Heading),
+            );
+        }
+        for item in &group.items {
+            children.push(sidebar_row(item, index, index == selected, &on_select));
+            index += 1;
+        }
+        div().class("flex flex-col gap-px").children(children)
+    });
+    let sections: Vec<Element<Msg>> = sections.collect();
+    div()
+        .class(&themed(
+            "group flex flex-col gap-4 p-3 overflow-y-auto",
+            "group flex flex-col gap-3 px-2.5 py-2 overflow-y-auto",
+        ))
+        .role(Role::Sidebar)
+        .selecting_focus_group()
+        .parts_root()
+        .children(sections)
+}
+
+fn sidebar_row<Msg>(
+    item: &SidebarItem,
+    index: usize,
+    selected: bool,
+    on_select: &impl Fn(usize) -> Msg,
+) -> Element<Msg> {
+    // `tw` has one state variant per class, so the selected row gets its
+    // own classes instead of `window-inactive:selected:`.
+    let emphasis = "group-focus-within:text-on-accent window-inactive:text-control-accent";
+    let (row, glyph, badge) = if selected {
+        (
+            themed(
+                "bg-primary/10 text-primary font-medium",
+                "bg-fill-2 text-label glass:font-semibold \
+                 group-focus-within:bg-selection group-focus-within:text-on-accent \
+                 window-inactive:bg-fill-2 window-inactive:text-label",
+            ),
+            themed("text-primary", &format!("text-control-accent {emphasis}")),
+            themed(
+                "text-primary",
+                "text-secondary-label group-focus-within:text-on-accent \
+                 window-inactive:text-secondary-label",
+            ),
+        )
+    } else {
+        (
+            themed("text-foreground hover:bg-muted", "text-label"),
+            themed("text-muted-foreground", "text-control-accent"),
+            themed("text-muted-foreground", "text-secondary-label"),
+        )
+    };
+    let mut children = Vec::new();
+    if let Some(glyph_icon) = item.icon {
+        children.push(icon(glyph_icon).class(&format!("size-4 shrink-0 {glyph}")));
+    }
+    children.push(text(item.label.as_str()).class("flex-1 truncate"));
+    if let Some(count) = &item.badge {
+        children.push(
+            text(count.as_str()).class(&format!("{badge} {}", themed("text-xs", "text-footnote"))),
+        );
+    }
+    div()
+        .class(&format!(
+            "{} {row}",
+            themed(
+                "flex items-center gap-2 h-9 px-3 rounded-md text-sm cursor-pointer \
+                 focus-visible:ring-2 focus-visible:ring-primary/40",
+                "flex items-center gap-1.5 h-7 px-2 rounded-[5px] text-control cursor-default",
+            )
+        ))
+        .role(Role::SidebarItem)
+        .key(index.to_string())
+        .part(index.to_string())
+        .label(item.label.as_str())
+        .pressed(selected)
+        .on_click(on_select(index))
+        .children(children)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, FieldBezel,
         FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MenuFrame,
-        SwitchDensity, TextField, alert, badge, badge_classes, button, button_classes, card,
-        card_actions, card_content, card_header, checkbox, checkbox_with_options, dialog,
-        group_box, icon_button_sized, segmented, segmented_with_options, select_menu,
-        select_with_options, stat, switch_labeled, switch_with_options,
+        SidebarGroup, SidebarItem, SwitchDensity, TextField, alert, badge, badge_classes, button,
+        button_classes, card, card_actions, card_content, card_header, checkbox,
+        checkbox_with_options, dialog, group_box, icon_button_sized, segmented,
+        segmented_with_options, select_menu, select_with_options, sidebar, stat, switch_labeled,
+        switch_with_options,
     };
     use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
@@ -2845,6 +3002,7 @@ mod tests {
             all.push(checkbox("Acepto", state, Msg::Toggle));
         }
         all.push(segmented(&["Día", "Mes"], 0, |_| Msg::Toggle));
+        all.push(sidebar(&sample_sidebar(), 1, |_| Msg::Toggle));
         all.push(card().children([card_header("T", Some("S")), card_content(), card_actions()]));
         all.push(group_box(Some("Opciones"), [text("x")]));
         all.push(stat("Clics", "3", Some("hoy")));
@@ -3538,5 +3696,55 @@ mod tests {
             true,
         ));
         assert_eq!(FocusOrder::from_tree(&disabled).ids().count(), 0);
+    }
+
+    fn sample_sidebar() -> Vec<SidebarGroup> {
+        vec![
+            SidebarGroup::titled(
+                "Demo",
+                [SidebarItem::new("Inicio").icon(Icon::House).badge("3")],
+            ),
+            SidebarGroup::titled(
+                "Componentes",
+                [
+                    SidebarItem::new("Campos").icon(Icon::TextCursorInput),
+                    SidebarItem::new("Botones"),
+                ],
+            ),
+        ]
+    }
+
+    #[test]
+    fn sidebar_rows_are_one_selecting_stop_counted_across_groups() {
+        let tree = assigned(
+            sidebar(&sample_sidebar(), 1, |index| Msg::Edited(index.to_string())).test_id("nav"),
+        );
+        assert_eq!(tree.role, Some(Role::Sidebar));
+        let rows: Vec<&Element<Msg>> = (0..3)
+            .map(|index| part(&tree, &format!("nav.{index}")))
+            .collect();
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.role, row.is_pressed(), row.handlers.on_click.clone()))
+                .collect::<Vec<_>>(),
+            ["0", "1", "2"].map(|index| (
+                Some(Role::SidebarItem),
+                index == "1",
+                Some(Msg::Edited(index.to_owned()))
+            ))
+        );
+        assert_eq!(rows[0].label.as_deref(), Some("Inicio"), "not the badge");
+        let order = FocusOrder::from_tree(&tree);
+        assert_eq!(order.next(None, false), Some(rows[1].id));
+        assert!(order.selects(rows[1].id));
+        assert_eq!(order.group_step(rows[0].id, false), Some(rows[1].id));
+
+        let mut headings = Vec::new();
+        tree.walk(&mut |element| {
+            if element.role == Some(Role::Heading) {
+                headings.push(element.text_content());
+            }
+        });
+        assert_eq!(headings, ["Demo", "Componentes"]);
     }
 }

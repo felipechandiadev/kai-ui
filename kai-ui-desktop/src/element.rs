@@ -60,6 +60,15 @@ pub enum ControlState {
     Mixed,
 }
 
+/// How the arrow keys behave inside a focus group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FocusGroup {
+    /// They move the focus; Space or Return chooses (`NSSegmentedControl`).
+    Focus,
+    /// ↑ and ↓ move the focus and activate (a sidebar source list).
+    Select,
+}
+
 /// Shortcut that activates a control even when it has no focus
 /// (`keyEquivalent` + `keyEquivalentModifierMask`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,6 +194,11 @@ pub enum Role {
     Menu,
     /// Option of a [`Role::Menu`]: On when it is the current choice.
     MenuItem,
+    /// Source list of sections (`NSOutlineView` in a sidebar); its
+    /// [`Role::SidebarItem`] rows carry the selection.
+    Sidebar,
+    /// Row of a [`Role::Sidebar`], named after its text: On when selected.
+    SidebarItem,
     TextInput,
     Image,
     /// Modal panel over the window; its name is its title.
@@ -303,8 +317,9 @@ pub struct Element<Msg> {
     /// `preventDefault` on `mousedown`: it activates but keeps the focus
     /// where it was).
     pub focus_on_press: bool,
-    /// Its controls are one Tab stop; see [`Element::focus_group`].
-    pub focus_group: bool,
+    /// Its controls are one Tab stop; see [`Element::focus_group`] and
+    /// [`Element::selecting_focus_group`].
+    pub focus_group: Option<FocusGroup>,
     /// Pop-up button list; see [`Element::options`].
     pub options: Option<Options>,
     pub handlers: Handlers<Msg>,
@@ -357,7 +372,7 @@ impl<Msg> Element<Msg> {
             description: None,
             delegates_focus: false,
             focus_on_press: true,
-            focus_group: false,
+            focus_group: None,
             options: None,
             handlers: Handlers::default(),
             command: None,
@@ -506,7 +521,15 @@ impl<Msg> Element<Msg> {
     /// group; the arrow keys move the focus between them, and Space or
     /// Return activates the focused one.
     pub fn focus_group(mut self) -> Self {
-        self.focus_group = true;
+        self.focus_group = Some(FocusGroup::Focus);
+        self
+    }
+
+    /// A [`Element::focus_group`] whose arrow keys (↑ and ↓ only) also
+    /// activate the member they reach, as a source list: moving is
+    /// choosing.
+    pub fn selecting_focus_group(mut self) -> Self {
+        self.focus_group = Some(FocusGroup::Select);
         self
     }
 
@@ -821,6 +844,8 @@ struct FocusEntry {
     submits: bool,
     /// Nearest [`Element::focus_group`] ancestor.
     group: Option<WidgetId>,
+    /// Its group is a [`FocusGroup::Select`].
+    selects: bool,
     /// In the `On` state: Tab enters its group here.
     selected: bool,
 }
@@ -842,14 +867,15 @@ impl FocusOrder {
         order
     }
 
-    fn collect<Msg>(&mut self, element: &Element<Msg>, group: Option<WidgetId>) {
+    fn collect<Msg>(&mut self, element: &Element<Msg>, group: Option<(WidgetId, FocusGroup)>) {
         if let Some(kind) = element.focus_kind() {
             self.entries.push(FocusEntry {
                 id: element.id,
                 kind,
                 focus_on_press: element.focus_on_press,
                 submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
-                group,
+                group: group.map(|(id, _)| id),
+                selects: group.is_some_and(|(_, behavior)| behavior == FocusGroup::Select),
                 selected: element.is_pressed(),
             });
         }
@@ -861,11 +887,10 @@ impl FocusOrder {
         {
             self.equivalents.push((element.id, equivalent));
         }
-        let group = if element.focus_group {
-            Some(element.id)
-        } else {
-            group
-        };
+        let group = element
+            .focus_group
+            .map(|behavior| (element.id, behavior))
+            .or(group);
         for child in &element.children {
             self.collect(child, group);
         }
@@ -915,6 +940,11 @@ impl FocusOrder {
 
     pub fn kind(&self, id: WidgetId) -> Option<FocusKind> {
         self.entry(id).map(|entry| entry.kind)
+    }
+
+    /// Whether `id` is in a [`FocusGroup::Select`]: arrows also activate.
+    pub fn selects(&self, id: WidgetId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.selects)
     }
 
     /// Whether a pointer press on `id` moves focus to it.

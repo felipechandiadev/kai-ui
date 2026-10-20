@@ -4,11 +4,12 @@
 //! golden captures (Paso 18). `cargo run --example gallery`.
 
 use crate::components::{
-    BezelStyle, Button, SwitchDensity, TextField, card, card_actions, card_content, card_header,
-    checkbox_with_options, group_box, paragraph, segmented, segmented_with_options, select,
-    select_with_options, switch_with_options,
+    BezelStyle, Button, SidebarGroup, SidebarItem, SwitchDensity, TextField, card, card_actions,
+    card_content, card_header, checkbox_with_options, group_box, paragraph, segmented,
+    segmented_with_options, select, select_with_options, sidebar, switch_with_options,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
+use crate::icons::Icon;
 use crate::layout::WindowActivity;
 use crate::runtime::SimpleApp;
 use crate::theme::{Appearance, Density, Theme};
@@ -26,6 +27,7 @@ pub enum Section {
     Fields,
     Toggles,
     Selection,
+    Navigation,
     Boxes,
     Text,
     Colors,
@@ -33,11 +35,12 @@ pub enum Section {
 
 impl Section {
     /// Sections with content, in display order (without `All`).
-    pub const CONTENT: [Section; 7] = [
+    pub const CONTENT: [Section; 8] = [
         Self::Buttons,
         Self::Fields,
         Self::Toggles,
         Self::Selection,
+        Self::Navigation,
         Self::Boxes,
         Self::Text,
         Self::Colors,
@@ -50,6 +53,7 @@ impl Section {
             Self::Fields => "Fields",
             Self::Toggles => "Toggles",
             Self::Selection => "Selection",
+            Self::Navigation => "Navigation",
             Self::Boxes => "Boxes",
             Self::Text => "Text",
             Self::Colors => "Colors",
@@ -79,6 +83,8 @@ pub struct Gallery {
     pub segment: usize,
     /// Choices of the Select and Select vacío rows.
     pub choices: [Option<usize>; 2],
+    /// Selected row of the Navigation section's sidebar.
+    pub nav: usize,
     pub last_action: Option<&'static str>,
 }
 
@@ -94,6 +100,7 @@ impl Default for Gallery {
             checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
             segment: 0,
             choices: [Some(0), None],
+            nav: 0,
             last_action: None,
         }
     }
@@ -111,6 +118,8 @@ pub enum Msg {
     Segment(usize),
     /// Row of the Select section and option index.
     Choose(usize, usize),
+    /// Row of the Navigation sidebar.
+    Navigate(usize),
     Clicked(&'static str),
 }
 
@@ -153,6 +162,29 @@ const SELECTION_ROWS: [&str; 9] = [
 const SEGMENTS: [&str; 3] = ["Día", "Semana", "Mes"];
 
 const FRUITS: [&str; 4] = ["Manzana", "Pera", "Uva", "Frutilla"];
+
+/// Rows of the Navigation sidebar, in order across its groups.
+const NAV_ROWS: [&str; 5] = ["Inicio", "Etiquetas", "Campos", "Botones", "Usuarios"];
+
+fn nav_groups() -> [SidebarGroup; 2] {
+    [
+        SidebarGroup::titled(
+            "Demo",
+            [
+                SidebarItem::new(NAV_ROWS[0]).icon(Icon::House),
+                SidebarItem::new(NAV_ROWS[1]).icon(Icon::Tag).badge("12"),
+            ],
+        ),
+        SidebarGroup::titled(
+            "Componentes",
+            [
+                SidebarItem::new(NAV_ROWS[2]).icon(Icon::TextCursorInput),
+                SidebarItem::new(NAV_ROWS[3]).icon(Icon::MousePointerClick),
+                SidebarItem::new(NAV_ROWS[4]).icon(Icon::User),
+            ],
+        ),
+    ]
+}
 
 /// Text styles of the Text section (`docs/dev/11-tema-appkit.md`).
 const TEXT_STYLES: [&str; 11] = [
@@ -234,8 +266,8 @@ impl Gallery {
                 "--section" => match args.next().as_deref().and_then(Section::parse) {
                     Some(section) => gallery.section = section,
                     None => eprintln!(
-                        "--section desconocida (todo, buttons, fields, toggles, selection, boxes, \
-                         text, colors)"
+                        "--section desconocida (todo, buttons, fields, toggles, selection, \
+                         navigation, boxes, text, colors)"
                     ),
                 },
                 other => eprintln!("argumento desconocido: {other}"),
@@ -268,10 +300,34 @@ impl Gallery {
             Section::Selection => sized_grid(section, &SELECTION_ROWS, |row, size| {
                 self.selection_cell(row, size)
             }),
+            Section::Navigation => self.navigation(),
             Section::Boxes => boxes(),
             Section::Text => text_styles(),
             Section::Colors => self.colors(),
         }
+    }
+
+    /// A window-like box: the sidebar and a pane naming the selected row.
+    fn navigation(&self) -> Element<Msg> {
+        div()
+            .class(
+                "flex h-[300px] max-w-2xl rounded-lg border border-border overflow-hidden \
+                 bg-background appkit:border-separator appkit:bg-window",
+            )
+            .children([
+                sidebar(&nav_groups(), self.nav, Msg::Navigate)
+                    .class(
+                        "w-56 shrink-0 border-r border-border appkit:w-[200px] appkit:bg-fill-4 \
+                         appkit:border-separator",
+                    )
+                    .label("Secciones")
+                    .test_id("gallery.navigation.sidebar"),
+                div().class("flex-1 p-6").child(
+                    text(NAV_ROWS[self.nav])
+                        .class("text-lg font-semibold appkit:text-title3")
+                        .role(Role::Heading),
+                ),
+            ])
     }
 
     fn titled(&self, section: Section) -> Element<Msg> {
@@ -542,6 +598,7 @@ impl SimpleApp for Gallery {
             }
             Msg::Segment(index) => self.segment = index,
             Msg::Choose(row, index) => self.choices[row] = Some(index),
+            Msg::Navigate(index) => self.nav = index,
             Msg::Clicked(name) => self.last_action = Some(name),
         }
     }
@@ -649,9 +706,11 @@ mod tests {
         assert_eq!(tree.validate_ids(), Vec::<String>::new());
         let mut tagged = Vec::new();
         tree.walk(&mut |element| {
-            // Parts (`<cell>.label`…) derive from the cell's id.
+            // Parts (`<cell>.label`…) derive from the cell's id; the
+            // sidebar's rows are its controls.
             if let Some(test_id) = &element.test_id
                 && (element.part.is_none() || element.is_control())
+                && element.role != Some(Role::Sidebar)
             {
                 assert!(element.is_control(), "{test_id} is not a control");
                 tagged.push(test_id.clone());
@@ -671,10 +730,12 @@ mod tests {
             }
         }
         assert!(tagged.contains(&"gallery.fields.con-valor.xl".to_owned()));
+        assert!(tagged.contains(&"gallery.navigation.sidebar.4".to_owned()));
         assert_eq!(
             tagged.len(),
             ControlSize::ALL.len()
                 * (BUTTON_ROWS.len() + FIELD_ROWS.len() + TOGGLE_ROWS.len() + SELECTION_ROWS.len())
+                + NAV_ROWS.len()
         );
     }
 
@@ -698,6 +759,7 @@ mod tests {
             (Section::Fields, sizes * field_controls),
             (Section::Toggles, sizes * enabled_switches),
             (Section::Selection, sizes * enabled_selection),
+            (Section::Navigation, NAV_ROWS.len()),
             (Section::Boxes, 1),
         ] {
             let mut tree = gallery.section_view(section);
@@ -1025,6 +1087,80 @@ mod tests {
         assert!(app.perform(crate::commands::PALETTE));
         assert!(!app.session().popup_open());
         assert!(app.session().palette_open());
+    }
+
+    fn nav_row(index: usize) -> By {
+        By::test_id(format!("gallery.navigation.sidebar.{index}"))
+    }
+
+    #[test]
+    fn sidebar_rows_are_chosen_by_click_and_by_up_and_down() {
+        use crate::ui_engine::{Key, Modifiers};
+
+        let none = Modifiers::NONE;
+        let mut app = TestApp::new(Gallery {
+            section: Section::Navigation,
+            nav: 1,
+            ..Gallery::default()
+        });
+        app.click(nav_row(2));
+        assert_eq!(app.app().nav, 2);
+        app.screen().get(By::role(Role::Heading).name("Campos"));
+        assert!(app.is_focused(nav_row(2)));
+
+        // From the header, Tab enters at the selected row.
+        app.click(By::role(Role::Button).name("Navigation"));
+        let rows: Vec<_> = (0..NAV_ROWS.len())
+            .map(|index| app.screen().get(nav_row(index)).id())
+            .collect();
+        for _ in 0..20 {
+            app.press(Key::Tab, none);
+            if rows.contains(&app.session().focused().unwrap()) {
+                break;
+            }
+        }
+        assert!(app.is_focused(nav_row(2)));
+        app.press(Key::ArrowDown, none);
+        assert!(app.is_focused(nav_row(3)));
+        assert_eq!(app.app().nav, 3);
+        app.press(Key::ArrowUp, none);
+        app.press(Key::ArrowUp, none);
+        app.press(Key::ArrowUp, none);
+        assert_eq!(app.app().nav, 0);
+        app.press(Key::ArrowUp, none);
+        assert_eq!(
+            app.messages()
+                .iter()
+                .filter(|msg| matches!(msg, Msg::Navigate(_)))
+                .count(),
+            5,
+            "the first row is not chosen again"
+        );
+        app.press(Key::ArrowRight, none);
+        assert_eq!(app.app().nav, 0, "← and → do nothing");
+
+        app.press(Key::Tab, none);
+        let focused = app.session().focused().unwrap();
+        assert!(!rows.contains(&focused), "Tab leaves the sidebar");
+    }
+
+    #[test]
+    fn the_focused_row_scrolls_into_view_in_a_short_window() {
+        use crate::ui_engine::{Key, Modifiers};
+
+        let mut app = TestApp::builder(Gallery {
+            section: Section::Navigation,
+            ..Gallery::default()
+        })
+        .viewport(800.0, 200.0)
+        .build();
+        app.click(nav_row(0));
+        for _ in 1..NAV_ROWS.len() {
+            app.press(Key::ArrowDown, Modifiers::NONE);
+        }
+        assert_eq!(app.app().nav, NAV_ROWS.len() - 1);
+        let row = app.screen().get(nav_row(NAV_ROWS.len() - 1)).bounds();
+        assert!(row.y >= 0.0 && row.y + row.height <= 200.0, "{row:?}");
     }
 
     #[test]

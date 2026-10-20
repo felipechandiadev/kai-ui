@@ -31,6 +31,10 @@ const ICONS = [
   "loader-circle",
   "check",
   "chevrons-up-down",
+  "house",
+  "text-cursor-input",
+  "mouse-pointer-click",
+  "tag",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

@@ -22,6 +22,10 @@ pub enum Icon {
     LoaderCircle,
     Check,
     ChevronsUpDown,
+    House,
+    TextCursorInput,
+    MousePointerClick,
+    Tag,
 }
 
 impl Icon {
@@ -44,6 +48,10 @@ impl Icon {
         Icon::LoaderCircle,
         Icon::Check,
         Icon::ChevronsUpDown,
+        Icon::House,
+        Icon::TextCursorInput,
+        Icon::MousePointerClick,
+        Icon::Tag,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -67,6 +75,10 @@ impl Icon {
             Icon::LoaderCircle => "loader-circle",
             Icon::Check => "check",
             Icon::ChevronsUpDown => "chevrons-up-down",
+            Icon::House => "house",
+            Icon::TextCursorInput => "text-cursor-input",
+            Icon::MousePointerClick => "mouse-pointer-click",
+            Icon::Tag => "tag",
         }
     }
 
@@ -95,6 +107,10 @@ impl Icon {
             Icon::LoaderCircle => include_str!("../../assets/icons/loader-circle.svg"),
             Icon::Check => include_str!("../../assets/icons/check.svg"),
             Icon::ChevronsUpDown => include_str!("../../assets/icons/chevrons-up-down.svg"),
+            Icon::House => include_str!("../../assets/icons/house.svg"),
+            Icon::TextCursorInput => include_str!("../../assets/icons/text-cursor-input.svg"),
+            Icon::MousePointerClick => include_str!("../../assets/icons/mouse-pointer-click.svg"),
+            Icon::Tag => include_str!("../../assets/icons/tag.svg"),
         }
     }
 }

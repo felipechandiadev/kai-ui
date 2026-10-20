@@ -11,6 +11,8 @@ pub enum ActivationSource {
     Pointer,
     Enter,
     Space,
+    /// ↑ or ↓ inside a selecting focus group (a sidebar).
+    Arrow,
     Accessibility,
     /// Return for the default button, Escape for the cancel button, or a
     /// control's own shortcut.
@@ -303,15 +305,27 @@ fn key_commands(
 
     match (focused, kind) {
         (Some(focused), Some(FocusKind::Button)) => {
+            let selects = order.selects(focused);
             if modifiers == Modifiers::NONE
                 && let Some(backwards) = match key {
-                    Key::ArrowLeft | Key::ArrowUp => Some(true),
-                    Key::ArrowRight | Key::ArrowDown => Some(false),
+                    Key::ArrowUp => Some(true),
+                    Key::ArrowDown => Some(false),
+                    Key::ArrowLeft if !selects => Some(true),
+                    Key::ArrowRight if !selects => Some(false),
                     _ => None,
                 }
                 && let Some(next) = order.group_step(focused, backwards)
             {
-                return vec![UiCommand::SetFocus(Some(next), FocusOrigin::Keyboard)];
+                if !selects {
+                    return vec![UiCommand::SetFocus(Some(next), FocusOrigin::Keyboard)];
+                }
+                if next == focused {
+                    return Vec::new();
+                }
+                return vec![
+                    UiCommand::SetFocus(Some(next), FocusOrigin::Keyboard),
+                    UiCommand::Activate(next, ActivationSource::Arrow),
+                ];
             }
             if repeat {
                 return Vec::new();
@@ -726,6 +740,41 @@ mod tests {
             enter.activated.map(|a| (a.widget, a.source)),
             Some((cancel, ActivationSource::Enter))
         );
+    }
+
+    #[test]
+    fn up_and_down_in_a_selecting_group_move_and_activate() {
+        let row = |on: bool| div().on_click(()).pressed(on);
+        let mut tree: Element<()> = div().children([div().selecting_focus_group().children([
+            row(true),
+            row(false),
+            row(false),
+        ])]);
+        tree.assign_ids();
+        let rows: Vec<WidgetId> = tree.children[0].children.iter().map(|r| r.id).collect();
+        let order = FocusOrder::from_tree(&tree);
+        let mut model = UiModel::default();
+        dispatch(&mut model, &order, Intent::SetFocus(Some(rows[0])));
+
+        let down = dispatch(&mut model, &order, plain(Key::ArrowDown));
+        assert_eq!(*model.focused.get(), Some(rows[1]));
+        assert_eq!(
+            down.activated.map(|a| (a.widget, a.source)),
+            Some((rows[1], ActivationSource::Arrow))
+        );
+        assert!(*model.focus_visible.get());
+
+        let right = dispatch(&mut model, &order, plain(Key::ArrowRight));
+        assert_eq!(right.activated, None);
+        assert_eq!(right.action, Some(Action::MoveRight), "← and → pass by");
+        assert_eq!(*model.focused.get(), Some(rows[1]));
+
+        dispatch(&mut model, &order, plain(Key::ArrowDown));
+        let end = dispatch(&mut model, &order, plain(Key::ArrowDown));
+        assert_eq!(end.activated, None, "the last row is not chosen again");
+        assert_eq!(*model.focused.get(), Some(rows[2]));
+        let up = dispatch(&mut model, &order, plain(Key::ArrowUp));
+        assert_eq!(up.activated.map(|a| a.widget), Some(rows[1]));
     }
 
     #[test]

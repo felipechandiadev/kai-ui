@@ -96,6 +96,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
                     | KaiRole::Radio
                     | KaiRole::PopUpButton
                     | KaiRole::MenuItem
+                    | KaiRole::SidebarItem
             )
             .then(|| {
                 let mut parts = Vec::new();
@@ -129,6 +130,10 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::PopUpButton => Role::ComboBox,
         KaiRole::Menu => Role::MenuListPopup,
         KaiRole::MenuItem => Role::MenuListOption,
+        // `accesskit_macos`: `Tree` is `AXOutline` and `TreeItem` an
+        // `AXRow` (`AXOutlineRow`), as Finder's sidebar.
+        KaiRole::Sidebar => Role::Tree,
+        KaiRole::SidebarItem => Role::TreeItem,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
@@ -168,6 +173,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::RadioButton
             | Role::ComboBox
             | Role::MenuListOption
+            | Role::TreeItem
             | Role::TextInput
             | Role::PasswordInput
     );
@@ -213,7 +219,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
         text_content(layout, index, &mut parts);
         node.set_value(parts.join(" "));
     }
-    if role == Role::MenuListOption {
+    if matches!(role, Role::MenuListOption | Role::TreeItem) {
         node.set_selected(source.control_state == Some(ControlState::On));
     }
     if let Some(description) = &source.description {
@@ -450,6 +456,46 @@ mod tests {
         assert_eq!(month.toggled(), Some(accesskit::Toggled::True));
         let day = node(&update, radio_group.children()[0]);
         assert_eq!(day.toggled(), Some(accesskit::Toggled::False));
+    }
+
+    #[test]
+    fn sidebar_is_an_outline_of_rows_with_one_selected() {
+        use crate::components::{SidebarGroup, SidebarItem, sidebar};
+
+        let groups = [SidebarGroup::titled(
+            "Demo",
+            [
+                SidebarItem::new("Inicio").badge("3"),
+                SidebarItem::new("Campos"),
+            ],
+        )];
+        let mut tree: Element<Msg> =
+            div().child(sidebar(&groups, 1, |_| Msg::Clicked).test_id("nav"));
+        tree.assign_ids();
+        let root = tree.children[0].id;
+        let rows = ["nav.0", "nav.1"].map(|id| tree.find_test_id(id).unwrap().id);
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        assert_eq!(node(&update, node_id(root)).role(), Role::Tree);
+        let first = node(&update, node_id(rows[0]));
+        assert_eq!(first.role(), Role::TreeItem);
+        assert_eq!(
+            first.label(),
+            Some("Inicio"),
+            "the badge is not in the name"
+        );
+        assert_eq!(first.is_selected(), Some(false));
+        assert!(first.children().is_empty());
+        let second = node(&update, node_id(rows[1]));
+        assert_eq!(second.is_selected(), Some(true));
+        assert_eq!(second.author_id(), Some("nav.1"));
+        let mut headings = Vec::new();
+        for (_, n) in &update.nodes {
+            if n.role() == Role::Heading {
+                headings.push(n.value().map(str::to_owned));
+            }
+        }
+        assert_eq!(headings, [Some("Demo".to_owned())]);
     }
 
     #[test]
