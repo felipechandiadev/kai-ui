@@ -27,7 +27,7 @@ use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
 };
-use crate::geo::{Camera, MapView, TileId};
+use crate::geo::{Camera, LatLon, MapView, TileId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
 use crate::layout::{
@@ -35,6 +35,7 @@ use crate::layout::{
     WindowActivity, text_style,
 };
 use crate::maps::camera::CameraState;
+use crate::maps::editor::PolygonEdit;
 use crate::maps::labels::Labels;
 use crate::maps::tiles::{SourceKey, TileResult, TileStore};
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
@@ -60,6 +61,9 @@ pub(crate) use calls::{AgentCall, CONFIRMATION};
 const MAP_KEY_STEP: f64 = 80.0;
 /// A press and release on a map closer than this (points) is a click.
 const MAP_CLICK_SLOP: f32 = 4.0;
+/// Points an arrow key moves a focused vertex of a polygon editor (ten
+/// times as far with ⇧).
+const VERTEX_KEY_STEP: f32 = 1.0;
 
 /// Extra room kept visible around a focused element when scrolling to it
 /// (focus rings are 2px wide with a 2px offset).
@@ -176,6 +180,8 @@ pub(crate) struct Session<A: App> {
     map_press: Option<(WidgetId, Point)>,
     /// The clickable map layer under the pointer.
     map_hover: Option<(WidgetId, String)>,
+    /// The polygon editor vertex the pointer is dragging.
+    vertex_drag: Option<VertexDrag>,
     /// Basemap tiles of every map, loading on the task pool.
     tiles: TileStore,
     /// Loaded basemap tiles wait to be shown, a few per frame.
@@ -190,6 +196,17 @@ pub(crate) struct Session<A: App> {
     maps_resized: bool,
     /// Modifier keys held now (⇧ double click and ⌘ wheel on maps).
     modifiers: Modifiers,
+}
+
+/// A vertex of a map's polygon editor under the pointer's drag.
+#[derive(Clone, Copy, Debug)]
+struct VertexDrag {
+    map: WidgetId,
+    index: usize,
+    /// From the vertex to where the pointer took it, so it does not jump.
+    grab: Point,
+    /// Some move was sent: the next one is not the first of the drag.
+    moved: bool,
 }
 
 struct Tooltip {
@@ -497,6 +514,7 @@ impl<A: App> Session<A> {
             map_drag: None,
             map_press: None,
             map_hover: None,
+            vertex_drag: None,
             tiles: TileStore::default(),
             tiles_revealing: false,
             labels: HashMap::new(),
@@ -1764,6 +1782,7 @@ impl<A: App> Session<A> {
             || self.popup_key(&intent)
             || self.row_key(&intent)
             || self.map_key(&intent)
+            || self.vertex_key(&intent)
         {
             return;
         }
@@ -1983,6 +2002,12 @@ impl<A: App> Session<A> {
             self.map_press = None;
         }
         if self
+            .vertex_drag
+            .is_some_and(|drag| !live.contains(&drag.map))
+        {
+            self.vertex_drag = None;
+        }
+        if self
             .map_hover
             .as_ref()
             .is_some_and(|(id, _)| !live.contains(id))
@@ -2153,6 +2178,138 @@ impl<A: App> Session<A> {
         Some((map, control))
     }
 
+    /// The polygon editor vertex `widget` is: its map, its index and
+    /// where it stands.
+    fn map_vertex(&self, widget: WidgetId) -> Option<(WidgetId, usize, LatLon)> {
+        let element = self.tree.find(widget)?;
+        let index = element.map_vertex?;
+        let at = element.marker?.at;
+        let path = self.tree.path_to(widget)?;
+        let map = path
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.maps.contains_key(id))?;
+        Some((map, index, at))
+    }
+
+    /// Hand `edit` to the `on_edit` of `map`'s polygon editor.
+    fn send_edit(&mut self, map: WidgetId, edit: PolygonEdit, source: MsgSource) {
+        if let Some(handler) = self.handler(map).and_then(|h| h.on_edit.clone()) {
+            let source = self.source.clone().unwrap_or(source);
+            self.with_source(source, |session| session.send(handler(edit)));
+        }
+    }
+
+    /// A press on a polygon editor vertex starts dragging it; the map
+    /// stops gliding so the vertex lands where the pointer is.
+    fn press_vertex(&mut self, target: Option<WidgetId>) {
+        let Some((map, index, _)) = target.and_then(|id| self.map_vertex(id)) else {
+            return;
+        };
+        let (Some(cursor), Some(node)) = (self.cursor, target.and_then(|id| self.layout.node(id)))
+        else {
+            return;
+        };
+        let handle = node.padding_box;
+        if let Some(camera) = self.maps.get_mut(&map) {
+            camera.halt();
+        }
+        self.vertex_drag = Some(VertexDrag {
+            map,
+            index,
+            grab: Point {
+                x: cursor.x - (handle.x + handle.width / 2.0),
+                y: cursor.y - (handle.y + handle.height / 2.0),
+            },
+            moved: false,
+        });
+    }
+
+    /// The pointer moved during a vertex drag: the vertex follows it.
+    fn drag_vertex(&mut self) {
+        let Some(drag) = self.vertex_drag else {
+            return;
+        };
+        let (Some(local), Some(camera)) = (self.map_local(drag.map), self.maps.get(&drag.map))
+        else {
+            return;
+        };
+        let at = Camera::new(camera.view, camera.size).to_lat_lon(Point {
+            x: local.x - drag.grab.x,
+            y: local.y - drag.grab.y,
+        });
+        self.vertex_drag = Some(VertexDrag {
+            moved: true,
+            ..drag
+        });
+        self.send_edit(
+            drag.map,
+            PolygonEdit::Move {
+                index: drag.index,
+                to: at,
+                first: !drag.moved,
+            },
+            MsgSource::Pointer,
+        );
+    }
+
+    /// With a polygon editor vertex focused, the arrows move it (⇧: ten
+    /// times as far), Delete removes it and Return finishes the edit.
+    fn vertex_key(&mut self, intent: &Intent) -> bool {
+        let Intent::Text(TextIntent::KeyDown {
+            key,
+            modifiers,
+            repeat,
+        }) = intent
+        else {
+            return false;
+        };
+        if modifiers.command || modifiers.control || modifiers.option {
+            return false;
+        }
+        let Some((map, index, at)) = self.focused().and_then(|id| self.map_vertex(id)) else {
+            return false;
+        };
+        let step = if modifiers.shift {
+            VERTEX_KEY_STEP * 10.0
+        } else {
+            VERTEX_KEY_STEP
+        };
+        let offset = match key {
+            Key::ArrowLeft => Some((-step, 0.0)),
+            Key::ArrowRight => Some((step, 0.0)),
+            Key::ArrowUp => Some((0.0, -step)),
+            Key::ArrowDown => Some((0.0, step)),
+            _ => None,
+        };
+        let edit = if let Some((dx, dy)) = offset {
+            let Some(camera) = self.maps.get(&map) else {
+                return false;
+            };
+            let camera = Camera::new(camera.view, camera.size);
+            let local = camera.to_local(at);
+            PolygonEdit::Move {
+                index,
+                to: camera.to_lat_lon(Point {
+                    x: local.x + dx,
+                    y: local.y + dy,
+                }),
+                first: true,
+            }
+        } else if *repeat {
+            return false;
+        } else {
+            match key {
+                Key::Backspace | Key::Delete if !modifiers.shift => PolygonEdit::Remove { index },
+                Key::Enter => PolygonEdit::Finish,
+                _ => return false,
+            }
+        };
+        self.send_edit(map, edit, MsgSource::Keyboard);
+        true
+    }
+
     /// Arrow keys pan a focused map and `+`/`−` zoom it.
     fn map_key(&mut self, intent: &Intent) -> bool {
         let Intent::Text(TextIntent::KeyDown { key, modifiers, .. }) = intent else {
@@ -2253,11 +2410,13 @@ impl<A: App> Session<A> {
             self.refresh_hover();
             self.apply_intent(Intent::CancelPointer);
             self.dragging = None;
+            self.vertex_drag = None;
             self.release_map();
             self.invalidate();
             return;
         }
         let mut redraw = self.refresh_hover();
+        self.drag_vertex();
         if let Some(id) = self.map_drag
             && let Some(local) = self.map_local(id)
         {
@@ -2344,6 +2503,7 @@ impl<A: App> Session<A> {
             let previous_focus = *self.ui.focused.get();
             self.apply_intent(Intent::PointerDown(target));
             self.press_map(target, clicks);
+            self.press_vertex(target);
             let selected_on_focus = target
                 .is_some_and(|id| previous_focus != Some(id) && selects_on_focus(&self.tree, id));
             self.dragging = target.filter(|_| self.is_text_field(target) && !selected_on_focus);
@@ -2357,6 +2517,7 @@ impl<A: App> Session<A> {
         } else {
             self.apply_intent(Intent::PointerUp(target));
             self.dragging = None;
+            self.vertex_drag = None;
             self.click_map_area();
             self.release_map();
         }
@@ -2372,6 +2533,7 @@ impl<A: App> Session<A> {
         } else {
             self.apply_intent(Intent::CancelPointer);
             self.dragging = None;
+            self.vertex_drag = None;
             self.release_map();
             for field in self.text_fields.values_mut() {
                 field.set_preedit(&mut self.text.font_system, None);

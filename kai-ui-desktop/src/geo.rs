@@ -33,6 +33,9 @@ impl LatLon {
     }
 }
 
+/// Places compare by value; maps and their editors keep finite ones.
+impl Eq for LatLon {}
+
 /// A point of the Mercator world square, `0..1` on both axes.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WorldPoint {

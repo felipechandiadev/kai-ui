@@ -345,7 +345,7 @@
       "title": "Encuadrar el mapa"
     },
     {
-      "description": "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % de margen; un código desconocido no cambia nada",
+      "description": "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % de margen; un código desconocido, o un sector en edición, no cambia nada",
       "exposed": true,
       "id": "areas.seleccionar",
       "inputSchema": {
@@ -364,6 +364,41 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Seleccionar sector"
+    },
+    {
+      "description": "Reemplaza el polígono de un sector de DSP en el mapa de la sección Mapa, lo selecciona y lo encuadra; una geometría inválida es un error y no cambia nada",
+      "exposed": true,
+      "id": "areas.editar_geometria",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Código del sector, como en areas.seleccionar",
+            "type": "string"
+          },
+          "coordinates": {
+            "description": "Anillo exterior del polígono como en GeoJSON: [longitud, latitud] por vértice, al menos 3, sin bordes que se crucen; el primero puede repetirse al final",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "coordinates"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Editar la geometría de un sector"
     },
     {
       "exposed": true,

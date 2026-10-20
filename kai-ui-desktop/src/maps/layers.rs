@@ -40,6 +40,8 @@ type Polygon = Vec<Vec<WorldPoint>>;
 #[derive(Debug)]
 struct Shape {
     polygons: Vec<Polygon>,
+    /// `false` for a line: an open outline, no fill and no inside.
+    closed: bool,
     /// Mesh coordinates count from here.
     origin: WorldPoint,
     fill: Arc<Mesh>,
@@ -81,6 +83,19 @@ fn world(position: &Position) -> Result<WorldPoint, String> {
         }
         _ => Err(format!("posición inválida: {:?}", position.as_slice())),
     }
+}
+
+fn latlon_points(points: &[LatLon]) -> Result<Vec<WorldPoint>, String> {
+    points
+        .iter()
+        .map(|at| {
+            if at.lat.is_finite() && at.lon.is_finite() {
+                Ok(project(*at))
+            } else {
+                Err(format!("posición inválida: {at:?}"))
+            }
+        })
+        .collect()
 }
 
 fn polygon(rings: &[Vec<Position>]) -> Result<Polygon, String> {
@@ -145,7 +160,7 @@ fn centroid(polygons: &[Polygon]) -> WorldPoint {
 }
 
 impl Shape {
-    fn new(polygons: Vec<Polygon>) -> Self {
+    fn new(polygons: Vec<Polygon>, closed: bool) -> Self {
         let origin = polygons[0][0][0];
         let local = |p: &WorldPoint| Point {
             x: ((p.x - origin.x) * UNITS) as f32,
@@ -163,9 +178,11 @@ impl Shape {
                 .iter()
                 .map(|ring| ring.iter().map(local).collect())
                 .collect();
-            fill.fill(&rings);
+            if closed {
+                fill.fill(&rings);
+            }
             for ring in &rings {
-                outline.stroke(ring, true, style);
+                outline.stroke(ring, closed, style);
             }
         }
         let bounds =
@@ -174,6 +191,7 @@ impl Shape {
         Self {
             centroid: unproject(centroid(&polygons)),
             polygons,
+            closed,
             origin,
             fill: Arc::new(fill.build()),
             outline: Arc::new(outline.build()),
@@ -183,19 +201,20 @@ impl Shape {
 
     /// Even-odd over every ring, so holes stay out.
     fn contains(&self, at: WorldPoint) -> bool {
-        self.polygons.iter().any(|polygon| {
-            let mut inside = false;
-            for ring in polygon {
-                for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
-                    if (a.y > at.y) != (b.y > at.y)
-                        && at.x < a.x + (b.x - a.x) * (at.y - a.y) / (b.y - a.y)
-                    {
-                        inside = !inside;
+        self.closed
+            && self.polygons.iter().any(|polygon| {
+                let mut inside = false;
+                for ring in polygon {
+                    for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                        if (a.y > at.y) != (b.y > at.y)
+                            && at.x < a.x + (b.x - a.x) * (at.y - a.y) / (b.y - a.y)
+                        {
+                            inside = !inside;
+                        }
                     }
                 }
-            }
-            inside
-        })
+                inside
+            })
     }
 }
 
@@ -214,14 +233,40 @@ impl MapLayer {
         if polygons.is_empty() {
             return Err("multipolígono vacío".to_owned());
         }
-        Ok(Self {
+        Ok(Self::from_shape(Shape::new(polygons, true)))
+    }
+
+    /// A polygon with one ring of at least three points, closed or not.
+    pub fn ring(points: &[LatLon]) -> Result<Self, String> {
+        let mut ring = latlon_points(points)?;
+        if ring.len() > 1 && ring.first() == ring.last() {
+            ring.pop();
+        }
+        if ring.len() < 3 {
+            return Err("un anillo necesita al menos tres puntos".to_owned());
+        }
+        Ok(Self::from_shape(Shape::new(vec![vec![ring]], true)))
+    }
+
+    /// An open line through at least two points: an outline only, never
+    /// under the pointer.
+    pub fn line(points: &[LatLon]) -> Result<Self, String> {
+        let line = latlon_points(points)?;
+        if line.len() < 2 {
+            return Err("una línea necesita al menos dos puntos".to_owned());
+        }
+        Ok(Self::from_shape(Shape::new(vec![vec![line]], false)))
+    }
+
+    fn from_shape(shape: Shape) -> Self {
+        Self {
             id: String::new(),
-            shape: Arc::new(Shape::new(polygons)),
+            shape: Arc::new(shape),
             fill: None,
             stroke: None,
             label: None,
             selected: false,
-        })
+        }
     }
 
     /// What [`on_area_click`](crate::element::Element::on_area_click)
@@ -261,6 +306,15 @@ impl MapLayer {
 
     pub fn centroid(&self) -> LatLon {
         self.shape.centroid
+    }
+
+    /// The outer ring of its first polygon (or its line), without
+    /// repeating the first point.
+    pub fn outer_ring(&self) -> Vec<LatLon> {
+        self.shape.polygons[0][0]
+            .iter()
+            .map(|p| unproject(*p))
+            .collect()
     }
 
     pub fn contains(&self, at: LatLon) -> bool {
@@ -462,6 +516,36 @@ mod tests {
             ]],
         });
         assert!(MapLayer::polygon(&thin).is_err());
+    }
+
+    #[test]
+    fn rings_and_lines_build_from_points() {
+        let corners = [
+            LatLon::new(-1.0, -1.0),
+            LatLon::new(-1.0, 1.0),
+            LatLon::new(1.0, 1.0),
+            LatLon::new(1.0, -1.0),
+        ];
+        let ring = MapLayer::ring(&corners).unwrap();
+        assert!(ring.contains(LatLon::new(0.0, 0.0)));
+        for (back, corner) in ring.outer_ring().iter().zip(&corners) {
+            assert!((back.lat - corner.lat).abs() < 1e-9 && (back.lon - corner.lon).abs() < 1e-9);
+        }
+        let closed = [corners.as_slice(), &corners[..1]].concat();
+        assert!(
+            MapLayer::ring(&closed)
+                .unwrap()
+                .contains(LatLon::new(0.5, 0.5))
+        );
+        assert!(MapLayer::ring(&corners[..2]).is_err());
+        assert!(MapLayer::ring(&[corners[0], corners[1], LatLon::new(f64::NAN, 0.0)]).is_err());
+        let line = MapLayer::line(&corners[..2]).unwrap();
+        assert!(
+            !line.contains(LatLon::new(-1.0, 0.0)),
+            "a line has no inside"
+        );
+        assert!(line.shape.fill.is_empty() && !line.shape.outline.is_empty());
+        assert!(MapLayer::line(&corners[..1]).is_err());
     }
 
     #[test]

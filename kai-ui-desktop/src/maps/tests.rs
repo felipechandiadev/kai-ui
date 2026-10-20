@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::camera::{FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
+use super::editor::{PolygonDraft, PolygonEdit};
 use super::labels::{FADE, MapLabel};
 use super::layers::MapLayer;
 use super::mvt::Bucket;
@@ -33,6 +34,7 @@ enum Msg {
     Moved(MapView),
     Go,
     Area(String),
+    Edit(PolygonEdit),
 }
 
 struct Atlas {
@@ -40,6 +42,7 @@ struct Atlas {
     basemap: Option<TileSource>,
     layers: Vec<MapLayer>,
     fit: Option<FitRequest>,
+    draft: Option<PolygonDraft>,
 }
 
 impl Atlas {
@@ -49,6 +52,7 @@ impl Atlas {
             basemap: None,
             layers: Vec::new(),
             fit: None,
+            draft: None,
         }
     }
 }
@@ -92,6 +96,11 @@ impl SimpleApp for Atlas {
             Msg::Moved(view) => self.view = view,
             Msg::Go => self.view = ELSEWHERE,
             Msg::Area(_) => {}
+            Msg::Edit(edit) => {
+                if let Some(draft) = &mut self.draft {
+                    draft.apply(edit);
+                }
+            }
         }
     }
 
@@ -107,6 +116,9 @@ impl SimpleApp for Atlas {
         }
         if let Some(fit) = self.fit {
             atlas = atlas.fit_bounds(fit.bounds, fit.serial);
+        }
+        if let Some(draft) = &self.draft {
+            atlas = atlas.polygon_editor(draft, Color::hex(0xc45c26), Msg::Edit);
         }
         div().class("flex flex-col gap-2 p-4").children([
             atlas
@@ -160,7 +172,7 @@ fn views(app: &TestApp<Atlas>) -> Vec<MapView> {
         .iter()
         .filter_map(|msg| match msg {
             Msg::Moved(view) => Some(*view),
-            Msg::Go | Msg::Area(_) => None,
+            Msg::Go | Msg::Area(_) | Msg::Edit(_) => None,
         })
         .collect()
 }
@@ -529,4 +541,187 @@ fn fit_bounds_glides_to_the_box_once_and_reports_it() {
         dragged,
         "the request stands but is served once"
     );
+}
+
+/// A draft `d` degrees around the plaza: south west, south east, north
+/// east and north west.
+fn draft_around_plaza(d: f64) -> PolygonDraft {
+    PolygonDraft::from_ring([
+        LatLon::new(PLAZA.lat - d, PLAZA.lon - d),
+        LatLon::new(PLAZA.lat - d, PLAZA.lon + d),
+        LatLon::new(PLAZA.lat + d, PLAZA.lon + d),
+        LatLon::new(PLAZA.lat + d, PLAZA.lon - d),
+    ])
+    .unwrap()
+}
+
+fn editing(draft: PolygonDraft) -> TestApp<Atlas> {
+    TestApp::new(Atlas {
+        draft: Some(draft),
+        ..Atlas::at(15.0)
+    })
+}
+
+fn vertex(n: usize) -> By {
+    By::test_id(format!("mapa.vertex.{n}"))
+}
+
+fn center(app: &TestApp<Atlas>, by: By) -> Point {
+    let bounds = app.screen().get(by).bounds();
+    Point {
+        x: bounds.x + bounds.width / 2.0,
+        y: bounds.y + bounds.height / 2.0,
+    }
+}
+
+fn ring(app: &TestApp<Atlas>) -> Vec<LatLon> {
+    app.app().draft.as_ref().unwrap().ring().to_vec()
+}
+
+fn edits(app: &TestApp<Atlas>) -> Vec<PolygonEdit> {
+    app.messages()
+        .iter()
+        .filter_map(|msg| match msg {
+            Msg::Edit(edit) => Some(*edit),
+            _ => None,
+        })
+        .collect()
+}
+
+fn offset(point: Point, dx: f32, dy: f32) -> Point {
+    Point {
+        x: point.x + dx,
+        y: point.y + dy,
+    }
+}
+
+#[test]
+fn dragging_a_vertex_moves_it_and_not_the_map() {
+    let mut app = editing(draft_around_plaza(0.003));
+    let view = app.app().view;
+    let start = ring(&app);
+    for (n, at) in start.iter().enumerate() {
+        assert_near(center(&app, vertex(n)), on_screen(&app, view, *at), 0.5);
+    }
+    let vertex_0 = app.screen().get(vertex(0));
+    assert_eq!(vertex_0.role(), Role::Button);
+    assert_eq!(vertex_0.name().as_deref(), Some("Vértice 1 de 4"));
+
+    app.drag_and_hold(vertex(0), 20.0, 10.0);
+    assert!(
+        views(&app).is_empty(),
+        "the map stays: {:?}",
+        app.messages()
+    );
+    assert_eq!(app.app().view, view);
+    let firsts: Vec<bool> = edits(&app)
+        .iter()
+        .map(|edit| match edit {
+            PolygonEdit::Move {
+                index: 0, first, ..
+            } => *first,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert!(firsts.len() > 1 && firsts[0] && !firsts[1..].contains(&true));
+    let expected = offset(on_screen(&app, view, start[0]), 20.0, 10.0);
+    assert_near(on_screen(&app, view, ring(&app)[0]), expected, 0.5);
+    assert_near(center(&app, vertex(0)), expected, 0.5);
+    assert_eq!(ring(&app)[1..], start[1..]);
+
+    assert!(app.is_focused(vertex(0)));
+    app.press(
+        Key::Char('z'),
+        Modifiers {
+            command: true,
+            ..Modifiers::NONE
+        },
+    );
+    assert_eq!(ring(&app), start, "⌘Z takes the whole drag back");
+}
+
+#[test]
+fn keys_move_remove_and_finish_on_a_focused_vertex() {
+    let mut app = editing(draft_around_plaza(0.003));
+    let view = app.app().view;
+    let start = ring(&app);
+    app.click(vertex(2));
+    assert!(app.is_focused(vertex(2)));
+    assert!(edits(&app).is_empty(), "a click moves nothing");
+
+    app.press(Key::ArrowRight, Modifiers::NONE);
+    app.press(
+        Key::ArrowDown,
+        Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        },
+    );
+    assert_near(
+        on_screen(&app, view, ring(&app)[2]),
+        offset(on_screen(&app, view, start[2]), 1.0, 10.0),
+        0.01,
+    );
+    assert_eq!(
+        app.app().view,
+        view,
+        "the arrows move the vertex, not the map"
+    );
+
+    app.press(Key::Backspace, Modifiers::NONE);
+    assert_eq!(ring(&app), [start[0], start[1], start[3]]);
+    assert!(app.is_focused(vertex(2)), "the focus stays on the slot");
+    app.press(Key::Delete, Modifiers::NONE);
+    assert_eq!(ring(&app).len(), 3, "three is the least");
+
+    app.press(Key::Enter, Modifiers::NONE);
+    assert_eq!(edits(&app).last(), Some(&PolygonEdit::Finish));
+    app.press(Key::Escape, Modifiers::NONE);
+    assert_eq!(edits(&app).last(), Some(&PolygonEdit::Cancel));
+}
+
+#[test]
+fn a_midpoint_adds_a_vertex_and_crossing_edges_turn_red() {
+    let mut app = editing(draft_around_plaza(0.003));
+    let view = app.app().view;
+    let middle = app.app().draft.as_ref().unwrap().midpoint(1);
+    let handle = By::test_id("mapa.midpoint.1");
+    assert_near(
+        center(&app, handle.clone()),
+        on_screen(&app, view, middle),
+        0.5,
+    );
+    assert_eq!(
+        app.screen().get(handle.clone()).name().as_deref(),
+        Some("Agregar vértice entre 2 y 3")
+    );
+    app.click(handle);
+    assert_eq!(ring(&app).len(), 5);
+    assert_eq!(ring(&app)[2], middle);
+    assert_eq!(
+        app.screen().get(vertex(4)).name().as_deref(),
+        Some("Vértice 5 de 5")
+    );
+
+    let map_layers = |app: &TestApp<Atlas>| {
+        let id = app.screen().get(mapa()).id();
+        match &app.session().layout().node(id).unwrap().content {
+            Content::Map(spec) => spec.layers.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(map_layers(&app).len(), 1, "the draft");
+    let square = draft_around_plaza(0.003);
+    let corners = square.ring();
+    let bow_tie =
+        PolygonDraft::from_ring([corners[0], corners[2], corners[1], corners[3]]).unwrap();
+    let crossed = editing(bow_tie);
+    let layers = map_layers(&crossed);
+    assert_eq!(layers.len(), 3, "the draft and the two edges that cross");
+    for edge in &layers[1..] {
+        assert_eq!(
+            edge.stroke.map(|(color, _)| color),
+            Some(Color::hex(0xd64545))
+        );
+    }
 }

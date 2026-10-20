@@ -17,6 +17,7 @@
 //! single `on_view_change`. A new view from the app glides there.
 
 pub mod camera;
+pub mod editor;
 pub mod labels;
 pub mod layers;
 pub mod mvt;

@@ -29,6 +29,7 @@ use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image,
 use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
+use crate::maps::editor::{PolygonDraft, PolygonEdit, crossing};
 use crate::maps::layers::{MapLayer, polygons};
 use crate::maps::style::MapStyle;
 use crate::maps::tiles::TileSource;
@@ -104,11 +105,15 @@ struct Demo {
     /// Mapa: what it shows, and whether a new view glides there.
     vista: MapView,
     animar_vista: bool,
-    /// Mapa: the DSP sectors are drawn, the code of the one selected and
-    /// the last request to frame a box (with its serial).
+    /// Mapa: the DSP sectors (their outlines change when edited), whether
+    /// they are drawn, the code of the one selected and the last request
+    /// to frame a box (with its serial).
+    sectores: Vec<Sector>,
     mostrar_areas: bool,
     area: Option<String>,
     encuadre: Option<(LatLonBounds, u64)>,
+    /// Mapa: the sector being edited and its draft.
+    edicion: Option<(String, PolygonDraft)>,
 }
 
 impl Default for Demo {
@@ -157,9 +162,11 @@ impl Default for Demo {
             next_toast: 1,
             vista: VISTA_INICIAL,
             animar_vista: true,
+            sectores: SECTORES.clone(),
             mostrar_areas: true,
             area: None,
             encuadre: None,
+            edicion: None,
         }
     }
 }
@@ -175,7 +182,7 @@ const DSP_AREAS: &str = include_str!("../assets/maps/dsp-areas.geojson");
 const MARGEN_SECTOR: f64 = 0.2;
 
 /// An area of operation of DSP.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Sector {
     code: String,
     nombre: String,
@@ -184,6 +191,19 @@ struct Sector {
 }
 
 impl Sector {
+    /// Its outline, without repeating the first vertex.
+    fn anillo(&self) -> Vec<LatLon> {
+        self.capa.outer_ring()
+    }
+
+    /// Take `anillo` as its new outline; a ring a layer cannot be made
+    /// of leaves it as it was.
+    fn con_anillo(&mut self, anillo: &[LatLon]) {
+        if let Ok(capa) = MapLayer::ring(anillo) {
+            self.capa = capa;
+        }
+    }
+
     /// The color of its type, as in DSP's `operation_area_types`.
     fn color(&self) -> Color {
         match self.tipo.as_str() {
@@ -220,8 +240,14 @@ static SECTORES: LazyLock<Vec<Sector>> = LazyLock::new(|| {
         .collect()
 });
 
-fn sector(code: &str) -> Option<&'static Sector> {
+/// The sector `code` as the seed draws it.
+fn sector_inicial(code: &str) -> Option<&'static Sector> {
     SECTORES.iter().find(|sector| sector.code == code)
+}
+
+/// Area in hectares with a decimal comma.
+fn hectareas(area: f64) -> String {
+    format!("{area:.1} ha").replace('.', ",")
 }
 
 /// Largest file the image fields take, in megabytes.
@@ -614,6 +640,16 @@ enum Msg {
     /// Moves the map to show all of the box.
     Encuadrar(LatLonBounds),
     ToggleAreas,
+    /// Starts editing the outline of the sector with this code.
+    EditarArea(String),
+    /// A change to the draft of the sector being edited (`Finish` keeps
+    /// it if valid, `Cancel` drops it).
+    Edicion(PolygonEdit),
+    /// Replaces the outline of a sector (an agent's edit, already valid).
+    GuardarGeometria {
+        code: String,
+        anillo: Vec<LatLon>,
+    },
 }
 
 impl Demo {
@@ -654,6 +690,44 @@ impl Demo {
         let serial = self.encuadre.map_or(1, |(_, serial)| serial + 1);
         self.encuadre = Some((bounds, serial));
         self.animar_vista = true;
+    }
+
+    fn sector(&self, code: &str) -> Option<&Sector> {
+        self.sectores.iter().find(|sector| sector.code == code)
+    }
+
+    /// Select sector `code`, show the sectors and frame it with a margin.
+    fn seleccionar(&mut self, code: &str) {
+        let Some(bounds) = self.sector(code).map(|s| s.capa.bounds()) else {
+            return;
+        };
+        self.area = Some(code.to_owned());
+        self.mostrar_areas = true;
+        self.encuadrar(bounds.padded(MARGEN_SECTOR));
+    }
+
+    /// Give sector `code` the outline `anillo`.
+    fn guardar_anillo(&mut self, code: &str, anillo: &[LatLon]) {
+        if let Some(sector) = self.sectores.iter_mut().find(|s| s.code == code) {
+            sector.con_anillo(anillo);
+        }
+    }
+
+    fn editar(&mut self, edit: PolygonEdit) {
+        let Some((code, draft)) = &mut self.edicion else {
+            return;
+        };
+        match edit {
+            PolygonEdit::Finish if draft.is_valid() => {
+                let (code, anillo) = (code.clone(), draft.ring().to_vec());
+                self.edicion = None;
+                self.guardar_anillo(&code, &anillo);
+            }
+            PolygonEdit::Cancel => self.edicion = None,
+            edit => {
+                draft.apply(edit);
+            }
+        }
     }
 }
 
@@ -909,10 +983,79 @@ impl Action for SeleccionarArea {
     const TITLE: &'static str = "Seleccionar sector";
     fn description() -> &'static str {
         "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % \
-         de margen; un código desconocido no cambia nada"
+         de margen; un código desconocido, o un sector en edición, no cambia nada"
     }
     fn into_msg(self) -> Msg {
         Msg::SeleccionarArea(self.code)
+    }
+}
+
+/// The outline an agent proposes for a sector, before it is checked.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GeometriaPropuesta {
+    #[schemars(description = "Código del sector, como en areas.seleccionar")]
+    code: String,
+    #[schemars(
+        description = "Anillo exterior del polígono como en GeoJSON: [longitud, latitud] por \
+                       vértice, al menos 3, sin bordes que se crucen; el primero puede repetirse \
+                       al final"
+    )]
+    coordinates: Vec<[f64; 2]>,
+}
+
+/// Replaces the outline of a DSP sector of «Mapa»; the input is checked
+/// as it is read, so an invalid one is an input error.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(try_from = "GeometriaPropuesta")]
+struct EditarGeometria {
+    code: String,
+    anillo: Vec<LatLon>,
+}
+
+impl TryFrom<GeometriaPropuesta> for EditarGeometria {
+    type Error = String;
+
+    fn try_from(propuesta: GeometriaPropuesta) -> Result<Self, String> {
+        if sector_inicial(&propuesta.code).is_none() {
+            return Err(format!("no hay un sector {}", propuesta.code));
+        }
+        let draft = PolygonDraft::from_ring(
+            propuesta
+                .coordinates
+                .iter()
+                .map(|[lon, lat]| LatLon::new(*lat, *lon)),
+        )?;
+        if let Some(bad) = draft
+            .ring()
+            .iter()
+            .find(|at| at.lat.abs() > 90.0 || at.lon.abs() > 180.0)
+        {
+            return Err(format!("[{}, {}] está fuera del mundo", bad.lon, bad.lat));
+        }
+        if let Some((a, b)) = crossing(draft.ring()) {
+            return Err(format!("los bordes {} y {} se cruzan", a + 1, b + 1));
+        }
+        Ok(Self {
+            code: propuesta.code,
+            anillo: draft.ring().to_vec(),
+        })
+    }
+}
+
+impl Action for EditarGeometria {
+    type App = Demo;
+    const ID: &'static str = "areas.editar_geometria";
+    const TITLE: &'static str = "Editar la geometría de un sector";
+    fn description() -> &'static str {
+        "Reemplaza el polígono de un sector de DSP en el mapa de la sección Mapa, lo selecciona y \
+         lo encuadra; una geometría inválida es un error y no cambia nada"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::GuardarGeometria {
+            code: self.code,
+            anillo: self.anillo,
+        }
     }
 }
 
@@ -981,6 +1124,7 @@ impl App for Demo {
         registry.action::<FijarVista>().expose();
         registry.action::<Encuadrar>().expose();
         registry.action::<SeleccionarArea>().expose();
+        registry.action::<EditarGeometria>().expose();
         registry.query::<VistaDelMapa>().expose();
     }
 
@@ -1119,14 +1263,35 @@ impl App for Demo {
                 self.animar_vista = animar;
             }
             Msg::SeleccionarArea(code) => {
-                if let Some(sector) = sector(&code) {
-                    self.area = Some(code);
-                    self.mostrar_areas = true;
-                    self.encuadrar(sector.capa.bounds().padded(MARGEN_SECTOR));
+                if self.edicion.is_none() {
+                    self.seleccionar(&code);
                 }
             }
             Msg::Encuadrar(bounds) => self.encuadrar(bounds),
             Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
+            Msg::EditarArea(code) => {
+                if self.edicion.is_none()
+                    && let Some(anillo) = self.sector(&code).map(Sector::anillo)
+                    && let Ok(draft) = PolygonDraft::from_ring(anillo)
+                {
+                    self.seleccionar(&code);
+                    self.edicion = Some((code, draft));
+                }
+            }
+            Msg::Edicion(edit) => self.editar(edit),
+            Msg::GuardarGeometria { code, anillo } => {
+                if self
+                    .edicion
+                    .as_ref()
+                    .is_some_and(|(editing, _)| *editing == code)
+                {
+                    self.edicion = None;
+                }
+                self.guardar_anillo(&code, &anillo);
+                if self.edicion.is_none() {
+                    self.seleccionar(&code);
+                }
+            }
         }
         Effects::none()
     }
@@ -1974,9 +2139,11 @@ impl Demo {
     fn mapa(&self) -> Element<Msg> {
         let vista = self.vista;
         let seleccionada = self.area.as_deref();
-        let capas = SECTORES
+        let editando = self.edicion.as_ref().map(|(code, _)| code.as_str());
+        let capas = self
+            .sectores
             .iter()
-            .filter(|_| self.mostrar_areas)
+            .filter(|sector| self.mostrar_areas && editando != Some(sector.code.as_str()))
             .map(|sector| {
                 let color = sector.color();
                 sector
@@ -1992,8 +2159,17 @@ impl Demo {
             .basemap(TileSource::pmtiles(PARRAL_PMTILES, MapStyle::protomaps()))
             .layers(capas)
             .animate_view(self.animar_vista)
-            .on_view_change(Msg::MapaMovido)
-            .on_area_click(Msg::SeleccionarArea)
+            .on_view_change(Msg::MapaMovido);
+        mapa = match &self.edicion {
+            Some((code, draft)) => {
+                let color = self
+                    .sector(code)
+                    .map_or(Color::hex(0xc45c26), Sector::color);
+                mapa.polygon_editor(draft, color, Msg::Edicion)
+            }
+            None => mapa.on_area_click(Msg::SeleccionarArea),
+        };
+        let mut mapa = mapa
             .label("Mapa de Parral")
             .test_id("mapa.vista")
             .class("flex-1 min-w-0 h-96 border border-border")
@@ -2011,7 +2187,7 @@ impl Demo {
             .label("Sectores")
             .test_id("mapa.sectores")
             .class("flex flex-col gap-1 w-44")
-            .children(SECTORES.iter().map(|sector| {
+            .children(self.sectores.iter().map(|sector| {
                 let elegido = seleccionada == Some(sector.code.as_str());
                 div()
                     .role(Role::Button)
@@ -2032,20 +2208,65 @@ impl Demo {
                         text(&sector.nombre),
                     ])
             }));
-        let estado = match self.area.as_deref().and_then(sector) {
-            Some(sector) => format!("Sector {} · {}", sector.nombre, sector.code),
-            None => "Elige un sector en la lista o en el mapa".to_owned(),
+        let estado = match (
+            &self.edicion,
+            self.area.as_deref().and_then(|c| self.sector(c)),
+        ) {
+            (Some(_), Some(sector)) => format!(
+                "Editando {}: arrastra los vértices, haz clic entre dos para agregar uno; \
+                 Supr borra el vértice elegido y ⌘Z deshace",
+                sector.nombre
+            ),
+            (None, Some(sector)) => format!(
+                "Sector {} · {} · {}",
+                sector.nombre,
+                sector.code,
+                hectareas(crate::maps::editor::area_m2(&sector.anillo()) / 10_000.0)
+            ),
+            _ => "Elige un sector en la lista o en el mapa".to_owned(),
         };
+        let edicion = self.edicion.as_ref().map(|(_, draft)| {
+            let cruza = draft.crossing().is_some();
+            div()
+                .class("flex items-center gap-3")
+                .test_id("mapa.edicion")
+                .children([
+                    caption(format!("Superficie {}", hectareas(draft.area_ha())))
+                        .role(Role::Status)
+                        .test_id("mapa.superficie"),
+                    if cruza {
+                        caption("Los bordes se cruzan")
+                            .class("text-error")
+                            .role(Role::Alert)
+                            .test_id("mapa.cruce")
+                    } else {
+                        div()
+                    },
+                    div().class("flex-1"),
+                    button("Cancelar", ButtonVariant::Outlined)
+                        .on_click(Msg::Edicion(PolygonEdit::Cancel))
+                        .test_id("mapa.cancelar"),
+                    button("Terminar", ButtonVariant::Primary)
+                        .on_click(Msg::Edicion(PolygonEdit::Finish))
+                        .disabled(!draft.is_valid())
+                        .test_id("mapa.terminar"),
+                ])
+        });
+        let editar = button("Editar sector", ButtonVariant::Outlined)
+            .on_click(Msg::EditarArea(self.area.clone().unwrap_or_default()))
+            .disabled(self.area.is_none() || self.edicion.is_some())
+            .test_id("mapa.editar");
         card().class("w-full max-w-3xl").test_id("mapa").children([
             card_header(
                 "Parral",
                 Some("Arrastra, usa la rueda o pellizca; doble clic acerca y ⇧ doble clic aleja"),
             ),
-            card_content().class("gap-3").children([
-                div().class("flex gap-3").children([
+            card_content().class("gap-3").children(
+                [div().class("flex gap-3").children([
                     mapa,
                     div().class("flex flex-col gap-3 w-44").children([
                         lista,
+                        editar,
                         switch_labeled(
                             "Sectores",
                             self.mostrar_areas,
@@ -2055,25 +2276,29 @@ impl Demo {
                         )
                         .test_id("mapa.mostrar_sectores"),
                     ]),
+                ])]
+                .into_iter()
+                .chain(edicion)
+                .chain([
+                    caption(estado).test_id("mapa.sector"),
+                    div()
+                        .class("flex items-center justify-between gap-3")
+                        .children([
+                            caption(format!(
+                                "{:.4}, {:.4} · zoom {:.1}",
+                                vista.center.lat, vista.center.lon, vista.zoom
+                            ))
+                            .role(Role::Status)
+                            .test_id("mapa.posicion"),
+                            button("Volver a la plaza", ButtonVariant::Outlined)
+                                .on_click(Msg::FijarVista {
+                                    vista: VISTA_INICIAL,
+                                    animar: true,
+                                })
+                                .test_id("mapa.volver"),
+                        ]),
                 ]),
-                caption(estado).test_id("mapa.sector"),
-                div()
-                    .class("flex items-center justify-between gap-3")
-                    .children([
-                        caption(format!(
-                            "{:.4}, {:.4} · zoom {:.1}",
-                            vista.center.lat, vista.center.lon, vista.zoom
-                        ))
-                        .role(Role::Status)
-                        .test_id("mapa.posicion"),
-                        button("Volver a la plaza", ButtonVariant::Outlined)
-                            .on_click(Msg::FijarVista {
-                                vista: VISTA_INICIAL,
-                                animar: true,
-                            })
-                            .test_id("mapa.volver"),
-                    ]),
-            ]),
+            ),
         ])
     }
 
@@ -2437,7 +2662,7 @@ mod tests {
 
     use super::{
         Campo, CargarUrl, Dialogo, ImageSource, LatLon, LatLonBounds, MapView, PLAZA_DE_ARMAS,
-        SECTORES, SortDirection, VISTA_INICIAL, VarianteAviso, sector,
+        SECTORES, SortDirection, VISTA_INICIAL, VarianteAviso, sector_inicial,
     };
 
     use cosmic_text::{
@@ -3234,7 +3459,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 11] = [
+        const SOURCES: [&str; 12] = [
             include_str!("components.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
@@ -3246,12 +3471,15 @@ mod tests {
             include_str!("components/toolbar.rs"),
             include_str!("maps/mod.rs"),
             include_str!("maps/layers.rs"),
+            include_str!("maps/editor.rs"),
         ];
-        const NOT_WIDGETS: [&str; 17] = [
+        const NOT_WIDGETS: [&str; 19] = [
             "MapSpec",
             "Marker",
             "FitRequest",
             "paint",
+            "crossing",
+            "area_m2",
             "validate_image_file",
             "themed",
             "appkit_button_classes",
@@ -3489,6 +3717,10 @@ mod tests {
             );
             covered.extend(names.iter().copied());
         }
+        let mut editor = TestApp::new(Demo::at(Mapa));
+        editar_catillo(&mut editor);
+        assert!(!editor.screen().all(vertice(0)).is_empty());
+        covered.insert("PolygonDraft");
 
         let public: BTreeSet<&str> = SOURCES
             .iter()
@@ -3941,6 +4173,7 @@ mod tests {
                 "mapa.set_view",
                 "mapa.fit_bounds",
                 "areas.seleccionar",
+                "areas.editar_geometria",
                 "mapa.get_view",
                 "kai.paleta",
             ]
@@ -4465,6 +4698,7 @@ mod tests {
                 "mapa.set_view",
                 "mapa.fit_bounds",
                 "areas.seleccionar",
+                "areas.editar_geometria",
                 "mapa.get_view",
             ]
         );
@@ -4643,7 +4877,7 @@ mod tests {
             ]
         );
 
-        let catillo = sector("AOP26000002").unwrap();
+        let catillo = sector_inicial("AOP26000002").unwrap();
         app.click(By::test_id("mapa.sector.AOP26000002"));
         assert_eq!(app.app().area.as_deref(), Some("AOP26000002"));
         assert!(app.session().animating(), "it glides to the sector");
@@ -4653,7 +4887,8 @@ mod tests {
         let centro = catillo.capa.centroid();
         assert!((vista.center.lat - centro.lat).abs() < 1e-3, "{vista:?}");
         assert!((vista.center.lon - centro.lon).abs() < 1e-3, "{vista:?}");
-        app.screen().get(By::text("Sector Catillo · AOP26000002"));
+        app.screen()
+            .get(By::text("Sector Catillo · AOP26000002 · 191,7 ha"));
         assert_eq!(
             app.screen()
                 .get_by_test_id("mapa.sector.AOP26000002")
@@ -4672,7 +4907,7 @@ mod tests {
             Ok(json!(null))
         );
         app.advance(Duration::from_secs(1));
-        let terminal = sector("AOP26000005").unwrap().capa.centroid();
+        let terminal = sector_inicial("AOP26000005").unwrap().capa.centroid();
         let punto = on_map(&app, terminal);
         app.move_pointer(punto);
         assert_eq!(app.mouse_cursor(), Cursor::Pointer);
@@ -4700,6 +4935,203 @@ mod tests {
         let plaza = on_map(&app, PLAZA_DE_ARMAS);
         app.move_pointer(plaza);
         assert_eq!(app.mouse_cursor(), Cursor::Default, "no sectors drawn");
+    }
+
+    const CATILLO: &str = "AOP26000002";
+
+    fn anillo(app: &TestApp<Demo>, code: &str) -> Vec<LatLon> {
+        app.app().sector(code).unwrap().anillo()
+    }
+
+    fn borrador(app: &TestApp<Demo>) -> Vec<LatLon> {
+        app.app().edicion.as_ref().unwrap().1.ring().to_vec()
+    }
+
+    #[track_caller]
+    fn assert_same_ring(actual: &[LatLon], expected: &[LatLon]) {
+        assert_eq!(actual.len(), expected.len(), "{actual:?} vs {expected:?}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!(
+                (a.lat - e.lat).abs() < 1e-9 && (a.lon - e.lon).abs() < 1e-9,
+                "{actual:?} vs {expected:?}"
+            );
+        }
+    }
+
+    /// Select Catillo, press «Editar sector» and let the map frame it.
+    fn editar_catillo(app: &mut TestApp<Demo>) {
+        app.click(By::test_id(format!("mapa.sector.{CATILLO}")));
+        app.click(By::test_id("mapa.editar"));
+        app.advance(Duration::from_secs(1));
+        assert!(app.app().edicion.is_some(), "{:?}", app.messages().last());
+    }
+
+    fn vertice(n: usize) -> By {
+        By::test_id(format!("mapa.vista.vertex.{n}"))
+    }
+
+    #[test]
+    fn a_sector_is_edited_on_the_map_and_kept_only_on_finish() {
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let editar = By::test_id("mapa.editar");
+        assert!(
+            app.screen().get(editar.clone()).node().disabled,
+            "nothing selected"
+        );
+        editar_catillo(&mut app);
+        assert!(app.screen().get(editar.clone()).node().disabled, "editing");
+        let antes = anillo(&app, CATILLO);
+        let vista = app.app().vista;
+        for (n, at) in antes.iter().enumerate() {
+            let handle = app.screen().get(vertice(n)).bounds();
+            let punto = on_map(&app, *at);
+            assert!(
+                (handle.x + handle.width / 2.0 - punto.x).abs() < 0.5
+                    && (handle.y + handle.height / 2.0 - punto.y).abs() < 0.5,
+                "vertex {n}: {handle:?} vs {punto:?}"
+            );
+        }
+        let superficie = |app: &TestApp<Demo>| {
+            app.screen()
+                .get_by_test_id("mapa.superficie")
+                .name()
+                .unwrap()
+        };
+        assert_eq!(superficie(&app), "Superficie 191,7 ha");
+
+        app.drag_and_hold(vertice(0), -30.0, 20.0);
+        assert_eq!(app.app().vista, vista, "the map stays put");
+        let movido = borrador(&app);
+        assert_ne!(movido[0], antes[0]);
+        assert_eq!(movido[1..], antes[1..]);
+        assert_eq!(
+            anillo(&app, CATILLO),
+            antes,
+            "the sector waits for «Terminar»"
+        );
+        assert_ne!(superficie(&app), "Superficie 191,7 ha");
+
+        app.click(By::test_id("mapa.sector.AOP26000001"));
+        assert_eq!(
+            app.app().area.as_deref(),
+            Some(CATILLO),
+            "no switching mid-edit"
+        );
+
+        app.click(By::test_id("mapa.vista.midpoint.0"));
+        assert_eq!(borrador(&app).len(), 5);
+        app.click(By::test_id("mapa.terminar"));
+        assert!(app.app().edicion.is_none());
+        let guardado = anillo(&app, CATILLO);
+        assert_eq!(guardado.len(), 5);
+        assert_same_ring(&[guardado[0]], &[movido[0]]);
+        assert!(!app.screen().get(editar.clone()).node().disabled);
+
+        editar_catillo(&mut app);
+        app.drag_and_hold(vertice(1), 15.0, 0.0);
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.app().edicion.is_none(), "Esc cancels");
+        assert_same_ring(&anillo(&app, CATILLO), &guardado);
+
+        editar_catillo(&mut app);
+        app.drag_and_hold(vertice(1), 15.0, 0.0);
+        app.press(
+            Key::Char('z'),
+            Modifiers {
+                command: true,
+                ..Modifiers::NONE
+            },
+        );
+        assert_same_ring(&borrador(&app), &guardado);
+        app.click(By::test_id("mapa.cancelar"));
+        assert!(app.app().edicion.is_none());
+        assert_same_ring(&anillo(&app, CATILLO), &guardado);
+    }
+
+    #[test]
+    fn crossing_edges_block_finish_until_fixed() {
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        editar_catillo(&mut app);
+        let antes = anillo(&app, CATILLO);
+        let terminar = By::test_id("mapa.terminar");
+        assert!(!app.screen().get(terminar.clone()).node().disabled);
+        assert!(app.screen().all(By::test_id("mapa.cruce")).is_empty());
+
+        let (sur_oeste, sur_este, nor_este) = (
+            on_map(&app, antes[0]),
+            on_map(&app, antes[1]),
+            on_map(&app, antes[2]),
+        );
+        let al_este = (
+            sur_este.x - sur_oeste.x + 30.0,
+            (nor_este.y - sur_oeste.y) / 2.0,
+        );
+        app.drag_and_hold(vertice(0), al_este.0, al_este.1);
+        assert!(borrador(&app)[0] != antes[0]);
+        assert!(app.screen().get(terminar.clone()).node().disabled);
+        assert_eq!(
+            app.screen().get_by_test_id("mapa.cruce").name().as_deref(),
+            Some("Los bordes se cruzan")
+        );
+        app.press(Key::Enter, Modifiers::NONE);
+        assert!(
+            app.app().edicion.is_some(),
+            "Return does not take a crossed draft"
+        );
+
+        app.press(
+            Key::Char('z'),
+            Modifiers {
+                command: true,
+                ..Modifiers::NONE
+            },
+        );
+        assert!(!app.screen().get(terminar).node().disabled);
+        app.press(Key::Enter, Modifiers::NONE);
+        assert!(app.app().edicion.is_none(), "Return finishes from a vertex");
+        assert_same_ring(&anillo(&app, CATILLO), &antes);
+    }
+
+    #[test]
+    fn agents_replace_a_sector_outline_with_a_valid_ring() {
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let antes = anillo(&app, CATILLO);
+        let error = |result: Result<serde_json::Value, CommandError>| {
+            result.expect_err("debería fallar").message
+        };
+        let bow_tie = json!({
+            "code": CATILLO,
+            "coordinates": [[-71.84, -36.15], [-71.82, -36.13], [-71.82, -36.15], [-71.84, -36.13]],
+        });
+        let message = error(app.call("areas.editar_geometria", bow_tie));
+        assert!(message.contains("se cruzan"), "{message}");
+        let unknown = json!({
+            "code": "AOP99",
+            "coordinates": [[-71.84, -36.15], [-71.82, -36.15], [-71.82, -36.13]],
+        });
+        let message = error(app.call("areas.editar_geometria", unknown));
+        assert!(message.contains("AOP99"), "{message}");
+        let short = json!({ "code": CATILLO, "coordinates": [[-71.84, -36.15], [-71.82, -36.15]] });
+        assert!(error(app.call("areas.editar_geometria", short)).contains("al menos 3"));
+        assert_eq!(anillo(&app, CATILLO), antes, "nothing changed");
+
+        let triangle = json!({
+            "code": CATILLO,
+            "coordinates": [[-71.84, -36.15], [-71.82, -36.15], [-71.83, -36.13], [-71.84, -36.15]],
+        });
+        assert_eq!(
+            app.call("areas.editar_geometria", triangle),
+            Ok(json!(null))
+        );
+        assert_same_ring(
+            &anillo(&app, CATILLO),
+            &[
+                LatLon::new(-36.15, -71.84),
+                LatLon::new(-36.15, -71.82),
+                LatLon::new(-36.13, -71.83),
+            ],
+        );
+        assert_eq!(app.app().area.as_deref(), Some(CATILLO), "and selects it");
     }
 
     fn agent(client: &str) -> Origin {
@@ -6011,6 +6443,24 @@ mod tests {
             out,
             "demo-mapa-seleccion",
             seleccion.app(),
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
+        );
+
+        // Catillo being edited, its north east corner pulled out.
+        let mut edicion = TestApp::builder(Demo::at(Seccion::Mapa))
+            .viewport(wide.width, wide.height)
+            .build();
+        edicion.click(By::test_id("mapa.sector.AOP26000002"));
+        edicion.click(By::test_id("mapa.editar"));
+        edicion.advance(Duration::from_secs(1));
+        edicion.drag_and_hold(By::test_id("mapa.vista.vertex.2"), 40.0, -30.0);
+        snapshot(
+            out,
+            "demo-mapa-edicion",
+            edicion.app(),
             wide,
             2.0,
             &Interaction::default(),

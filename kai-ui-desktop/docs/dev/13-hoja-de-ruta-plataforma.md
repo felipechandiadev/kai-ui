@@ -826,6 +826,7 @@ Reglas de la pista C:
 - **Diseño**: [10](10-mapas.md) §4.8. Modos Punto · Línea · Área; vértices como elementos Kai con foco y teclado; validación de polígonos sin autointersección; área visible al dibujar; un solo `Msg` con la geometría resultante al confirmar.
 - **Tests**: dibujar un polígono con clics y confirmarlo con Retorno; mover un vértice con el teclado; rechazar un polígono que se cruza; Esc cancela sin emitir `Msg`.
 - **Hecho cuando**: el editor de áreas y el selector de ubicación de incidencias de DSP desktop cubren lo que hacen `OperationAreasMap.tsx` y `LocationGeometryMap.tsx`.
+- **Estado: parcial (modo Área sobre polígonos existentes).** Hecho `polygon_editor` (`src/maps/editor.rs`), con el borrador `PolygonDraft` en el modelo de la app. Permite mover, insertar y borrar vértices con el mouse y el teclado, deshacer por gesto, marcar en rojo los bordes que se cruzan y mostrar el área en ha. Terminar emite un solo `Msg` y Cancelar o Esc descartan el borrador. La sección Mapa de la demo edita los sectores con Terminar y Cancelar. Pendientes los modos Punto y Línea, dibujar desde cero y el selector de ubicación. Detalle en [10](10-mapas.md) §4.8 y §5, M1b.
 
 #### Paso 15d — Comandos de mapa (mapas M2)
 
@@ -833,7 +834,7 @@ Reglas de la pista C:
 - **Depende de**: Pasos 9, 12–13 y 15c.
 - **Diseño**: [10](10-mapas.md) §4.6, con la separación consulta/acción de §7.2: `mapa.get_view` y `mapa.screen_to_latlon` son consultas; `mapa.set_view` y `mapa.fit_bounds` son acciones de UI; las acciones de dominio (`areas.editar_geometria`, `incidencias.set_ubicacion`) son de la app y validan la geometría de entrada.
 - **Hecho cuando**: `TestApp::invoke(SetView { .. })` mueve la cámara y un cliente MCP llama `incidencias.set_ubicacion` con un punto y la UI lo refleja.
-- **Estado: empezado.** La demo expone `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds` y `areas.seleccionar`, con tests por `TestApp::invoke`. Faltan `mapa.screen_to_latlon` y las acciones de dominio con geometría.
+- **Estado: empezado.** La demo expone `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria { code, coordinates }`, con tests por `TestApp::invoke`. La última valida la geometría al deserializar y devuelve un error de herramienta si es inválida. Faltan `mapa.screen_to_latlon` e `incidencias.set_ubicacion`.
 
 #### Paso 16 — Persistencia
 
@@ -1131,7 +1132,7 @@ Reglas de la pista C:
 - [ ] P14b Primitivas de renderer: imágenes, geometría, transformaciones, clip redondeado (mapas M0). Hecho salvo el clip redondeado.
 - [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`.
 - [ ] P15b Mapa raster con capas de áreas y atribución (mapas M1). Parcial: mapa vectorial con áreas de DSP, sin raster.
-- [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b).
+- [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b). Parcial: edición de polígonos existentes (`polygon_editor`).
 - [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2).
 - [ ] P16 `Store` con migración y guardado atómico.
 

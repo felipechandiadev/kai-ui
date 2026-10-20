@@ -19,6 +19,7 @@ use std::rc::Rc;
 
 use crate::geo::MapView;
 use crate::icons::Icon;
+use crate::maps::editor::PolygonEdit;
 use crate::maps::{MapControl, MapSpec, Marker};
 use crate::media::{ImageSource, LoadedImage};
 use crate::responder::Action;
@@ -298,6 +299,9 @@ pub struct Handlers<Msg> {
     pub on_view_change: Option<Rc<dyn Fn(MapView) -> Msg>>,
     /// Map: the id of the layer clicked ([`Element::on_area_click`]).
     pub on_area_click: Option<Rc<dyn Fn(String) -> Msg>>,
+    /// Map with a polygon editor: an edit of its draft
+    /// ([`Element::polygon_editor`]).
+    pub on_edit: Option<Rc<dyn Fn(PolygonEdit) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -311,6 +315,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_drop_files: None,
             on_view_change: None,
             on_area_click: None,
+            on_edit: None,
         }
     }
 }
@@ -326,6 +331,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_drop_files: self.on_drop_files.clone(),
             on_view_change: self.on_view_change.clone(),
             on_area_click: self.on_area_click.clone(),
+            on_edit: self.on_edit.clone(),
         }
     }
 }
@@ -341,6 +347,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_drop_files", &self.on_drop_files.is_some())
             .field("on_view_change", &self.on_view_change.is_some())
             .field("on_area_click", &self.on_area_click.is_some())
+            .field("on_edit", &self.on_edit.is_some())
             .finish()
     }
 }
@@ -444,6 +451,9 @@ pub struct Element<Msg> {
     pub marker: Option<Marker>,
     /// A map's zoom button, which the session handles.
     pub map_control: Option<MapControl>,
+    /// Vertex `n` of the map's polygon editor, which the session drags
+    /// and moves with the keyboard.
+    pub map_vertex: Option<usize>,
 }
 
 pub fn div<Msg>() -> Element<Msg> {
@@ -516,6 +526,7 @@ impl<Msg> Element<Msg> {
             command: None,
             marker: None,
             map_control: None,
+            map_vertex: None,
         }
     }
 
@@ -1036,7 +1047,8 @@ impl<Msg> Element<Msg> {
             _ if self.handlers.on_click.is_some()
                 || self.handlers.on_select.is_some()
                 || self.command.is_some()
-                || self.map_control.is_some() =>
+                || self.map_control.is_some()
+                || self.map_vertex.is_some() =>
             {
                 Some(FocusKind::Button)
             }
@@ -1060,6 +1072,7 @@ impl<Msg> Element<Msg> {
             || self.handlers.on_select.is_some()
             || self.command.is_some()
             || self.map_control.is_some()
+            || self.map_vertex.is_some()
     }
 
     /// Concatenated text of the subtree, used as default accessible name.
@@ -1096,6 +1109,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_drop_files.is_some()
                 || h.on_view_change.is_some()
                 || h.on_area_click.is_some()
+                || h.on_edit.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

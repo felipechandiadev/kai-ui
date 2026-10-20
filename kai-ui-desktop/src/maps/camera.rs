@@ -174,6 +174,12 @@ impl CameraState {
         });
     }
 
+    /// Stop gliding or zooming where it is (the view is reported as
+    /// usual).
+    pub fn halt(&mut self) {
+        self.motion = None;
+    }
+
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
     }

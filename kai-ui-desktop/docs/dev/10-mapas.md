@@ -2,7 +2,7 @@
 
 **Fase:** pista C de la hoja de ruta [13](13-hoja-de-ruta-plataforma.md) (§8.1): M0 es el Paso 14b, M1 el 15b, M1b el 15c, M2 el 15d, M3 va en la Etapa 7 y M4 con los Pasos 16 y 27. Depende de primitivas de renderer pendientes en [04](04-renderer-y-texto.md) (imágenes, transformaciones, clip redondeado), de la etapa de identificación y pruebas de 13 y, para la automatización, del registro de comandos (13, Pasos 7–9) y MCP (13, Pasos 12–13). La app guía es **DSP desktop** (sección 1.1). Esta guía evalúa cómo dibujar mapas interactivos (pan/zoom, marcadores, polilíneas/polígonos, popups) **dentro del árbol Kai**, con buen rendimiento, preferiblemente teselas vectoriales, capacidad offline y licencias permisivas.
 
-> **El código de las secciones 4.2–4.8 es API propuesta.** Lo construido (módulo `kai::maps`: `map`, `marker`, `MapLayer`, cámara, teselas vectoriales, estilo y etiquetas) se resume con su archivo en el estado de cada hito (sección 5); la API real difiere de la propuesta donde se indica.
+> **El código de las secciones 4.2–4.8 es API propuesta**, salvo la «API real» al final de 4.8. Lo construido (módulo `kai::maps`: `map`, `marker`, `MapLayer`, cámara, teselas vectoriales, estilo y etiquetas) se resume con su archivo en el estado de cada hito (sección 5); la API real difiere de la propuesta donde se indica.
 
 > **Verificación.** Versiones, estrellas, fechas y licencias se comprobaron en crates.io, GitHub y en el código de los crates el **18-oct-2026**. Las marcas **(?)** indican datos no verificados del todo o inferencias. Las cifras de estrellas y actividad cambian; revisarlas antes de decidir.
 
@@ -292,6 +292,26 @@ map(&self.vista)
 - **Encuadre**: al cargar una geometría existente, el editor puede pedir `fit_bounds` con margen (DSP usa 20 % y zoom ≥ 15 para puntos).
 - **Coste**: los vértices son pocos (decenas); no hace falta pipeline especial. Las aristas del borrador usan el pipeline de geometría de M0.
 
+**API real (M1b parcial, `maps/editor.rs`).** Por ahora solo el modo Área y solo sobre polígonos existentes: mover, insertar y borrar vértices. **El borrador vive en el modelo de la app** y no en el estado de UI. La vista necesita sus vértices para construir los marcadores, y así el editor es un componente controlado, igual que un input de Kai. La sesión solo guarda el gesto en curso.
+
+```rust
+// En el modelo: edicion: Option<PolygonDraft>
+map(&self.vista)
+    .layers(/* los demás sectores */)
+    .polygon_editor(&borrador, color, Msg::Edicion)   // Fn(PolygonEdit) -> Msg
+    .test_id("mapa.vista")
+
+// En update:
+Msg::Edicion(PolygonEdit::Finish) if borrador.is_valid() => { /* guardar borrador.ring() */ }
+Msg::Edicion(PolygonEdit::Cancel) => self.edicion = None,
+Msg::Edicion(edit) => { borrador.apply(edit); }
+```
+
+- `PolygonDraft::from_geometry(&Geometry)` o `from_ring(..)` (mínimo 3 vértices, sin repetir el cierre); `to_geometry()` devuelve el anillo cerrado. Para un sector ya dibujado, `MapLayer::outer_ring()` da su anillo exterior.
+- `PolygonEdit` tiene las variantes `Move { index, to, first }`, `Insert { after, at }`, `Remove { index }`, `Undo`, `Finish` y `Cancel`. `apply` ignora los borrados por debajo de 3 vértices. Cada arrastre o pulsación de flecha apila un solo paso en el historial (`first`), así que Cmd+Z deshace el gesto entero.
+- Cada vértice es un botón `vertex.<n>` («Vértice 3 de 7») y cada punto medio un botón `midpoint.<n>` («Agregar vértice entre 3 y 4»), con el `test_id` del mapa como prefijo. Arrastrar un vértice no mueve el mapa. Con un vértice enfocado, las flechas lo mueven 1 px (Shift: 10 px), Backspace o Supr lo borran y Retorno emite `Finish`. Con el foco en el mapa o en un vértice, Esc emite `Cancel` y Cmd+Z emite `Undo` (por la cadena de respondedores). La barra Terminar/Cancelar la pone la app.
+- Validación propia, sin el crate `geo`. `crossing(ring)` busca dos bordes no adyacentes que se cruzan (O(n²) en coordenadas de mundo); el editor los dibuja en rojo con `MapLayer::line`. `area_m2(ring)` usa la fórmula esférica con radio medio 6 371 008,8 m, y `area_ha()` es lo que muestra la demo. `is_valid()` exige ambas cosas: anillo de 3 o más vértices y sin cruces.
+
 ### 4.9 Pruebas
 
 Los mapas siguen la etapa de identificación y pruebas de [13](13-hoja-de-ruta-plataforma.md) (Etapa 1): ningún test depende de píxeles de teselas reales ni de la red.
@@ -359,12 +379,13 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 
 - Editor de 4.8: modos Punto · Línea · Área, vértices accesibles, validación de autointersección, área geodésica, solo lectura, conversión GeoJSON.
 - **Terminado cuando:** los tests de 4.9 pasan; el editor de áreas y el selector de ubicación de DSP desktop cubren lo que hacen `OperationAreasMap.tsx` y `LocationGeometryMap.tsx`; dibujar y editar un polígono se puede hacer solo con teclado.
+- **Estado: parcial (modo Área sobre polígonos existentes).** Hechos `PolygonDraft`, `PolygonEdit` y `polygon_editor` (API real al final de 4.8), `MapLayer::ring`, `MapLayer::line` y `MapLayer::outer_ring`. En la sección Mapa de la demo, «Editar sector» abre el borrador del sector elegido, con la superficie en ha, el aviso «Los bordes se cruzan» y «Terminar» deshabilitado mientras haya cruces. «Cancelar» o Esc lo descartan. Tests de arrastre, teclado, punto medio, cruces y deshacer, más la captura `demo-mapa-edicion`. Pendientes los modos Punto y Línea, dibujar desde cero, «Borrar geometría», solo lectura y la revisión con VoiceOver.
 
 ### M2 — Capas de la app y comandos (13, Paso 15d)
 
 - Polilíneas, polígonos y popups como API estable; comandos `mapa.*` en el registro (13, Pasos 7–9) y recurso de vista (13, Paso 24); acciones de dominio con geometría en la app guía.
 - **Terminado cuando:** `TestApp::invoke(SetView { .. })` mueve la cámara; un cliente MCP (13, Paso 12) llama `incidencias.set_ubicacion` con un punto y la UI lo refleja; una geometría inválida vuelve como error de herramienta sin tocar el modelo.
-- **Estado: empezado.** La demo registra `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds { bounds }` y la acción de dominio `areas.seleccionar { code }`, expuestas por MCP (`mcp-schema.json`). Faltan polilíneas, popups, el recurso de vista y acciones que guarden geometrías.
+- **Estado: empezado.** La demo registra `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds { bounds }` y las acciones de dominio `areas.seleccionar { code }` y `areas.editar_geometria { code, coordinates }`, expuestas por MCP (`mcp-schema.json`). `areas.editar_geometria` reemplaza el anillo de un sector. La entrada se valida al deserializar (código conocido, 3 o más vértices, latitud y longitud en rango, sin cruces), así que una geometría inválida vuelve como error de herramienta sin tocar el modelo. Faltan polilíneas, popups, el recurso de vista e `incidencias.set_ubicacion`.
 
 ### M3 — Vectorial (13, Etapa 7)
 
