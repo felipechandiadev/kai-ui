@@ -10,9 +10,13 @@ use std::rc::Rc;
 
 mod search;
 mod text_area;
+mod toolbar;
 
 pub use search::{SearchField, search_field};
 pub use text_area::{TextArea, text_area};
+pub use toolbar::{
+    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+};
 
 use crate::commands::Action;
 use crate::element::{

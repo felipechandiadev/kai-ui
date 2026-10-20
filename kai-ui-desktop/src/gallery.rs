@@ -7,7 +7,8 @@ use crate::components::{
     BezelStyle, Button, SidebarGroup, SidebarItem, SwitchDensity, TextField, card, card_actions,
     card_content, card_header, checkbox_with_options, group_box, paragraph, search_field,
     segmented, segmented_with_options, select, select_with_options, sidebar, switch_with_options,
-    text_area,
+    text_area, toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer,
+    toolbar_title,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::icons::Icon;
@@ -79,6 +80,8 @@ pub struct Gallery {
     pub text: String,
     /// Text of the Textarea row.
     pub notes: String,
+    /// Search field of the Navigation toolbar.
+    pub search: String,
     pub switches: [bool; 2],
     /// Checkboxes of the Selection section: off, on and mixed rows.
     pub checks: [ControlState; 3],
@@ -100,6 +103,7 @@ impl Default for Gallery {
             section: Section::All,
             text: "Texto".to_owned(),
             notes: "Primera línea\nsegunda línea".to_owned(),
+            search: String::new(),
             switches: [false, true],
             checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
             segment: 0,
@@ -118,6 +122,7 @@ pub enum Msg {
     Show(Section),
     Edit(String),
     Notes(String),
+    Search(String),
     Switch(usize),
     Check(usize),
     Segment(usize),
@@ -314,26 +319,45 @@ impl Gallery {
         }
     }
 
-    /// A window-like box: the sidebar and a pane naming the selected row.
+    /// A window-like box: a toolbar over the sidebar and a pane naming the
+    /// selected row.
     fn navigation(&self) -> Element<Msg> {
+        let bar = toolbar([
+            toolbar_item(Icon::PanelLeft, "Barra lateral")
+                .on_click(Msg::Clicked("barra lateral"))
+                .test_id("gallery.navigation.toolbar.sidebar"),
+            toolbar_title("Navegación", Some("Galería")),
+            toolbar_spacer(),
+            toolbar_item(Icon::Plus, "Agregar")
+                .on_click(Msg::Clicked("agregar"))
+                .test_id("gallery.navigation.toolbar.add"),
+            toolbar_separator(),
+            toolbar_item(Icon::Settings, "Ajustes")
+                .on_click(Msg::Clicked("ajustes"))
+                .test_id("gallery.navigation.toolbar.settings"),
+            toolbar_search(search_field(self.search.clone(), Msg::Search).build()),
+        ]);
         div()
             .class(
-                "flex h-[300px] max-w-2xl rounded-lg border border-border overflow-hidden \
-                 bg-background appkit:border-separator appkit:bg-window",
+                "flex flex-col h-[340px] max-w-2xl rounded-lg border border-border \
+                 overflow-hidden bg-background appkit:border-separator appkit:bg-window",
             )
             .children([
-                sidebar(&nav_groups(), self.nav, Msg::Navigate)
-                    .class(
-                        "w-56 shrink-0 border-r border-border appkit:w-[200px] appkit:bg-fill-4 \
-                         appkit:border-separator",
-                    )
-                    .label("Secciones")
-                    .test_id("gallery.navigation.sidebar"),
-                div().class("flex-1 p-6").child(
-                    text(NAV_ROWS[self.nav])
-                        .class("text-lg font-semibold appkit:text-title3")
-                        .role(Role::Heading),
-                ),
+                bar,
+                div().class("flex flex-1 min-h-0").children([
+                    sidebar(&nav_groups(), self.nav, Msg::Navigate)
+                        .class(
+                            "w-56 shrink-0 border-r border-border appkit:w-[200px] \
+                             appkit:bg-fill-4 appkit:border-separator",
+                        )
+                        .label("Secciones")
+                        .test_id("gallery.navigation.sidebar"),
+                    div().class("flex-1 p-6").child(
+                        text(NAV_ROWS[self.nav])
+                            .class("text-lg font-semibold appkit:text-title3")
+                            .role(Role::Heading),
+                    ),
+                ]),
             ])
     }
 
@@ -608,6 +632,7 @@ impl SimpleApp for Gallery {
             Msg::Show(section) => self.section = section,
             Msg::Edit(value) => self.text = value,
             Msg::Notes(value) => self.notes = value,
+            Msg::Search(value) => self.search = value,
             Msg::Switch(index) => self.switches[index] = !self.switches[index],
             // A mixed checkbox turns on, as `NSButton` without
             // `allowsMixedState`.
@@ -752,11 +777,14 @@ mod tests {
         }
         assert!(tagged.contains(&"gallery.fields.con-valor.xl".to_owned()));
         assert!(tagged.contains(&"gallery.navigation.sidebar.4".to_owned()));
+        assert!(tagged.contains(&"gallery.navigation.toolbar.add".to_owned()));
+        let toolbar_items = 3;
         assert_eq!(
             tagged.len(),
             ControlSize::ALL.len()
                 * (BUTTON_ROWS.len() + FIELD_ROWS.len() + TOGGLE_ROWS.len() + SELECTION_ROWS.len())
                 + NAV_ROWS.len()
+                + toolbar_items
         );
     }
 
@@ -780,7 +808,8 @@ mod tests {
             (Section::Fields, sizes * field_controls),
             (Section::Toggles, sizes * enabled_switches),
             (Section::Selection, sizes * enabled_selection),
-            (Section::Navigation, NAV_ROWS.len()),
+            // Three toolbar items and its search field.
+            (Section::Navigation, NAV_ROWS.len() + 3 + 1),
             (Section::Boxes, 1),
         ] {
             let mut tree = gallery.section_view(section);

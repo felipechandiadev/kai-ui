@@ -931,6 +931,8 @@ impl FocusOrder {
 
     fn collect<Msg>(&mut self, element: &Element<Msg>, group: Option<(WidgetId, FocusGroup)>) {
         if let Some(kind) = element.focus_kind() {
+            // Arrows edit text: a field is never a member of a group.
+            let group = group.filter(|_| kind != FocusKind::TextField);
             self.entries.push(FocusEntry {
                 id: element.id,
                 kind,
