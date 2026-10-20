@@ -110,6 +110,48 @@
         ]
       },
       "title": "Último envío"
+    },
+    {
+      "description": "Muestra una sección de la demo, como un clic en la barra lateral",
+      "exposed": true,
+      "id": "ui.ir_a",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "seccion": {
+            "description": "Sección que se muestra",
+            "oneOf": [
+              {
+                "const": "inicio",
+                "description": "Fondo de ventana, contador, formulario y estadísticas.",
+                "type": "string"
+              },
+              {
+                "const": "campos",
+                "description": "Variantes de TextField.",
+                "type": "string"
+              },
+              {
+                "const": "botones",
+                "description": "Botones, tamaños e IconButtons.",
+                "type": "string"
+              },
+              {
+                "const": "badges",
+                "description": "Badges y alertas.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "seccion"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Ir a sección"
     }
   ],
   "format": 1

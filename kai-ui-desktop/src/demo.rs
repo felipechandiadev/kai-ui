@@ -10,9 +10,10 @@ use crate::commands::{
 };
 use crate::components::{
     AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
-    IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity, TextField, alert, badge, button,
-    button_sized, caption, card, card_actions, card_content, card_header, checkbox,
-    icon_button_sized, paragraph, segmented, select, stat, switch_labeled,
+    IconButtonSize, IconButtonVariant, LabelLayout, SidebarGroup, SidebarItem, SwitchDensity,
+    TextField, alert, badge, button, button_sized, caption, card, card_actions, card_content,
+    card_header, checkbox, icon_button_sized, paragraph, segmented, select, sidebar, stat,
+    switch_labeled,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::icons::Icon;
@@ -43,6 +44,8 @@ struct Demo {
     /// Form: index into [`ROLES`].
     role: Option<usize>,
     terms: bool,
+    /// Section shown next to the sidebar.
+    seccion: Seccion,
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
@@ -67,6 +70,7 @@ impl Default for Demo {
             notifications: true,
             role: None,
             terms: false,
+            seccion: Seccion::Inicio,
             background: BackgroundKind::None,
             background_motion: BackgroundMotion::Static,
         }
@@ -104,6 +108,37 @@ fn background_from_env(
 /// Options of the form's role select.
 const ROLES: [&str; 3] = ["Diseño", "Desarrollo", "Producto"];
 
+/// Sections of the sidebar, in its order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum Seccion {
+    /// Fondo de ventana, contador, formulario y estadísticas.
+    Inicio,
+    /// Variantes de TextField.
+    Campos,
+    /// Botones, tamaños e IconButtons.
+    Botones,
+    /// Badges y alertas.
+    Badges,
+}
+
+impl Seccion {
+    const ALL: [Seccion; 4] = [Self::Inicio, Self::Campos, Self::Botones, Self::Badges];
+
+    fn index(self) -> usize {
+        Self::ALL.iter().position(|s| *s == self).unwrap_or(0)
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Inicio => "inicio",
+            Self::Campos => "campos",
+            Self::Botones => "botones",
+            Self::Badges => "badges",
+        }
+    }
+}
+
 /// Inputs of the TextField variants card.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Field {
@@ -131,6 +166,7 @@ enum Msg {
     ToggleNotifications,
     SetRole(usize),
     ToggleTerms,
+    IrA(Seccion),
     SetBackground(BackgroundKind),
     ToggleBackgroundMotion,
 }
@@ -256,6 +292,26 @@ impl Action for AlternarContrasena {
     }
 }
 
+/// Shows a section, as a click on the sidebar does.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct IrA {
+    #[schemars(description = "Sección que se muestra")]
+    seccion: Seccion,
+}
+
+impl Action for IrA {
+    type App = Demo;
+    const ID: &'static str = "ui.ir_a";
+    const TITLE: &'static str = "Ir a sección";
+    fn description() -> &'static str {
+        "Muestra una sección de la demo, como un clic en la barra lateral"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::IrA(self.seccion)
+    }
+}
+
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
 struct Saludo;
@@ -294,6 +350,8 @@ impl SimpleApp for Demo {
         // Showing the password is the user's business, not an agent's.
         registry.action::<AlternarContrasena>().menu("Formulario");
         registry.query::<Saludo>().expose();
+        // It takes a section, so it has no menu item nor shortcut.
+        registry.action::<IrA>().expose();
     }
 
     fn title(&self) -> String {
@@ -335,6 +393,7 @@ impl SimpleApp for Demo {
             Msg::ToggleNotifications => self.notifications = !self.notifications,
             Msg::SetRole(index) => self.role = Some(index),
             Msg::ToggleTerms => self.terms = !self.terms,
+            Msg::IrA(seccion) => self.seccion = seccion,
             Msg::SetBackground(kind) => self.background = kind,
             Msg::ToggleBackgroundMotion => {
                 self.background_motion = match self.background_motion {
@@ -584,35 +643,70 @@ impl SimpleApp for Demo {
             ]),
         ]);
 
+        let cards = match self.seccion {
+            Seccion::Inicio => vec![
+                self.background_panel(),
+                div().class("w-full max-w-3xl").child(alert_banner),
+                counter,
+                form,
+                stats,
+            ],
+            Seccion::Campos => vec![self.fields()],
+            Seccion::Botones => vec![buttons_section, self.control_sizes()],
+            Seccion::Badges => vec![badges_and_alerts],
+        };
+
         div()
             // `neutral` is systemGray in AppKit: use the window background.
             .class("w-full h-full flex flex-col bg-neutral appkit:bg-window")
             .role(Role::Main)
             .children([
                 header,
-                div()
-                    .class("flex-1 overflow-y-auto")
-                    .test_id("contenido")
-                    .child(
-                        div()
-                            .class("flex flex-col items-center gap-6 p-6")
-                            .children([
-                                self.background_panel(),
-                                div().class("w-full max-w-3xl").child(alert_banner),
-                                counter,
-                                form,
-                                self.fields(),
-                                badges_and_alerts,
-                                buttons_section,
-                                self.control_sizes(),
-                                stats,
-                            ]),
-                    ),
+                div().class("flex-1 flex min-h-0").children([
+                    self.sidebar(),
+                    // Keyed by section: each one keeps its own scroll.
+                    div()
+                        .class("flex-1 overflow-y-auto")
+                        .key(self.seccion.key())
+                        .test_id("contenido")
+                        .child(
+                            div()
+                                .class("flex flex-col items-center gap-6 p-6")
+                                .children(cards),
+                        ),
+                ]),
             ])
     }
 }
 
 impl Demo {
+    fn sidebar(&self) -> Element<Msg> {
+        let mut inicio = SidebarItem::new("Inicio").icon(Icon::House);
+        if !self.submissions.is_empty() {
+            inicio = inicio.badge(self.submissions.len().to_string());
+        }
+        let groups = [
+            SidebarGroup::titled("Demo", [inicio]),
+            SidebarGroup::titled(
+                "Componentes",
+                [
+                    SidebarItem::new("Campos").icon(Icon::TextCursorInput),
+                    SidebarItem::new("Botones").icon(Icon::MousePointerClick),
+                    SidebarItem::new("Badges y alertas").icon(Icon::Tag),
+                ],
+            ),
+        ];
+        sidebar(&groups, self.seccion.index(), |index| {
+            Msg::IrA(Seccion::ALL[index])
+        })
+        .class(
+            "w-40 sm:w-52 shrink-0 border-r border-border/70 bg-background \
+             appkit:border-separator appkit:bg-fill-4",
+        )
+        .label("Secciones")
+        .test_id("nav")
+    }
+
     /// Card with every control size (`NSControl.ControlSize`, mini … extra
     /// large) for the main button variants, and the three icon-button
     /// sizes (Kai 28 / 40 / 48 pt, also in mix C).
@@ -919,6 +1013,7 @@ mod tests {
 
     use super::{
         AlternarContrasena, Demo, Enviar, Field, Incrementar, Limpiar, Msg, Reiniciar, Saludo,
+        Seccion,
     };
     use serde_json::json;
 
@@ -927,10 +1022,20 @@ mod tests {
         Availability, CommandError, DIALECT, Origin, Outcome, PALETTE, describe_json,
     };
     use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
-    use crate::geometry::Size;
+    use crate::geometry::{Rect, Size};
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::menu::{MenuEntry, menu_model};
+
+    impl Demo {
+        /// The default demo showing `seccion`.
+        fn at(seccion: Seccion) -> Self {
+            Self {
+                seccion,
+                ..Self::default()
+            }
+        }
+    }
     use crate::render::paint::{PaintInput, paint};
     use crate::render::text::TextStore;
     use crate::runtime::{SimpleApp, build_view};
@@ -944,7 +1049,10 @@ mod tests {
     #[test]
     fn field_rows_stack_in_a_narrow_window() {
         use crate::theme::MixStyle;
-        let demo = Demo::default();
+        let rows = [
+            (Demo::default(), ("Nombre", "Correo")),
+            (Demo::at(Seccion::Campos), ("Buscar", "Contraseña")),
+        ];
         let themes = [
             Theme::kai(Density::Comfortable),
             Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light).with_mix(MixStyle::C),
@@ -952,34 +1060,8 @@ mod tests {
         ];
         for theme in themes {
             let at = |width: f32| {
-                let tree = build_view(&demo);
-                let layout = Layout::compute(
-                    &tree,
-                    &LayoutInput {
-                        viewport: Size {
-                            width,
-                            height: 700.0,
-                        },
-                        theme: &theme,
-                        interaction: &Interaction::default(),
-                        scroll: &ScrollOffsets::new(),
-                    },
-                    &mut StyleCache::default(),
-                    &mut FixedMeasure,
-                );
-                let bounds = |label| {
-                    let input = find(&demo, By::label(label));
-                    // The field's shell: the input's grid cell ancestor.
-                    let path = tree.path_to(input).unwrap();
-                    let cell = path.iter().rev().find(|id| {
-                        layout
-                            .node(**id)
-                            .is_some_and(|n| n.style.min_width == crate::style::Length::Px(180.0))
-                    });
-                    layout.bounds(*cell.unwrap()).unwrap()
-                };
-                [("Nombre", "Correo"), ("Buscar", "Contraseña")]
-                    .map(|(a, b)| (bounds(a), bounds(b)))
+                rows.each_ref()
+                    .map(|(demo, pair)| row_bounds(&theme, demo, *pair, width))
             };
             for (first, second) in at(1024.0) {
                 assert_eq!(first.y, second.y, "{:?}", theme.kind);
@@ -993,6 +1075,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Bounds of the shells (the 180 pt minimum grid cells) of two fields.
+    fn row_bounds(theme: &Theme, demo: &Demo, (a, b): (&str, &str), width: f32) -> (Rect, Rect) {
+        let tree = build_view(demo);
+        let layout = Layout::compute(
+            &tree,
+            &LayoutInput {
+                viewport: Size {
+                    width,
+                    height: 700.0,
+                },
+                theme,
+                interaction: &Interaction::default(),
+                scroll: &ScrollOffsets::new(),
+            },
+            &mut StyleCache::default(),
+            &mut FixedMeasure,
+        );
+        let bounds = |label| {
+            let input = find(demo, By::label(label));
+            // The field's shell: the input's grid cell ancestor.
+            let path = tree.path_to(input).unwrap();
+            let cell = path.iter().rev().find(|id| {
+                layout
+                    .node(**id)
+                    .is_some_and(|n| n.style.min_width == crate::style::Length::Px(180.0))
+            });
+            layout.bounds(*cell.unwrap()).unwrap()
+        };
+        (bounds(a), bounds(b))
     }
 
     /// A field and a button in an `items-end` row (mix C, `near` label
@@ -1201,28 +1314,33 @@ mod tests {
         let order = FocusOrder::from_tree(&build_view(&demo));
         let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
         assert_eq!(kinds[0], FocusKind::Button, "header quick action button");
+        assert_eq!(kinds[1..5], [FocusKind::Button; 4], "sidebar rows");
         // Background panel: four effect segments (one Tab stop); the
         // "Animado" switch starts disabled (no effect).
-        assert_eq!(kinds[1..5], [FocusKind::Button; 4], "background effects");
+        assert_eq!(kinds[5..9], [FocusKind::Button; 4], "background effects");
         assert_eq!(
-            kinds[5],
+            kinds[9],
             FocusKind::Button,
             "Incrementar; Reiniciar starts disabled"
         );
-        assert_eq!(kinds[6], FocusKind::TextField, "Nombre");
-        assert_eq!(kinds[7], FocusKind::TextField, "Correo");
-        assert_eq!(kinds[8], FocusKind::Button, "select rol");
-        assert_eq!(kinds[9], FocusKind::Button, "checkbox términos");
-        assert_eq!(kinds[10], FocusKind::Button, "switch notificaciones");
-        assert_eq!(kinds[11], FocusKind::Button, "Limpiar");
-        assert_eq!(kinds[12], FocusKind::TextField, "Buscar");
-        assert_eq!(kinds[13], FocusKind::TextField, "Contraseña");
-        assert_eq!(kinds[14], FocusKind::Button, "Toggle password");
+        assert_eq!(kinds[10], FocusKind::TextField, "Nombre");
+        assert_eq!(kinds[11], FocusKind::TextField, "Correo");
+        assert_eq!(kinds[12], FocusKind::Button, "select rol");
+        assert_eq!(kinds[13], FocusKind::Button, "checkbox términos");
+        assert_eq!(kinds[14], FocusKind::Button, "switch notificaciones");
+        assert_eq!(kinds[15], FocusKind::Button, "Limpiar");
+        assert_eq!(kinds.len(), 16, "Enviar starts disabled");
+        let campos = Demo::at(Seccion::Campos);
+        let order = FocusOrder::from_tree(&build_view(&campos));
+        let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
+        assert_eq!(kinds[5], FocusKind::TextField, "Buscar");
+        assert_eq!(kinds[6], FocusKind::TextField, "Contraseña");
+        assert_eq!(kinds[7], FocusKind::Button, "Toggle password");
         // With an effect the switch joins the order.
         let mut glow = Demo::default();
         glow.update(Msg::SetBackground(BackgroundKind::Glow));
         let order = FocusOrder::from_tree(&build_view(&glow));
-        assert_eq!(order.ids().count(), kinds.len() + 1);
+        assert_eq!(order.ids().count(), 16 + 1);
     }
 
     /// The background panel sets the effect and its motion; the app hands
@@ -1414,6 +1532,21 @@ mod tests {
             Some("form.correo.input")
         );
         assert_eq!(
+            screen.get_by_test_id("header.sumar").name().as_deref(),
+            Some("Sumar clic")
+        );
+        assert_eq!(
+            screen
+                .get(By::role(Role::SidebarItem).name("Campos"))
+                .test_id(),
+            Some("nav.1")
+        );
+
+        let tree = build_view(&Demo::at(Seccion::Campos));
+        assert_eq!(tree.validate_ids(), Vec::<String>::new());
+        let layout = layout_of(&tree);
+        let screen = Screen::new(&layout);
+        assert_eq!(
             screen.get_by_label("Contraseña").test_id(),
             Some("form.password.input")
         );
@@ -1422,10 +1555,6 @@ mod tests {
                 .get(By::role(Role::Button).name("Mostrar contraseña"))
                 .test_id(),
             Some("form.password.toggle")
-        );
-        assert_eq!(
-            screen.get_by_test_id("header.sumar").name().as_deref(),
-            Some("Sumar clic")
         );
     }
 
@@ -1480,8 +1609,10 @@ mod tests {
     fn background_effects_are_one_segmented_tab_stop() {
         let mut app = TestApp::new(Demo::default());
         let segment = |name: &str| By::role(Role::Radio).name(name);
-        app.press(Key::Tab, Modifiers::NONE);
-        app.press(Key::Tab, Modifiers::NONE);
+        // Header button, sidebar, then the effects.
+        for _ in 0..3 {
+            app.press(Key::Tab, Modifiers::NONE);
+        }
         assert!(app.is_focused(segment("Ninguno")));
         app.press(Key::ArrowRight, Modifiers::NONE);
         app.press(Key::Space, Modifiers::NONE);
@@ -1496,6 +1627,72 @@ mod tests {
             .collect();
         assert_eq!(segments.len(), 4);
         assert!(!segments.contains(&focused), "Tab leaves the group");
+    }
+
+    #[test]
+    fn the_sidebar_shows_one_section_at_a_time() {
+        let mut app = TestApp::new(Demo::default());
+        app.screen().get(By::test_id("form.nombre"));
+        app.click(By::role(Role::SidebarItem).name("Campos"));
+        assert_eq!(app.messages(), [Msg::IrA(Seccion::Campos)]);
+        app.screen().get(By::test_id("form.password"));
+        assert!(app.screen().query(By::test_id("form.nombre")).is_none());
+        assert!(app.is_focused(By::test_id("nav.1")));
+
+        // ↓ and ↑ move the selection.
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        assert_eq!(app.app().seccion, Seccion::Botones);
+        app.screen().get(By::test_id("botones.secondary"));
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        assert_eq!(app.app().seccion, Seccion::Badges);
+        app.press(Key::ArrowUp, Modifiers::NONE);
+        app.press(Key::ArrowUp, Modifiers::NONE);
+        app.press(Key::ArrowUp, Modifiers::NONE);
+        assert_eq!(app.app().seccion, Seccion::Inicio);
+        assert!(app.is_focused(By::test_id("nav.0")));
+    }
+
+    #[test]
+    fn scripts_and_agents_change_the_section_with_ui_ir_a() {
+        let mut app = TestApp::new(Demo::default());
+        assert_eq!(
+            app.call("ui.ir_a", json!({"seccion": "botones"})),
+            Ok(json!(null))
+        );
+        assert_eq!(app.app().seccion, Seccion::Botones);
+        assert_eq!(
+            app.screen().get(By::test_id("nav.2")).role(),
+            Role::SidebarItem
+        );
+        assert!(app.call("ui.ir_a", json!({"seccion": "mapas"})).is_err());
+        assert!(app.call("ui.ir_a", json!({})).is_err());
+        assert_eq!(app.app().seccion, Seccion::Botones);
+    }
+
+    /// The content is keyed by section, so a section never inherits the
+    /// scroll of the one before it.
+    #[test]
+    fn each_section_opens_at_the_top() {
+        let short = |demo| TestApp::builder(demo).viewport(1024.0, 400.0).build();
+        let password =
+            |app: &TestApp<Demo>| app.screen().get(By::test_id("form.password")).bounds().y;
+        let top = |app: &TestApp<Demo>| app.screen().get(By::test_id("form.limpiar")).bounds().y;
+        let campos = password(&short(Demo::at(Seccion::Campos)));
+        let mut app = short(Demo::default());
+        let at_rest = top(&app);
+        for _ in 0..20 {
+            app.press(Key::Tab, Modifiers::NONE);
+            if app.is_focused(By::test_id("form.limpiar")) {
+                break;
+            }
+        }
+        let scrolled = top(&app);
+        assert!(scrolled < at_rest, "focusing «Limpiar» scrolls to it");
+        app.click(By::test_id("nav.1"));
+        assert_eq!(password(&app), campos);
+        app.click(By::test_id("nav.0"));
+        assert_eq!(top(&app), at_rest);
     }
 
     #[test]
@@ -1528,7 +1725,7 @@ mod tests {
 
     #[test]
     fn the_password_eye_toggles_and_leaves_focus_in_the_field() {
-        let mut app = TestApp::new(Demo::default());
+        let mut app = TestApp::new(Demo::at(Seccion::Campos));
         app.type_text(By::test_id("form.password"), "abc");
         assert!(!app.app().show_password);
         app.click(By::test_id("form.password.toggle"));
@@ -1551,6 +1748,7 @@ mod tests {
                 "form.limpiar",
                 "form.alternar_contrasena",
                 "form.ultimo_envio",
+                "ui.ir_a",
                 "kai.paleta",
             ]
         );
@@ -1943,7 +2141,8 @@ mod tests {
             },
             Case {
                 id: "form.alternar_contrasena",
-                setup: |_| {},
+                // The password field is in «Campos».
+                setup: |app| app.click(By::test_id("nav.1")),
                 invoke: |app| app.invoke(AlternarContrasena).unwrap(),
                 vias: vec![
                     Via::Invoke,
@@ -2062,6 +2261,7 @@ mod tests {
                 "form.enviar",
                 "form.limpiar",
                 "form.ultimo_envio",
+                "ui.ir_a",
             ]
         );
     }
@@ -2589,7 +2789,7 @@ mod tests {
         let content = Screen::new(&layout).get_by_test_id("contenido").id();
         let card = card_header_of(demo, title);
         let top = layout.bounds(card).unwrap().y - layout.bounds(content).unwrap().y;
-        ScrollOffsets::from([(content, top - 40.0)])
+        ScrollOffsets::from([(content, (top - 40.0).max(0.0))])
     }
 
     /// Where a set of captures goes and with which theme.
@@ -2750,11 +2950,11 @@ mod tests {
         };
         let demo = Demo {
             clicks: 3,
-            ..Demo::default()
+            ..Demo::at(Seccion::Botones)
         };
         let filled = Demo {
             password: "kai-2026".to_owned(),
-            ..Demo::default()
+            ..Demo::at(Seccion::Campos)
         };
         for (generation, appearance, name) in [
             (AppKitGeneration::Aqua11, Appearance::Light, "light"),
@@ -2886,7 +3086,7 @@ mod tests {
         // Control sizes card: Kai, mix C light and dark.
         let clicks = Demo {
             clicks: 3,
-            ..Demo::default()
+            ..Demo::at(Seccion::Botones)
         };
         for (name, theme) in [
             ("kai", Theme::kai(Density::Comfortable)),
@@ -3276,19 +3476,23 @@ mod tests {
             &none,
         );
 
+        let buttons = Demo {
+            seccion: Seccion::Botones,
+            ..typed
+        };
         snapshot(
             out,
             "demo-variants-focus",
-            &typed,
+            &buttons,
             wide,
             2.0,
             &Interaction {
-                focused: Some(find(&typed, By::test_id("botones.secondary"))),
+                focused: Some(find(&buttons, By::test_id("botones.secondary"))),
                 // Reached with Tab: the ring is drawn.
                 focus_visible: true,
                 ..Interaction::default()
             },
-            &scrolled_to(&out.theme, &typed, wide, BUTTONS_CARD),
+            &scrolled_to(&out.theme, &buttons, wide, BUTTONS_CARD),
         );
 
         let fields_view = Size {
@@ -3298,7 +3502,7 @@ mod tests {
         let title = "Variantes de TextField";
         let masked = Demo {
             password: "kai-2026".to_owned(),
-            ..Demo::default()
+            ..Demo::at(Seccion::Campos)
         };
         snapshot(
             out,
@@ -3311,7 +3515,7 @@ mod tests {
         );
         let mut filled = Demo {
             show_password: true,
-            ..Demo::default()
+            ..Demo::at(Seccion::Campos)
         };
         for (field, value) in [
             (Field::Search, "zapatillas"),
