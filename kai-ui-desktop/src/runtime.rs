@@ -18,11 +18,12 @@
 //! something else changed (`dirty`). Pending timers ([`Effects::after`])
 //! wake the loop at the nearest one (`ControlFlow::WaitUntil`).
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use winit::{
@@ -50,10 +51,16 @@ use crate::ui_engine::{ClickCounter, Modifiers};
 
 const LINE_SCROLL: f32 = 40.0;
 
-/// What `update` asks the runtime to do, as a value. For now only timers
-/// (a subset of 13, Paso 15): [`Effects::after`] sends a message later.
+/// What `update` asks the runtime to do, as a value (a subset of 13,
+/// Paso 15): [`Effects::after`] sends a message later and
+/// [`Effects::perform`] runs work off the UI thread.
 #[must_use]
 pub struct Effects<Msg>(Vec<Effect<Msg>>);
+
+/// A task of [`Effects::perform`], with its result type erased.
+pub(crate) type Task = Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>;
+/// Turns a task's erased result back into the app's message.
+pub(crate) type TaskDone<Msg> = Box<dyn FnOnce(Box<dyn Any + Send>) -> Msg>;
 
 pub(crate) enum Effect<Msg> {
     /// Send `msg` after `delay`. A keyed timer replaces the pending one
@@ -63,7 +70,14 @@ pub(crate) enum Effect<Msg> {
         delay: Duration,
         msg: Msg,
     },
-    /// Drop the pending timer with this key.
+    /// Run `task` on the task pool and send `done(result)`. A keyed task
+    /// replaces the pending one with the same key (its result is dropped).
+    Perform {
+        key: Option<String>,
+        task: Task,
+        done: TaskDone<Msg>,
+    },
+    /// Drop the pending timer or task with this key.
     Cancel(String),
 }
 
@@ -90,19 +104,44 @@ impl<Msg> Effects<Msg> {
         }])
     }
 
-    /// Give these timers `key`: a new timer with the same key replaces
-    /// the pending one, and [`Effects::cancel`] drops it.
+    /// Run `task` off the UI thread, on a small shared pool, and send
+    /// `to_msg(result)` to `update` when it finishes. Reading files,
+    /// decoding or network calls go here so the frame never waits for
+    /// them. A task that panics sends nothing. Tests wait for tasks with
+    /// `TestApp::run_until_idle`.
+    pub fn perform<T: Send + 'static>(
+        task: impl FnOnce() -> T + Send + 'static,
+        to_msg: impl FnOnce(T) -> Msg + 'static,
+    ) -> Self {
+        Self(vec![Effect::Perform {
+            key: None,
+            task: Box::new(move || Box::new(task()) as Box<dyn Any + Send>),
+            done: Box::new(move |output| {
+                let output = output
+                    .downcast::<T>()
+                    .expect("el resultado de la tarea tiene el tipo de su to_msg");
+                to_msg(*output)
+            }),
+        }])
+    }
+
+    /// Give these timers and tasks `key`: a new one with the same key
+    /// replaces the pending one, and [`Effects::cancel`] drops it.
     pub fn keyed(mut self, key: impl Into<String>) -> Self {
         let key = key.into();
         for effect in &mut self.0 {
-            if let Effect::After { key: slot, .. } = effect {
-                *slot = Some(key.clone());
+            match effect {
+                Effect::After { key: slot, .. } | Effect::Perform { key: slot, .. } => {
+                    *slot = Some(key.clone());
+                }
+                Effect::Cancel(_) => {}
             }
         }
         self
     }
 
-    /// Drop the pending timer with `key`, if any.
+    /// Drop the pending timer or task with `key`, if any (a running task
+    /// finishes, but its message is not sent).
     pub fn cancel(key: impl Into<String>) -> Self {
         Self(vec![Effect::Cancel(key.into())])
     }
@@ -123,6 +162,7 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 Effect::After { key, delay, msg } => {
                     list.entry(&format_args!("after({delay:?}, {msg:?}, key: {key:?})"))
                 }
+                Effect::Perform { key, .. } => list.entry(&format_args!("perform(key: {key:?})")),
                 Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
             };
         }
@@ -468,6 +508,8 @@ enum UserEvent {
     /// The menu bar item of this command id was chosen.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Menu(String),
+    /// An [`Effects::perform`] task finished.
+    Task,
     /// News from the MCP server: a client connected, called or cancelled a
     /// tool, or went away.
     #[cfg(feature = "mcp")]
@@ -766,6 +808,14 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         match state {
             #[cfg_attr(not(feature = "mcp"), allow(unused_mut))]
             Ok(mut state) => {
+                let proxy = Mutex::new(self.proxy.clone());
+                state.session.set_task_waker(Box::new(move || {
+                    let proxy = proxy.lock().unwrap_or_else(|poison| poison.into_inner());
+                    let _ = proxy.send_event(UserEvent::Task);
+                }));
+                if state.session.run_tasks() {
+                    state.flush();
+                }
                 #[cfg(feature = "mcp")]
                 {
                     for event in self.pending.drain(..) {
@@ -884,6 +934,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             UserEvent::A11y(_) => return,
             UserEvent::Menu(id) => {
                 state.session.menu_command(&id);
+            }
+            UserEvent::Task => {
+                state.session.run_tasks();
             }
             #[cfg(feature = "mcp")]
             UserEvent::Mcp(event) => state.mcp(event),

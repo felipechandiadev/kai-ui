@@ -10,7 +10,8 @@ mod calls;
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::a11y;
 use crate::background::BackgroundEffect;
@@ -20,6 +21,7 @@ use crate::commands::{
 use crate::components::themed;
 use crate::components::{MENU, MenuFrame, PaletteItem, command_palette, select_menu};
 use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
+use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
 };
@@ -34,8 +36,8 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, action_message, build_view_with, cursor_for, pointer_target, report_once,
-    selects_on_focus,
+    App, Effect, Effects, TaskDone, action_message, build_view_with, cursor_for, pointer_target,
+    report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -129,6 +131,8 @@ pub(crate) struct Session<A: App> {
     modal_focus: Option<ModalFocus>,
     /// Pending [`Effects::after`] timers, in the order they were asked for.
     timers: Vec<Timer<A::Msg>>,
+    /// Running [`Effects::perform`] tasks.
+    tasks: Tasks<A::Msg>,
     /// The time tests set; `None` follows the real clock.
     clock: Option<Instant>,
     /// Row the keys are moving to in a virtual list: the next rebuild
@@ -220,6 +224,32 @@ struct Timer<Msg> {
     key: Option<String>,
     due: Instant,
     msg: Msg,
+}
+
+/// [`Effects::perform`] tasks on the pool, by id, with what turns each
+/// result into a message; a replaced or cancelled task leaves this map and
+/// its result is dropped when it lands.
+struct Tasks<Msg> {
+    inbox: Arc<Inbox>,
+    next: u64,
+    waiting: HashMap<u64, (Option<String>, TaskDone<Msg>)>,
+}
+
+impl<Msg> Default for Tasks<Msg> {
+    fn default() -> Self {
+        Self {
+            inbox: Arc::default(),
+            next: 1,
+            waiting: HashMap::new(),
+        }
+    }
+}
+
+impl<Msg> Tasks<Msg> {
+    fn forget(&mut self, key: &str) {
+        self.waiting
+            .retain(|_, (pending, _)| pending.as_deref() != Some(key));
+    }
 }
 
 /// An [`Element::modal`] panel of the app while it is in the tree.
@@ -393,6 +423,7 @@ impl<A: App> Session<A> {
             modal: None,
             modal_focus: None,
             timers: Vec::new(),
+            tasks: Tasks::default(),
             clock: None,
             row_pin: None,
             row_windows: Vec::new(),
@@ -439,11 +470,59 @@ impl<A: App> Session<A> {
                     let due = self.now() + delay;
                     self.timers.push(Timer { key, due, msg });
                 }
-                Effect::Cancel(key) => self
-                    .timers
-                    .retain(|timer| timer.key.as_deref() != Some(key.as_str())),
+                Effect::Perform { key, task, done } => {
+                    if let Some(key) = &key {
+                        self.tasks.forget(key);
+                    }
+                    let id = self.tasks.next;
+                    self.tasks.next += 1;
+                    self.tasks.waiting.insert(id, (key, done));
+                    effects::spawn(&self.tasks.inbox, id, task);
+                }
+                Effect::Cancel(key) => {
+                    self.timers
+                        .retain(|timer| timer.key.as_deref() != Some(key.as_str()));
+                    self.tasks.forget(&key);
+                }
             }
         }
+    }
+
+    /// Wake the window with `wake` when an [`Effects::perform`] task
+    /// finishes; it is called from a pool thread.
+    pub fn set_task_waker(&mut self, wake: Box<dyn Fn() + Send>) {
+        self.tasks.inbox.set_waker(wake);
+    }
+
+    /// Whether some [`Effects::perform`] task has not sent its message.
+    pub fn tasks_pending(&self) -> bool {
+        !self.tasks.waiting.is_empty()
+    }
+
+    /// Send the message of every task that finished, in the order they
+    /// finished. Returns whether any did.
+    pub fn run_tasks(&mut self) -> bool {
+        let mut ran = false;
+        for (id, output) in self.tasks.inbox.take() {
+            let Some((_, done)) = self.tasks.waiting.remove(&id) else {
+                continue;
+            };
+            if let Some(output) = output {
+                self.with_source(MsgSource::Task, |session| session.send(done(output)));
+                ran = true;
+            }
+        }
+        ran
+    }
+
+    /// Block until a pending task finishes or `timeout` passes, then send
+    /// what finished; returns whether anything did.
+    pub fn wait_for_tasks(&mut self, timeout: Duration) -> bool {
+        if self.tasks.waiting.is_empty() {
+            return false;
+        }
+        self.tasks.inbox.wait(timeout);
+        self.run_tasks()
     }
 
     /// When the earliest pending timer is due.

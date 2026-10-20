@@ -219,6 +219,31 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// Wait for every [`Effects::perform`] task, the ones their messages
+    /// start included, sending each message as its task finishes, with a
+    /// frame after each batch. Panics if they take more than ten seconds.
+    ///
+    /// [`Effects::perform`]: crate::runtime::Effects::perform
+    pub fn run_until_idle(&mut self) {
+        let limit = Instant::now() + Duration::from_secs(10);
+        while self.session.tasks_pending() {
+            assert!(
+                Instant::now() < limit,
+                "las tareas de Effects::perform no terminaron en 10 s"
+            );
+            if self.session.wait_for_tasks(Duration::from_millis(50)) {
+                self.frame();
+            }
+        }
+    }
+
+    /// Whether some [`Effects::perform`] task has not sent its message.
+    ///
+    /// [`Effects::perform`]: crate::runtime::Effects::perform
+    pub fn tasks_pending(&self) -> bool {
+        self.session.tasks_pending()
+    }
+
     /// Run an action as a script or an agent would, without the UI: its
     /// message goes through `update` if the action is registered and
     /// available; otherwise the error says why not (the reason of a

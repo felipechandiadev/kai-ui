@@ -85,6 +85,8 @@ pub enum MsgSource {
     Timer,
     /// The window's size ([`App::resized`](crate::runtime::App::resized)).
     Window,
+    /// A finished task of `Effects::perform`.
+    Task,
 }
 
 impl fmt::Display for MsgSource {
@@ -98,6 +100,7 @@ impl fmt::Display for MsgSource {
             Self::Agent(client) => write!(f, "Agente {client}"),
             Self::Timer => f.write_str("Temporizador"),
             Self::Window => f.write_str("Ventana"),
+            Self::Task => f.write_str("Tarea"),
         }
     }
 }

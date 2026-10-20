@@ -55,6 +55,7 @@ pub mod tw;
 #[doc(hidden)]
 pub mod ui_engine;
 
+pub(crate) mod effects;
 pub(crate) mod fonts;
 pub(crate) mod platform_adapter;
 pub(crate) mod session;
