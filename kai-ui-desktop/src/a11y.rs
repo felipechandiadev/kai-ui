@@ -40,6 +40,10 @@ pub struct A11ySnapshot<'a> {
     pub window_title: &'a str,
     /// Current value of each input.
     pub field_values: &'a [(WidgetId, &'a str)],
+    /// A focused input and the row its arrow keys highlight (the command
+    /// palette): assistive technology reads the row while focus stays in
+    /// the input.
+    pub active_descendant: Option<(WidgetId, WidgetId)>,
 }
 
 pub fn a11y_tree(snapshot: &A11ySnapshot<'_>) -> TreeUpdate {
@@ -239,6 +243,12 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     if let Some(test_id) = &source.test_id {
         node.set_author_id(test_id.as_str());
     }
+    if let Some((_, row)) = snapshot
+        .active_descendant
+        .filter(|(owner, _)| *owner == source.id)
+    {
+        node.set_active_descendant(node_id(row));
+    }
     if source.required {
         node.set_required();
     }
@@ -406,6 +416,7 @@ mod tests {
             focused,
             window_title: "Kai",
             field_values: &[],
+            active_descendant: None,
         }
     }
 

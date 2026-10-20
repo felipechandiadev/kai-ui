@@ -1862,6 +1862,10 @@ impl<A: App> Session<A> {
             focused: *self.ui.focused.get(),
             window_title: &self.title,
             field_values: &field_values,
+            active_descendant: self.palette.as_ref().and_then(|palette| {
+                let row = palette.rows.get(palette.selected)?.0;
+                Some((palette.search, row))
+            }),
         })
     }
 

@@ -1500,9 +1500,11 @@ pub struct PaletteItem {
 }
 
 /// Command palette: a backdrop over the whole window and a panel with the
-/// search input `kai.paleta.buscar` and one button per item
-/// (`kai.paleta.<id>`), `selected` highlighted. Behavior lives in the
-/// session that shows it; the elements send no messages.
+/// search input `kai.paleta.buscar` and a [`Role::List`] with one
+/// [`Role::Row`] per item (`kai.paleta.<id>`), `selected` highlighted and
+/// On. Behavior lives in the session that shows it, which publishes the
+/// selected row as the search input's active descendant; the elements send
+/// no messages.
 pub fn command_palette<Msg>(
     items: &[PaletteItem],
     query: &str,
@@ -1533,7 +1535,12 @@ pub fn command_palette<Msg>(
                 "px-2 py-1 rounded-control text-body text-label \
                  disabled:text-disabled-control-text",
             ))
-            .role(Role::Button)
+            .role(Role::Row)
+            .state(if selected == Some(index) {
+                ControlState::On
+            } else {
+                ControlState::Off
+            })
             .key(item.id)
             .test_id(format!("kai.paleta.{}", item.id))
             .label(item.title)
@@ -1557,6 +1564,8 @@ pub fn command_palette<Msg>(
     } else {
         div()
             .class("flex flex-col gap-0.5 p-1 overflow-y-auto")
+            .role(Role::List)
+            .label("Comandos")
             .children(rows)
     };
     div()

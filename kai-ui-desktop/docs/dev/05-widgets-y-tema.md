@@ -180,7 +180,7 @@ TextField::new("Contraseña", &model.password)
 // el ojo sigue siendo "form.password.toggle"
 ```
 
-- **`command_palette(items, query, selected)`** dibuja la paleta: fondo `absolute inset-0 z-50`, panel `Role::Group` «Paleta de comandos», búsqueda `kai.paleta.buscar` y una fila por `PaletteItem` (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo (`KeyEquivalent::label`). La muestra la sesión con ⇧⌘P; los elementos no llevan `Msg`. Comparte el layout entre temas y elige colores y tipografía con `themed`.
+- **`command_palette(items, query, selected)`** dibuja la paleta: fondo `absolute inset-0 z-50`, panel `Role::Dialog` «Paleta de comandos», búsqueda `kai.paleta.buscar` y una lista (`Role::List` «Comandos») con una fila `Role::Row` por `PaletteItem` (`kai.paleta.<id>`): título, motivo si está deshabilitada y atajo (`KeyEquivalent::label`); la elegida está en `On`. El foco se queda en la búsqueda y la sesión publica la fila elegida como su `active_descendant` (`A11ySnapshot::active_descendant`), así VoiceOver lee la fila que mueven las flechas. La muestra la sesión con ⇧⌘P; los elementos no llevan `Msg`. Comparte el layout entre temas y elige colores y tipografía con `themed`.
 
 ### Ids de prueba y partes
 

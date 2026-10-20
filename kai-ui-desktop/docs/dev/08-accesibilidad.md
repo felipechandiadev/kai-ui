@@ -23,6 +23,7 @@ El MSRV del crate sigue siendo 1.89 (lo impone `cosmic-text` 0.19).
   - Un input publica `placeholder` y `value`, salvo si está enmascarado: un `PasswordInput` nunca expone su valor. `read_only` se publica con `set_read_only`, `required` con `set_required`, y `description` (el helper text del `TextField`) con `set_description`.
   - Los iconos sin `label` son decorativos (`aria-hidden`) y se omiten del árbol; con `label` se publican como `Image` con ese nombre. El botón de ojo del password se llama "Mostrar contraseña" u "Ocultar contraseña" según el estado.
   - Los controles deshabilitados se publican con `disabled` y sin acciones. Los nodos con `display: none` se omiten.
+  - `A11ySnapshot::active_descendant` (input, fila) publica la fila que resaltan las flechas como `active_descendant` del input enfocado. La usa la paleta de comandos: el foco se queda en la búsqueda para seguir escribiendo, y VoiceOver lee la fila elegida (`Row` con `selected`) como foco efectivo.
   - `intents_for_action(&ActionRequest, &FocusOrder) -> Vec<Intent>` traduce acciones de asistencia a intents de Kai solo para elementos habilitados y focusables: `Focus` → `SetFocus`, `Click` → `Intent::Activate`, `ReplaceSelectedText` en un input → foco + `InsertText`.
 - `Intent::Activate(id)` en `ui_engine.rs` enfoca el elemento y, si es un botón, lo activa con `ActivationSource::Accessibility`; el runtime lo convierte en su mensaje `on_click`.
 - `runtime.rs`:
@@ -42,6 +43,7 @@ Tests en `a11y.rs` y `ui_engine.rs`:
 - Iconos decorativos omitidos y etiquetados como `Image`; password como `PasswordInput` sin valor, con `required` y descripción; read-only con su valor.
 - Transform de escala en la raíz y jerarquía que replica el árbol `Element`.
 - Foco reportado según `UiModel` y bounds que siguen al layout, al scroll y al clip.
+- Paleta (`demo.rs`): la búsqueda conserva el foco y su `active_descendant` sigue a la fila elegida con las flechas.
 - Traducción de `Click`, `Focus` y `ReplaceSelectedText` a intents; las acciones sobre nodos no interactivos o deshabilitados se ignoran.
 
 ## Limitaciones conocidas

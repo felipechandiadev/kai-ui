@@ -4652,7 +4652,7 @@ mod tests {
             let panel = screen.get(By::test_id("kai.paleta"));
             screen
                 .within(panel)
-                .all(By::role(Role::Button))
+                .all(By::role(Role::Row))
                 .iter()
                 .filter_map(|found| found.test_id().map(str::to_owned))
                 .collect()
@@ -4723,6 +4723,61 @@ mod tests {
             app.messages(),
             [Msg::Increment, Msg::Reset],
             "second row: Reiniciar"
+        );
+    }
+
+    #[test]
+    fn assistive_tech_reads_the_selected_row_while_focus_stays_in_search() {
+        let mut app = TestApp::new(Demo::default());
+        app.press(Key::Char('p'), CMD_SHIFT);
+        let active = |app: &TestApp<Demo>| {
+            let search = app.screen().get(search()).id();
+            let update = app.session().a11y_tree(1.0);
+            let node = |id| {
+                update
+                    .nodes
+                    .iter()
+                    .find(|(node, _)| *node == id)
+                    .map(|(_, node)| node.clone())
+                    .unwrap()
+            };
+            let row = node(crate::a11y::node_id(search)).active_descendant();
+            let row = row.map(|row| (row, node(row).role(), node(row).is_selected()));
+            (row, update.focus == crate::a11y::node_id(search))
+        };
+        let first = app.screen().get(row("contador.incrementar")).id();
+        let second = app.screen().get(row("contador.reiniciar")).id();
+        assert_eq!(
+            active(&app),
+            (
+                Some((
+                    crate::a11y::node_id(first),
+                    accesskit::Role::Row,
+                    Some(true)
+                )),
+                true
+            )
+        );
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        assert_eq!(
+            active(&app),
+            (
+                Some((
+                    crate::a11y::node_id(second),
+                    accesskit::Role::Row,
+                    Some(true)
+                )),
+                true
+            ),
+            "the row changes, the focus does not"
+        );
+        assert!(app.is_focused(search()));
+        assert_eq!(
+            app.screen()
+                .get(row("contador.incrementar"))
+                .node()
+                .control_state,
+            Some(crate::element::ControlState::Off)
         );
     }
 
