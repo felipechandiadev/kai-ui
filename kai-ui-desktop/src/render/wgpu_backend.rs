@@ -3,7 +3,9 @@
 //! Quads are instanced rounded rectangles evaluated with a signed distance
 //! field (`quad.wgsl`): radius, border, blur and a per-instance clip rect.
 //! Icons are quads in mask mode: their coverage comes from an `R8Unorm`
-//! atlas of rasterized SVGs ([`MaskAtlas`]). Text uses one glyphon
+//! atlas of rasterized SVGs ([`MaskAtlas`]). Images are rounded rectangles
+//! of `image.wgsl` sampling an RGBA atlas ([`ImageAtlas`], created with the
+//! first image) with a linear filter. Text uses one glyphon
 //! `TextRenderer` per text batch, all sharing one atlas, so quads and text
 //! interleave in painter's order inside a single render pass.
 //!
@@ -33,8 +35,9 @@ use wgpu::{CurrentSurfaceTexture, SurfaceTexture};
 use winit::window::Window;
 
 use super::icons::{ATLAS_SIZE, AtlasRect, MaskAtlas, MaskKey};
+use super::images::{IMAGE_ATLAS_SIZE, ImageAtlas, ImageRegion};
 use super::text::TextStore;
-use super::{Batch, ClippedQuad, Color, DrawList, Quad, resolve};
+use super::{Batch, Bitmap, ClippedImage, ClippedQuad, Color, DrawList, Quad, resolve};
 use crate::background::{AURORA_WHITEN, BackgroundKind, BackgroundLayer};
 use crate::geometry::Rect;
 
@@ -53,6 +56,22 @@ pub struct QuadInstance {
     pub params: [f32; 4],
     /// Mask region in the atlas: x, y, size in pixels, unused.
     pub uv: [f32; 4],
+}
+
+/// One image of `image.wgsl`, in physical pixels and atlas texels.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub struct ImageInstance {
+    /// x, y, width, height in physical pixels.
+    pub rect: [f32; 4],
+    /// Region shown, in atlas texels: x, y, width, height.
+    pub source: [f32; 4],
+    /// left, top, right, bottom in physical pixels.
+    pub clip: [f32; 4],
+    /// radius (physical pixels), opacity, linear output (0/1), unused.
+    pub params: [f32; 4],
+    /// Whole atlas region of the image: x, y, width, height.
+    pub region: [f32; 4],
 }
 
 #[repr(C)]
@@ -173,14 +192,7 @@ pub fn build_instances(
     quads
         .iter()
         .filter_map(|ClippedQuad { quad, clip }| {
-            let clip = clip.map_or([0.0, 0.0, width as f32, height as f32], |clip| {
-                [
-                    clip.x * scale,
-                    clip.y * scale,
-                    (clip.x + clip.width) * scale,
-                    (clip.y + clip.height) * scale,
-                ]
-            });
+            let clip = clip_pixels(*clip, scale, width, height);
             if let Some(key) = mask_key(quad, scale) {
                 let region = masks.get(&key)?;
                 let size = region.size as f32;
@@ -222,6 +234,63 @@ pub fn build_instances(
         .collect()
 }
 
+fn clip_pixels(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> [f32; 4] {
+    clip.map_or([0.0, 0.0, width as f32, height as f32], |clip| {
+        [
+            clip.x * scale,
+            clip.y * scale,
+            (clip.x + clip.width) * scale,
+            (clip.y + clip.height) * scale,
+        ]
+    })
+}
+
+/// Convert logical images to physical instances for a `width` × `height`
+/// surface; those without a region in `regions` are skipped.
+pub fn build_image_instances(
+    images: &[ClippedImage],
+    scale: f32,
+    width: u32,
+    height: u32,
+    linear: bool,
+    regions: &HashMap<u64, ImageRegion>,
+) -> Vec<ImageInstance> {
+    images
+        .iter()
+        .filter_map(|ClippedImage { image, clip }| {
+            let region = regions.get(&image.bitmap.id())?;
+            let (region_width, region_height) = (region.width as f32, region.height as f32);
+            Some(ImageInstance {
+                rect: [
+                    image.rect.x * scale,
+                    image.rect.y * scale,
+                    image.rect.width * scale,
+                    image.rect.height * scale,
+                ],
+                source: [
+                    region.x as f32 + image.source.x * region_width,
+                    region.y as f32 + image.source.y * region_height,
+                    image.source.width * region_width,
+                    image.source.height * region_height,
+                ],
+                clip: clip_pixels(*clip, scale, width, height),
+                params: [
+                    image.radius * scale,
+                    image.opacity.clamp(0.0, 1.0),
+                    if linear { 1.0 } else { 0.0 },
+                    0.0,
+                ],
+                region: [
+                    region.x as f32,
+                    region.y as f32,
+                    region_width,
+                    region_height,
+                ],
+            })
+        })
+        .collect()
+}
+
 fn text_bounds(rect: Option<Rect>, scale: f32, width: u32, height: u32) -> TextBounds {
     match rect {
         Some(rect) => TextBounds {
@@ -241,7 +310,186 @@ fn text_bounds(rect: Option<Rect>, scale: f32, width: u32, height: u32) -> TextB
 
 enum Step {
     Quads(Range<u32>),
+    Images(Range<u32>),
     Text(usize),
+}
+
+/// Pipeline of `image.wgsl`, its instances and the image atlas texture,
+/// created with the first image.
+struct ImagePass {
+    pipeline: wgpu::RenderPipeline,
+    sampler: wgpu::Sampler,
+    atlas: ImageAtlas,
+    texture: Option<(wgpu::Texture, wgpu::BindGroup)>,
+    instance_buffer: wgpu::Buffer,
+    instance_capacity: usize,
+}
+
+impl ImagePass {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Kai image shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../image.wgsl").into()),
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Kai image pipeline"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<ImageInstance>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![
+                        0 => Float32x4,
+                        1 => Float32x4,
+                        2 => Float32x4,
+                        3 => Float32x4,
+                        4 => Float32x4
+                    ],
+                })],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Kai image sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        Self {
+            pipeline,
+            sampler,
+            atlas: ImageAtlas::default(),
+            texture: None,
+            instance_buffer: create_buffer::<ImageInstance>(
+                device,
+                "Kai image instances",
+                MIN_INSTANCE_CAPACITY,
+            ),
+            instance_capacity: MIN_INSTANCE_CAPACITY,
+        }
+    }
+
+    /// Pack this frame's images, copy the new ones to the texture (made on
+    /// first use) and upload `instances` built from their regions.
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniforms: &wgpu::Buffer,
+        bitmaps: &[&Bitmap],
+    ) -> HashMap<u64, ImageRegion> {
+        if bitmaps.is_empty() {
+            return HashMap::new();
+        }
+        let regions = self.atlas.prepare(bitmaps);
+        let (texture, _) = self.texture.get_or_insert_with(|| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Kai image atlas"),
+                size: wgpu::Extent3d {
+                    width: IMAGE_ATLAS_SIZE,
+                    height: IMAGE_ATLAS_SIZE,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Kai image bind group"),
+                layout: &self.pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniforms.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            (texture, bind_group)
+        });
+        for (region, pixels) in self.atlas.take_uploads() {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: region.x,
+                        y: region.y,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(region.width * 4),
+                    rows_per_image: Some(region.height),
+                },
+                wgpu::Extent3d {
+                    width: region.width,
+                    height: region.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        regions
+    }
+
+    fn upload_instances(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        instances: &[ImageInstance],
+    ) {
+        let capacity = grown_capacity(self.instance_capacity, instances.len());
+        if capacity != self.instance_capacity {
+            self.instance_buffer =
+                create_buffer::<ImageInstance>(device, "Kai image instances", capacity);
+            self.instance_capacity = capacity;
+        }
+        if !instances.is_empty() {
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        }
+    }
+
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>, range: Range<u32>) {
+        if let Some((_, bind_group)) = &self.texture {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+            pass.draw(0..6, range);
+        }
+    }
 }
 
 /// Effect texture and the bind group that samples it.
@@ -471,6 +719,7 @@ pub struct WgpuRenderer {
     masks: MaskAtlas,
     mask_texture: wgpu::Texture,
     background: BackgroundPass,
+    images: ImagePass,
     /// Prepared draws of the last frame, for [`Self::redraw_background`].
     steps: Vec<Step>,
     clear: Color,
@@ -667,6 +916,7 @@ impl WgpuRenderer {
         };
         let atlas = TextAtlas::with_color_mode(&device, &queue, &cache, format, color_mode);
         let background = BackgroundPass::new(&device, format);
+        let images = ImagePass::new(&device, format);
         Self {
             _instance: instance,
             device,
@@ -688,6 +938,7 @@ impl WgpuRenderer {
             masks: MaskAtlas::default(),
             mask_texture,
             background,
+            images,
             steps: Vec::new(),
             clear: Color::rgb(0, 0, 0),
             scale: 1.0,
@@ -721,14 +972,28 @@ impl WgpuRenderer {
             .iter()
             .filter_map(|batch| match batch {
                 Batch::Quads(quads) => Some(quads),
-                Batch::Texts(_) => None,
+                Batch::Images(_) | Batch::Texts(_) => None,
             })
             .flatten()
             .filter_map(|clipped| mask_key(&clipped.quad, scale))
             .collect();
         let masks = self.masks.prepare(&keys);
         self.upload_masks();
+        let mut bitmaps: Vec<&Bitmap> = Vec::new();
+        for batch in &batches {
+            if let Batch::Images(images) = batch {
+                for clipped in images {
+                    if !bitmaps.contains(&&clipped.image.bitmap) {
+                        bitmaps.push(&clipped.image.bitmap);
+                    }
+                }
+            }
+        }
+        let regions = self
+            .images
+            .prepare(&self.device, &self.queue, &self.uniforms, &bitmaps);
         let mut instances = Vec::new();
+        let mut image_instances = Vec::new();
         let mut steps = Vec::with_capacity(batches.len());
         let mut text_batches = Vec::new();
         for batch in &batches {
@@ -745,6 +1010,18 @@ impl WgpuRenderer {
                     ));
                     steps.push(Step::Quads(start..instances.len() as u32));
                 }
+                Batch::Images(images) => {
+                    let start = image_instances.len() as u32;
+                    image_instances.extend(build_image_instances(
+                        images,
+                        scale,
+                        width,
+                        height,
+                        self.linear_target,
+                        &regions,
+                    ));
+                    steps.push(Step::Images(start..image_instances.len() as u32));
+                }
                 Batch::Texts(texts) => {
                     steps.push(Step::Text(text_batches.len()));
                     text_batches.push(texts);
@@ -756,6 +1033,8 @@ impl WgpuRenderer {
             self.queue
                 .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
         }
+        self.images
+            .upload_instances(&self.device, &self.queue, &image_instances);
         self.queue.write_buffer(
             &self.uniforms,
             0,
@@ -862,6 +1141,7 @@ impl WgpuRenderer {
                     pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
                     pass.draw(0..6, range.clone());
                 }
+                Step::Images(range) => self.images.draw(&mut pass, range.clone()),
                 Step::Text(index) => self.text_renderers[*index]
                     .render(&self.atlas, &self.viewport, &mut pass)
                     .map_err(|error| format!("No se pudo dibujar el texto: {error}"))?,
@@ -1060,9 +1340,13 @@ fn linear_blend_forced() -> bool {
 }
 
 fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    create_buffer::<QuadInstance>(device, "Kai quad instances", capacity)
+}
+
+fn create_buffer<T>(device: &wgpu::Device, label: &str, capacity: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Kai quad instances"),
-        size: (capacity * std::mem::size_of::<QuadInstance>()) as u64,
+        label: Some(label),
+        size: (capacity * std::mem::size_of::<T>()) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -1245,6 +1529,135 @@ mod tests {
         let mut renderer = pollster::block_on(super::WgpuRenderer::new_offscreen(size, size))
             .expect("offscreen renderer");
         renderer.render_to_rgba(list, text, 1.0).expect("render")
+    }
+
+    #[test]
+    fn images_scale_to_pixels_and_map_their_crop_into_the_atlas() {
+        use crate::render::images::{ImageRegion, test_pattern};
+        use crate::render::{ClippedImage, ImageDraw};
+        let photo = test_pattern(4, 4);
+        let image = ImageDraw {
+            source: Rect {
+                x: 0.25,
+                y: 0.0,
+                width: 0.5,
+                height: 1.0,
+            },
+            radius: 8.0,
+            opacity: 0.5,
+            ..ImageDraw::new(
+                Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    width: 30.0,
+                    height: 40.0,
+                },
+                photo.clone(),
+            )
+        };
+        let images = [ClippedImage { image, clip: None }];
+        assert!(
+            super::build_image_instances(&images, 2.0, 800, 600, false, &HashMap::new()).is_empty(),
+            "images missing from the atlas are skipped"
+        );
+        let regions = HashMap::from([(
+            photo.id(),
+            ImageRegion {
+                x: 101,
+                y: 1,
+                width: 200,
+                height: 100,
+            },
+        )]);
+        let instance = super::build_image_instances(&images, 2.0, 800, 600, true, &regions)[0];
+        assert_eq!(instance.rect, [20.0, 40.0, 60.0, 80.0]);
+        assert_eq!(instance.source, [151.0, 1.0, 100.0, 100.0]);
+        assert_eq!(instance.clip, [0.0, 0.0, 800.0, 600.0]);
+        assert_eq!(instance.params, [16.0, 0.5, 1.0, 0.0]);
+        assert_eq!(instance.region, [101.0, 1.0, 200.0, 100.0]);
+    }
+
+    /// Writes `target/snapshots/images-primitive.bmp`: the test pattern
+    /// whole, cropped into a circle and into `rounded-xl`, half
+    /// transparent, and under a clip.
+    #[test]
+    #[ignore = "needs a GPU"]
+    fn images_draw_rounded_cropped_and_clipped() {
+        use crate::render::ImageDraw;
+        use crate::render::images::test_pattern;
+        let photo = test_pattern(256, 128);
+        let mut list = crate::render::DrawList::new(Color::hex(0xffffff));
+        let at = |x: f32, y: f32, w: f32, h: f32| Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        };
+        list.image(ImageDraw::new(at(8.0, 8.0, 128.0, 64.0), photo.clone()));
+        list.image(ImageDraw {
+            source: at(0.25, 0.0, 0.5, 1.0),
+            radius: 32.0,
+            ..ImageDraw::new(at(152.0, 8.0, 64.0, 64.0), photo.clone())
+        });
+        list.image(ImageDraw {
+            radius: 12.0,
+            ..ImageDraw::new(at(8.0, 88.0, 128.0, 64.0), photo.clone())
+        });
+        list.image(ImageDraw {
+            opacity: 0.5,
+            ..ImageDraw::new(at(152.0, 88.0, 64.0, 64.0), photo.clone())
+        });
+        list.quad(Quad::fill(
+            at(152.0, 160.0, 64.0, 16.0),
+            Color::hex(0x1e73ae),
+        ));
+        list.push_clip(at(8.0, 160.0, 64.0, 24.0));
+        list.image(ImageDraw::new(at(8.0, 160.0, 128.0, 64.0), photo.clone()));
+        list.pop_clip();
+        let mut text = crate::render::text::TextStore::new(cosmic_text::FontSystem::new());
+        let mut renderer = pollster::block_on(super::WgpuRenderer::new_offscreen(232, 232))
+            .expect("offscreen renderer");
+        let rgba = renderer
+            .render_to_rgba(&list, &mut text, 1.0)
+            .expect("render");
+        let px = |x: u32, y: u32| -> [u8; 4] {
+            rgba[((y * 232 + x) * 4) as usize..][..4]
+                .try_into()
+                .unwrap()
+        };
+        let source = |x: u32, y: u32| -> [u8; 4] {
+            photo.pixels()[((y * 256 + x) * 4) as usize..][..4]
+                .try_into()
+                .unwrap()
+        };
+        let near = |a: [u8; 4], b: [u8; 4]| a.iter().zip(b).all(|(a, b)| a.abs_diff(b) <= 12);
+        // The whole image at half size: (8 + 20, 8 + 20) shows source (40, 40).
+        assert!(near(px(28, 28), source(40, 40)), "{:?}", px(28, 28));
+        // Circle: its corner is the white background, its center the crop.
+        assert_eq!(px(153, 9), [255, 255, 255, 255]);
+        assert!(near(px(184, 40), source(128, 64)), "{:?}", px(184, 40));
+        // rounded-xl leaves the corner white, the inside is drawn.
+        assert_eq!(px(9, 89), [255, 255, 255, 255]);
+        assert!(near(px(40, 120), source(64, 64)));
+        // Half transparent over white is lighter than the source.
+        let faded = px(184, 120);
+        let solid = source(128, 64);
+        assert!(faded[0] >= solid[0] && faded[1] >= solid[1] && faded[2] >= solid[2]);
+        // Clipped below 184.
+        assert_eq!(px(40, 190), [255, 255, 255, 255]);
+        assert!(near(px(40, 170), source(64, 20)));
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/snapshots");
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::snapshot::write_bmp(
+            &dir.join("images-primitive.bmp"),
+            &crate::snapshot::Image {
+                width: 232,
+                height: 232,
+                rgba,
+            },
+        )
+        .unwrap();
     }
 
     #[test]

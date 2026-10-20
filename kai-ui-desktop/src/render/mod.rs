@@ -3,10 +3,11 @@
 //! Paint code produces a [`DrawList`] in logical window coordinates and in
 //! painter's order (later ops cover earlier ones, text included); a backend
 //! (currently [`wgpu_backend::WgpuRenderer`]) turns it into GPU work.
-//! [`resolve`] splits the list into alternating quad and text [`Batch`]es
-//! that keep that order and carries each op's effective clip.
+//! [`resolve`] splits the list into alternating quad, image and text
+//! [`Batch`]es that keep that order and carries each op's effective clip.
 
 pub mod icons;
+pub mod images;
 pub mod paint;
 pub mod text;
 pub mod wgpu_backend;
@@ -15,6 +16,7 @@ use crate::background::BackgroundLayer;
 use crate::element::WidgetId;
 use crate::geometry::{Point, Rect};
 use crate::icons::Icon;
+pub use images::Bitmap;
 
 /// Straight-alpha color in the sRGB color space, as authored in design tokens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,9 +188,42 @@ impl Quad {
 
 pub const TRANSPARENT: Color = Color::rgba(0, 0, 0, 0);
 
+/// A raster image stretched over `rect`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageDraw {
+    pub rect: Rect,
+    pub bitmap: Bitmap,
+    /// Part of the bitmap shown, as fractions of its size (`0..1`); a crop
+    /// for `object-cover`.
+    pub source: Rect,
+    /// Corner radius of `rect`, in logical points; `rect` is rounded like a
+    /// quad (`rounded-full` makes a circle).
+    pub radius: f32,
+    pub opacity: f32,
+}
+
+impl ImageDraw {
+    /// The whole of `bitmap` over `rect`, square and opaque.
+    pub fn new(rect: Rect, bitmap: Bitmap) -> Self {
+        Self {
+            rect,
+            bitmap,
+            source: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            radius: 0.0,
+            opacity: 1.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawOp {
     Quad(Quad),
+    Image(ImageDraw),
     /// Intersect the current clip with `rect` until the matching `PopClip`.
     PushClip(Rect),
     PopClip,
@@ -224,6 +259,10 @@ impl DrawList {
         self.quad(Quad::fill(rect, color));
     }
 
+    pub fn image(&mut self, image: ImageDraw) {
+        self.ops.push(DrawOp::Image(image));
+    }
+
     pub fn push_clip(&mut self, rect: Rect) {
         self.ops.push(DrawOp::PushClip(rect));
     }
@@ -253,10 +292,18 @@ pub struct TextDraw {
     pub clip: Option<Rect>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClippedImage {
+    pub image: ImageDraw,
+    /// Effective clip; `None` means unclipped (whole surface).
+    pub clip: Option<Rect>,
+}
+
 /// Consecutive ops of one kind; batches are drawn in order.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Batch {
     Quads(Vec<ClippedQuad>),
+    Images(Vec<ClippedImage>),
     Texts(Vec<TextDraw>),
 }
 
@@ -310,6 +357,24 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                 match batches.last_mut() {
                     Some(Batch::Quads(quads)) => quads.push(item),
                     _ => batches.push(Batch::Quads(vec![item])),
+                }
+            }
+            DrawOp::Image(image) => {
+                let Some(clip) = current.rect() else {
+                    continue;
+                };
+                let empty = image.rect.width <= 0.0 || image.rect.height <= 0.0;
+                let clipped_out = clip.is_some_and(|clip| image.rect.intersection(clip).is_none());
+                if image.opacity <= 0.0 || empty || clipped_out {
+                    continue;
+                }
+                let item = ClippedImage {
+                    image: image.clone(),
+                    clip,
+                };
+                match batches.last_mut() {
+                    Some(Batch::Images(images)) => images.push(item),
+                    _ => batches.push(Batch::Images(vec![item])),
                 }
             }
             DrawOp::Text { id, origin, color } => {
@@ -378,6 +443,7 @@ mod tests {
             .iter()
             .map(|batch| match batch {
                 Batch::Quads(quads) => (true, quads.len()),
+                Batch::Images(_) => unreachable!("no images here"),
                 Batch::Texts(texts) => (false, texts.len()),
             })
             .collect();
@@ -426,5 +492,64 @@ mod tests {
         };
         assert_eq!(last[0].clip, None);
         assert_eq!(last[0].quad.extent(), rect(196.0, 196.0, 13.0, 13.0));
+    }
+
+    #[test]
+    fn images_batch_between_quads_and_text_and_drop_when_hidden() {
+        use super::ImageDraw;
+        use super::images::test_pattern;
+        let red = Color::rgb(255, 0, 0);
+        let photo = test_pattern(8, 8);
+        let mut list = DrawList::new(Color::rgb(0, 0, 0));
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+        list.image(ImageDraw::new(rect(0.0, 0.0, 40.0, 40.0), photo.clone()));
+        list.image(ImageDraw {
+            radius: 20.0,
+            ..ImageDraw::new(rect(50.0, 0.0, 40.0, 40.0), photo.clone())
+        });
+        list.text(TEXT, Point::default(), red);
+        list.image(ImageDraw {
+            opacity: 0.0,
+            ..ImageDraw::new(rect(0.0, 0.0, 40.0, 40.0), photo.clone())
+        });
+        list.image(ImageDraw::new(rect(0.0, 0.0, 0.0, 40.0), photo.clone()));
+        list.push_clip(rect(0.0, 0.0, 30.0, 30.0));
+        list.image(ImageDraw::new(
+            rect(100.0, 100.0, 10.0, 10.0),
+            photo.clone(),
+        ));
+        list.image(ImageDraw::new(rect(20.0, 20.0, 40.0, 40.0), photo.clone()));
+        list.pop_clip();
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+
+        let batches = resolve(&list);
+        let shape: Vec<(&str, usize)> = batches
+            .iter()
+            .map(|batch| match batch {
+                Batch::Quads(quads) => ("quads", quads.len()),
+                Batch::Images(images) => ("images", images.len()),
+                Batch::Texts(texts) => ("texts", texts.len()),
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("quads", 1),
+                ("images", 2),
+                ("texts", 1),
+                ("images", 1),
+                ("quads", 1)
+            ],
+            "transparent, empty and clipped-out images are dropped"
+        );
+        let Batch::Images(clipped) = &batches[3] else {
+            panic!("images");
+        };
+        assert_eq!(clipped[0].clip, Some(rect(0.0, 0.0, 30.0, 30.0)));
+        assert_eq!(clipped[0].image.bitmap, photo);
+        let Batch::Images(first) = &batches[1] else {
+            panic!("images");
+        };
+        assert_eq!(first[1].image.radius, 20.0);
     }
 }
