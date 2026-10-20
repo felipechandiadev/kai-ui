@@ -33,8 +33,9 @@ Convertir el árbol ya medido en una lista de operaciones visuales que Kai prese
 
 - `Color` (sRGB u8 con alfa directo, `hex`, `mix` como `color-mix`, `with_alpha`, conversión a lineal) y `TextId { widget, part }` (contenido, valor o placeholder de un elemento).
 - `Quad { rect, fill, border, border_width, radius, blur, mask }`: una caja con esquinas redondeadas, borde interior y desenfoque opcional; sirve para fondos, bordes, sombras, anillos de foco, caret, selección y scrollbar. Con `mask: Some(Mask { icon, stroke_width })` el quad es un icono: `fill` se multiplica por la cobertura del icono rasterizado (abajo).
-- `DrawOp { Quad, PushClip, PopClip, Text { id, origin, color } }` y `DrawList` con `clear` (color de fondo de la raíz).
-- `resolve(&DrawList) -> Vec<Batch>` resuelve la pila de clips en CPU y agrupa las operaciones en lotes alternos `Quads`/`Texts` **en orden de pintor**: un texto pintado antes que una caja queda debajo de ella. Descarta lo totalmente recortado o transparente.
+- `DrawOp { Quad, Image, PushClip, PopClip, Text { id, origin, color } }` y `DrawList` con `clear` (color de fondo de la raíz).
+- `ImageDraw { rect, bitmap, source, radius, opacity }`: un `Bitmap` RGBA decodificado sobre `rect`; `source` es la parte visible en fracciones `0..1` (el recorte de `object-cover`) y `radius` redondea como un quad (`rounded-full` da un círculo).
+- `resolve(&DrawList) -> Vec<Batch>` resuelve la pila de clips en CPU y agrupa las operaciones en lotes alternos `Quads`/`Texts`/`Images` **en orden de pintor**: un texto pintado antes que una caja queda debajo de ella. Descarta lo totalmente recortado o transparente.
 
 ### Paint (`render/paint.rs`)
 
@@ -43,7 +44,7 @@ Convertir el árbol ya medido en una lista de operaciones visuales que Kai prese
 1. `box-shadow` (quad desenfocado, desplazado y expandido).
 2. `ring` de foco por fuera del borde, con `ring-offset`.
 3. Fondo y borde: con borde uniforme se usa un único quad SDF con radio; con lados distintos (`border-b`, `border-t`…), un rectángulo por lado.
-4. Texto, icono (un quad con máscara, cuadrado y centrado en la caja de contenido, con el color de texto heredado y su `stroke_width`), o el contenido del input (selección, valor o placeholder y caret), recortado a su interior.
+4. Texto, icono (un quad con máscara, cuadrado y centrado en la caja de contenido, con el color de texto heredado y su `stroke_width`), imagen (`fit_image` según `object-fill`, `object-cover` o `object-contain`; radio `min(rounded-*, lado corto / 2)`), o el contenido del input (selección, valor o placeholder y caret), recortado a su interior.
 5. Hijos, dentro del clip del nodo si tiene `overflow`.
 6. Barra de scroll superpuesta (4 pt, `muted-foreground` translúcido) cuando hay overflow.
 
@@ -54,6 +55,7 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 - `WgpuRenderer` encapsula device, pipeline, glyphon y la superficie, o una textura offscreen `Rgba8UnormSrgb` (`new_offscreen` + `render_to_rgba`, usado por las capturas).
 - Quads instanciados: cada instancia lleva rect, relleno, borde, clip y `(radio, ancho de borde, blur)`. El shader evalúa la SDF de un rectángulo redondeado, descarta fuera del clip, suaviza el borde con antialiasing y aplica el blur con `smoothstep`. La mezcla es en alfa premultiplicado. El buffer de instancias crece a la siguiente potencia de dos.
 - Iconos: `MaskAtlas` (`render/icons.rs`, puro) empaqueta por estantes las máscaras en una textura `R8Unorm` de 1024², con 1 px de margen. La clave es `(icono, tamaño en px físicos, trazo × 100)`, así que cada tamaño y escala se rasteriza nítido una sola vez. `rasterize` arma el `<svg>` de Lucide con el `stroke-width` pedido, lo convierte con `resvg`/`tiny-skia` a la escala física y guarda el canal alfa. En `prepare` se juntan las claves del frame, se empaquetan las nuevas (si el atlas se llena se vacía y se re-empaqueta una vez; una máscara más grande que el atlas se omite) y se suben con `queue.write_texture`. La instancia lleva `uv = (x, y, tamaño)` y `params.w = 1`. El rect se ajusta a píxeles físicos enteros y el shader lee la cobertura con `textureLoad` (un texel por píxel, sin sampler ni filtrado), así el icono queda tan nítido como el raster.
+- Imágenes (`render/images.rs` e `image.wgsl`): `ImageAtlas` empaqueta por estantes los `Bitmap` en una textura `Rgba8Unorm` de 4096² con margen de 1 px; si se llena, se vacía y se re-empaqueta con las imágenes del frame. La clave es `Bitmap::id`. Antes de subir, cada imagen se reduce a 1024 px de lado como máximo (promediando) y se premultiplica. El shader muestrea con filtro lineal, recorta con la SDF del rectángulo redondeado y el clip de la instancia, y multiplica por la opacidad.
 - Cada lote de texto tiene su propio `TextRenderer` de glyphon (todos comparten el atlas), así los textos se intercalan con las cajas en el orden correcto. Los `TextBounds` salen del clip resuelto en píxeles físicos.
 - Los colores se convierten a lineal cuando el formato es sRGB, igual que glyphon. `render` devuelve `Ok(false)` cuando hay que redibujar (superficie perdida u obsoleta).
 
@@ -74,15 +76,23 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 - `set_read_only(true)`: navegación, selección y copia funcionan; insertar, borrar, pegar e IME no. Cortar se comporta como copiar.
 - `select_all()` selecciona todo el valor (lo usa `select_on_focus`). Los clics por encima o por debajo de la línea (delegados desde el contorno del campo) se acotan a la línea.
 
+### Imágenes (`media.rs` y `element::image`)
+
+- `image(src)` es una hoja con `Role::Image`; `.alt("…")` le da nombre (sin nombre es decorativa y AccessKit no la expone). `ImageSource` es `Path`, `Url`, `Bytes` o `Rgba(Bitmap)`.
+- La sesión tiene un `ImageStore`: tras cada `view` rellena las imágenes ya decodificadas y pide las nuevas al pool de tareas (`Effects::perform`, 4 hilos `std`), que leen con un `ImageLoader` y decodifican con `image` (png, jpeg y webp). `SystemLoader` lee archivos y, con la feature `net` (por defecto), descarga con `ureq` (20 s de timeout, 20 MB como máximo). El resultado invalida el frame. El almacén guarda 256 imágenes y desaloja las que llevan más tiempo sin usarse. Si una carga falla, el elemento sigue sin imagen (el avatar muestra sus iniciales).
+- Layout: una imagen cargada toma su aspecto intrínseco (`aspect_ratio` de Taffy) salvo que el estilo fije uno (`aspect-square`, `aspect-video`); sin ancho ni alto, mide su tamaño natural.
+- Pruebas: `TestApp` usa un `FakeImageLoader` (respuestas por URL o ruta; `.images(loader)` en el builder) y `run_until_idle()` espera las cargas. Las capturas construidas fuera de una sesión llaman a `ImageStore::load_now(&mut tree)`.
+
 ### Capturas
 
-`cargo test --manifest-path kai-ui-desktop/Cargo.toml -- --ignored snapshot_demo` renderiza la demo offscreen en la GPU local (2×) y escribe BMP en `kai-ui-desktop/target/snapshots/`: reposo, interacción (hover, foco y valor), ventana estrecha, scroll al final con anillo de foco, y la tarjeta de variantes de TextField en reposo (`demo-fields`, con password enmascarado) y con valores y foco en el password visible (`demo-fields-focus`). Para verlas como PNG: `sips -s format png demo-idle.bmp --out demo-idle.png`. Es `#[ignore]` porque necesita GPU.
+`cargo test --manifest-path kai-ui-desktop/Cargo.toml -- --ignored snapshot_demo` renderiza la demo offscreen en la GPU local (2×) y escribe BMP en `kai-ui-desktop/target/snapshots/`: reposo, interacción (hover, foco y valor), ventana estrecha, scroll al final con anillo de foco, la tarjeta de variantes de TextField en reposo (`demo-fields`, con password enmascarado) y con valores y foco en el password visible (`demo-fields-focus`), y la sección Multimedia en reposo y con un archivo arrastrado sobre la portada (`demo-multimedia`, `demo-multimedia-drag`). `images_draw_rounded_cropped_and_clipped` escribe `images-primitive.bmp` (imagen entera, en círculo, `rounded-xl`, semitransparente y recortada). Para verlas como PNG: `sips -s format png demo-idle.bmp --out demo-idle.png`. Es `#[ignore]` porque necesita GPU.
 
 ### Pendiente
 
 - [ ] Comparación automática de capturas contra referencias (requiere un runner con GPU y tolerancia de rasterización).
 - [x] Iconos SVG (Lucide) en un atlas de máscaras.
-- [ ] Sombras múltiples, gradientes, transformaciones e imágenes rasterizadas.
+- [x] Imágenes rasterizadas (atlas RGBA, `object-*`, radio propio).
+- [ ] Sombras múltiples, gradientes, transformaciones y clip redondeado de contenedores (`rounded-xl overflow-hidden` recorta sus hijos con un rectángulo).
 - [ ] Política de recursos de fuentes (carga propia, invalidación al cambiar de escala) más allá del `FontSystem` del sistema.
 
 ## Accesibilidad

@@ -786,6 +786,7 @@ Reglas de la pista C:
 - **Diseño**: el de [10](10-mapas.md) §4.1: `TextureArray` RGBA o atlas con LRU y sampler lineal; uniforme de transformación afín por lote; vértices de `lyon` con AA.
 - **Tests**: tests puros de `resolve` con los nuevos lotes y su orden de pintor; captura con una imagen recortada por `rounded-xl overflow-hidden`, una polilínea y un polígono semitransparente.
 - **Hecho cuando**: el criterio de M0 en [10](10-mapas.md) §5 se cumple y DSP desktop muestra avatares de funcionarios con la misma primitiva.
+- **Estado: parcial.** Hechos `DrawOp::Image`, el lote `Images`, `image.wgsl` y el atlas RGBA (re-empaquetado al llenarse, sin LRU), con radio SDF propio por imagen, la captura `images-primitive` y los tests de `resolve`. Encima: `image(src)` con `ImageSource`, `ImageStore` en la sesión (decodifica en el pool del Paso 15), `object-*`, `aspect-*`, `Role::Image`, y los componentes `Avatar` y `MediaSlot`, que la demo usa en la sección Multimedia y en la tabla ([04](04-renderer-y-texto.md), «Imágenes»). Pendientes: clip redondeado de contenedores, transformaciones y geometría con `lyon`.
 
 #### Paso 15 — Efectos async
 
@@ -806,6 +807,7 @@ Reglas de la pista C:
 - **Tests**: una llamada lenta no bloquea `view`; cancelar descarta el resultado; una invocación MCP async responde al terminar.
 - **Hecho cuando**: el benchmark de frame no empeora durante una llamada de red en curso; los tests anteriores pasan.
 - **Nota**: esto revisa la exclusión de `Cmd`/`Sub` del [README](README.md) («Fuera del alcance inicial»); actualizarlo en el mismo cambio.
+- **Estado: parcial.** El ejecutor no es Tokio sino un pool propio de 4 hilos `std` (Tokio sigue siendo opcional, solo con `mcp`). `Effects::perform(tarea, Msg)` corre una función bloqueante en el pool; el resultado vuelve como `UserEvent::Task` por el `EventLoopProxy` y llega a `update` como `Msg` (en devtools, origen «Tarea»). `.keyed(key)` reemplaza la tarea o temporizador pendiente con la misma key y `Effects::cancel(key)` descarta su resultado; `after` ya existía. `Effects::pick_file(PickFile::images(título), |ruta| Msg)` abre un `NSOpenPanel` modal (objc2) y entrega la ruta o `None`; los archivos arrastrados desde Finder llegan con `on_drop_files` (origen «Archivos»). En `TestApp`: `run_until_idle()`, `on_file_pick(ruta)`, `drop_files(By, rutas)` y `hover_files()`. Pendientes: futures (`perform` recibe una función, no un `async`), suscripciones, comandos async que completan una invocación MCP (§7.3) y el test de frame durante una llamada de red.
 
 #### Paso 15b — Mapa raster (mapas M1)
 

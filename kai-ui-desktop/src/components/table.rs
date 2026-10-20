@@ -129,7 +129,11 @@ pub struct Table<Msg> {
     on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
     label: Option<String>,
     test_id: Option<String>,
+    leading: Option<(usize, Leading<Msg>)>,
 }
+
+/// Element before the text of a cell, by row ([`Table::leading`]).
+type Leading<Msg> = Rc<dyn Fn(usize) -> Element<Msg>>;
 
 impl<Msg: Clone + 'static> Table<Msg> {
     pub fn new(
@@ -148,7 +152,19 @@ impl<Msg: Clone + 'static> Table<Msg> {
             on_select: None,
             label: None,
             test_id: None,
+            leading: None,
         }
+    }
+
+    /// Put `element(row)` before the text of `column`'s cells (an avatar
+    /// next to a name). Built only for the visible rows.
+    pub fn leading(
+        mut self,
+        column: usize,
+        element: impl Fn(usize) -> Element<Msg> + 'static,
+    ) -> Self {
+        self.leading = Some((column, Rc::new(element)));
+        self
     }
 
     /// Row height in points: 32 by default (24 is AppKit's).
@@ -210,8 +226,17 @@ impl<Msg: Clone + 'static> Table<Msg> {
         let cell = self.cell;
         let selected = self.selected;
         let on_select = self.on_select.clone();
-        let render: Rc<dyn Fn(usize) -> Element<Msg>> =
-            Rc::new(move |index| table_row(index, &columns, &cell, selected, on_select.as_deref()));
+        let leading = self.leading;
+        let render: Rc<dyn Fn(usize) -> Element<Msg>> = Rc::new(move |index| {
+            table_row(
+                index,
+                &columns,
+                &cell,
+                leading.as_ref(),
+                selected,
+                on_select.as_deref(),
+            )
+        });
         let mut body = div()
             .class("flex flex-col flex-1 min-h-0 overflow-y-auto")
             .part("body")
@@ -294,6 +319,7 @@ fn table_row<Msg: Clone>(
     index: usize,
     columns: &[Column],
     cell: &Rc<dyn Fn(usize, usize) -> String>,
+    leading: Option<&(usize, Leading<Msg>)>,
     selected: Option<usize>,
     on_select: Option<&dyn Fn(usize) -> Msg>,
 ) -> Element<Msg> {
@@ -311,13 +337,17 @@ fn table_row<Msg: Clone>(
     };
     let cells = columns.iter().enumerate().map(|(column_index, column)| {
         let justify = if column.numeric { "justify-end" } else { "" };
+        let before = leading
+            .filter(|(leading_column, _)| *leading_column == column_index)
+            .map(|(_, element)| element(index));
         div()
             .class(&format!(
-                "flex items-center {} {justify} {}",
+                "flex items-center gap-2 {} {justify} {}",
                 column.width_class(),
                 themed("px-3", "px-1.5")
             ))
             .role(Role::Cell)
+            .children(before)
             .child(text(cell(index, column_index)).class("truncate"))
     });
     let mut row = div()

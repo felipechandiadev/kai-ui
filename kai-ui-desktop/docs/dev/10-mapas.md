@@ -126,11 +126,11 @@ flowchart LR
 
 | Pieza | Estado actual | Propuesta |
 |---|---|---|
-| Imágenes rasterizadas | Pendiente en [04](04-renderer-y-texto.md); solo existe `MaskAtlas` `R8Unorm` para iconos | `DrawOp::Image { rect, texture, uv, opacity }`. Almacén de teselas en un `TextureArray` RGBA (por ejemplo 256 capas de 256 o 512 px) o en un atlas de 4096² con huecos y desalojo LRU. Útil también para `<img>` y avatares. Con sampler lineal (a diferencia de los iconos, que usan `textureLoad`). |
-| Clip | Rectangular por instancia en `quad.wgsl`, pila resuelta en `resolve` | Reutilizar el clip rectangular; añadir clip redondeado (máscara SDF por instancia) para `rounded-xl overflow-hidden` ([13](13-hoja-de-ruta-plataforma.md), Paso 14b). |
+| Imágenes rasterizadas | **Hecho** ([04](04-renderer-y-texto.md), «Imágenes»): `DrawOp::Image { rect, bitmap, source, radius, opacity }`, atlas `Rgba8Unorm` de 4096² con estantes y margen (lleno, se re-empaqueta con las imágenes del frame), sampler lineal en `image.wgsl`; `image(src)`, `Avatar` y `MediaSlot` lo usan | Para teselas: subir un número limitado por frame y, si el atlas compartido se queda chico, un atlas propio del mapa o un `TextureArray`. |
+| Clip | Rectangular por instancia en `quad.wgsl` e `image.wgsl`, pila resuelta en `resolve`; cada imagen recorta además con su propio radio (SDF) | Falta el clip redondeado de contenedores (máscara SDF heredada por los hijos) para `rounded-xl overflow-hidden` ([13](13-hoja-de-ruta-plataforma.md), Paso 14b). |
 | Transformaciones | Pendiente | Uniforme por lote con matriz afín 2D (o traslación + escala). La geometría del mapa vive en coordenadas Mercator del mundo y pan/zoom solo cambian el uniforme: no hace falta reconstruir buffers aunque el árbol se reconstruya cada frame. |
 | Geometría | Solo quads SDF | Pipeline de triángulos (posición en mundo, color, `width`/normal para trazos) con vértices de `lyon`. AA por MSAA 4× o por distancia en el shader. Imprescindible para polilíneas y polígonos de la app desde v1. |
-| Orden de pintor | `resolve` alterna lotes `Quads`/`Texts` | Añadir lotes `Images` y `Geometry` en la misma secuencia, para que fondo del mapa, capas vectoriales e hijos Kai respeten el orden. |
+| Orden de pintor | `resolve` alterna lotes `Quads`/`Texts`/`Images` | Añadir lotes `Geometry` en la misma secuencia, para que fondo del mapa, capas vectoriales e hijos Kai respeten el orden. |
 
 ### 4.2 Elemento `Map`
 
@@ -199,7 +199,7 @@ pub trait TileSource: Send + Sync + 'static {
 }
 ```
 
-- La descarga y la decodificación (`image`, o `mvt-reader` + `lyon` en fase 2) corren fuera del hilo de UI, en el **Tokio de hilo de servicio** que fija [13](13-hoja-de-ruta-plataforma.md) para MCP y efectos (Pasos 12 y 15), con concurrencia acotada (4–6) y un **User-Agent propio** de la app (`[maps] user-agent` en `kai.toml`). El resultado llega como evento interno `TileReady` por el `EventLoopProxy` que `runtime.rs` ya usa para AccessKit, y provoca `request_redraw`. No es un `Msg` de la app.
+- La descarga y la decodificación (`image`, o `mvt-reader` + `lyon` en fase 2) corren fuera del hilo de UI, en el **pool de 4 hilos `std`** de `Effects::perform` (13, Paso 15; Tokio queda solo para MCP), con concurrencia acotada (4–6) y un **User-Agent propio** de la app (`[maps] user-agent` en `kai.toml`). El resultado llega como evento interno `TileReady` por el `EventLoopProxy` que `runtime.rs` ya usa para AccessKit, y provoca `request_redraw`. No es un `Msg` de la app.
 - La subida a GPU (`queue.write_texture`) se limita por frame (por ejemplo 8 teselas) para no bajar de 60/120 Hz.
 - PMTiles local: lectura por mmap; la cabecera y los directorios se cachean una vez por archivo.
 
@@ -339,6 +339,7 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 ### M0 — Primitivas de renderer (13, Paso 14b)
 
 - `DrawOp::Image` con `TextureArray`/atlas RGBA y sampler lineal; lotes `Images` en `resolve`; uniforme de transformación; pipeline de geometría con vértices de `lyon`; clip redondeado.
+- **Estado: a medias.** Hechos `DrawOp::Image`, el atlas RGBA, los lotes `Images` con sus tests de `resolve`, el radio propio de cada imagen y la captura `images-primitive` (imagen entera, en círculo, `rounded-xl`, semitransparente y recortada). Pendientes el uniforme de transformación, la geometría con `lyon` y el clip redondeado de contenedores.
 - **Terminado cuando:** las capturas offscreen ([04](04-renderer-y-texto.md), «Capturas») muestran una imagen recortada por `rounded-xl overflow-hidden`, una polilínea con AA y un polígono semitransparente en el orden de pintor correcto, y los tests puros de `resolve` cubren los nuevos lotes.
 
 ### M1 — Mapa raster (v1) (13, Paso 15b)

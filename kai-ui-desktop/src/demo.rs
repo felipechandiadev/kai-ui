@@ -1,6 +1,7 @@
 //! Kai UI Desktop demo, shared by the `kai-ui-desktop-prototype` binary
 //! (`cargo run`) and `examples/demo.rs` (`cargo run --example demo`).
 
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use schemars::JsonSchema;
@@ -12,20 +13,22 @@ use crate::commands::{
     describe_json,
 };
 use crate::components::{
-    AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, Column, Dialog,
-    DialogWidth, FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant,
-    LabelLayout, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table,
-    TextField, Toast, alert, badge, button, button_sized, caption, card, card_actions,
-    card_content, card_header, checkbox, checkbox_with_options, group_box, heading, icon_button,
-    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
-    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
-    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
-    toolbar_spacer, toolbar_title, virtual_list,
+    ActionPlacement, AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button,
+    ButtonSize, ButtonVariant, Column, Dialog, DialogWidth, FieldBezel, FieldDensity, FieldVariant,
+    IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, Sidebar, SidebarGroup,
+    SidebarItem, SortDirection, SwitchDensity, Table, TextField, Toast, alert, avatar, badge,
+    button, button_sized, caption, card, card_actions, card_content, card_header, checkbox,
+    checkbox_with_options, group_box, heading, icon_button, icon_button_sized, paragraph,
+    search_field, segmented, segmented_with_options, select, select_with_options, stat, switch,
+    switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar,
+    toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    validate_image_file, virtual_list,
 };
-use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
+use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geometry::Size;
 use crate::icons::Icon;
-use crate::runtime::{self, App, Effects};
+use crate::media::{ImageSource, sample_landscape, sample_portrait};
+use crate::runtime::{self, App, Effects, PickFile};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -80,6 +83,13 @@ struct Demo {
     /// Client numbers in display order: filtered by `query`, sorted.
     rows: Rc<[u32]>,
     cliente: Option<u32>,
+    /// Multimedia: the three image fields, the URL typed and the one
+    /// loaded in the avatar.
+    foto: Imagen,
+    portada: Imagen,
+    logo: Imagen,
+    url: String,
+    avatar_url: Option<String>,
     /// Diálogos y avisos.
     dialogo: Option<Dialogo>,
     toasts: Vec<Toast<Msg>>,
@@ -122,11 +132,52 @@ impl Default for Demo {
             sort: (0, SortDirection::Ascending),
             rows: clientes("", (0, SortDirection::Ascending)),
             cliente: None,
+            foto: Imagen::with(sample_portrait()),
+            portada: Imagen::default(),
+            logo: Imagen::with(sample_landscape()),
+            url: String::new(),
+            avatar_url: None,
             dialogo: None,
             toasts: Vec::new(),
             next_toast: 1,
         }
     }
+}
+
+/// Largest file the image fields take, in megabytes.
+const MAX_IMAGEN_MB: u64 = 5;
+
+/// An image field of «Multimedia»: what it shows and the last file
+/// refused.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Imagen {
+    actual: Option<ImageSource>,
+    error: Option<String>,
+}
+
+impl Imagen {
+    fn with(source: ImageSource) -> Self {
+        Self {
+            actual: Some(source),
+            error: None,
+        }
+    }
+
+    /// Show `path` if it is an image of at most [`MAX_IMAGEN_MB`].
+    fn set(&mut self, path: PathBuf) {
+        match validate_image_file(&path, MAX_IMAGEN_MB) {
+            Ok(()) => *self = Self::with(ImageSource::Path(path)),
+            Err(error) => self.error = Some(error),
+        }
+    }
+}
+
+/// The image fields of «Multimedia».
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Campo {
+    Foto,
+    Portada,
+    Logo,
 }
 
 /// Rows of the client table.
@@ -348,6 +399,8 @@ enum Seccion {
     Contenedores,
     /// Badges y alertas.
     Badges,
+    /// Avatares, imágenes y campos de imagen (foto, portada, logo).
+    Multimedia,
     /// Tabla de 10 000 clientes y lista virtualizada.
     Tabla,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
@@ -355,13 +408,14 @@ enum Seccion {
 }
 
 impl Seccion {
-    const ALL: [Seccion; 8] = [
+    const ALL: [Seccion; 9] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
         Self::Seleccion,
         Self::Contenedores,
         Self::Badges,
+        Self::Multimedia,
         Self::Tabla,
         Self::Dialogos,
     ];
@@ -378,6 +432,7 @@ impl Seccion {
             Self::Seleccion => "seleccion",
             Self::Contenedores => "contenedores",
             Self::Badges => "badges",
+            Self::Multimedia => "multimedia",
             Self::Tabla => "tabla",
             Self::Dialogos => "dialogos",
         }
@@ -392,6 +447,7 @@ impl Seccion {
             Self::Seleccion => ("Selección", Icon::ToggleLeft),
             Self::Contenedores => ("Contenedores", Icon::LayoutGrid),
             Self::Badges => ("Badges y alertas", Icon::Tag),
+            Self::Multimedia => ("Multimedia", Icon::Image),
             Self::Tabla => ("Tabla", Icon::Table),
             Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
         };
@@ -413,6 +469,7 @@ enum Field {
     Pin,
     Notes,
     Lookup,
+    Url,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -454,6 +511,12 @@ enum Msg {
     ConfirmDialog,
     ShowToast(VarianteAviso),
     CloseToast(u64),
+    /// Opens the file panel for a field.
+    ElegirImagen(Campo),
+    /// The panel's answer, or a file dropped on the field.
+    ImagenElegida(Campo, Option<PathBuf>),
+    /// Loads the avatar from a URL; empty, back to the initials.
+    CargarUrl(String),
 }
 
 impl Demo {
@@ -641,6 +704,29 @@ impl Action for MostrarAviso {
     }
 }
 
+/// Shows the image at a URL in the avatar of «Multimedia».
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CargarUrl {
+    #[schemars(
+        description = "Dirección http(s) de una imagen png, jpg o webp; vacía, \
+                              vuelve a las iniciales"
+    )]
+    url: String,
+}
+
+impl Action for CargarUrl {
+    type App = Demo;
+    const ID: &'static str = "multimedia.cargar_url";
+    const TITLE: &'static str = "Cargar imagen desde URL";
+    fn description() -> &'static str {
+        "Descarga una imagen y la muestra en el avatar de la sección Multimedia"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::CargarUrl(self.url)
+    }
+}
+
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
 struct Saludo;
@@ -688,6 +774,7 @@ impl App for Demo {
             .expose();
         // It takes a variant: no menu item, as `ui.ir_a`.
         registry.action::<MostrarAviso>().expose();
+        registry.action::<CargarUrl>().expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -758,7 +845,29 @@ impl App for Demo {
                     Field::Pin => &mut self.pin,
                     Field::Notes => &mut self.notes,
                     Field::Lookup => &mut self.lookup,
+                    Field::Url => &mut self.url,
                 } = value;
+            }
+            Msg::ElegirImagen(campo) => {
+                let title = match campo {
+                    Campo::Foto => "Elegir foto de perfil",
+                    Campo::Portada => "Elegir portada",
+                    Campo::Logo => "Elegir logo",
+                };
+                return Effects::pick_file(PickFile::images(title), move |path| {
+                    Msg::ImagenElegida(campo, path)
+                });
+            }
+            Msg::ImagenElegida(campo, Some(path)) => match campo {
+                Campo::Foto => self.foto.set(path),
+                Campo::Portada => self.portada.set(path),
+                Campo::Logo => self.logo.set(path),
+            },
+            Msg::ImagenElegida(_, None) => {}
+            Msg::CargarUrl(url) => {
+                let url = url.trim().to_owned();
+                self.avatar_url = (!url.is_empty()).then(|| url.clone());
+                self.url = url;
             }
             Msg::TogglePassword => self.show_password = !self.show_password,
             Msg::ToggleNotifications => self.notifications = !self.notifications,
@@ -1056,6 +1165,7 @@ impl App for Demo {
             Seccion::Seleccion => vec![self.selection()],
             Seccion::Contenedores => self.containers(),
             Seccion::Badges => vec![badges_and_alerts],
+            Seccion::Multimedia => vec![self.avatars(), self.image_fields()],
             Seccion::Tabla => vec![self.client_table(), self.simple_list()],
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
@@ -1104,6 +1214,7 @@ impl Demo {
                     Seccion::Seleccion,
                     Seccion::Contenedores,
                     Seccion::Badges,
+                    Seccion::Multimedia,
                 ]
                 .map(Seccion::item),
             ),
@@ -1405,6 +1516,7 @@ impl Demo {
     /// filtered by the toolbar search.
     fn client_table(&self) -> Element<Msg> {
         let rows = Rc::clone(&self.rows);
+        let named = Rc::clone(&self.rows);
         let selected = self
             .cliente
             .and_then(|numero| self.rows.iter().position(|row| *row == numero));
@@ -1437,6 +1549,12 @@ impl Demo {
                     rows.get(row)
                         .map_or_else(String::new, |numero| celda(&cliente(*numero), column))
                 })
+                .leading(1, move |row| {
+                    let nombre = named
+                        .get(row)
+                        .map_or_else(String::new, |numero| cliente(*numero).nombre);
+                    Avatar::new(nombre).size(AvatarSize::Xs).build()
+                })
                 .sort(self.sort.0, self.sort.1)
                 .on_sort(Msg::Sort)
                 .selected(selected)
@@ -1447,6 +1565,160 @@ impl Demo {
                 .class("h-[360px] rounded-md border border-border appkit:border-separator"),
             ]),
         ])
+    }
+
+    /// Multimedia: avatars by size, with initials, an image or one from a
+    /// URL, and a bare `image`.
+    fn avatars(&self) -> Element<Msg> {
+        let sizes = [
+            AvatarSize::Xs,
+            AvatarSize::Sm,
+            AvatarSize::Md,
+            AvatarSize::Lg,
+        ];
+        let row = |label: &str, avatars: Vec<Element<Msg>>| {
+            div()
+                .class("flex flex-wrap items-center gap-3")
+                .child(caption(label).class("w-24"))
+                .children(avatars)
+        };
+        let url = self.url.clone();
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("multimedia.avatares")
+            .children([
+                card_header(
+                    "Avatares",
+                    Some("Iniciales mientras no hay imagen; la imagen se recorta al círculo"),
+                ),
+                card_content().class("gap-4").children([
+                    row(
+                        "Iniciales:",
+                        ["Ana Rojas", "Bruno Soto", "Carla Vega", "Diego"]
+                            .into_iter()
+                            .zip(sizes)
+                            .map(|(name, size)| Avatar::new(name).size(size).build())
+                            .chain([Avatar::new("").size(AvatarSize::Sm).build()])
+                            .collect(),
+                    ),
+                    row(
+                        "Con imagen:",
+                        sizes
+                            .into_iter()
+                            .map(|size| {
+                                Avatar::new("Felipe Muñoz")
+                                    .image(sample_portrait())
+                                    .size(size)
+                                    .build()
+                            })
+                            .collect(),
+                    ),
+                    div().class("flex items-center gap-4").children([
+                        avatar(
+                            "Imagen remota",
+                            self.avatar_url.clone().map(ImageSource::Url),
+                        )
+                        .test_id("multimedia.avatar_url"),
+                        div().class("flex flex-1 flex-col gap-2 min-w-0").children([
+                            caption("Desde una URL (multimedia.cargar_url):"),
+                            div().class("flex items-center gap-3").children([
+                                TextField::new("URL de la imagen", &self.url)
+                                    .placeholder("https://…/foto.png")
+                                    .on_input(|value| Msg::Edit(Field::Url, value))
+                                    .on_submit(Msg::CargarUrl(self.url.clone()))
+                                    .test_id("multimedia.url")
+                                    .build()
+                                    .class("flex-1"),
+                                button("Cargar", ButtonVariant::Outlined)
+                                    .on_command(CargarUrl { url })
+                                    .test_id("multimedia.cargar"),
+                            ]),
+                        ]),
+                    ]),
+                    row(
+                        "image(src):",
+                        vec![
+                            image(sample_landscape())
+                                .alt("Paisaje")
+                                .class("w-48 rounded-md")
+                                .test_id("multimedia.paisaje"),
+                            image(sample_landscape())
+                                .alt("Paisaje recortado")
+                                .class("size-24 rounded-md object-cover"),
+                        ],
+                    ),
+                ]),
+            ])
+    }
+
+    /// Multimedia: the profile photo (button on the edge), logo and
+    /// banner fields: a click or the button opens the file panel, a file
+    /// dropped from Finder replaces the image, and a refused one shows its
+    /// error.
+    fn image_fields(&self) -> Element<Msg> {
+        let field = |campo: Campo, variant: MediaVariant, imagen: &Imagen, id: &str| {
+            MediaSlot::new(variant)
+                .current(imagen.actual.clone())
+                .on_pick(Msg::ElegirImagen(campo))
+                .on_drop(move |path| Msg::ImagenElegida(campo, Some(path)))
+                .error(imagen.error.clone())
+                .test_id(id)
+        };
+        let labeled = |label: &str, slot: Element<Msg>| {
+            div()
+                .class("flex flex-col items-center gap-2 min-w-0")
+                .children([caption(label), slot])
+        };
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("multimedia.campos")
+            .children([
+                card_header(
+                    "Campos de imagen",
+                    Some(
+                        format!(
+                            "Clic para elegir o arrastra desde Finder; png, jpg o webp de \
+                             hasta {MAX_IMAGEN_MB} MB"
+                        )
+                        .as_str(),
+                    ),
+                ),
+                card_content().class("gap-6").children([
+                    div().class("grid grid-cols-2 gap-6").children([
+                        labeled(
+                            "Foto de perfil",
+                            field(
+                                Campo::Foto,
+                                MediaVariant::Avatar(AvatarSize::Md),
+                                &self.foto,
+                                "multimedia.foto",
+                            )
+                            .action_placement(ActionPlacement::Edge)
+                            .build(),
+                        ),
+                        labeled(
+                            "Logo",
+                            field(
+                                Campo::Logo,
+                                MediaVariant::Logo,
+                                &self.logo,
+                                "multimedia.logo",
+                            )
+                            .build(),
+                        ),
+                    ]),
+                    labeled(
+                        "Portada",
+                        field(
+                            Campo::Portada,
+                            MediaVariant::Banner,
+                            &self.portada,
+                            "multimedia.portada",
+                        )
+                        .build(),
+                    ),
+                ]),
+            ])
     }
 
     /// Tabla: a plain virtual list.
@@ -1831,7 +2103,7 @@ fn demo_theme() -> Theme {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{Dialogo, SortDirection, VarianteAviso};
+    use super::{Campo, CargarUrl, Dialogo, ImageSource, SortDirection, VarianteAviso};
 
     use cosmic_text::{
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
@@ -1867,12 +2139,21 @@ mod tests {
             let _ = self.update(msg);
         }
     }
+    use crate::media::{FakeImageLoader, ImageStore};
     use crate::render::paint::{PaintInput, paint};
     use crate::render::text::TextStore;
-    use crate::runtime::{App, build_view};
+    use crate::runtime::App;
     use crate::snapshot::{self, Shot};
     use crate::testing::{By, Confirm, Key, Modifiers, MsgSource, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
+
+    /// The demo's tree as the session shows it: built, with its images
+    /// decoded.
+    fn build_view(demo: &Demo) -> crate::element::Element<Msg> {
+        let mut tree = crate::runtime::build_view(demo);
+        ImageStore::new(std::sync::Arc::new(FakeImageLoader::new())).load_now(&mut tree);
+        tree
+    }
 
     /// Two-field rows (`grid-cols-1 sm:grid-cols-2`): side by side from
     /// 640 pt, one column below, never wider than the window (the fields
@@ -2541,6 +2822,7 @@ mod tests {
             Seccion::Seleccion => "seleccion",
             Seccion::Contenedores => "contenedores.card",
             Seccion::Badges => "badges",
+            Seccion::Multimedia => "multimedia.campos",
             Seccion::Tabla => "tabla.clientes",
             Seccion::Dialogos => "dialogos",
         }
@@ -2600,6 +2882,7 @@ mod tests {
                 "Selección",
                 "Contenedores",
                 "Badges y alertas",
+                "Multimedia",
                 "Tabla",
                 "Diálogos y avisos",
             ]
@@ -2614,9 +2897,10 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 8] = [
+        const SOURCES: [&str; 9] = [
             include_str!("components.rs"),
             include_str!("components/dialog.rs"),
+            include_str!("components/media.rs"),
             include_str!("components/search.rs"),
             include_str!("components/sidebar.rs"),
             include_str!("components/table.rs"),
@@ -2624,7 +2908,9 @@ mod tests {
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
         ];
-        const NOT_WIDGETS: [&str; 12] = [
+        const NOT_WIDGETS: [&str; 14] = [
+            "initials",
+            "validate_image_file",
             "themed",
             "appkit_button_classes",
             "button_classes",
@@ -2777,6 +3063,24 @@ mod tests {
             ),
             (&["badge"], Badges, None, By::text("Warning")),
             (
+                &["Avatar"],
+                Multimedia,
+                None,
+                By::role(Role::Image).name("Ana Rojas"),
+            ),
+            (
+                &["avatar"],
+                Multimedia,
+                None,
+                By::test_id("multimedia.avatar_url"),
+            ),
+            (
+                &["MediaSlot"],
+                Multimedia,
+                None,
+                By::test_id("multimedia.portada.preview"),
+            ),
+            (
                 &["alert"],
                 Badges,
                 None,
@@ -2840,6 +3144,102 @@ mod tests {
             .collect();
         let accounted: BTreeSet<&str> = covered.into_iter().chain(NOT_WIDGETS).collect();
         assert_eq!(public, accounted);
+    }
+
+    /// An 8×8 PNG of one color.
+    fn png(color: [u8; 4]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_pixel(8, 8, image::Rgba(color))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn image_fields_take_picked_and_dropped_files_and_refuse_others() {
+        let dir = std::env::temp_dir().join(format!("kai-demo-media-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let foto = dir.join("portada.png");
+        std::fs::write(&foto, png([200, 40, 40, 255])).unwrap();
+        let mut app = TestApp::new(Demo::at(Seccion::Multimedia));
+        let preview = |id: &str| By::test_id(format!("multimedia.{id}.preview"));
+        assert_eq!(
+            app.screen().get(preview("portada")).name().as_deref(),
+            Some("Seleccionar imagen")
+        );
+
+        app.click(By::test_id("multimedia.portada.action"));
+        let request = app.file_pick_request().expect("the panel is open");
+        assert_eq!(request.title, "Elegir portada");
+        app.on_file_pick(Some(foto.clone()));
+        app.run_until_idle();
+        assert_eq!(
+            app.app().portada.actual,
+            Some(ImageSource::Path(foto.clone()))
+        );
+        assert_eq!(
+            app.screen().get(preview("portada")).name().as_deref(),
+            Some("Actualizar imagen")
+        );
+        assert!(
+            app.messages()
+                .contains(&Msg::ImagenElegida(Campo::Portada, Some(foto)))
+        );
+
+        let before = app.app().foto.clone();
+        app.on_file_pick(None);
+        app.click(By::test_id("multimedia.foto.action"));
+        assert_eq!(app.app().foto, before, "cancelled");
+
+        app.drop_files(preview("logo"), [dir.join("nota.txt")]);
+        assert_eq!(
+            app.app().logo.error.as_deref(),
+            Some("Tipo no permitido: png, jpg, jpeg, webp")
+        );
+        assert!(app.app().logo.actual.is_some(), "the logo stays");
+        app.screen().get(By::test_id("multimedia.logo.error"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cargar_url_puts_a_downloaded_image_in_the_avatar() {
+        const URL: &str = "https://kai.test/ana.png";
+        let mut app = TestApp::builder(Demo::at(Seccion::Multimedia))
+            .images(FakeImageLoader::new().with(URL, png([20, 120, 220, 255])))
+            .build();
+        let image = By::test_id("multimedia.avatar_url.image");
+        assert!(app.screen().query(image.clone()).is_none(), "initials");
+
+        let result = app.call("multimedia.cargar_url", json!({"url": URL}));
+        assert!(result.is_ok(), "{result:?}");
+        app.run_until_idle();
+        assert_eq!(app.app().avatar_url.as_deref(), Some(URL));
+        app.screen().get(image.clone());
+        assert_eq!(app.app().url, URL, "the field shows it");
+
+        app.type_text(By::test_id("multimedia.url"), " ");
+        app.click(By::test_id("multimedia.cargar"));
+        assert_eq!(app.app().avatar_url.as_deref(), Some(URL), "trimmed");
+        app.invoke(CargarUrl { url: String::new() }).unwrap();
+        assert!(app.screen().query(image).is_none(), "back to the initials");
+    }
+
+    #[test]
+    fn the_table_shows_an_avatar_by_each_name() {
+        let app = TestApp::new(Demo::at(Seccion::Tabla));
+        let screen = app.screen();
+        let row = screen.within(screen.get_by_test_id("tabla.clientes.row.0"));
+        let nombre = super::cliente(1).nombre;
+        row.get(By::role(Role::Image).name(&nombre));
+        let names: Vec<_> = row
+            .all(By::role(Role::Cell))
+            .iter()
+            .filter_map(|cell| cell.name())
+            .collect();
+        assert_eq!(names[1], nombre, "the initials stay out of the cell's name");
     }
 
     #[test]
@@ -3177,6 +3577,7 @@ mod tests {
                 "ui.ir_a",
                 "ui.alternar_sidebar",
                 "avisos.mostrar",
+                "multimedia.cargar_url",
                 "kai.paleta",
             ]
         );
@@ -3696,6 +4097,7 @@ mod tests {
                 "ui.ir_a",
                 "ui.alternar_sidebar",
                 "avisos.mostrar",
+                "multimedia.cargar_url",
             ]
         );
     }
@@ -4988,6 +5390,36 @@ mod tests {
             }
             snapshot(out, name, &demo, wide, 2.0, &Interaction::default(), &none);
         }
+
+        let mut media = Demo::at(Seccion::Multimedia);
+        media.apply(Msg::ImagenElegida(
+            Campo::Logo,
+            Some("/no/existe/logo.gif".into()),
+        ));
+        snapshot(
+            out,
+            "demo-multimedia",
+            &media,
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
+        );
+        let banner = find(&media, By::test_id("multimedia.portada.preview"));
+        let tree = build_view(&media);
+        snapshot(
+            out,
+            "demo-multimedia-drag",
+            &media,
+            wide,
+            2.0,
+            &Interaction {
+                hovered: tree.path_to(banner).unwrap(),
+                file_drag: true,
+                ..Interaction::default()
+            },
+            &scrolled_to(&out.theme, &media, wide, "Campos de imagen"),
+        );
 
         let mut dialog = Demo::at(Seccion::Dialogos);
         dialog.apply(Msg::OpenDialog(Dialogo::Eliminar));
