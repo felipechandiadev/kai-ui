@@ -599,6 +599,10 @@ impl Theme {
             "fill-pressed" => s.fill_pressed,
             "mix-secondary" => s.mix_secondary,
             "mix-on-secondary" => s.mix_on_secondary,
+            // Selected or active choice (sidebar row, menu option, table
+            // row, segment…): Kai `secondary` in every theme, as a tint
+            // with a border. Never a text color: it is too light on white.
+            "choice" => s.mix_secondary,
             // `systemRed`: `error` is filled from it in the AppKit theme.
             "system-red" => c.error,
             "white" => Color::hex(0xffffff),
@@ -909,9 +913,13 @@ mod tests {
             "fill-pressed",
             "mix-secondary",
             "mix-on-secondary",
+            "choice",
         ] {
             assert!(theme.color(name).is_some(), "{name}");
         }
+        assert_eq!(theme.color("choice"), Some(theme.colors.secondary));
+        let glass_dark = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Dark);
+        assert_eq!(glass_dark.color("choice"), Some(Color::hex(0x00c4d4)));
         assert_eq!(theme.color("separator"), Some(theme.colors.border));
         assert_eq!(theme.color("window"), Some(theme.colors.background));
         assert_eq!(theme.color("fill-5"), Some(theme.colors.surface));

@@ -63,6 +63,14 @@ pub fn themed(kai: &str, appkit: &str) -> String {
     out
 }
 
+/// Selected or active choice (sidebar row, menu option, table row,
+/// segment, pressed toolbar item), the same in every theme: a `choice`
+/// tint with a `choice` border. Add the border width and the theme's text
+/// color: `choice` is too light for text.
+pub const CHOICE_ACTIVE: &str = "border-choice bg-choice/20 hover:bg-choice/25";
+/// The other choices of the same group under the pointer: a fainter tint.
+pub const CHOICE_HOVER: &str = "border-transparent hover:bg-choice/10 hover:border-choice/40";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonVariant {
     /// `.fs-button--contained-primary`.
@@ -1462,22 +1470,20 @@ pub fn command_palette<Msg>(
         )
     };
     let rows = items.iter().enumerate().map(|(index, item)| {
-        let (kai_selected, appkit_selected) = if selected == Some(index) {
-            ("bg-primary/10", "bg-selection/20")
+        let choice = if selected == Some(index) {
+            CHOICE_ACTIVE
         } else {
-            ("", "")
+            CHOICE_HOVER
         };
         let mut row = div()
             .class(&style(
-                "flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed",
                 &format!(
-                    "px-3 py-2 rounded-md text-sm leading-5 text-foreground hover:bg-accent/10 \
-                     disabled:opacity-50 {kai_selected}"
+                    "flex items-center gap-3 border cursor-pointer disabled:cursor-not-allowed \
+                     {choice}"
                 ),
-                &format!(
-                    "px-2 py-1 rounded-control text-body text-label hover:bg-fill-3 \
-                     disabled:text-disabled-control-text {appkit_selected}"
-                ),
+                "px-3 py-2 rounded-md text-sm leading-5 text-foreground disabled:opacity-50",
+                "px-2 py-1 rounded-control text-body text-label \
+                 disabled:text-disabled-control-text",
             ))
             .role(Role::Button)
             .key(item.id)
@@ -1918,11 +1924,10 @@ pub fn select_with_options<Msg>(
     } else {
         "hover:bg-bezel-hover active:bg-control-pressed"
     };
-    let appkit_arrows = if disabled {
-        "bg-transparent text-disabled-control-text"
+    let appkit_chevron = if disabled {
+        "text-disabled-control-text"
     } else {
-        "bg-control-accent text-on-accent window-inactive:bg-transparent \
-         window-inactive:text-control-text glass:bg-transparent glass:text-control-text"
+        "text-secondary-label"
     };
     div()
         .class(&themed(
@@ -1932,7 +1937,7 @@ pub fn select_with_options<Msg>(
                  focus-visible:ring-primary/40 {interaction}"
             ),
             &format!(
-                "inline-flex items-center gap-1.5 h-control pl-2 pr-0.5 min-w-24 \
+                "inline-flex items-center gap-1.5 h-control pl-2 pr-1.5 min-w-24 \
                  rounded-control text-control bg-control border-[0.5px] border-separator \
                  shadow-bezel dark:border-0 glass:bg-fill-2 glass:border-0 glass:shadow-none \
                  cursor-default keyboard-focus:ring-focus window-inactive:ring-0 {appkit_hover}"
@@ -1948,16 +1953,10 @@ pub fn select_with_options<Msg>(
         .on_select(on_select)
         .children([
             value,
-            icon(Icon::ChevronDown).class(&themed("size-4 text-muted-foreground", "hidden")),
-            div()
-                .class(&themed(
-                    "hidden",
-                    &format!(
-                        "flex items-center justify-center shrink-0 size-check rounded-[3px] \
-                         {appkit_arrows}"
-                    ),
-                ))
-                .child(icon(Icon::ChevronsUpDown).class("size-full stroke-[2.5]")),
+            icon(Icon::ChevronDown).class(&themed(
+                "size-4 text-muted-foreground",
+                &format!("size-4 shrink-0 {appkit_chevron}"),
+            )),
         ])
 }
 
@@ -1972,9 +1971,9 @@ pub struct MenuFrame {
 
 /// The open list of a [`select`]: a transparent layer over the window
 /// (a click on it closes the list) and the panel `kai.menu` at `frame`,
-/// with one row per item (`kai.menu.<index>`), `selected` checked and
-/// `highlighted` marked (the session moves it with the keys and the
-/// pointer). Behavior lives in the session that shows it; the elements
+/// with one row per item (`kai.menu.<index>`), `selected` in the choice
+/// look ([`CHOICE_ACTIVE`], no check mark) and `highlighted` with a
+/// neutral fill (the session moves it with the keys and the pointer). Behavior lives in the session that shows it; the elements
 /// send no messages.
 pub fn select_menu<Msg>(
     items: &[String],
@@ -1983,23 +1982,30 @@ pub fn select_menu<Msg>(
     frame: MenuFrame,
 ) -> Element<Msg> {
     let rows = items.iter().enumerate().map(|(index, item)| {
-        let (kai_mark, appkit_mark) = if index == highlighted {
-            ("bg-primary/10", "bg-control-accent text-on-accent")
+        let (kai_mark, appkit_mark) = if selected == Some(index) {
+            (
+                format!("{CHOICE_ACTIVE} font-medium"),
+                format!("{CHOICE_ACTIVE} glass:font-semibold"),
+            )
+        } else if index == highlighted {
+            (
+                "border-transparent bg-neutral".to_owned(),
+                "border-transparent bg-fill-2".to_owned(),
+            )
         } else {
-            ("", "")
+            (
+                "border-transparent".to_owned(),
+                "border-transparent".to_owned(),
+            )
         };
-        let mut check = div().class("flex items-center justify-center shrink-0 size-3.5");
-        if selected == Some(index) {
-            check = check.child(icon(Icon::Check).class("size-full stroke-[3]"));
-        }
         let mut row = div()
             .class(&themed(
                 &format!(
-                    "flex items-center gap-1.5 px-2 py-1.5 rounded text-sm leading-5 \
+                    "flex items-center px-2 py-1.5 border rounded text-sm leading-5 \
                      whitespace-nowrap text-foreground cursor-pointer {kai_mark}"
                 ),
                 &format!(
-                    "flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-body \
+                    "flex items-center px-2 py-0.5 border rounded-[4px] text-body \
                      whitespace-nowrap text-label cursor-default {appkit_mark}"
                 ),
             ))
@@ -2009,7 +2015,7 @@ pub fn select_menu<Msg>(
             .label(item.clone())
             .pressed(selected == Some(index))
             .focus_on_press(false)
-            .children([check, text(item.clone())]);
+            .child(text(item.clone()));
         row.command = Some(MENU);
         row
     });
@@ -2058,16 +2064,15 @@ pub fn segmented_with_options<Msg>(
     disabled: bool,
 ) -> Element<Msg> {
     let segment_class = themed(
-        "flex items-center justify-center px-3 rounded-[4px] text-sm leading-5 font-medium \
-         whitespace-nowrap text-muted-foreground cursor-pointer hover:text-foreground \
-         selected:bg-background selected:text-foreground selected:shadow-sm \
-         focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 \
-         disabled:cursor-not-allowed",
-        "flex items-center justify-center px-control rounded-[4px] text-control \
-         whitespace-nowrap text-control-text cursor-default hover:bg-fill-3 \
-         selected:bg-control selected:shadow-bezel dark:selected:bg-control-pressed \
-         keyboard-focus:ring-focus window-inactive:ring-0 \
-         disabled:text-disabled-control-text",
+        "flex items-center justify-center px-3 border border-transparent rounded-[4px] text-sm \
+         leading-5 font-medium whitespace-nowrap text-muted-foreground cursor-pointer \
+         hover:text-foreground selected:border-choice selected:bg-choice/20 \
+         selected:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 \
+         disabled:opacity-50 disabled:cursor-not-allowed",
+        "flex items-center justify-center px-control border border-transparent rounded-[4px] \
+         text-control whitespace-nowrap text-control-text cursor-default hover:bg-fill-3 \
+         selected:border-choice selected:bg-choice/20 keyboard-focus:ring-focus \
+         window-inactive:ring-0 disabled:text-disabled-control-text",
     );
     div()
         .class(&themed(
@@ -2094,13 +2099,13 @@ pub fn segmented_with_options<Msg>(
 #[cfg(test)]
 mod tests {
     use super::{
-        AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, FieldBezel,
-        FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MenuFrame,
-        SidebarGroup, SidebarItem, SwitchDensity, TextField, alert, badge, badge_classes, button,
-        button_classes, card, card_actions, card_content, card_header, checkbox,
-        checkbox_with_options, dialog, group_box, icon_button_sized, segmented,
-        segmented_with_options, select_menu, select_with_options, sidebar, stat, switch_labeled,
-        switch_with_options,
+        AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, CHOICE_ACTIVE,
+        CHOICE_HOVER, FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant,
+        LabelLayout, MenuFrame, SidebarGroup, SidebarItem, SwitchDensity, TextField, alert, badge,
+        badge_classes, button, button_classes, card, card_actions, card_content, card_header,
+        checkbox, checkbox_with_options, dialog, group_box, icon_button_sized, segmented,
+        segmented_with_options, select, select_menu, select_with_options, sidebar, stat,
+        switch_labeled, switch_with_options,
     };
     use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
@@ -2386,6 +2391,57 @@ mod tests {
                 .end_icon(Icon::Info)
                 .build(),
         );
+    }
+
+    #[test]
+    fn a_choice_is_a_secondary_tint_with_its_border_in_every_theme() {
+        let glass_dark = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Dark);
+        for theme in [theme(), appkit(), glass_dark] {
+            let secondary = theme.semantic.mix_secondary;
+            let rgb = |color: Color| (color.r, color.g, color.b);
+            let list = ClassList::parse(CHOICE_ACTIVE, &theme);
+            assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+            let idle = list.resolve(State::default());
+            let tint = idle.background.expect("tint");
+            assert_eq!(rgb(tint), rgb(secondary));
+            assert!(tint.a < 255, "a tint, not a solid fill");
+            assert_eq!(idle.border_color.map(rgb), Some(rgb(secondary)));
+            let hover = ClassList::parse(CHOICE_HOVER, &theme);
+            assert!(hover.unknown.is_empty(), "{:?}", hover.unknown);
+        }
+        assert_eq!(theme().semantic.mix_secondary, theme().colors.secondary);
+    }
+
+    #[test]
+    fn the_select_list_marks_its_choice_without_a_check() {
+        let items = ["Manzana".to_owned(), "Pera".to_owned(), "Uva".to_owned()];
+        let frame = MenuFrame {
+            x: 0.0,
+            y: 0.0,
+            min_width: 120.0,
+            max_height: 300.0,
+        };
+        let menu = select_menu::<Msg>(&items, Some(1), 2, frame);
+        let rows = &menu.children[0].children;
+        let mut icons = 0;
+        menu.walk(&mut |element| icons += usize::from(matches!(element.kind, Kind::Icon(_))));
+        assert_eq!(icons, 0, "no check mark");
+        assert_eq!(rows[1].control.state, Some(ControlState::On));
+        assert!(rows[1].class.contains("bg-choice/20"));
+        assert!(!rows[2].class.contains("choice/20"), "highlighted only");
+        assert!(rows[2].class.contains("bg-fill-2"));
+        assert_eq!(rows[0].control.state, Some(ControlState::Off));
+
+        let button = select(&["Manzana", "Pera"], Some(0), "Fruta", |_| Msg::Toggle);
+        let glyphs: Vec<Icon> = button
+            .children
+            .iter()
+            .filter_map(|child| match child.kind {
+                Kind::Icon(glyph) => Some(glyph),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(glyphs, vec![Icon::ChevronDown], "one chevron, both themes");
     }
 
     #[test]

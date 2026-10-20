@@ -127,13 +127,13 @@ impl<Msg: Clone + 'static> ColorField<Msg> {
             themed(
                 &format!(
                     "flex items-center justify-center size-6 rounded-md cursor-pointer \
-                     selected:ring-2 selected:ring-primary selected:ring-offset-2 \
+                     selected:ring-2 selected:ring-choice selected:ring-offset-2 \
                      focus-visible:ring-2 focus-visible:ring-primary/40 \
                      disabled:opacity-50 disabled:cursor-not-allowed{}",
                     if selected { "" } else { " hover:opacity-80" }
                 ),
                 "flex items-center justify-center size-[18px] rounded-[4px] cursor-default \
-                 selected:ring-2 selected:ring-control-accent selected:ring-offset-1 \
+                 selected:ring-2 selected:ring-choice selected:ring-offset-1 \
                  keyboard-focus:ring-focus window-inactive:ring-0 disabled:opacity-50",
             )
         };

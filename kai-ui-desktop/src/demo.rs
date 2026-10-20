@@ -15,15 +15,16 @@ use crate::commands::{
 };
 use crate::components::{
     ActionPlacement, AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button,
-    ButtonSize, ButtonVariant, Column, Dialog, DialogWidth, FieldBezel, FieldDensity, FieldVariant,
-    IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, Sidebar, SidebarGroup,
-    SidebarItem, SortDirection, SwitchDensity, Table, TextField, Toast, alert, avatar, badge,
-    button, button_sized, caption, card, card_actions, card_content, card_header, checkbox,
-    checkbox_with_options, color_field, group_box, heading, icon_button, icon_button_sized,
-    paragraph, search_field, segmented, segmented_with_options, select, select_with_options, stat,
-    switch, switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer,
-    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
-    validate_image_file, virtual_list,
+    ButtonSize, ButtonVariant, CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth,
+    FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout,
+    MediaSlot, MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity,
+    Table, TextField, Toast, alert, avatar, badge, button, button_sized, caption, card,
+    card_actions, card_content, card_header, checkbox, checkbox_with_options, color_field,
+    group_box, heading, icon_button, icon_button_sized, paragraph, search_field, segmented,
+    segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
+    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
+    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
+    virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
@@ -2264,15 +2265,16 @@ impl Demo {
                     .pressed(elegido)
                     .on_click(Msg::SeleccionarArea(sector.code.clone()))
                     .test_id(format!("mapa.sector.{}", sector.code))
-                    .class(if elegido {
-                        "flex items-center gap-2 h-8 px-2 rounded-md border border-info \
-                         bg-info/20 text-sm font-medium text-foreground cursor-pointer \
-                         focus-visible:ring-2 focus-visible:ring-primary/40"
-                    } else {
-                        "flex items-center gap-2 h-8 px-2 rounded-md border border-transparent \
-                         text-sm text-foreground hover:bg-info/10 cursor-pointer \
-                         focus-visible:ring-2 focus-visible:ring-primary/40"
-                    })
+                    .class(&format!(
+                        "flex items-center gap-2 h-8 px-2 rounded-md border text-sm \
+                         text-foreground cursor-pointer focus-visible:ring-2 \
+                         focus-visible:ring-primary/40 {}",
+                        if elegido {
+                            format!("{CHOICE_ACTIVE} font-medium")
+                        } else {
+                            CHOICE_HOVER.to_owned()
+                        }
+                    ))
                     .children([
                         div().class(&format!("size-3 shrink-0 rounded-sm {}", sector.swatch())),
                         text(&sector.nombre),

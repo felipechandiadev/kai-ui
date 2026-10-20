@@ -33,13 +33,13 @@ pub fn toolbar_item<Msg>(glyph: Icon, label: impl Into<String>) -> Element<Msg> 
         .class(&themed(
             "inline-flex items-center justify-center shrink-0 size-9 rounded-md border \
              border-transparent text-secondary cursor-pointer hover:border-border \
-             hover:bg-primary/10 active:bg-primary/20 selected:bg-primary/15 \
-             selected:text-primary focus-visible:ring-2 focus-visible:ring-primary/40 \
+             hover:bg-primary/10 active:bg-primary/20 selected:border-choice \
+             selected:bg-choice/20 selected:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 \
              disabled:opacity-50 disabled:cursor-not-allowed",
             "inline-flex items-center justify-center shrink-0 h-[28px] w-[32px] rounded-md \
              border-[0.5px] border-transparent text-secondary-label cursor-default \
-             hover:border-separator hover:bg-fill-3 active:bg-fill-2 selected:bg-fill-2 \
-             selected:text-label keyboard-focus:ring-focus window-inactive:ring-0 \
+             hover:border-separator hover:bg-fill-3 active:bg-fill-2 selected:border-choice \
+             selected:bg-choice/20 selected:text-label keyboard-focus:ring-focus window-inactive:ring-0 \
              window-inactive:text-tertiary-label disabled:text-disabled-control-text",
         ))
         .role(Role::Button)

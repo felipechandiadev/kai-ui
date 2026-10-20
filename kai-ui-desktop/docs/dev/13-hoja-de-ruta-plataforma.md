@@ -780,6 +780,13 @@ Reglas de la pista C:
     - **Demo:** en Mapa cambia el color del sector elegido, con la paleta de los cinco colores de DSP.
     - **Pendiente:** el botón de color con popover (antes hace falta un popover genérico) y el panel nativo de macOS (`NSColorPanel`).
   - Pendientes para después: los de mapa de los Pasos 15b–15c.
+- **Lenguaje de color de la selección** ✅: todo lo que es una elección activa usa el `secondary` de Kai (cyan) como vidrio teñido, en Kai, Aqua11 y Glass, claro y oscuro.
+  - **Token:** `choice` en `Theme::color`, el mismo `#00deef` que `mix-secondary` (`#00c4d4` en AppKit oscuro).
+  - **Clases compartidas:** `components::CHOICE_ACTIVE` (`border-choice bg-choice/20 hover:bg-choice/25`) para lo elegido y `CHOICE_HOVER` (`bg-choice/10` y borde `choice/40` bajo el puntero) para el resto del grupo. Las apps (DSP) las usan en sus propias listas.
+  - **Dónde:** fila de la sidebar y del riel, opción elegida de la lista del select (sin check), fila de la paleta de comandos, segmento elegido, `toolbar_item` presionado, anillo de la muestra elegida del `ColorField` y lista de sectores de Mapa en la demo. La fila de la tabla usa solo el tinte (`bg-choice/20`), porque las filas se tocan y el borde taparía los divisores.
+  - **Texto e iconos:** sobre la elección van en el color del texto (`foreground` / `label`) con letra media, nunca en `choice`: el cyan sobre blanco no llega al contraste mínimo, y el borde y el peso hacen que el estado no dependa solo del color.
+  - **Siguen en azul** (acento): botones primarios, switches, checkboxes y radios encendidos, anillos de foco, enlaces y cursor. Azul significa acción, encendido o foco; cyan, elección.
+  - **Select:** el botón termina en un `ChevronDown` en todos los temas, como un desplegable.
 - **Edición de texto** ✅: navegación por palabra y línea (Option/Cmd + flechas, Option/Cmd + Backspace), doble y triple clic.
 - **Comandos de la app** (ejemplos): `areas.crear`, `areas.editar_geometria`, `areas.archivar` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.cerrar` (`Destructive`), consultas `areas.listar`, `incidencias.buscar` (`Query` puras sobre el modelo cargado), `ui.ir_a(seccion)` (acción de UI).
 - **Pruebas**: el core se simula con un servidor HTTP falso en proceso (respuestas fijas por ruta) para que los tests de `TestApp` no dependan de Postgres; un job aparte, opcional, corre contra el core real con el seed de DSP.

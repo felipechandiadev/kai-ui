@@ -324,16 +324,20 @@ fn table_row<Msg: Clone>(
     on_select: Option<&dyn Fn(usize) -> Msg>,
 ) -> Element<Msg> {
     let is_selected = selected == Some(index);
+    // Rows touch: the choice tint without its border, which would draw
+    // over the row dividers.
     let look = if is_selected {
         themed(
-            "bg-info/20 text-foreground",
-            "bg-selection text-on-accent window-inactive:bg-selection-inactive \
-             window-inactive:text-label",
+            "bg-choice/20 hover:bg-choice/25 text-foreground",
+            "bg-choice/20 text-label",
         )
     } else if index % 2 == 1 {
-        themed("text-foreground hover:bg-info/10", "bg-label/4 text-label")
+        themed(
+            "text-foreground hover:bg-choice/10",
+            "bg-label/4 text-label",
+        )
     } else {
-        themed("text-foreground hover:bg-info/10", "text-label")
+        themed("text-foreground hover:bg-choice/10", "text-label")
     };
     let cells = columns.iter().enumerate().map(|(column_index, column)| {
         let justify = if column.numeric { "justify-end" } else { "" };

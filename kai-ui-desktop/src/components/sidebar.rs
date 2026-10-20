@@ -1,7 +1,7 @@
 //! Sidebar of sections (a source list), expanded or collapsed to a rail
 //! of icons (12 Paso 20.7).
 
-use super::themed;
+use super::{CHOICE_ACTIVE, CHOICE_HOVER, themed};
 use crate::element::{Element, Role, div, icon, text};
 use crate::icons::Icon;
 
@@ -246,17 +246,17 @@ fn row_look(selected: bool) -> (String, String, String) {
     if selected {
         (
             themed(
-                "border-info bg-info/20 hover:bg-info/25 text-foreground font-medium",
-                "border-info bg-info/20 hover:bg-info/25 text-label glass:font-semibold",
+                &format!("{CHOICE_ACTIVE} text-foreground font-medium"),
+                &format!("{CHOICE_ACTIVE} text-label glass:font-semibold"),
             ),
-            "text-info".to_owned(),
-            "text-info".to_owned(),
+            themed("text-foreground", "text-label"),
+            themed("text-foreground", "text-label"),
         )
     } else {
         (
             themed(
-                "border-transparent text-foreground hover:bg-info/10 hover:border-info/40",
-                "border-transparent text-label hover:bg-info/10 hover:border-info/40",
+                &format!("{CHOICE_HOVER} text-foreground"),
+                &format!("{CHOICE_HOVER} text-label"),
             ),
             themed("text-muted-foreground", "text-control-accent"),
             themed("text-muted-foreground", "text-secondary-label"),
