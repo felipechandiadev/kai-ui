@@ -14,6 +14,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::icons::Icon;
@@ -286,6 +287,8 @@ pub struct Handlers<Msg> {
     pub on_action: Option<Rc<dyn Fn(Action) -> Option<Msg>>>,
     /// Pop-up button: the option picked from its list, by index.
     pub on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
+    /// Drop zone: the files dropped on it ([`Element::on_drop_files`]).
+    pub on_drop_files: Option<Rc<dyn Fn(Vec<PathBuf>) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -296,6 +299,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_submit: None,
             on_action: None,
             on_select: None,
+            on_drop_files: None,
         }
     }
 }
@@ -308,6 +312,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_submit: self.on_submit.clone(),
             on_action: self.on_action.clone(),
             on_select: self.on_select.clone(),
+            on_drop_files: self.on_drop_files.clone(),
         }
     }
 }
@@ -320,6 +325,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_submit", &self.on_submit)
             .field("on_action", &self.on_action.is_some())
             .field("on_select", &self.on_select.is_some())
+            .field("on_drop_files", &self.on_drop_files.is_some())
             .finish()
     }
 }
@@ -768,6 +774,16 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Make this a drop zone for files dragged from Finder: `handler` gets
+    /// their paths. While files are dragged over the window, drop zones
+    /// take their `drag:` classes (`drag:border-primary`). The window does
+    /// not say where the files land: with one zone on screen they go to
+    /// it; with several, to the one under the pointer's last position.
+    pub fn on_drop_files(mut self, handler: impl Fn(Vec<PathBuf>) -> Msg + 'static) -> Self {
+        self.handlers.on_drop_files = Some(Rc::new(handler));
+        self
+    }
+
     /// Handle standard actions (Escape → `CancelOperation`, Cmd+Z → `Undo`…)
     /// that the focused element or a descendant did not consume. Return
     /// `None` to let the action continue up the responder chain.
@@ -1045,6 +1061,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_submit.is_some()
                 || h.on_action.is_some()
                 || h.on_select.is_some()
+                || h.on_drop_files.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

@@ -23,6 +23,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -52,8 +53,9 @@ use crate::ui_engine::{ClickCounter, Modifiers};
 const LINE_SCROLL: f32 = 40.0;
 
 /// What `update` asks the runtime to do, as a value (a subset of 13,
-/// Paso 15): [`Effects::after`] sends a message later and
-/// [`Effects::perform`] runs work off the UI thread.
+/// Paso 15): [`Effects::after`] sends a message later,
+/// [`Effects::perform`] runs work off the UI thread and
+/// [`Effects::pick_file`] asks for a file.
 #[must_use]
 pub struct Effects<Msg>(Vec<Effect<Msg>>);
 
@@ -79,6 +81,45 @@ pub(crate) enum Effect<Msg> {
     },
     /// Drop the pending timer or task with this key.
     Cancel(String),
+    /// Ask the person for a file with the system's open panel.
+    PickFile {
+        request: PickFile,
+        done: FilePicked<Msg>,
+    },
+}
+
+/// Turns the file chosen in the open panel (`None`: cancelled) into the
+/// app's message.
+pub(crate) type FilePicked<Msg> = Box<dyn FnOnce(Option<PathBuf>) -> Msg>;
+
+/// Extensions of the images `kai::media` decodes.
+pub const IMAGE_FILE_TYPES: &[&str] = &["png", "jpg", "jpeg", "webp"];
+
+/// What the open panel of [`Effects::pick_file`] shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PickFile {
+    /// Title and message of the panel ("Elegir foto").
+    pub title: String,
+    /// Extensions that can be chosen, without the dot; empty: any file.
+    pub types: &'static [&'static str],
+}
+
+impl PickFile {
+    /// Any file.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            types: &[],
+        }
+    }
+
+    /// The images `kai::media` decodes ([`IMAGE_FILE_TYPES`]).
+    pub fn images(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            types: IMAGE_FILE_TYPES,
+        }
+    }
 }
 
 impl<Msg> Effects<Msg> {
@@ -125,6 +166,20 @@ impl<Msg> Effects<Msg> {
         }])
     }
 
+    /// Show the system's open panel (`NSOpenPanel`) and send
+    /// `to_msg(Some(path))` with the chosen file, or `to_msg(None)` when
+    /// the person cancels. One panel at a time: a second request while one
+    /// is open replaces it. Tests answer it with `TestApp::on_file_pick`.
+    pub fn pick_file(
+        request: PickFile,
+        to_msg: impl FnOnce(Option<PathBuf>) -> Msg + 'static,
+    ) -> Self {
+        Self(vec![Effect::PickFile {
+            request,
+            done: Box::new(to_msg),
+        }])
+    }
+
     /// Give these timers and tasks `key`: a new one with the same key
     /// replaces the pending one, and [`Effects::cancel`] drops it.
     pub fn keyed(mut self, key: impl Into<String>) -> Self {
@@ -134,7 +189,7 @@ impl<Msg> Effects<Msg> {
                 Effect::After { key: slot, .. } | Effect::Perform { key: slot, .. } => {
                     *slot = Some(key.clone());
                 }
-                Effect::Cancel(_) => {}
+                Effect::Cancel(_) | Effect::PickFile { .. } => {}
             }
         }
         self
@@ -164,6 +219,9 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 }
                 Effect::Perform { key, .. } => list.entry(&format_args!("perform(key: {key:?})")),
                 Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
+                Effect::PickFile { request, .. } => {
+                    list.entry(&format_args!("pick_file({:?})", request.title))
+                }
             };
         }
         list.finish()
@@ -549,6 +607,9 @@ struct WindowState<A: App> {
     next_frame: Option<Instant>,
     /// Times of full frames, with `KAI_DEVTOOLS=frames`.
     frames: Option<FrameStats>,
+    /// Files of a drop: winit sends one `DroppedFile` per file, and they go
+    /// to the drop zone together before the loop waits again.
+    dropped: Vec<PathBuf>,
     #[cfg(target_os = "macos")]
     menu: Option<crate::menu::NativeMenu>,
 }
@@ -590,6 +651,7 @@ impl<A: App> WindowState<A> {
             clock: BackgroundClock::default(),
             background_layer: None,
             next_frame: None,
+            dropped: Vec::new(),
             #[cfg(target_os = "macos")]
             menu: None,
         };
@@ -656,6 +718,11 @@ impl<A: App> WindowState<A> {
                     self.menu = Some(crate::menu::NativeMenu::install(&name, model));
                 }
             }
+        }
+        if let Some(request) = outbox.pick_file {
+            let path = crate::platform::file_panel::pick(&request);
+            self.session.finish_file_pick(path);
+            self.flush();
         }
     }
 
@@ -877,6 +944,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 };
                 state.session.pointer_clicks(pressed, clicks);
             }
+            WindowEvent::HoveredFile(_) => state.session.hover_files(),
+            WindowEvent::HoveredFileCancelled => state.session.cancel_file_drag(),
+            WindowEvent::DroppedFile(path) => state.dropped.push(path),
             WindowEvent::Ime(ime) => state.session.apply_intent(adapt_ime_event(ime)),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 for intent in adapt_keyboard_event(&event, state.modifiers) {
@@ -902,6 +972,11 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(state) = self.state.as_mut() {
+            if !state.dropped.is_empty() {
+                let paths = std::mem::take(&mut state.dropped);
+                state.session.drop_files(paths);
+                state.flush();
+            }
             if state.session.run_timers() {
                 state.flush();
             }

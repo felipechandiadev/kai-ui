@@ -83,6 +83,9 @@ pub struct Interaction {
     /// The focus came from the keyboard or assistive technology
     /// (`UiModel::focus_visible`).
     pub focus_visible: bool,
+    /// Files are being dragged over the window: drop zones
+    /// ([`Element::on_drop_files`]) take their `drag:` classes.
+    pub file_drag: bool,
 }
 
 /// Vertical scroll offset of each `overflow-auto` element.
@@ -317,6 +320,7 @@ impl Builder<'_> {
             mixed: element.control.state == Some(ControlState::Mixed),
             control_size,
             viewport_width: self.viewport_width,
+            file_drag: interaction.file_drag && element.handlers.on_drop_files.is_some(),
         };
         let classes = self.styles.get(&element.class, self.theme);
         let is_group = classes.group;

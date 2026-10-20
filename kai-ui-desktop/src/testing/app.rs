@@ -3,6 +3,7 @@
 //! fonts in layout or GPU.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
@@ -16,7 +17,7 @@ use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::media::{FakeImageLoader, ImageLoader};
 use crate::platform_adapter::adapt_key_input;
-use crate::runtime::App;
+use crate::runtime::{App, PickFile};
 use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
 use crate::text_field::ClipboardPort;
@@ -104,6 +105,8 @@ impl<A: App> TestAppBuilder<A> {
             clipboard: self.clipboard,
             confirm: Confirm::Ask,
             next_agent_call: 1,
+            file_pick_answer: None,
+            file_pick_request: None,
         };
         app.frame();
         app
@@ -150,6 +153,9 @@ pub struct TestApp<A: App> {
     clipboard: MemoryClipboard,
     confirm: Confirm,
     next_agent_call: u64,
+    /// Answer for the open panel ([`TestApp::on_file_pick`]).
+    file_pick_answer: Option<Option<PathBuf>>,
+    file_pick_request: Option<PickFile>,
 }
 
 /// What the person does when an agent's call opens the confirmation
@@ -721,10 +727,67 @@ impl<A: App> TestApp<A> {
         }
     }
 
-    /// What the window does on `RedrawRequested`, minus paint.
+    /// What the window does on `RedrawRequested`, minus paint; an open
+    /// panel asked for meanwhile gets the answer of [`Self::on_file_pick`].
     fn frame(&mut self) {
-        self.session.prepare_frame();
-        let _ = self.session.take_outbox();
+        loop {
+            self.session.prepare_frame();
+            let outbox = self.session.take_outbox();
+            if let Some(request) = outbox.pick_file {
+                self.file_pick_request = Some(request);
+            }
+            match &self.file_pick_answer {
+                Some(answer) if self.session.file_pick_pending() => {
+                    self.session.finish_file_pick(answer.clone());
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// From now on, answer the open panel of [`Effects::pick_file`] with
+    /// `path` (`None`: the person cancels), now if one is open. Until this
+    /// is called the panel stays open ([`Self::file_pick_request`]).
+    ///
+    /// [`Effects::pick_file`]: crate::runtime::Effects::pick_file
+    pub fn on_file_pick(&mut self, path: Option<PathBuf>) {
+        self.file_pick_answer = Some(path);
+        self.frame();
+    }
+
+    /// The open panel waiting for an answer, if any.
+    pub fn file_pick_request(&self) -> Option<&PickFile> {
+        self.file_pick_request
+            .as_ref()
+            .filter(|_| self.session.file_pick_pending())
+    }
+
+    /// Start dragging files over the window, as from Finder: drop zones
+    /// take their `drag:` classes.
+    pub fn hover_files(&mut self) {
+        self.session.hover_files();
+        self.frame();
+    }
+
+    /// The dragged files leave the window without a drop.
+    pub fn cancel_file_drag(&mut self) {
+        self.session.cancel_file_drag();
+        self.frame();
+    }
+
+    /// Drag `paths` over the element and drop them there. Panics when no
+    /// drop zone takes them.
+    #[track_caller]
+    pub fn drop_files(&mut self, on: By, paths: impl IntoIterator<Item = impl Into<PathBuf>>) {
+        self.hover(on);
+        self.session.hover_files();
+        self.frame();
+        let paths = paths.into_iter().map(Into::into).collect();
+        assert!(
+            self.session.drop_files(paths),
+            "ninguna zona de soltar recibió los archivos"
+        );
+        self.frame();
     }
 }
 
@@ -958,5 +1021,138 @@ mod tests {
         assert_eq!(image.height, (bounds.height * 2.0).ceil() as u32);
         assert!(image.width > 0 && image.width < 2048);
         assert_eq!(image.rgba.len(), (image.width * image.height * 4) as usize);
+    }
+
+    mod files {
+        use std::path::PathBuf;
+
+        use crate::components::{ButtonVariant, button};
+        use crate::devtools::MsgSource;
+        use crate::element::{Element, Role, div, text};
+        use crate::runtime::{App, Effects, IMAGE_FILE_TYPES, PickFile};
+        use crate::testing::{By, TestApp};
+
+        #[derive(Clone, Debug, PartialEq)]
+        enum Msg {
+            Choose,
+            Chosen(Option<PathBuf>),
+            Dropped(&'static str, Vec<PathBuf>),
+        }
+
+        #[derive(Default)]
+        struct Uploader {
+            zones: usize,
+            disabled: bool,
+        }
+
+        impl App for Uploader {
+            type Msg = Msg;
+            fn title(&self) -> String {
+                "Subir".into()
+            }
+            fn update(&mut self, msg: Msg) -> Effects<Msg> {
+                match msg {
+                    Msg::Choose => Effects::pick_file(PickFile::images("Elegir foto"), Msg::Chosen),
+                    _ => Effects::none(),
+                }
+            }
+            fn view(&self) -> Element<Msg> {
+                let zone = |name: &'static str| {
+                    div()
+                        .class("w-40 h-20 border-0 drag:border-2")
+                        .test_id(name)
+                        .disabled(self.disabled)
+                        .on_drop_files(move |paths| Msg::Dropped(name, paths))
+                        .child(text(name))
+                };
+                div()
+                    .class("flex flex-col gap-2")
+                    .child(button("Elegir", ButtonVariant::Primary).on_click(Msg::Choose))
+                    .children(["fotos", "logos"].into_iter().take(self.zones).map(zone))
+            }
+        }
+
+        fn border(app: &TestApp<Uploader>, zone: &str) -> f32 {
+            app.screen()
+                .get(By::test_id(zone))
+                .node()
+                .style
+                .border_width
+                .top
+        }
+
+        #[test]
+        fn the_open_panel_answers_with_the_programmed_file_or_none() {
+            let mut app = TestApp::new(Uploader::default());
+            app.click(By::role(Role::Button).name("Elegir"));
+            assert_eq!(
+                app.file_pick_request(),
+                Some(&PickFile {
+                    title: "Elegir foto".into(),
+                    types: IMAGE_FILE_TYPES,
+                })
+            );
+            assert_eq!(app.messages(), [Msg::Choose], "waiting for the person");
+
+            app.on_file_pick(Some("/fotos/ana.png".into()));
+            assert_eq!(app.file_pick_request(), None);
+            assert_eq!(
+                app.messages().last(),
+                Some(&Msg::Chosen(Some("/fotos/ana.png".into())))
+            );
+            assert_eq!(app.message_sources().last(), Some(&MsgSource::Files));
+
+            app.on_file_pick(None);
+            app.click(By::role(Role::Button).name("Elegir"));
+            assert_eq!(app.messages().last(), Some(&Msg::Chosen(None)));
+        }
+
+        #[test]
+        fn dropped_files_go_to_the_only_zone_and_drag_styles_come_and_go() {
+            let mut app = TestApp::new(Uploader {
+                zones: 1,
+                disabled: false,
+            });
+            assert_eq!(border(&app, "fotos"), 0.0);
+            app.hover_files();
+            assert_eq!(border(&app, "fotos"), 2.0, "drag: while files hover");
+            app.cancel_file_drag();
+            assert_eq!(border(&app, "fotos"), 0.0);
+
+            app.drop_files(By::text("fotos"), ["/a.png", "/b.jpg"]);
+            assert_eq!(
+                app.messages(),
+                [Msg::Dropped(
+                    "fotos",
+                    vec!["/a.png".into(), "/b.jpg".into()]
+                )]
+            );
+            assert_eq!(border(&app, "fotos"), 0.0, "drag: ends with the drop");
+        }
+
+        #[test]
+        fn with_several_zones_the_one_under_the_pointer_gets_the_files() {
+            let mut app = TestApp::new(Uploader {
+                zones: 2,
+                disabled: false,
+            });
+            app.drop_files(By::test_id("logos"), ["/logo.webp"]);
+            assert_eq!(
+                app.messages(),
+                [Msg::Dropped("logos", vec!["/logo.webp".into()])]
+            );
+        }
+
+        #[test]
+        #[should_panic(expected = "ninguna zona de soltar")]
+        fn a_disabled_zone_takes_no_files() {
+            let mut app = TestApp::new(Uploader {
+                zones: 1,
+                disabled: true,
+            });
+            app.hover_files();
+            assert_eq!(border(&app, "fotos"), 0.0, "no drag: when disabled");
+            app.drop_files(By::test_id("fotos"), ["/a.png"]);
+        }
     }
 }

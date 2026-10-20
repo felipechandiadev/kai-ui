@@ -85,6 +85,8 @@ pub struct State {
     pub control_size: ControlSize,
     /// Window (viewport) width in points, for the `sm:` … `xl:` breakpoints.
     pub viewport_width: u32,
+    /// A drop zone while files are dragged over the window (`drag:`).
+    pub file_drag: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +106,7 @@ enum Variant {
     Selected,
     Mixed,
     Active,
+    FileDrag,
     WindowInactive,
     Disabled,
 }
@@ -123,6 +126,7 @@ impl Variant {
             "selected" | "checked" => Self::Selected,
             "mixed" | "indeterminate" => Self::Mixed,
             "window-inactive" => Self::WindowInactive,
+            "drag" => Self::FileDrag,
             "sm" => Self::MinWidth(Breakpoint::Sm),
             "md" => Self::MinWidth(Breakpoint::Md),
             "lg" => Self::MinWidth(Breakpoint::Lg),
@@ -154,10 +158,11 @@ impl Variant {
             Self::Selected => 13,
             Self::Mixed => 14,
             Self::Active => 15,
+            Self::FileDrag => 16,
             // Beats selected/active: the accent turns off.
-            Self::WindowInactive => 16,
+            Self::WindowInactive => 17,
             // Beats everything.
-            Self::Disabled => 17,
+            Self::Disabled => 18,
         }
     }
 
@@ -176,6 +181,7 @@ impl Variant {
             Self::Selected => state.selected,
             Self::Mixed => state.mixed,
             Self::Active => state.active && !state.disabled,
+            Self::FileDrag => state.file_drag && !state.disabled,
             Self::WindowInactive => state.window_inactive,
             Self::Disabled => state.disabled,
         }
@@ -1406,6 +1412,23 @@ mod tests {
         let stroke = |class: &str| parse(class).resolve(State::default()).text.stroke_width;
         assert_eq!(stroke("stroke-1"), Some(1.0));
         assert_eq!(stroke("stroke-[2.25]"), Some(2.25));
+    }
+
+    #[test]
+    fn drag_variant_needs_a_file_drag_and_loses_to_disabled() {
+        let list = parse("border-0 drag:border-2 disabled:border");
+        let width = |file_drag, disabled| {
+            list.resolve(State {
+                file_drag,
+                disabled,
+                ..State::default()
+            })
+            .border_width
+            .top
+        };
+        assert_eq!(width(false, false), 0.0);
+        assert_eq!(width(true, false), 2.0);
+        assert_eq!(width(true, true), 1.0);
     }
 
     #[test]

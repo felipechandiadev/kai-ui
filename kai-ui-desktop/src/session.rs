@@ -11,6 +11,7 @@ mod calls;
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -38,8 +39,8 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, TaskDone, action_message, build_view_with, cursor_for, pointer_target,
-    report_once, selects_on_focus,
+    App, Effect, Effects, FilePicked, PickFile, TaskDone, action_message, build_view_with,
+    cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -76,6 +77,8 @@ pub(crate) struct Outbox {
     pub theme: Option<Theme>,
     /// Commands whose availability changed (for the menu bar).
     pub commands: Option<Vec<CommandState>>,
+    /// Show the open panel; answer with [`Session::finish_file_pick`].
+    pub pick_file: Option<PickFile>,
 }
 
 pub(crate) struct Session<A: App> {
@@ -137,6 +140,10 @@ pub(crate) struct Session<A: App> {
     tasks: Tasks<A::Msg>,
     /// Decoded images of the views, filled into the tree on rebuild.
     images: ImageStore,
+    /// What turns the open panel's answer into a message, while it is open.
+    file_pick: Option<FilePicked<A::Msg>>,
+    /// Files are being dragged over the window.
+    file_drag: bool,
     /// The time tests set; `None` follows the real clock.
     clock: Option<Instant>,
     /// Row the keys are moving to in a virtual list: the next rebuild
@@ -443,6 +450,8 @@ impl<A: App> Session<A> {
             timers: Vec::new(),
             tasks: Tasks::default(),
             images: ImageStore::default(),
+            file_pick: None,
+            file_drag: false,
             clock: None,
             row_pin: None,
             row_windows: Vec::new(),
@@ -501,6 +510,10 @@ impl<A: App> Session<A> {
                         .retain(|timer| timer.key.as_deref() != Some(key.as_str()));
                     self.tasks.forget(&key);
                 }
+                Effect::PickFile { request, done } => {
+                    self.file_pick = Some(done);
+                    self.outbox.pick_file = Some(request);
+                }
             }
         }
     }
@@ -551,6 +564,85 @@ impl<A: App> Session<A> {
         }
         self.tasks.inbox.wait(timeout);
         self.run_tasks()
+    }
+
+    /// Whether the open panel of [`Effects::pick_file`] waits for an answer.
+    pub fn file_pick_pending(&self) -> bool {
+        self.file_pick.is_some()
+    }
+
+    /// The open panel closed with `path` (`None`: cancelled): send the
+    /// app's message.
+    pub fn finish_file_pick(&mut self, path: Option<PathBuf>) {
+        if let Some(done) = self.file_pick.take() {
+            self.with_source(MsgSource::Files, |session| session.send(done(path)));
+        }
+    }
+
+    /// Files entered the window (`HoveredFile`): drop zones take their
+    /// `drag:` classes.
+    pub fn hover_files(&mut self) {
+        if !self.file_drag {
+            self.file_drag = true;
+            self.invalidate();
+        }
+    }
+
+    /// The dragged files left the window (`HoveredFileCancelled`).
+    pub fn cancel_file_drag(&mut self) {
+        if self.file_drag {
+            self.file_drag = false;
+            self.invalidate();
+        }
+    }
+
+    /// Files were dropped on the window: the drop zone gets them (see
+    /// [`Session::drop_target`]). Returns whether one did.
+    pub fn drop_files(&mut self, paths: Vec<PathBuf>) -> bool {
+        self.cancel_file_drag();
+        let handler = self
+            .drop_target()
+            .and_then(|id| self.handler(id))
+            .and_then(|handlers| handlers.on_drop_files.clone());
+        match handler {
+            Some(handler) if !paths.is_empty() => {
+                self.with_source(MsgSource::Files, |session| session.send(handler(paths)));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The drop zone that gets dropped files: the only one on screen, or
+    /// the innermost under the pointer's last position. Disabled and
+    /// clipped-out zones take nothing.
+    pub fn drop_target(&self) -> Option<WidgetId> {
+        let zones: Vec<_> = self
+            .handlers
+            .iter()
+            .filter(|(_, handlers)| handlers.on_drop_files.is_some())
+            .filter_map(|(id, _)| {
+                let node = self.layout.node(*id)?;
+                let visible = node.visible_bounds()?;
+                (!node.hidden && !node.disabled && visible.width > 0.0 && visible.height > 0.0)
+                    .then_some((*id, visible))
+            })
+            .collect();
+        if let [(only, _)] = zones.as_slice() {
+            return Some(*only);
+        }
+        let cursor = self.cursor?;
+        self.hover_path
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| zones.iter().any(|(zone, _)| zone == id))
+            .or_else(|| {
+                zones
+                    .iter()
+                    .find(|(_, visible)| visible.contains(cursor))
+                    .map(|(id, _)| *id)
+            })
     }
 
     /// Read images with `loader` from now on (tests use a
@@ -1063,6 +1155,7 @@ impl<A: App> Session<A> {
             pressed: *self.ui.pressed.get(),
             window: self.activity(),
             focus_visible: *self.ui.focus_visible.get(),
+            file_drag: self.file_drag,
         }
     }
 

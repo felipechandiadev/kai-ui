@@ -87,6 +87,9 @@ pub enum MsgSource {
     Window,
     /// A finished task of `Effects::perform`.
     Task,
+    /// The open panel of `Effects::pick_file`, or files dropped on the
+    /// window.
+    Files,
 }
 
 impl fmt::Display for MsgSource {
@@ -101,6 +104,7 @@ impl fmt::Display for MsgSource {
             Self::Timer => f.write_str("Temporizador"),
             Self::Window => f.write_str("Ventana"),
             Self::Task => f.write_str("Tarea"),
+            Self::Files => f.write_str("Archivos"),
         }
     }
 }
