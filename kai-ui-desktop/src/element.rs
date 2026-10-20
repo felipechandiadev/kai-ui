@@ -296,6 +296,8 @@ pub struct Handlers<Msg> {
     pub on_drop_files: Option<Rc<dyn Fn(Vec<PathBuf>) -> Msg>>,
     /// Map: the view once a gesture ends ([`Element::on_view_change`]).
     pub on_view_change: Option<Rc<dyn Fn(MapView) -> Msg>>,
+    /// Map: the id of the layer clicked ([`Element::on_area_click`]).
+    pub on_area_click: Option<Rc<dyn Fn(String) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -308,6 +310,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_select: None,
             on_drop_files: None,
             on_view_change: None,
+            on_area_click: None,
         }
     }
 }
@@ -322,6 +325,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_select: self.on_select.clone(),
             on_drop_files: self.on_drop_files.clone(),
             on_view_change: self.on_view_change.clone(),
+            on_area_click: self.on_area_click.clone(),
         }
     }
 }
@@ -336,6 +340,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_select", &self.on_select.is_some())
             .field("on_drop_files", &self.on_drop_files.is_some())
             .field("on_view_change", &self.on_view_change.is_some())
+            .field("on_area_click", &self.on_area_click.is_some())
             .finish()
     }
 }
@@ -1090,6 +1095,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_select.is_some()
                 || h.on_drop_files.is_some()
                 || h.on_view_change.is_some()
+                || h.on_area_click.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

@@ -64,9 +64,13 @@ pub fn world_size(zoom: f64) -> f64 {
 /// A latitude and longitude box.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LatLonBounds {
+    /// Southern edge, latitude in degrees.
     pub south: f64,
+    /// Western edge, longitude in degrees.
     pub west: f64,
+    /// Northern edge, latitude in degrees.
     pub north: f64,
+    /// Eastern edge, longitude in degrees.
     pub east: f64,
 }
 
@@ -111,7 +115,22 @@ impl LatLonBounds {
     pub fn contains(self, at: LatLon) -> bool {
         (self.south..=self.north).contains(&at.lat) && (self.west..=self.east).contains(&at.lon)
     }
+
+    /// The box grown by `fraction` of its height and width on every side.
+    pub fn padded(self, fraction: f64) -> Self {
+        let lat = (self.north - self.south) * fraction;
+        let lon = (self.east - self.west) * fraction;
+        Self {
+            south: self.south - lat,
+            west: self.west - lon,
+            north: self.north + lat,
+            east: self.east + lon,
+        }
+    }
 }
+
+/// Boxes compare by value; they come from finite coordinates.
+impl Eq for LatLonBounds {}
 
 /// What a map shows: its center and zoom (fractional zooms scale tiles).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

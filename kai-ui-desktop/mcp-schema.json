@@ -296,6 +296,76 @@
       "title": "Mover el mapa"
     },
     {
+      "description": "Mueve el mapa de la sección Mapa hasta mostrar entera una caja de latitud y longitud",
+      "exposed": true,
+      "id": "mapa.fit_bounds",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "description": "Caja a mostrar entera (grados)",
+            "properties": {
+              "east": {
+                "description": "Eastern edge, longitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "north": {
+                "description": "Northern edge, latitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "south": {
+                "description": "Southern edge, latitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "west": {
+                "description": "Western edge, longitude in degrees.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "south",
+              "west",
+              "north",
+              "east"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "bounds"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Encuadrar el mapa"
+    },
+    {
+      "description": "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % de margen; un código desconocido no cambia nada",
+      "exposed": true,
+      "id": "areas.seleccionar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Código del sector: AOP26000001 (Plaza de Armas), AOP26000002 (Catillo), AOP26000003 (Villa San Pedro), AOP26000004 (Palma Rosa) o AOP26000005 (Terminal de Buses)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Seleccionar sector"
+    },
+    {
       "exposed": true,
       "id": "mapa.get_view",
       "inputSchema": {

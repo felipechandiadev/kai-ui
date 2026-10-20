@@ -1,0 +1,180 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "AOP26000001",
+        "name": "Plaza de Armas",
+        "type": "sector"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.8345,
+              -36.1475
+            ],
+            [
+              -71.8185,
+              -36.1475
+            ],
+            [
+              -71.8185,
+              -36.1355
+            ],
+            [
+              -71.8345,
+              -36.1355
+            ],
+            [
+              -71.8345,
+              -36.1475
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "AOP26000002",
+        "name": "Catillo",
+        "type": "sector"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.846,
+              -36.154
+            ],
+            [
+              -71.83,
+              -36.154
+            ],
+            [
+              -71.83,
+              -36.142
+            ],
+            [
+              -71.846,
+              -36.142
+            ],
+            [
+              -71.846,
+              -36.154
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "AOP26000003",
+        "name": "Villa San Pedro",
+        "type": "sector"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.823,
+              -36.141
+            ],
+            [
+              -71.807,
+              -36.141
+            ],
+            [
+              -71.807,
+              -36.129
+            ],
+            [
+              -71.823,
+              -36.129
+            ],
+            [
+              -71.823,
+              -36.141
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "AOP26000004",
+        "name": "Palma Rosa",
+        "type": "sector"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.853,
+              -36.138
+            ],
+            [
+              -71.837,
+              -36.138
+            ],
+            [
+              -71.837,
+              -36.126
+            ],
+            [
+              -71.853,
+              -36.126
+            ],
+            [
+              -71.853,
+              -36.138
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "code": "AOP26000005",
+        "name": "Terminal de Buses",
+        "type": "sector"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.828,
+              -36.161
+            ],
+            [
+              -71.812,
+              -36.161
+            ],
+            [
+              -71.812,
+              -36.149
+            ],
+            [
+              -71.828,
+              -36.149
+            ],
+            [
+              -71.828,
+              -36.161
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

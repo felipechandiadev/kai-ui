@@ -2,18 +2,22 @@ use std::time::Duration;
 
 use super::camera::{FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
 use super::labels::{FADE, MapLabel};
+use super::layers::MapLayer;
 use super::mvt::Bucket;
 use super::style::{Ink, MapStyle, StyleLayer};
 use super::tiles::TileSource;
-use super::{Anchor, map, marker};
+use super::{Anchor, FitRequest, map, marker};
 use crate::components::{ButtonVariant, button};
 use crate::element::{Element, Role, div};
-use crate::geo::{Camera, LatLon, MapView, TileId};
+use crate::geo::{Camera, LatLon, LatLonBounds, MapView, TileId};
 use crate::geometry::{Point, Size};
 use crate::layout::Content;
+use crate::render::Color;
 use crate::runtime::SimpleApp;
+use crate::style::Cursor;
 use crate::testing::{By, TestApp};
 use crate::ui_engine::{Key, Modifiers};
+use geojson::{Geometry, GeometryValue, Position};
 
 const PLAZA: LatLon = LatLon::new(-36.1415, -71.8265);
 /// Villa San Pedro, north east of the plaza: in view at zoom 14.
@@ -28,11 +32,14 @@ const ELSEWHERE: MapView = MapView::new(LatLon::new(-36.155, -71.82), 15.0);
 enum Msg {
     Moved(MapView),
     Go,
+    Area(String),
 }
 
 struct Atlas {
     view: MapView,
     basemap: Option<TileSource>,
+    layers: Vec<MapLayer>,
+    fit: Option<FitRequest>,
 }
 
 impl Atlas {
@@ -40,8 +47,25 @@ impl Atlas {
         Self {
             view: MapView::new(PLAZA, zoom),
             basemap: None,
+            layers: Vec::new(),
+            fit: None,
         }
     }
+}
+
+/// A square `d` degrees from `center` on each side.
+fn square(center: LatLon, d: f64) -> MapLayer {
+    let corner = |lon: f64, lat: f64| Position::from(vec![lon, lat]);
+    let (lon, lat) = (center.lon, center.lat);
+    MapLayer::polygon(&Geometry::new(GeometryValue::Polygon {
+        coordinates: vec![vec![
+            corner(lon - d, lat - d),
+            corner(lon + d, lat - d),
+            corner(lon + d, lat + d),
+            corner(lon - d, lat + d),
+        ]],
+    }))
+    .unwrap()
 }
 
 static LAND: MapStyle = MapStyle {
@@ -67,6 +91,7 @@ impl SimpleApp for Atlas {
         match msg {
             Msg::Moved(view) => self.view = view,
             Msg::Go => self.view = ELSEWHERE,
+            Msg::Area(_) => {}
         }
     }
 
@@ -74,6 +99,14 @@ impl SimpleApp for Atlas {
         let mut atlas = map(&self.view);
         if let Some(source) = &self.basemap {
             atlas = atlas.basemap(source.clone());
+        }
+        if !self.layers.is_empty() {
+            atlas = atlas
+                .layers(self.layers.iter().cloned())
+                .on_area_click(Msg::Area);
+        }
+        if let Some(fit) = self.fit {
+            atlas = atlas.fit_bounds(fit.bounds, fit.serial);
         }
         div().class("flex flex-col gap-2 p-4").children([
             atlas
@@ -127,7 +160,7 @@ fn views(app: &TestApp<Atlas>) -> Vec<MapView> {
         .iter()
         .filter_map(|msg| match msg {
             Msg::Moved(view) => Some(*view),
-            Msg::Go => None,
+            Msg::Go | Msg::Area(_) => None,
         })
         .collect()
 }
@@ -403,5 +436,97 @@ fn a_new_view_from_the_app_glides_there_without_echo() {
     assert!(
         views(&app).is_empty(),
         "the app moved it; nothing to report"
+    );
+}
+
+/// The id of the layer the map shows under the pointer.
+fn hovered(app: &TestApp<Atlas>) -> Option<String> {
+    let id = app.screen().get(mapa()).id();
+    match &app.session().layout().node(id).unwrap().content {
+        Content::Map(spec) => spec.hovered.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn layers_light_up_under_the_pointer_and_report_clicks() {
+    let east = LatLon::new(PLAZA.lat, -71.81);
+    let mut app = TestApp::new(Atlas {
+        layers: vec![
+            square(PLAZA, 0.008).id("fondo"),
+            square(PLAZA, 0.003)
+                .id("plaza")
+                .fill(Color::hex(0xc45c26), 0.12),
+            square(east, 0.002),
+        ],
+        ..Atlas::at(14.0)
+    });
+    let view = app.app().view;
+    let at = |app: &TestApp<Atlas>, place: LatLon| on_screen(app, view, place);
+    assert_eq!(app.mouse_cursor(), Cursor::Default);
+
+    let plaza = at(&app, PLAZA);
+    app.move_pointer(plaza);
+    assert_eq!(hovered(&app).as_deref(), Some("plaza"), "the topmost one");
+    assert_eq!(app.mouse_cursor(), Cursor::Pointer);
+    let west = at(&app, LatLon::new(PLAZA.lat, PLAZA.lon - 0.006));
+    app.move_pointer(west);
+    assert_eq!(hovered(&app).as_deref(), Some("fondo"));
+    let without_id = at(&app, east);
+    app.move_pointer(without_id);
+    assert_eq!(
+        hovered(&app),
+        None,
+        "a layer without an id is not clickable"
+    );
+    assert_eq!(app.mouse_cursor(), Cursor::Default);
+
+    app.click_point(plaza);
+    assert_eq!(app.messages(), [Msg::Area("plaza".to_owned())]);
+    app.drag_and_hold(mapa(), -40.0, 0.0);
+    assert!(
+        matches!(app.messages(), [Msg::Area(_), Msg::Moved(_)]),
+        "a drag is not a click: {:?}",
+        app.messages()
+    );
+}
+
+#[test]
+fn fit_bounds_glides_to_the_box_once_and_reports_it() {
+    let bounds = LatLonBounds {
+        south: -36.16,
+        west: -71.85,
+        north: -36.13,
+        east: -71.81,
+    };
+    let mut app = TestApp::new(Atlas {
+        fit: Some(FitRequest { bounds, serial: 1 }),
+        ..Atlas::at(16.0)
+    });
+    assert!(app.session().animating(), "it glides from the app's view");
+    app.advance(FLY_DURATION);
+    let [fitted] = views(&app)[..] else {
+        panic!("{:?}", app.messages());
+    };
+    assert!(fitted.zoom < 16.0);
+    for corner in [
+        LatLon::new(bounds.north, bounds.west),
+        LatLon::new(bounds.south, bounds.east),
+    ] {
+        let local = Camera::new(fitted, SIZE).to_local(corner);
+        assert!(local.x >= 15.9 && local.x <= SIZE.width - 15.9, "{local:?}");
+        assert!(
+            local.y >= 15.9 && local.y <= SIZE.height - 15.9,
+            "{local:?}"
+        );
+    }
+
+    app.drag_and_hold(mapa(), -100.0, 0.0);
+    let dragged = app.app().view;
+    app.advance(FLY_DURATION);
+    assert_eq!(
+        app.app().view,
+        dragged,
+        "the request stands but is served once"
     );
 }

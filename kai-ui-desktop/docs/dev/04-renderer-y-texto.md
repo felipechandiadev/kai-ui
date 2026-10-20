@@ -33,9 +33,10 @@ Convertir el árbol ya medido en una lista de operaciones visuales que Kai prese
 
 - `Color` (sRGB u8 con alfa directo, `hex`, `mix` como `color-mix`, `with_alpha`, conversión a lineal) y `TextId { widget, part }` (contenido, valor o placeholder de un elemento).
 - `Quad { rect, fill, border, border_width, radius, blur, mask }`: una caja con esquinas redondeadas, borde interior y desenfoque opcional; sirve para fondos, bordes, sombras, anillos de foco, caret, selección y scrollbar. Con `mask: Some(Mask { icon, stroke_width })` el quad es un icono: `fill` se multiplica por la cobertura del icono rasterizado (abajo).
-- `DrawOp { Quad, Image, PushClip, PopClip, Text { id, origin, color } }` y `DrawList` con `clear` (color de fondo de la raíz).
+- `DrawOp { Quad, Image, Geometry, PushClip, PopClip, Text { id, origin, color } }` y `DrawList` con `clear` (color de fondo de la raíz). Los `PushClip` anidados se intersecan.
 - `ImageDraw { rect, bitmap, source, radius, opacity }`: un `Bitmap` RGBA decodificado sobre `rect`; `source` es la parte visible en fracciones `0..1` (el recorte de `object-cover`) y `radius` redondea como un quad (`rounded-full` da un círculo).
-- `resolve(&DrawList) -> Vec<Batch>` resuelve la pila de clips en CPU y agrupa las operaciones en lotes alternos `Quads`/`Texts`/`Images` **en orden de pintor**: un texto pintado antes que una caja queda debajo de ella. Descarta lo totalmente recortado o transparente.
+- `GeometryDraw { mesh, transform, color, width }`: una malla de triángulos (abajo) colocada con una `Affine2`; `width` es el ancho del trazo en puntos lógicos (0 en los rellenos).
+- `resolve(&DrawList) -> Vec<Batch>` resuelve la pila de clips en CPU y agrupa las operaciones en lotes alternos `Quads`/`Texts`/`Images`/`Geometry` **en orden de pintor**: un texto pintado antes que una caja queda debajo de ella. Descarta lo totalmente recortado o transparente.
 
 ### Paint (`render/paint.rs`)
 
@@ -57,7 +58,15 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 - Iconos: `MaskAtlas` (`render/icons.rs`, puro) empaqueta por estantes las máscaras en una textura `R8Unorm` de 1024², con 1 px de margen. La clave es `(icono, tamaño en px físicos, trazo × 100)`, así que cada tamaño y escala se rasteriza nítido una sola vez. `rasterize` arma el `<svg>` de Lucide con el `stroke-width` pedido, lo convierte con `resvg`/`tiny-skia` a la escala física y guarda el canal alfa. En `prepare` se juntan las claves del frame, se empaquetan las nuevas (si el atlas se llena se vacía y se re-empaqueta una vez; una máscara más grande que el atlas se omite) y se suben con `queue.write_texture`. La instancia lleva `uv = (x, y, tamaño)` y `params.w = 1`. El rect se ajusta a píxeles físicos enteros y el shader lee la cobertura con `textureLoad` (un texel por píxel, sin sampler ni filtrado), así el icono queda tan nítido como el raster.
 - Imágenes (`render/images.rs` e `image.wgsl`): `ImageAtlas` empaqueta por estantes los `Bitmap` en una textura `Rgba8Unorm` de 4096² con margen de 1 px; si se llena, se vacía y se re-empaqueta con las imágenes del frame. La clave es `Bitmap::id`. Antes de subir, cada imagen se reduce a 1024 px de lado como máximo (promediando) y se premultiplica. El shader muestrea con filtro lineal, recorta con la SDF del rectángulo redondeado y el clip de la instancia, y multiplica por la opacidad.
 - Cada lote de texto tiene su propio `TextRenderer` de glyphon (todos comparten el atlas), así los textos se intercalan con las cajas en el orden correcto. Los `TextBounds` salen del clip resuelto en píxeles físicos.
+- **MSAA 4×** (`SAMPLE_COUNT`): el pase principal dibuja todos los pipelines (quads, iconos, imágenes, texto y geometría) en una textura multisample de 4 muestras, recreada al cambiar de tamaño, que se resuelve en la superficie o en la textura de la captura. Los quads, iconos y texto ya suavizaban sus bordes en el shader; el MSAA es lo que antialiasa las aristas de las mallas.
 - Los colores se convierten a lineal cuando el formato es sRGB, igual que glyphon. `render` devuelve `Ok(false)` cuando hay que redibujar (superficie perdida u obsoleta).
+
+### Geometría (`render/geometry.rs` y `geometry.wgsl`)
+
+- `Mesh` es una malla inmutable con un id único (la clave de sus buffers en GPU) y sus límites. `Mesh::fill(rings, pixel)` tesela anillos cerrados con `lyon` (par-impar: los interiores son huecos); `Mesh::stroke(lines, closed, StrokeStyle, pixel)` deja los vértices sobre el trazado con la normal de extrusión, y el shader los desplaza `normal × width / 2` después de la transformación. Así un trazo conserva su ancho en píxeles a cualquier zoom, y la misma malla sirve para el borde de una calle y su relleno. `MeshBuilder` junta varios rellenos y trazos en una malla; `pixel` (unidades de malla por píxel al zoom esperado) fija la tolerancia del teselado.
+- `Affine2` lleva la malla de sus coordenadas propias (0..4096 en una tesela, relativas a un origen en una capa del mapa) a puntos lógicos; mover o hacer zoom solo cambia la transformación, sin volver a teselar ni a subir buffers.
+- Backend: una llamada indexada por dibujo. Los buffers de vértices e índices se guardan por id de malla y se liberan cuando la malla ya no existe o lleva 600 frames sin dibujarse. La transformación, el ancho y el color de cada dibujo van en un uniforme con offset dinámico, y su clip es el scissor.
+- Lo usan los mapas ([10](10-mapas.md)): teselas vectoriales, estilo del mapa base y capas de polígonos de la app.
 
 ### Fondos de ventana (`background.rs` y `background.wgsl`)
 
@@ -85,14 +94,15 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 
 ### Capturas
 
-`cargo test --manifest-path kai-ui-desktop/Cargo.toml -- --ignored snapshot_demo` renderiza la demo offscreen en la GPU local (2×) y escribe BMP en `kai-ui-desktop/target/snapshots/`: reposo, interacción (hover, foco y valor), ventana estrecha, scroll al final con anillo de foco, la tarjeta de variantes de TextField en reposo (`demo-fields`, con password enmascarado) y con valores y foco en el password visible (`demo-fields-focus`), y la sección Multimedia en reposo y con un archivo arrastrado sobre la portada (`demo-multimedia`, `demo-multimedia-drag`). `images_draw_rounded_cropped_and_clipped` escribe `images-primitive.bmp` (imagen entera, en círculo, `rounded-xl`, semitransparente y recortada). Para verlas como PNG: `sips -s format png demo-idle.bmp --out demo-idle.png`. Es `#[ignore]` porque necesita GPU.
+`cargo test --manifest-path kai-ui-desktop/Cargo.toml -- --ignored snapshot_demo` renderiza la demo offscreen en la GPU local (2×) y escribe BMP en `kai-ui-desktop/target/snapshots/`: reposo, interacción (hover, foco y valor), ventana estrecha, scroll al final con anillo de foco, la tarjeta de variantes de TextField en reposo (`demo-fields`, con password enmascarado) y con valores y foco en el password visible (`demo-fields-focus`), y la sección Multimedia en reposo y con un archivo arrastrado sobre la portada (`demo-multimedia`, `demo-multimedia-drag`). `images_draw_rounded_cropped_and_clipped` escribe `images-primitive.bmp` (imagen entera, en círculo, `rounded-xl`, semitransparente y recortada) y `geometry_draws_antialiased_strokes_and_fills_in_painter_order` escribe `geometry-primitive.bmp` (una polilínea de 3 px con uniones redondeadas y un polígono semitransparente debajo y encima de un quad, también recortado y ampliado). La sección Mapa aporta `demo-mapa` (solo el mapa base), `demo-mapa-areas` (los sectores de DSP) y `demo-mapa-seleccion` (un sector elegido y encuadrado); sus teselas se cargan de forma síncrona y sus etiquetas aparecen ya fundidas. Para verlas como PNG: `sips -s format png demo-idle.bmp --out demo-idle.png`. Es `#[ignore]` porque necesita GPU.
 
 ### Pendiente
 
 - [ ] Comparación automática de capturas contra referencias (requiere un runner con GPU y tolerancia de rasterización).
 - [x] Iconos SVG (Lucide) en un atlas de máscaras.
 - [x] Imágenes rasterizadas (atlas RGBA, `object-*`, radio propio).
-- [ ] Sombras múltiples, gradientes, transformaciones y clip redondeado de contenedores (`rounded-xl overflow-hidden` recorta sus hijos con un rectángulo).
+- [x] Geometría vectorial con `lyon` (rellenos y trazos de ancho constante en pantalla), transformación afín por dibujo y MSAA 4×.
+- [ ] Sombras múltiples, gradientes y clip redondeado de contenedores (`rounded-xl overflow-hidden` recorta sus hijos con un rectángulo).
 - [ ] Política de recursos de fuentes (carga propia, invalidación al cambiar de escala) más allá del `FontSystem` del sistema.
 
 ## Accesibilidad

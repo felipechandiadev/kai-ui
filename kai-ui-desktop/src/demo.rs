@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::LazyLock;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -25,13 +26,15 @@ use crate::components::{
     validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
-use crate::geo::{LatLon, MapView};
+use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
+use crate::maps::layers::{MapLayer, polygons};
 use crate::maps::style::MapStyle;
 use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
+use crate::render::Color;
 use crate::runtime::{self, App, Effects, PickFile};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
@@ -101,6 +104,11 @@ struct Demo {
     /// Mapa: what it shows, and whether a new view glides there.
     vista: MapView,
     animar_vista: bool,
+    /// Mapa: the DSP sectors are drawn, the code of the one selected and
+    /// the last request to frame a box (with its serial).
+    mostrar_areas: bool,
+    area: Option<String>,
+    encuadre: Option<(LatLonBounds, u64)>,
 }
 
 impl Default for Demo {
@@ -149,15 +157,72 @@ impl Default for Demo {
             next_toast: 1,
             vista: VISTA_INICIAL,
             animar_vista: true,
+            mostrar_areas: true,
+            area: None,
+            encuadre: None,
         }
     }
 }
 
 /// Plaza de Armas de Parral, where the map starts.
 const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
-const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 14.0);
+const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 13.0);
 /// Protomaps extract of Parral (`scripts/extract-region.sh`).
 const PARRAL_PMTILES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/parral.pmtiles");
+/// The five starting sectors of DSP Parral, as its seed draws them.
+const DSP_AREAS: &str = include_str!("../assets/maps/dsp-areas.geojson");
+/// Margin around a selected sector, as a fraction of its size per side.
+const MARGEN_SECTOR: f64 = 0.2;
+
+/// An area of operation of DSP.
+#[derive(Debug)]
+struct Sector {
+    code: String,
+    nombre: String,
+    tipo: String,
+    capa: MapLayer,
+}
+
+impl Sector {
+    /// The color of its type, as in DSP's `operation_area_types`.
+    fn color(&self) -> Color {
+        match self.tipo.as_str() {
+            "territorio" => Color::hex(0x1e73ae),
+            "barrio" => Color::hex(0x2d6a4f),
+            _ => Color::hex(0xc45c26),
+        }
+    }
+
+    /// Background class of its color.
+    fn swatch(&self) -> String {
+        let Color { r, g, b, .. } = self.color();
+        format!("bg-[#{r:02x}{g:02x}{b:02x}]")
+    }
+}
+
+static SECTORES: LazyLock<Vec<Sector>> = LazyLock::new(|| {
+    let text = |properties: &geojson::JsonObject, key: &str| {
+        properties
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    polygons(DSP_AREAS)
+        .expect("assets/maps/dsp-areas.geojson")
+        .into_iter()
+        .map(|(capa, properties)| Sector {
+            code: text(&properties, "code"),
+            nombre: text(&properties, "name"),
+            tipo: text(&properties, "type"),
+            capa,
+        })
+        .collect()
+});
+
+fn sector(code: &str) -> Option<&'static Sector> {
+    SECTORES.iter().find(|sector| sector.code == code)
+}
 
 /// Largest file the image fields take, in megabytes.
 const MAX_IMAGEN_MB: u64 = 5;
@@ -544,6 +609,11 @@ enum Msg {
         vista: MapView,
         animar: bool,
     },
+    /// Selects the sector with this code and frames it.
+    SeleccionarArea(String),
+    /// Moves the map to show all of the box.
+    Encuadrar(LatLonBounds),
+    ToggleAreas,
 }
 
 impl Demo {
@@ -565,6 +635,25 @@ impl Demo {
         toast.id = id;
         self.toasts.push(toast);
         toast_timer(id, Msg::CloseToast(id))
+    }
+
+    /// Ask the map to show `bounds` (a new request each time, so the same
+    /// box frames again after a drag). Boxes with NaN are ignored.
+    fn encuadrar(&mut self, bounds: LatLonBounds) {
+        let Some(bounds) = LatLonBounds::around([
+            LatLon::new(bounds.south, bounds.west),
+            LatLon::new(bounds.north, bounds.east),
+        ])
+        .filter(|b| {
+            [b.south, b.west, b.north, b.east]
+                .iter()
+                .all(|v| v.is_finite())
+        }) else {
+            return;
+        };
+        let serial = self.encuadre.map_or(1, |(_, serial)| serial + 1);
+        self.encuadre = Some((bounds, serial));
+        self.animar_vista = true;
     }
 }
 
@@ -782,6 +871,51 @@ impl Action for FijarVista {
     }
 }
 
+/// Frames a box on the map of «Mapa».
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Encuadrar {
+    #[schemars(description = "Caja a mostrar entera (grados)")]
+    bounds: LatLonBounds,
+}
+
+impl Action for Encuadrar {
+    type App = Demo;
+    const ID: &'static str = "mapa.fit_bounds";
+    const TITLE: &'static str = "Encuadrar el mapa";
+    fn description() -> &'static str {
+        "Mueve el mapa de la sección Mapa hasta mostrar entera una caja de latitud y longitud"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Encuadrar(self.bounds)
+    }
+}
+
+/// Selects a DSP sector of «Mapa», as a click on it or on the list would.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SeleccionarArea {
+    #[schemars(
+        description = "Código del sector: AOP26000001 (Plaza de Armas), AOP26000002 \
+                       (Catillo), AOP26000003 (Villa San Pedro), AOP26000004 (Palma Rosa) \
+                       o AOP26000005 (Terminal de Buses)"
+    )]
+    code: String,
+}
+
+impl Action for SeleccionarArea {
+    type App = Demo;
+    const ID: &'static str = "areas.seleccionar";
+    const TITLE: &'static str = "Seleccionar sector";
+    fn description() -> &'static str {
+        "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % \
+         de margen; un código desconocido no cambia nada"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::SeleccionarArea(self.code)
+    }
+}
+
 /// What the map of «Mapa» shows, as of the last gesture.
 #[derive(Deserialize, JsonSchema)]
 struct VistaDelMapa;
@@ -845,6 +979,8 @@ impl App for Demo {
         registry.action::<MostrarAviso>().expose();
         registry.action::<CargarUrl>().expose();
         registry.action::<FijarVista>().expose();
+        registry.action::<Encuadrar>().expose();
+        registry.action::<SeleccionarArea>().expose();
         registry.query::<VistaDelMapa>().expose();
     }
 
@@ -982,6 +1118,15 @@ impl App for Demo {
                 self.vista = vista.clamped();
                 self.animar_vista = animar;
             }
+            Msg::SeleccionarArea(code) => {
+                if let Some(sector) = sector(&code) {
+                    self.area = Some(code);
+                    self.mostrar_areas = true;
+                    self.encuadrar(sector.capa.bounds().padded(MARGEN_SECTOR));
+                }
+            }
+            Msg::Encuadrar(bounds) => self.encuadrar(bounds),
+            Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
         }
         Effects::none()
     }
@@ -1824,28 +1969,94 @@ impl Demo {
         ])
     }
 
-    /// Mapa: Parral with a pin on the plaza, and where the map is.
+    /// Mapa: Parral with a pin on the plaza, the DSP sectors over it, a
+    /// list that frames them, and where the map is.
     fn mapa(&self) -> Element<Msg> {
         let vista = self.vista;
+        let seleccionada = self.area.as_deref();
+        let capas = SECTORES
+            .iter()
+            .filter(|_| self.mostrar_areas)
+            .map(|sector| {
+                let color = sector.color();
+                sector
+                    .capa
+                    .clone()
+                    .id(&sector.code)
+                    .fill(color, 0.12)
+                    .stroke(color, 2.0)
+                    .label(&sector.nombre)
+                    .selected(seleccionada == Some(sector.code.as_str()))
+            });
+        let mut mapa = map(&vista)
+            .basemap(TileSource::pmtiles(PARRAL_PMTILES, MapStyle::protomaps()))
+            .layers(capas)
+            .animate_view(self.animar_vista)
+            .on_view_change(Msg::MapaMovido)
+            .on_area_click(Msg::SeleccionarArea)
+            .label("Mapa de Parral")
+            .test_id("mapa.vista")
+            .class("flex-1 min-w-0 h-96 border border-border")
+            .children([marker(
+                PLAZA_DE_ARMAS,
+                Anchor::Bottom,
+                icon(Icon::MapPin).class("size-8 text-primary"),
+            )
+            .alt("Plaza de Armas")]);
+        if let Some((bounds, serial)) = self.encuadre {
+            mapa = mapa.fit_bounds(bounds, serial);
+        }
+        let lista = div()
+            .role(Role::List)
+            .label("Sectores")
+            .test_id("mapa.sectores")
+            .class("flex flex-col gap-1 w-44")
+            .children(SECTORES.iter().map(|sector| {
+                let elegido = seleccionada == Some(sector.code.as_str());
+                div()
+                    .role(Role::Button)
+                    .pressed(elegido)
+                    .on_click(Msg::SeleccionarArea(sector.code.clone()))
+                    .test_id(format!("mapa.sector.{}", sector.code))
+                    .class(if elegido {
+                        "flex items-center gap-2 h-8 px-2 rounded-md border border-info \
+                         bg-info/20 text-sm font-medium text-foreground cursor-pointer \
+                         focus-visible:ring-2 focus-visible:ring-primary/40"
+                    } else {
+                        "flex items-center gap-2 h-8 px-2 rounded-md border border-transparent \
+                         text-sm text-foreground hover:bg-info/10 cursor-pointer \
+                         focus-visible:ring-2 focus-visible:ring-primary/40"
+                    })
+                    .children([
+                        div().class(&format!("size-3 shrink-0 rounded-sm {}", sector.swatch())),
+                        text(&sector.nombre),
+                    ])
+            }));
+        let estado = match self.area.as_deref().and_then(sector) {
+            Some(sector) => format!("Sector {} · {}", sector.nombre, sector.code),
+            None => "Elige un sector en la lista o en el mapa".to_owned(),
+        };
         card().class("w-full max-w-3xl").test_id("mapa").children([
             card_header(
                 "Parral",
                 Some("Arrastra, usa la rueda o pellizca; doble clic acerca y ⇧ doble clic aleja"),
             ),
             card_content().class("gap-3").children([
-                map(&vista)
-                    .basemap(TileSource::pmtiles(PARRAL_PMTILES, MapStyle::protomaps()))
-                    .animate_view(self.animar_vista)
-                    .on_view_change(Msg::MapaMovido)
-                    .label("Mapa de Parral")
-                    .test_id("mapa.vista")
-                    .class("w-full h-96 border border-border")
-                    .children([marker(
-                        PLAZA_DE_ARMAS,
-                        Anchor::Bottom,
-                        icon(Icon::MapPin).class("size-8 text-primary"),
-                    )
-                    .alt("Plaza de Armas")]),
+                div().class("flex gap-3").children([
+                    mapa,
+                    div().class("flex flex-col gap-3 w-44").children([
+                        lista,
+                        switch_labeled(
+                            "Sectores",
+                            self.mostrar_areas,
+                            Msg::ToggleAreas,
+                            false,
+                            SwitchDensity::Compact,
+                        )
+                        .test_id("mapa.mostrar_sectores"),
+                    ]),
+                ]),
+                caption(estado).test_id("mapa.sector"),
                 div()
                     .class("flex items-center justify-between gap-3")
                     .children([
@@ -2225,8 +2436,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        Campo, CargarUrl, Dialogo, ImageSource, LatLon, MapView, PLAZA_DE_ARMAS, SortDirection,
-        VISTA_INICIAL, VarianteAviso,
+        Campo, CargarUrl, Dialogo, ImageSource, LatLon, LatLonBounds, MapView, PLAZA_DE_ARMAS,
+        SECTORES, SortDirection, VISTA_INICIAL, VarianteAviso, sector,
     };
 
     use cosmic_text::{
@@ -3023,7 +3234,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 10] = [
+        const SOURCES: [&str; 11] = [
             include_str!("components.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
@@ -3034,10 +3245,13 @@ mod tests {
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
             include_str!("maps/mod.rs"),
+            include_str!("maps/layers.rs"),
         ];
-        const NOT_WIDGETS: [&str; 15] = [
+        const NOT_WIDGETS: [&str; 17] = [
             "MapSpec",
             "Marker",
+            "FitRequest",
+            "paint",
             "validate_image_file",
             "themed",
             "appkit_button_classes",
@@ -3237,6 +3451,12 @@ mod tests {
                 Mapa,
                 None,
                 By::role(Role::Image).name("Plaza de Armas"),
+            ),
+            (
+                &["MapLayer", "polygons"],
+                Mapa,
+                None,
+                By::role(Role::List).name("Sectores"),
             ),
             (
                 &["Dialog", "dialog"],
@@ -3719,6 +3939,8 @@ mod tests {
                 "avisos.mostrar",
                 "multimedia.cargar_url",
                 "mapa.set_view",
+                "mapa.fit_bounds",
+                "areas.seleccionar",
                 "mapa.get_view",
                 "kai.paleta",
             ]
@@ -4241,6 +4463,8 @@ mod tests {
                 "avisos.mostrar",
                 "multimedia.cargar_url",
                 "mapa.set_view",
+                "mapa.fit_bounds",
+                "areas.seleccionar",
                 "mapa.get_view",
             ]
         );
@@ -4379,6 +4603,103 @@ mod tests {
                 .any(|msg| matches!(msg, Msg::MapaMovido(_))),
             "the app's moves are not reported back"
         );
+    }
+
+    /// Where `at` falls in the window on the map of «Mapa».
+    fn on_map(app: &TestApp<Demo>, at: LatLon) -> crate::geometry::Point {
+        let id = app.screen().get_by_test_id("mapa.vista").id();
+        let area = app.session().layout().node(id).unwrap().padding_box;
+        let size = Size {
+            width: area.width,
+            height: area.height,
+        };
+        let local = crate::geo::Camera::new(app.app().vista, size).to_local(at);
+        crate::geometry::Point {
+            x: area.x + local.x,
+            y: area.y + local.y,
+        }
+    }
+
+    #[test]
+    fn sectors_are_chosen_from_the_list_the_map_and_agents() {
+        use crate::style::Cursor;
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let screen = app.screen();
+        let lista = screen.get(By::role(Role::List).name("Sectores"));
+        let nombres: Vec<String> = screen
+            .within(lista)
+            .all(By::role(Role::Button))
+            .iter()
+            .filter_map(|row| row.name())
+            .collect();
+        assert_eq!(
+            nombres,
+            [
+                "Plaza de Armas",
+                "Catillo",
+                "Villa San Pedro",
+                "Palma Rosa",
+                "Terminal de Buses"
+            ]
+        );
+
+        let catillo = sector("AOP26000002").unwrap();
+        app.click(By::test_id("mapa.sector.AOP26000002"));
+        assert_eq!(app.app().area.as_deref(), Some("AOP26000002"));
+        assert!(app.session().animating(), "it glides to the sector");
+        app.advance(Duration::from_secs(1));
+        let vista = app.app().vista;
+        assert!(vista.zoom > VISTA_INICIAL.zoom, "{vista:?}");
+        let centro = catillo.capa.centroid();
+        assert!((vista.center.lat - centro.lat).abs() < 1e-3, "{vista:?}");
+        assert!((vista.center.lon - centro.lon).abs() < 1e-3, "{vista:?}");
+        app.screen().get(By::text("Sector Catillo · AOP26000002"));
+        assert_eq!(
+            app.screen()
+                .get_by_test_id("mapa.sector.AOP26000002")
+                .node()
+                .control_state,
+            Some(ControlState::On)
+        );
+
+        let todos = SECTORES
+            .iter()
+            .map(|sector| sector.capa.bounds())
+            .reduce(LatLonBounds::union)
+            .unwrap();
+        assert_eq!(
+            app.call("mapa.fit_bounds", json!({ "bounds": todos })),
+            Ok(json!(null))
+        );
+        app.advance(Duration::from_secs(1));
+        let terminal = sector("AOP26000005").unwrap().capa.centroid();
+        let punto = on_map(&app, terminal);
+        app.move_pointer(punto);
+        assert_eq!(app.mouse_cursor(), Cursor::Pointer);
+        app.click_point(punto);
+        assert_eq!(app.app().area.as_deref(), Some("AOP26000005"));
+        assert!(
+            app.messages()
+                .contains(&Msg::SeleccionarArea("AOP26000005".to_owned()))
+        );
+
+        assert_eq!(
+            app.call("areas.seleccionar", json!({ "code": "AOP99" })),
+            Ok(json!(null))
+        );
+        assert_eq!(app.app().area.as_deref(), Some("AOP26000005"), "unknown");
+        assert_eq!(
+            app.call("areas.seleccionar", json!({ "code": "AOP26000001" })),
+            Ok(json!(null))
+        );
+        assert_eq!(app.app().area.as_deref(), Some("AOP26000001"));
+
+        app.click(By::role(Role::Switch).name("Sectores"));
+        assert!(!app.app().mostrar_areas, "{:?}", app.messages().last());
+        app.advance(Duration::from_secs(1));
+        let plaza = on_map(&app, PLAZA_DE_ARMAS);
+        app.move_pointer(plaza);
+        assert_eq!(app.mouse_cursor(), Cursor::Default, "no sectors drawn");
     }
 
     fn agent(client: &str) -> Origin {
@@ -4681,6 +5002,11 @@ mod tests {
             let destructive = command["safety"] == "destructive";
             assert_eq!(tool["annotations"]["destructiveHint"], json!(destructive));
             match command.get("outputSchema") {
+                Some(output) if output["type"] == "object" => assert_eq!(
+                    tool["outputSchema"], *output,
+                    "{} entrega su objeto tal cual",
+                    command["id"]
+                ),
                 Some(output) => assert_eq!(
                     tool["outputSchema"]["properties"]["result"], *output,
                     "{} envuelve su salida",
@@ -5662,14 +5988,34 @@ mod tests {
             ("demo-contenedores", Seccion::Contenedores),
             ("demo-tabla", Seccion::Tabla),
             ("demo-mapa", Seccion::Mapa),
+            ("demo-mapa-areas", Seccion::Mapa),
         ] {
             let mut demo = Demo::at(seccion);
             if seccion == Seccion::Tabla {
                 demo.apply(Msg::Sort(4, SortDirection::Descending));
                 demo.apply(Msg::SelectRow(1));
             }
+            if name == "demo-mapa" {
+                demo.apply(Msg::ToggleAreas);
+            }
             snapshot(out, name, &demo, wide, 2.0, &Interaction::default(), &none);
         }
+
+        // The view the map reports once it has framed Catillo.
+        let mut seleccion = TestApp::builder(Demo::at(Seccion::Mapa))
+            .viewport(wide.width, wide.height)
+            .build();
+        seleccion.click(By::test_id("mapa.sector.AOP26000002"));
+        seleccion.advance(Duration::from_secs(1));
+        snapshot(
+            out,
+            "demo-mapa-seleccion",
+            seleccion.app(),
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
+        );
 
         let mut media = Demo::at(Seccion::Multimedia);
         media.apply(Msg::ImagenElegida(

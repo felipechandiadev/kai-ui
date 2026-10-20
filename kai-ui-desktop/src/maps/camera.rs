@@ -6,7 +6,10 @@
 
 use std::time::{Duration, Instant};
 
-use crate::geo::{Camera, MapView, WorldPoint, anchored_view, project, unproject};
+use super::FitRequest;
+use crate::geo::{
+    Camera, LatLonBounds, MapView, WorldPoint, anchored_view, fit_bounds, project, unproject,
+};
 use crate::geometry::{Point, Size};
 
 /// Zoom animations (buttons, wheel notches, double click, keys).
@@ -56,6 +59,16 @@ enum Motion {
     },
 }
 
+/// Room left around fitted bounds, in points.
+pub const FIT_PADDING: f32 = 16.0;
+/// `fit_bounds` never zooms closer than this.
+pub const FIT_MAX_ZOOM: f64 = 18.0;
+
+/// The view that shows `bounds` on a map of `size`.
+pub fn fit_view(bounds: LatLonBounds, size: Size) -> MapView {
+    fit_bounds(bounds, size, FIT_PADDING, FIT_MAX_ZOOM).clamped()
+}
+
 fn ease_out(t: f64) -> f64 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
@@ -78,6 +91,8 @@ pub struct CameraState {
     moved: bool,
     /// Report no earlier than this (wheel, pinch and keys come in bursts).
     settle: Option<Instant>,
+    /// The last `fit_bounds` request served.
+    fitted: Option<u64>,
 }
 
 impl CameraState {
@@ -91,6 +106,7 @@ impl CameraState {
             motion: None,
             moved: false,
             settle: None,
+            fitted: None,
         }
     }
 
@@ -121,6 +137,30 @@ impl CameraState {
         } else {
             self.motion = None;
             self.view = model;
+        }
+    }
+
+    /// The app asks to show `request.bounds`: the camera moves there
+    /// (gliding when `animate`) and reports the view as a gesture would.
+    /// Each request is served once, as soon as the map has a size.
+    pub fn fit(&mut self, request: FitRequest, animate: bool, now: Instant) {
+        if self.fitted == Some(request.serial) || !self.size.is_finite_and_positive() {
+            return;
+        }
+        self.fitted = Some(request.serial);
+        let to = fit_view(request.bounds, self.size);
+        self.drag = None;
+        self.settle = None;
+        self.moved = true;
+        if animate {
+            self.motion = Some(Motion::Fly {
+                start: now,
+                from: self.view,
+                to,
+            });
+        } else {
+            self.motion = None;
+            self.view = to;
         }
     }
 
@@ -328,9 +368,10 @@ impl CameraState {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{CameraState, FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
-    use crate::geo::{Camera, LatLon, MapView};
+    use super::{CameraState, FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION, fit_view};
+    use crate::geo::{Camera, LatLon, LatLonBounds, MapView};
     use crate::geometry::{Point, Size};
+    use crate::maps::FitRequest;
 
     const PLAZA: LatLon = LatLon::new(-36.1415, -71.8265);
     const SIZE: Size = Size {
@@ -465,5 +506,42 @@ mod tests {
             MapView::new(PLAZA, 10.0),
             "jumps without animation"
         );
+    }
+
+    #[test]
+    fn a_fit_request_glides_to_the_bounds_once_and_reports() {
+        let bounds = LatLonBounds {
+            south: -36.148,
+            west: -71.84,
+            north: -36.135,
+            east: -71.81,
+        };
+        let request = FitRequest { bounds, serial: 1 };
+        let t = Instant::now();
+        let mut no_size = CameraState::new(MapView::new(PLAZA, 14.0));
+        no_size.fit(request, true, t);
+        assert!(!no_size.animating(), "it waits for a size");
+
+        let mut camera = camera();
+        camera.fit(request, true, t);
+        assert!(camera.animating());
+        camera.step(t + FLY_DURATION);
+        let view = Camera::new(camera.view, SIZE);
+        for corner in [
+            LatLon::new(bounds.north, bounds.west),
+            LatLon::new(bounds.south, bounds.east),
+        ] {
+            let at = view.to_local(corner);
+            assert!(at.x >= 15.9 && at.x <= SIZE.width - 15.9, "{at:?}");
+            assert!(at.y >= 15.9 && at.y <= SIZE.height - 15.9, "{at:?}");
+        }
+        assert_eq!(camera.take_report(t + FLY_DURATION), Some(camera.view));
+
+        camera.pan(50.0, 0.0, t + FLY_DURATION);
+        let panned = camera.view;
+        camera.fit(request, true, t + FLY_DURATION);
+        assert_eq!(camera.view, panned, "the same request is served once");
+        camera.fit(FitRequest { bounds, serial: 2 }, false, t + FLY_DURATION);
+        assert_eq!(camera.view, fit_view(bounds, SIZE), "a new one jumps");
     }
 }

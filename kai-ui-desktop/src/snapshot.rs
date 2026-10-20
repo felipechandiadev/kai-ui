@@ -120,19 +120,19 @@ fn render_with_layout<Msg>(
     let mut tiles = TileStore::default();
     let now = Instant::now();
     for (id, area, spec) in layout.maps_mut() {
+        let camera = Camera::new(
+            spec.view,
+            Size {
+                width: area.width,
+                height: area.height,
+            },
+        );
         if let Some(source) = &spec.source {
-            let camera = Camera::new(
-                spec.view,
-                Size {
-                    width: area.width,
-                    height: area.height,
-                },
-            );
             spec.tiles = tiles.load_now(source, camera);
-            let mut labels = Labels::default();
-            labels.update(id, camera, &spec.tiles, true, now, &mut text);
-            spec.labels = labels.frame(id, now + FADE).0;
         }
+        let mut labels = Labels::default();
+        labels.update(id, camera, &spec.tiles, &spec.layers, true, now, &mut text);
+        spec.labels = labels.frame(id, now + FADE).0;
     }
     let mut decorations = Vec::new();
     tree.walk(&mut |element| {

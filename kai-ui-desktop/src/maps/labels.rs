@@ -1,7 +1,10 @@
-//! Basemap labels: names of towns and neighbourhoods (`places`) and of
-//! streets (`roads`, horizontal, over the middle of their longest stretch).
+//! Map labels: names of the app's layers (at their centroid, in their
+//! color), and from the basemap names of towns and neighbourhoods
+//! (`places`) and of streets (`roads`, horizontal, over the middle of
+//! their longest stretch).
 //!
-//! A collision grid decides which fit, most important first. It runs when
+//! A collision grid decides which fit, layers first, then the most
+//! important basemap names. It runs when
 //! the map is still and its view or tiles changed; during a gesture the
 //! placed labels keep their spot on the map and move with it. New labels
 //! fade in over [`FADE`]; those placed before stay as they are.
@@ -14,15 +17,16 @@ use std::time::{Duration, Instant};
 use cosmic_text::Weight;
 
 use super::MapSpec;
+use super::layers::MapLayer;
 use super::mvt::EXTENT;
 use super::style::Palette;
 use super::tiles::TileFrame;
 use crate::element::WidgetId;
-use crate::geo::{Camera, WorldPoint};
+use crate::geo::{Camera, WorldPoint, project};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::TextMeasure;
 use crate::render::text::TextStyle;
-use crate::render::{DrawList, TextId};
+use crate::render::{Color, DrawList, TextId};
 use crate::theme::Theme;
 
 /// How long a new label takes to appear.
@@ -36,6 +40,8 @@ const HALO: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LabelKind {
+    /// The name of a [`MapLayer`].
+    Area,
     /// A city, town or village.
     Locality,
     Neighbourhood,
@@ -45,6 +51,7 @@ pub enum LabelKind {
 impl LabelKind {
     pub fn style(self) -> TextStyle {
         let (font_size, line_height, weight) = match self {
+            Self::Area => (12.0, 15.0, Weight::SEMIBOLD),
             Self::Locality => (15.0, 18.0, Weight::SEMIBOLD),
             Self::Neighbourhood => (11.0, 14.0, Weight::MEDIUM),
             Self::Street => (11.0, 14.0, Weight::NORMAL),
@@ -69,13 +76,15 @@ pub struct MapLabel {
     pub size: Size,
     /// 0 to 1 while fading in.
     pub opacity: f32,
+    /// Text color of a layer's name; basemap names take the palette's.
+    pub color: Option<Color>,
 }
 
 /// Labels compare by value and never hold NaN.
 impl Eq for MapLabel {}
 
-/// A name the tiles offer, with its priority: lower `class` first, then
-/// lower `rank`.
+/// A name the tiles or layers offer, with its priority: lower `class`
+/// first, then lower `rank`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Candidate {
     pub kind: LabelKind,
@@ -83,6 +92,25 @@ pub struct Candidate {
     pub at: WorldPoint,
     pub class: u8,
     pub rank: f32,
+    pub color: Option<Color>,
+}
+
+/// The names of `layers`, bottom to top: they go before any basemap name.
+fn layer_candidates(layers: &[MapLayer]) -> Vec<Candidate> {
+    layers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, layer)| {
+            Some(Candidate {
+                kind: LabelKind::Area,
+                name: Arc::from(layer.label.as_deref()?),
+                at: project(layer.centroid()),
+                class: 0,
+                rank: index as f32,
+                color: layer.ink(),
+            })
+        })
+        .collect()
 }
 
 /// The names of the drawn tiles worth showing at `zoom`, most important
@@ -93,13 +121,13 @@ pub fn candidates(tiles: &TileFrame, zoom: f64) -> Vec<Candidate> {
         let (corner, side) = placed.tile.world_origin();
         for label in &placed.meshes.labels {
             let (kind, class) = match (label.source, label.kind.as_str()) {
-                ("places", "locality" | "city" | "town" | "village") => (LabelKind::Locality, 0),
+                ("places", "locality" | "city" | "town" | "village") => (LabelKind::Locality, 1),
                 ("places", "neighbourhood" | "suburb" | "quarter" | "macrohood" | "microhood") => {
-                    (LabelKind::Neighbourhood, 1)
+                    (LabelKind::Neighbourhood, 2)
                 }
-                ("roads", "highway" | "major_road") if zoom >= 14.0 => (LabelKind::Street, 2),
-                ("roads", "minor_road") if zoom >= 15.0 => (LabelKind::Street, 3),
-                ("roads", "other") if zoom >= 16.0 => (LabelKind::Street, 4),
+                ("roads", "highway" | "major_road") if zoom >= 14.0 => (LabelKind::Street, 3),
+                ("roads", "minor_road") if zoom >= 15.0 => (LabelKind::Street, 4),
+                ("roads", "other") if zoom >= 16.0 => (LabelKind::Street, 5),
                 _ => continue,
             };
             // Protomaps zooms count 512-point tiles: one less than ours.
@@ -115,6 +143,7 @@ pub fn candidates(tiles: &TileFrame, zoom: f64) -> Vec<Candidate> {
                 },
                 class,
                 rank: label.rank,
+                color: None,
             });
         }
     }
@@ -202,6 +231,7 @@ struct Placed {
     at: WorldPoint,
     size: Size,
     since: Instant,
+    color: Option<Color>,
 }
 
 /// The labels of one map.
@@ -211,7 +241,7 @@ pub struct Labels {
     placed: Vec<Placed>,
 }
 
-fn signature(camera: &Camera, tiles: &TileFrame) -> u64 {
+fn signature(camera: &Camera, tiles: &TileFrame, layers: &[Candidate]) -> u64 {
     let mut hasher = DefaultHasher::new();
     camera.view.center.lat.to_bits().hash(&mut hasher);
     camera.view.center.lon.to_bits().hash(&mut hasher);
@@ -223,18 +253,26 @@ fn signature(camera: &Camera, tiles: &TileFrame) -> u64 {
         placed.clip.hash(&mut hasher);
         (Arc::as_ptr(&placed.meshes) as usize).hash(&mut hasher);
     }
+    for candidate in layers {
+        candidate.name.hash(&mut hasher);
+        candidate.at.x.to_bits().hash(&mut hasher);
+        candidate.at.y.to_bits().hash(&mut hasher);
+        candidate.color.hash(&mut hasher);
+    }
     hasher.finish()
 }
 
 impl Labels {
-    /// Place the labels of map `map` again if it is `still` and its view
-    /// or tiles changed. `measure` shapes their text (and keeps it ready to
-    /// draw).
+    /// Place the labels of map `map` again if it is `still` and its view,
+    /// tiles or layers changed. `measure` shapes their text (and keeps it
+    /// ready to draw).
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         map: WidgetId,
         camera: Camera,
         tiles: &TileFrame,
+        layers: &[MapLayer],
         still: bool,
         now: Instant,
         measure: &mut dyn TextMeasure,
@@ -242,7 +280,8 @@ impl Labels {
         if !still {
             return;
         }
-        let signature = signature(&camera, tiles);
+        let mut wanted = layer_candidates(layers);
+        let signature = signature(&camera, tiles, &wanted);
         if self.signature == Some(signature) {
             return;
         }
@@ -255,7 +294,8 @@ impl Labels {
         });
         let mut streets: HashSet<Arc<str>> = HashSet::new();
         let mut placed = Vec::new();
-        for candidate in candidates(tiles, camera.view.zoom) {
+        wanted.extend(candidates(tiles, camera.view.zoom));
+        for candidate in wanted {
             if candidate.kind == LabelKind::Street && streets.contains(&candidate.name) {
                 continue;
             }
@@ -292,6 +332,7 @@ impl Labels {
                 at: candidate.at,
                 size,
                 since,
+                color: candidate.color,
             });
         }
         self.placed = placed;
@@ -314,6 +355,7 @@ impl Labels {
                     at: placed.at,
                     size: placed.size,
                     opacity,
+                    color: placed.color,
                 }
             })
             .collect();
@@ -378,10 +420,10 @@ pub fn paint(list: &mut DrawList, area: Rect, spec: &MapSpec, theme: &Theme) {
                 halo,
             );
         }
-        let color = match label.kind {
-            LabelKind::Locality => palette.place_text,
+        let color = label.color.unwrap_or(match label.kind {
+            LabelKind::Area | LabelKind::Locality => palette.place_text,
             LabelKind::Neighbourhood | LabelKind::Street => palette.minor_text,
-        };
+        });
         list.text(label.text, at, color.with_alpha(alpha));
     }
     list.pop_clip();
@@ -487,7 +529,15 @@ mod tests {
     fn placed(zoom: f64, tiles: &TileFrame) -> (Labels, Camera) {
         let camera = camera(zoom);
         let mut labels = Labels::default();
-        labels.update(MAP, camera, tiles, true, Instant::now(), &mut FixedMeasure);
+        labels.update(
+            MAP,
+            camera,
+            tiles,
+            &[],
+            true,
+            Instant::now(),
+            &mut FixedMeasure,
+        );
         (labels, camera)
     }
 
@@ -586,7 +636,7 @@ mod tests {
         let start = Instant::now();
         let camera = camera(15.0);
         let mut labels = Labels::default();
-        labels.update(MAP, camera, &tiles, true, start, &mut FixedMeasure);
+        labels.update(MAP, camera, &tiles, &[], true, start, &mut FixedMeasure);
         let (shown, fading) = labels.frame(MAP, start);
         assert!(fading && shown.iter().all(|label| label.opacity == 0.0));
         let (half, _) = labels.frame(MAP, start + FADE / 2);
@@ -597,7 +647,7 @@ mod tests {
         // A small pan: the labels still in place keep showing.
         let later = start + FADE * 4;
         let moved = Camera::new(camera.panned(-40.0, 0.0), SIZE);
-        labels.update(MAP, moved, &tiles, true, later, &mut FixedMeasure);
+        labels.update(MAP, moved, &tiles, &[], true, later, &mut FixedMeasure);
         let (after, _) = labels.frame(MAP, later);
         let kept: Vec<&MapLabel> = after.iter().filter(|label| label.opacity == 1.0).collect();
         assert!(!kept.is_empty() && kept.iter().any(|label| &*label.name == "Parral"));
@@ -609,18 +659,55 @@ mod tests {
         let now = Instant::now();
         let camera = camera(15.0);
         let mut labels = Labels::default();
-        labels.update(MAP, camera, &tiles, false, now, &mut FixedMeasure);
+        labels.update(MAP, camera, &tiles, &[], false, now, &mut FixedMeasure);
         assert!(labels.frame(MAP, now).0.is_empty());
-        labels.update(MAP, camera, &tiles, true, now, &mut FixedMeasure);
+        labels.update(MAP, camera, &tiles, &[], true, now, &mut FixedMeasure);
         let before = labels.frame(MAP, now).0;
         assert!(!before.is_empty());
         let moved = Camera::new(camera.panned(-200.0, 0.0), SIZE);
-        labels.update(MAP, moved, &tiles, false, now, &mut FixedMeasure);
+        labels.update(MAP, moved, &tiles, &[], false, now, &mut FixedMeasure);
         assert_eq!(
             labels.frame(MAP, now).0,
             before,
             "they ride along during the gesture"
         );
+    }
+
+    #[test]
+    fn layer_names_go_first_in_their_color() {
+        use geojson::{Geometry, GeometryValue, Position};
+        let sector = Color::hex(0xc45c26);
+        let square = |d: f64| {
+            let (lon, lat) = (PLAZA.lon, PLAZA.lat);
+            Geometry::new(GeometryValue::Polygon {
+                coordinates: vec![vec![
+                    Position::from(vec![lon - d, lat - d]),
+                    Position::from(vec![lon + d, lat - d]),
+                    Position::from(vec![lon + d, lat + d]),
+                    Position::from(vec![lon - d, lat + d]),
+                ]],
+            })
+        };
+        let layers = [MapLayer::polygon(&square(0.004))
+            .unwrap()
+            .stroke(sector, 2.0)
+            .label("Plaza de Armas")];
+        let tiles = crowded();
+        let camera = camera(15.0);
+        let now = Instant::now();
+        let mut labels = Labels::default();
+        labels.update(MAP, camera, &tiles, &layers, true, now, &mut FixedMeasure);
+        let (shown, _) = labels.frame(MAP, now);
+        assert_eq!(&*shown[0].name, "Plaza de Armas");
+        assert_eq!(
+            (shown[0].kind, shown[0].color),
+            (LabelKind::Area, Some(sector))
+        );
+        assert!(shown[1..].iter().all(|label| label.color.is_none()));
+
+        let renamed = [layers[0].clone().label("Centro cívico")];
+        labels.update(MAP, camera, &tiles, &renamed, true, now, &mut FixedMeasure);
+        assert_eq!(&*labels.frame(MAP, now).0[0].name, "Centro cívico");
     }
 
     #[test]

@@ -20,6 +20,7 @@ use crate::platform_adapter::adapt_key_input;
 use crate::runtime::{App, LINE_SCROLL, PickFile};
 use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
+use crate::style::Cursor;
 use crate::text_field::ClipboardPort;
 use crate::theme::{Density, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent};
@@ -111,6 +112,7 @@ impl<A: App> TestAppBuilder<A> {
             next_agent_call: 1,
             file_pick_answer: None,
             file_pick_request: None,
+            cursor: Cursor::Default,
         };
         app.frame();
         app
@@ -160,6 +162,8 @@ pub struct TestApp<A: App> {
     /// Answer for the open panel ([`TestApp::on_file_pick`]).
     file_pick_answer: Option<Option<PathBuf>>,
     file_pick_request: Option<PickFile>,
+    /// The last pointer shape the session asked the window for.
+    cursor: Cursor,
 }
 
 /// What the person does when an agent's call opens the confirmation
@@ -492,6 +496,13 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// Move the pointer to `point`, without pressing.
+    #[cfg(test)]
+    pub(crate) fn move_pointer(&mut self, point: crate::geometry::Point) {
+        self.session.pointer_moved(Some(point));
+        self.frame();
+    }
+
     /// Press and release the primary button at `point`, whatever is there.
     #[cfg(test)]
     pub(crate) fn click_point(&mut self, point: crate::geometry::Point) {
@@ -500,6 +511,12 @@ impl<A: App> TestApp<A> {
         self.session.pointer_button(true);
         self.session.pointer_button(false);
         self.frame();
+    }
+
+    /// The pointer's shape, as the window shows it (`Pointer` over links,
+    /// buttons and clickable map areas).
+    pub fn mouse_cursor(&self) -> Cursor {
+        self.cursor
     }
 
     /// Theme in use (the app's own when it asks for one).
@@ -858,6 +875,9 @@ impl<A: App> TestApp<A> {
             let outbox = self.session.take_outbox();
             if let Some(request) = outbox.pick_file {
                 self.file_pick_request = Some(request);
+            }
+            if let Some(cursor) = outbox.cursor {
+                self.cursor = cursor;
             }
             match &self.file_pick_answer {
                 Some(answer) if self.session.file_pick_pending() => {

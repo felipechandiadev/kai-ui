@@ -22,7 +22,7 @@ pub use geometry::{Affine2, GeometryDraw, Mesh};
 pub use images::Bitmap;
 
 /// Straight-alpha color in the sRGB color space, as authored in design tokens.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
     pub g: u8,

@@ -1,5 +1,6 @@
 //! Interactive maps: the [`map`] element, [`marker`]s placed by latitude
-//! and longitude, and the camera that gestures move.
+//! and longitude, polygons over the basemap ([`layers::MapLayer`]) and
+//! the camera that gestures move.
 //!
 //! ```ignore
 //! map(&self.vista)
@@ -17,15 +18,17 @@
 
 pub mod camera;
 pub mod labels;
+pub mod layers;
 pub mod mvt;
 pub mod pmtiles;
 pub mod style;
 pub mod tiles;
 
 use crate::element::{Element, Kind, Role, icon, text};
-use crate::geo::{LatLon, MapView};
+use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::icons::Icon;
 use labels::MapLabel;
+use layers::MapLayer;
 use tiles::{TileFrame, TileSource};
 
 /// Credit for the map data, shown in a corner of every map.
@@ -42,8 +45,15 @@ pub struct MapSpec {
     pub source: Option<TileSource>,
     /// The tiles to draw this frame (the session fills them in).
     pub tiles: TileFrame,
-    /// The basemap's labels this frame (the session places them).
+    /// The basemap's and the layers' labels this frame (the session
+    /// places them).
     pub labels: Vec<MapLabel>,
+    /// Shapes over the tiles, bottom to top.
+    pub layers: Vec<MapLayer>,
+    /// Id of the layer under the pointer (the session sets it).
+    pub hovered: Option<String>,
+    /// The last [`Element::fit_bounds`] request.
+    pub fit: Option<FitRequest>,
 }
 
 impl MapSpec {
@@ -54,8 +64,18 @@ impl MapSpec {
             source: None,
             tiles: TileFrame::default(),
             labels: Vec::new(),
+            layers: Vec::new(),
+            hovered: None,
+            fit: None,
         }
     }
+}
+
+/// Show `bounds` once: a new `serial` asks again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FitRequest {
+    pub bounds: LatLonBounds,
+    pub serial: u64,
 }
 
 /// Which point of a marker sits on its coordinate.
@@ -184,6 +204,33 @@ impl<Msg> Element<Msg> {
     pub fn basemap(mut self, source: TileSource) -> Self {
         if let Kind::Map(spec) = &mut self.kind {
             spec.source = Some(source);
+        }
+        self
+    }
+
+    /// Maps only: draw `layers` over the basemap, bottom to top.
+    pub fn layers(mut self, layers: impl IntoIterator<Item = MapLayer>) -> Self {
+        if let Kind::Map(spec) = &mut self.kind {
+            spec.layers.extend(layers);
+        }
+        self
+    }
+
+    /// Maps only: `handler` gets the id of the topmost layer clicked
+    /// (a press and release without a drag). Layers with an id show a
+    /// pointer cursor and light up under it.
+    pub fn on_area_click(mut self, handler: impl Fn(String) -> Msg + 'static) -> Self {
+        self.handlers.on_area_click = Some(std::rc::Rc::new(handler));
+        self
+    }
+
+    /// Maps only: move to show all of `bounds` (gliding unless
+    /// [`Element::animate_view`] is off), then report the view through
+    /// `on_view_change`. Each new `serial` asks once; keep it while the
+    /// request stands.
+    pub fn fit_bounds(mut self, bounds: LatLonBounds, serial: u64) -> Self {
+        if let Kind::Map(spec) = &mut self.kind {
+            spec.fit = Some(FitRequest { bounds, serial });
         }
         self
     }

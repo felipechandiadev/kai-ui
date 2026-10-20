@@ -2,7 +2,7 @@
 
 **Fase:** pista C de la hoja de ruta [13](13-hoja-de-ruta-plataforma.md) (§8.1): M0 es el Paso 14b, M1 el 15b, M1b el 15c, M2 el 15d, M3 va en la Etapa 7 y M4 con los Pasos 16 y 27. Depende de primitivas de renderer pendientes en [04](04-renderer-y-texto.md) (imágenes, transformaciones, clip redondeado), de la etapa de identificación y pruebas de 13 y, para la automatización, del registro de comandos (13, Pasos 7–9) y MCP (13, Pasos 12–13). La app guía es **DSP desktop** (sección 1.1). Esta guía evalúa cómo dibujar mapas interactivos (pan/zoom, marcadores, polilíneas/polígonos, popups) **dentro del árbol Kai**, con buen rendimiento, preferiblemente teselas vectoriales, capacidad offline y licencias permisivas.
 
-> **Todo el código de esta guía es API propuesta, no existente.** Lo que sí existe se cita con su archivo (`render/wgpu_backend.rs`, `quad.wgsl`, `layout.rs`, `runtime.rs`…).
+> **El código de las secciones 4.2–4.8 es API propuesta.** Lo construido (módulo `kai::maps`: `map`, `marker`, `MapLayer`, cámara, teselas vectoriales, estilo y etiquetas) se resume con su archivo en el estado de cada hito (sección 5); la API real difiere de la propuesta donde se indica.
 
 > **Verificación.** Versiones, estrellas, fechas y licencias se comprobaron en crates.io, GitHub y en el código de los crates el **18-oct-2026**. Las marcas **(?)** indican datos no verificados del todo o inferencias. Las cifras de estrellas y actividad cambian; revisarlas antes de decidir.
 
@@ -128,9 +128,9 @@ flowchart LR
 |---|---|---|
 | Imágenes rasterizadas | **Hecho** ([04](04-renderer-y-texto.md), «Imágenes»): `DrawOp::Image { rect, bitmap, source, radius, opacity }`, atlas `Rgba8Unorm` de 4096² con estantes y margen (lleno, se re-empaqueta con las imágenes del frame), sampler lineal en `image.wgsl`; `image(src)`, `Avatar` y `MediaSlot` lo usan | Para teselas: subir un número limitado por frame y, si el atlas compartido se queda chico, un atlas propio del mapa o un `TextureArray`. |
 | Clip | Rectangular por instancia en `quad.wgsl` e `image.wgsl`, pila resuelta en `resolve`; cada imagen recorta además con su propio radio (SDF) | Falta el clip redondeado de contenedores (máscara SDF heredada por los hijos) para `rounded-xl overflow-hidden` ([13](13-hoja-de-ruta-plataforma.md), Paso 14b). |
-| Transformaciones | Pendiente | Uniforme por lote con matriz afín 2D (o traslación + escala). La geometría del mapa vive en coordenadas Mercator del mundo y pan/zoom solo cambian el uniforme: no hace falta reconstruir buffers aunque el árbol se reconstruya cada frame. |
-| Geometría | Solo quads SDF | Pipeline de triángulos (posición en mundo, color, `width`/normal para trazos) con vértices de `lyon`. AA por MSAA 4× o por distancia en el shader. Imprescindible para polilíneas y polígonos de la app desde v1. |
-| Orden de pintor | `resolve` alterna lotes `Quads`/`Texts`/`Images` | Añadir lotes `Geometry` en la misma secuencia, para que fondo del mapa, capas vectoriales e hijos Kai respeten el orden. |
+| Transformaciones | **Hecho** ([04](04-renderer-y-texto.md), «Geometría»): `Affine2` por dibujo, en un uniforme con offset dinámico | Las mallas viven en coordenadas propias (tesela 0..4096, o relativas al origen de una capa) y pan/zoom solo cambian la transformación: no se reconstruyen buffers aunque el árbol se reconstruya cada frame. |
+| Geometría | **Hecho**: `Mesh` con `lyon` (rellenos y trazos con normal de extrusión), `DrawOp::Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines, buffers por id de malla | — |
+| Orden de pintor | **Hecho**: `resolve` alterna lotes `Quads`/`Texts`/`Images`/`Geometry` | — |
 
 ### 4.2 Elemento `Map`
 
@@ -339,13 +339,21 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 ### M0 — Primitivas de renderer (13, Paso 14b)
 
 - `DrawOp::Image` con `TextureArray`/atlas RGBA y sampler lineal; lotes `Images` en `resolve`; uniforme de transformación; pipeline de geometría con vértices de `lyon`; clip redondeado.
-- **Estado: a medias.** Hechos `DrawOp::Image`, el atlas RGBA, los lotes `Images` con sus tests de `resolve`, el radio propio de cada imagen y la captura `images-primitive` (imagen entera, en círculo, `rounded-xl`, semitransparente y recortada). Pendientes el uniforme de transformación, la geometría con `lyon` y el clip redondeado de contenedores.
+- **Estado: hecho salvo el clip redondeado.** Hechos `DrawOp::Image`, el atlas RGBA, los lotes `Images` con sus tests de `resolve`, el radio propio de cada imagen y la captura `images-primitive`; la geometría (`render/geometry.rs`: `Mesh` con `lyon`, `Affine2` por dibujo, trazos de ancho constante en pantalla, `DrawOp::Geometry` y lotes `Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines) con la captura `geometry-primitive`. Pendiente el clip redondeado de contenedores ([04](04-renderer-y-texto.md), «Pendiente»).
 - **Terminado cuando:** las capturas offscreen ([04](04-renderer-y-texto.md), «Capturas») muestran una imagen recortada por `rounded-xl overflow-hidden`, una polilínea con AA y un polígono semitransparente en el orden de pintor correcto, y los tests puros de `resolve` cubren los nuevos lotes.
 
 ### M1 — Mapa raster (v1) (13, Paso 15b)
 
-- Matemática Mercator y `TileId` con tests (proyectar/desproyectar, teselas visibles, envoltura, anclaje del zoom). `TileSource` HTTP XYZ y PMTiles raster local; caché GPU/RAM/disco; carga en el Tokio de servicio con `EventLoopProxy`; elemento `map` con `marker`, capas de polígonos GeoJSON con estilo por capa y atribución; entrada con inercia y zoom anclado; `FakeTileSource` y gestos en `TestApp` (4.9).
+- Matemática Mercator y `TileId` con tests (proyectar/desproyectar, teselas visibles, envoltura, anclaje del zoom). `TileSource` HTTP XYZ y PMTiles raster local; caché GPU/RAM/disco; carga en el pool de 4 hilos `std` de `Effects::perform` (Tokio queda solo para MCP), con el resultado invalidando el frame; elemento `map` con `marker`, capas de polígonos GeoJSON con estilo por capa y atribución; entrada con inercia y zoom anclado; `FakeTileSource` y gestos en `TestApp` (4.9).
 - **Terminado cuando:** pan y pinch fluidos a 120 Hz en Apple M4 con 4 mapas abiertos (medido); sin huecos al hacer zoom (se ve el ancestro); un marcador sigue a su coordenada a ±0,5 px en todos los niveles (test de layout); VoiceOver recorre los marcadores; con la red cortada se ve lo cacheado; la atribución siempre es visible; la pantalla de áreas de DSP desktop muestra todas las áreas con su color.
+- **Estado: parcial (se saltó el raster y se fue directo al vectorial de M3).** Hechos:
+  - `geo.rs`: Mercator, `TileId`, `Camera`, `fit_bounds` y `LatLonBounds` (`around`, `union`, `padded`).
+  - `maps/mod.rs` y `maps/camera.rs`: elemento `map` con `marker`, cámara como estado de UI con inercia, zoom anclado, rueda, pellizco, doble clic y teclado; un solo `on_view_change` al terminar cada gesto; atribución siempre visible; botones de zoom.
+  - `maps/layers.rs`: `MapLayer::polygon` desde GeoJSON (`Polygon` y `MultiPolygon`, crate `geojson`) con `.fill(color, opacidad)`, `.stroke(color, ancho)`, `.label(nombre)` (en el centroide, en la grilla de colisiones antes que el mapa base) y `.selected(..)`. Con `on_area_click`, la capa bajo el puntero (punto en polígono par-impar) se resalta y muestra el cursor de mano, y un clic sin arrastre entrega su id. `Element::fit_bounds(bounds, serial)` encuadra una caja una vez por serial y reporta la vista como un gesto.
+  - Gestos y `click_point`/`move_pointer`/`mouse_cursor` en `TestApp`; marcadores a ±0,5 px en todos los niveles (test).
+  - La sección Mapa de la demo: los 5 sectores de partida de DSP (`assets/maps/dsp-areas.geojson`, los rectángulos del seed de `dsp-27`) en el color del tipo `sector`, una lista que los selecciona y encuadra con un 20 % de margen, y un switch para ocultarlos.
+
+  Pendientes la fuente raster HTTP XYZ con caché en disco, `FakeTileSource`, la medición con 4 mapas a 120 Hz y la revisión con VoiceOver.
 
 ### M1b — Edición de geometrías (13, Paso 15c)
 
@@ -356,11 +364,21 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 
 - Polilíneas, polígonos y popups como API estable; comandos `mapa.*` en el registro (13, Pasos 7–9) y recurso de vista (13, Paso 24); acciones de dominio con geometría en la app guía.
 - **Terminado cuando:** `TestApp::invoke(SetView { .. })` mueve la cámara; un cliente MCP (13, Paso 12) llama `incidencias.set_ubicacion` con un punto y la UI lo refleja; una geometría inválida vuelve como error de herramienta sin tocar el modelo.
+- **Estado: empezado.** La demo registra `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds { bounds }` y la acción de dominio `areas.seleccionar { code }`, expuestas por MCP (`mcp-schema.json`). Faltan polilíneas, popups, el recurso de vista y acciones que guarden geometrías.
 
 ### M3 — Vectorial (13, Etapa 7)
 
 - PMTiles vectorial, subconjunto de estilo Protomaps/OpenMapTiles, teselado en workers, etiquetas básicas. Spike de galileo en paralelo para comparar coste y calidad.
 - **Terminado cuando:** un extracto regional `.pmtiles` local (para DSP, Parral y alrededores a z0–17) se ve sin red con calles, agua, edificios y nombres; un frame medio durante el pan cuesta menos de 4 ms de CPU en M4; la memoria de la caché queda acotada.
+- **Estado: parcial.** Hechos:
+  - `maps/pmtiles.rs`: lector PMTiles v3 propio y síncrono (`File` y `seek`, sin async), para llamarlo desde el pool de tareas.
+  - `assets/maps/parral.pmtiles`: extracto Protomaps de Parral (z0–15, versionado en el repo y generado con `scripts/extract-region.sh`), sin red.
+  - `maps/mvt.rs` y `maps/tiles.rs`: decodificación MVT y teselado por grupo en el pool de tareas; `TileStore` con ancestros de reemplazo, cancelación y LRU por bytes.
+  - `maps/style.rs`: estilo en Rust para las capas de Protomaps, con paleta clara y oscura sacada de los tokens.
+  - `maps/labels.rs`: etiquetas de localidades, barrios y calles con colisiones, recalculadas al quedar quieto el mapa y con fundido.
+  - Benchmark de pan (vista, layout y paint, en release): p95 0,43 ms con los sectores de DSP.
+
+  Pendientes los datos más allá de z15 (hoy se amplía z15), el spike de galileo (no se hizo: el vectorial propio cumplió) y medir la memoria GPU.
 
 ### M4 — Offline y multiplataforma (13, Pasos 16 y 27)
 
@@ -395,12 +413,12 @@ Consejos:
 ## 8. Preguntas abiertas
 
 - ~~¿Cámara siempre controlada por el `Model` o modo no controlado?~~ Recomendación en 4.2: estado de UI durante el gesto y `Msg` al terminar ([13](13-hoja-de-ruta-plataforma.md) §8.1).
-- ¿Pan con dos dedos o zoom con la rueda del trackpad por defecto? ¿Cmd + rueda para zoom?
-- ¿`TextureArray` de tamaño fijo o atlas con huecos? ¿512 px (pantallas Retina) o 256 px?
-- ¿Teselas vectoriales dibujadas directamente con transformación, o rasterizadas a textura por tesela (más simple, menos nítido)?
-- ¿Portar galileo a `wgpu 30` (fork que mantener) o construir el vectorial propio?
+- ~~¿Pan con dos dedos o zoom con la rueda del trackpad por defecto? ¿Cmd + rueda para zoom?~~ El trackpad desplaza; las muescas de una rueda de ratón, o ⌘ con el trackpad, hacen zoom.
+- ¿`TextureArray` de tamaño fijo o atlas con huecos? ¿512 px (pantallas Retina) o 256 px? (Solo para el raster; el vectorial no usa texturas y muestra teselas de 256 a 512 puntos.)
+- ~~¿Teselas vectoriales dibujadas directamente con transformación, o rasterizadas a textura por tesela (más simple, menos nítido)?~~ Directamente, con una `Affine2` por dibujo y MSAA 4×.
+- ~~¿Portar galileo a `wgpu 30` (fork que mantener) o construir el vectorial propio?~~ Vectorial propio (M3).
 - ¿Qué proveedor raster de producción para v1 y con qué condiciones offline? (?)
-- ~~¿Runtime de carga?~~ Tokio en hilo de servicio, el mismo de MCP y efectos ([13](13-hoja-de-ruta-plataforma.md), Pasos 12 y 15).
-- ¿El editor de geometrías debe permitir varias geometrías por entidad (multipolígonos)? DSP hoy usa una por vez; fuera de alcance salvo necesidad.
-- ¿Qué fuente usará DSP en producción: OSM estándar (uso bajo, con User-Agent y atribución) o un PMTiles propio de la región?
+- ~~¿Runtime de carga?~~ El pool de 4 hilos `std` de `Effects::perform` ([13](13-hoja-de-ruta-plataforma.md), Paso 15); Tokio queda solo para MCP (Paso 12).
+- ¿El editor de geometrías debe permitir varias geometrías por entidad (multipolígonos)? DSP hoy usa una por vez; fuera de alcance salvo necesidad. (`MapLayer::polygon` ya dibuja `MultiPolygon`.)
+- ~~¿Qué fuente usará DSP en producción: OSM estándar (uso bajo, con User-Agent y atribución) o un PMTiles propio de la región?~~ Un PMTiles propio de la región (extracto de Protomaps), leído localmente.
 - ¿Proyecciones distintas de Web Mercator? (Fuera de alcance salvo necesidad concreta.)

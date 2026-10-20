@@ -58,6 +58,8 @@ pub(crate) use calls::{AgentCall, CONFIRMATION};
 
 /// Points an arrow key moves a focused map.
 const MAP_KEY_STEP: f64 = 80.0;
+/// A press and release on a map closer than this (points) is a click.
+const MAP_CLICK_SLOP: f32 = 4.0;
 
 /// Extra room kept visible around a focused element when scrolling to it
 /// (focus rings are 2px wide with a 2px offset).
@@ -169,6 +171,11 @@ pub(crate) struct Session<A: App> {
     maps: HashMap<WidgetId, CameraState>,
     /// The map a pointer drag is moving.
     map_drag: Option<WidgetId>,
+    /// Where the pointer went down on a map: released close by, it is a
+    /// click on the layer under it.
+    map_press: Option<(WidgetId, Point)>,
+    /// The clickable map layer under the pointer.
+    map_hover: Option<(WidgetId, String)>,
     /// Basemap tiles of every map, loading on the task pool.
     tiles: TileStore,
     /// Loaded basemap tiles wait to be shown, a few per frame.
@@ -177,8 +184,9 @@ pub(crate) struct Session<A: App> {
     labels: HashMap<WidgetId, Labels>,
     /// Some map label is fading in: frames are needed.
     labels_fading: bool,
-    /// A map with a basemap changed size in the last layout: its tiles
-    /// were picked for the old one.
+    /// A map with a basemap, layers or a fit request changed size in the
+    /// last layout: its tiles, labels or fitted view were picked for the
+    /// old one.
     maps_resized: bool,
     /// Modifier keys held now (⇧ double click and ⌘ wheel on maps).
     modifiers: Modifiers,
@@ -487,6 +495,8 @@ impl<A: App> Session<A> {
             tooltip_pressed: None,
             maps: HashMap::new(),
             map_drag: None,
+            map_press: None,
+            map_hover: None,
             tiles: TileStore::default(),
             tiles_revealing: false,
             labels: HashMap::new(),
@@ -1199,7 +1209,8 @@ impl<A: App> Session<A> {
                     height: node.padding_box.height,
                 };
                 if size != camera.size
-                    && matches!(&node.content, Content::Map(spec) if spec.source.is_some())
+                    && matches!(&node.content, Content::Map(spec)
+                        if spec.source.is_some() || spec.fit.is_some() || !spec.layers.is_empty())
                 {
                     self.maps_resized = true;
                 }
@@ -1681,13 +1692,25 @@ impl<A: App> Session<A> {
             .cursor
             .map(|point| self.layout.hit_path(point))
             .unwrap_or_default();
-        if path == self.hover_path {
-            return false;
+        let changed = path != self.hover_path;
+        if changed {
+            self.hover_path = path;
+            self.update_tooltip();
         }
-        self.outbox.cursor = Some(cursor_for(&self.layout, &path));
-        self.hover_path = path;
-        self.update_tooltip();
-        true
+        let area = self.area_at_pointer();
+        let area_changed = area != self.map_hover;
+        if area_changed {
+            self.map_hover = area;
+            self.invalidate();
+        }
+        if changed || area_changed {
+            self.outbox.cursor = Some(if self.map_hover.is_some() {
+                Cursor::Pointer
+            } else {
+                cursor_for(&self.layout, &self.hover_path)
+            });
+        }
+        changed || area_changed
     }
 
     fn is_text_field(&self, id: Option<WidgetId>) -> bool {
@@ -1905,6 +1928,7 @@ impl<A: App> Session<A> {
             Measure::Real => &mut self.text,
             Measure::Fixed => &mut fixed,
         };
+        let map_hover = &self.map_hover;
         let mut live = Vec::new();
         let mut revealing = false;
         let mut fading = false;
@@ -1914,21 +1938,38 @@ impl<A: App> Session<A> {
                     .entry(element.id)
                     .or_insert_with(|| CameraState::new(spec.view));
                 camera.sync_model(spec.view, spec.animate, now);
+                if let Some(request) = spec.fit {
+                    camera.fit(request, spec.animate, now);
+                }
                 spec.view = camera.view;
+                spec.hovered = map_hover
+                    .as_ref()
+                    .filter(|(map, _)| *map == element.id)
+                    .map(|(_, area)| area.clone());
+                let view = Camera::new(camera.view, camera.size);
                 if let Some(source) = &spec.source {
-                    let view = Camera::new(camera.view, camera.size);
                     let (frame, loads) = tiles.frame(source, view);
                     for load in loads {
                         let id = tasks.spawn(load.run);
                         tasks.tiles.insert(id, (load.source, load.tile));
                     }
                     revealing |= frame.revealing;
+                    spec.tiles = frame;
+                }
+                if spec.source.is_some() || !spec.layers.is_empty() {
                     let map_labels = labels.entry(element.id).or_default();
-                    map_labels.update(element.id, view, &frame, camera.still(now), now, measure);
+                    map_labels.update(
+                        element.id,
+                        view,
+                        &spec.tiles,
+                        &spec.layers,
+                        camera.still(now),
+                        now,
+                        measure,
+                    );
                     let (shown, fades) = map_labels.frame(element.id, now);
                     fading |= fades;
                     spec.labels = shown;
-                    spec.tiles = frame;
                 }
                 live.push(element.id);
             }
@@ -1937,6 +1978,16 @@ impl<A: App> Session<A> {
         labels.retain(|id, _| live.contains(id));
         if self.map_drag.is_some_and(|id| !live.contains(&id)) {
             self.map_drag = None;
+        }
+        if self.map_press.is_some_and(|(id, _)| !live.contains(&id)) {
+            self.map_press = None;
+        }
+        if self
+            .map_hover
+            .as_ref()
+            .is_some_and(|(id, _)| !live.contains(id))
+        {
+            self.map_hover = None;
         }
         self.tiles_revealing = revealing;
         self.labels_fading = fading;
@@ -2031,11 +2082,55 @@ impl<A: App> Session<A> {
         } else {
             camera.press(local, now);
             self.map_drag = Some(id);
+            self.map_press = Some((id, local));
+        }
+    }
+
+    /// The clickable layer under the pointer: on a map with
+    /// `on_area_click`, not over a marker or control inside it.
+    fn area_at_pointer(&self) -> Option<(WidgetId, String)> {
+        let (id, local) = self.map_at_pointer()?;
+        if pointer_target(&self.layout, &self.hover_path) != Some(id)
+            || self.handler(id)?.on_area_click.is_none()
+        {
+            return None;
+        }
+        let Content::Map(spec) = &self.layout.node(id)?.content else {
+            return None;
+        };
+        let camera = self.maps.get(&id)?;
+        let view = Camera::new(camera.view, camera.size);
+        let layer = crate::maps::layers::hit(&spec.layers, &view, local)?;
+        Some((id, layer.id.clone()))
+    }
+
+    /// A release near where the pointer went down on a map clicks the
+    /// layer under it.
+    fn click_map_area(&mut self) {
+        let Some((id, pressed)) = self.map_press.take() else {
+            return;
+        };
+        let Some(local) = self.map_local(id) else {
+            return;
+        };
+        if (local.x - pressed.x).hypot(local.y - pressed.y) > MAP_CLICK_SLOP {
+            return;
+        }
+        let Some((map, area)) = self.area_at_pointer() else {
+            return;
+        };
+        if let Some(handler) = self
+            .handler(map)
+            .and_then(|handlers| handlers.on_area_click.clone())
+        {
+            let source = self.source.clone().unwrap_or(MsgSource::Pointer);
+            self.with_source(source, |session| session.send(handler(area)));
         }
     }
 
     /// End a map drag: the map may glide on, else the gesture reports.
     fn release_map(&mut self) {
+        self.map_press = None;
         let Some(id) = self.map_drag.take() else {
             return;
         };
@@ -2262,6 +2357,7 @@ impl<A: App> Session<A> {
         } else {
             self.apply_intent(Intent::PointerUp(target));
             self.dragging = None;
+            self.click_map_area();
             self.release_map();
         }
         self.invalidate();

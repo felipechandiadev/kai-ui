@@ -786,7 +786,7 @@ Reglas de la pista C:
 - **Diseño**: el de [10](10-mapas.md) §4.1: `TextureArray` RGBA o atlas con LRU y sampler lineal; uniforme de transformación afín por lote; vértices de `lyon` con AA.
 - **Tests**: tests puros de `resolve` con los nuevos lotes y su orden de pintor; captura con una imagen recortada por `rounded-xl overflow-hidden`, una polilínea y un polígono semitransparente.
 - **Hecho cuando**: el criterio de M0 en [10](10-mapas.md) §5 se cumple y DSP desktop muestra avatares de funcionarios con la misma primitiva.
-- **Estado: parcial.** Hechos `DrawOp::Image`, el lote `Images`, `image.wgsl` y el atlas RGBA (re-empaquetado al llenarse, sin LRU), con radio SDF propio por imagen, la captura `images-primitive` y los tests de `resolve`. Encima: `image(src)` con `ImageSource`, `ImageStore` en la sesión (decodifica en el pool del Paso 15), `object-*`, `aspect-*`, `Role::Image`, y los componentes `Avatar` y `MediaSlot`, que la demo usa en la sección Multimedia y en la tabla ([04](04-renderer-y-texto.md), «Imágenes»). Pendientes: clip redondeado de contenedores, transformaciones y geometría con `lyon`.
+- **Estado: hecho salvo el clip redondeado.** Hechos `DrawOp::Image`, el lote `Images`, `image.wgsl` y el atlas RGBA (re-empaquetado al llenarse, sin LRU), con radio SDF propio por imagen, la captura `images-primitive` y los tests de `resolve`. Encima: `image(src)` con `ImageSource`, `ImageStore` en la sesión (decodifica en el pool del Paso 15), `object-*`, `aspect-*`, `Role::Image`, y los componentes `Avatar` y `MediaSlot`, que la demo usa en la sección Multimedia y en la tabla ([04](04-renderer-y-texto.md), «Imágenes»). La geometría: `Mesh` con `lyon` (rellenos y trazos con normal), `Affine2` por dibujo en lugar de un uniforme por lote, `DrawOp::Geometry`, lotes `Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines y la captura `geometry-primitive` ([04](04-renderer-y-texto.md), «Geometría»). Pendiente: clip redondeado de contenedores.
 
 #### Paso 15 — Efectos async
 
@@ -817,6 +817,7 @@ Reglas de la pista C:
 - **Diseño**: [10](10-mapas.md) §4.2–4.5. Para DSP: fuente OSM raster con User-Agent propio y atribución visible, centro por defecto configurable (DSP usa Parral, `-36.1415, -71.8265`, zoom 13), capas GeoJSON de polígonos con color, grosor y opacidad por área (hoy `areaColor` en `territory-types.ts`), `fit_bounds` con margen (DSP usa 20 %).
 - **Tests**: matemática Mercator pura; `FakeTileSource` determinista; un marcador sigue a su coordenada a ±0,5 px; arrastre e inercia con `TestApp::drag` y `advance`.
 - **Hecho cuando**: la pantalla de áreas de DSP desktop muestra todas las áreas sobre OSM con pan, zoom e inercia fluidos, y los tests corren sin red.
+- **Estado: parcial, con mapa base vectorial en vez de raster.** El módulo es `src/maps/` sin feature propia. Hechos `map`, `marker`, la cámara con inercia y zoom anclado, la atribución, `MapLayer::polygon` desde GeoJSON con relleno, borde, nombre, selección, resaltado y `on_area_click`, y `fit_bounds` con margen. La sección Mapa de la demo muestra los 5 sectores de partida de DSP sobre el extracto PMTiles de Parral (centro `-36.1415, -71.8265`, zoom 13) con una lista que los encuadra con un 20 % de margen. Los tests corren sin red porque leen el extracto local. Pendientes la fuente OSM raster con User-Agent, `FakeTileSource` y la pantalla real de DSP desktop (Paso 14). Detalle en [10](10-mapas.md) §5, M1.
 
 #### Paso 15c — Edición de geometrías (mapas M1b)
 
@@ -832,6 +833,7 @@ Reglas de la pista C:
 - **Depende de**: Pasos 9, 12–13 y 15c.
 - **Diseño**: [10](10-mapas.md) §4.6, con la separación consulta/acción de §7.2: `mapa.get_view` y `mapa.screen_to_latlon` son consultas; `mapa.set_view` y `mapa.fit_bounds` son acciones de UI; las acciones de dominio (`areas.editar_geometria`, `incidencias.set_ubicacion`) son de la app y validan la geometría de entrada.
 - **Hecho cuando**: `TestApp::invoke(SetView { .. })` mueve la cámara y un cliente MCP llama `incidencias.set_ubicacion` con un punto y la UI lo refleja.
+- **Estado: empezado.** La demo expone `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds` y `areas.seleccionar`, con tests por `TestApp::invoke`. Faltan `mapa.screen_to_latlon` y las acciones de dominio con geometría.
 
 #### Paso 16 — Persistencia
 
@@ -973,6 +975,7 @@ Reglas de la pista C:
 - PMTiles vectorial, subconjunto de estilo Protomaps/OpenMapTiles, teselado con `lyon` en workers, etiquetas con glyphon; spike de galileo portado a `wgpu 30` en paralelo ([10](10-mapas.md) §4.7 y §5).
 - Para DSP, un extracto regional de Parral y alrededores (z0–17) en almacenamiento propio permite trabajo offline en terreno.
 - **Hecho cuando**: se cumple el criterio de M3 en [10](10-mapas.md) §5 sin degradar el benchmark de frame de la app guía.
+- **Estado: parcial, adelantado a la Etapa 4.** Hechos el lector PMTiles v3 propio, el extracto de Parral (z0–15, ampliado más allá), MVT, el teselado en el pool de tareas, el estilo en Rust claro y oscuro, las etiquetas con colisiones y fundido, y el benchmark de pan (p95 0,43 ms). No se hizo el spike de galileo porque el vectorial propio cumplió. Faltan z16–17 y medir la memoria GPU.
 
 ### Etapa 8 — Ergonomía (cuando la API esté estable)
 
@@ -1019,7 +1022,7 @@ Reglas de la pista C:
 | Deshacer | Inversos por acción, instantáneas del modelo | Inversos declarados para acciones de agente; instantáneas solo si el modelo es pequeño | Paso 25 |
 | Recarga en caliente | Reiniciar con estado de ventana, parcheo en vivo | Reiniciar con estado (seguro); parcheo en vivo fuera de alcance | Paso 18 |
 | Cámara del mapa | Controlada por el `Model`, estado de UI con `Msg` al terminar el gesto | Estado de UI durante el gesto; `Msg` al terminar; `mapa.set_view` por el `Model` | Paso 15b |
-| Fuente de teselas en producción (DSP) | OSM estándar, proveedor comercial, PMTiles propio | OSM con User-Agent y atribución mientras el uso sea bajo; PMTiles propio de la región cuando haya uso en terreno u offline | Paso 15b / M3 |
+| Fuente de teselas en producción (DSP) | OSM estándar, proveedor comercial, PMTiles propio | **PMTiles propio de la región** (extracto vectorial de Protomaps, leído localmente); OSM raster queda como opción para otras regiones | Paso 15b / M3 |
 | Primer corte de DSP desktop | Áreas + flujo operativo, otro módulo | Áreas + flujo operativo + notificaciones (ejercitan mapa, formularios, tablas, async y websockets) | Paso 14 |
 | Nombre y publicación | `kai`/`kai-*` en crates.io, privado | Decidir con licencia en el Paso 21; mientras tanto `publish = false` | Paso 21 |
 | Tokens Kai | Copia manual en `theme.rs`, generados desde `tokens.css` | Generados y versionados dentro del crate | Paso 19 |
@@ -1125,9 +1128,9 @@ Reglas de la pista C:
 - [x] Widgets previos al P14: checkbox (On, Off y mixto), segmented control (grupo de foco con flechas) y `Select` (lista de la `Session`, teclado completo, `AXPopUpButton` y `AXMenu`). Falta revisarlos con VoiceOver y la búsqueda por tipeo en la lista.
 - [x] Sidebar de secciones (`components::sidebar`): un grupo de foco que selecciona, donde ↑/↓ eligen la fila, como en Finder o Mail. AccessKit la publica como `AXOutline` con filas. La demo pasó a ser un shell con sidebar y `ui.ir_a`. Falta revisarla con VoiceOver.
 - [ ] P14 DSP desktop (login, áreas, flujo operativo, notificaciones) y widgets del backlog, cada uno con ids y tests.
-- [ ] P14b Primitivas de renderer: imágenes, geometría, transformaciones, clip redondeado (mapas M0).
+- [ ] P14b Primitivas de renderer: imágenes, geometría, transformaciones, clip redondeado (mapas M0). Hecho salvo el clip redondeado.
 - [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`.
-- [ ] P15b Mapa raster con capas de áreas y atribución (mapas M1).
+- [ ] P15b Mapa raster con capas de áreas y atribución (mapas M1). Parcial: mapa vectorial con áreas de DSP, sin raster.
 - [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b).
 - [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2).
 - [ ] P16 `Store` con migración y guardado atómico.
@@ -1146,7 +1149,7 @@ Reglas de la pista C:
 - [ ] P23 Varias ventanas.
 - [ ] P24 MCP completo (resources, HTTP, puente stdio).
 - [ ] P25 Plugins, capacidades, deshacer.
-- [ ] Mapas M3: teselas vectoriales y extracto regional offline.
+- [ ] Mapas M3: teselas vectoriales y extracto regional offline. Parcial: adelantado con el extracto de Parral a z15.
 
 **Etapa 8 — Ergonomía**
 - [ ] P26 `tw!`, derives, `#[component]`, `rsx!`, i18n.
