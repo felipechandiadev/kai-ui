@@ -2036,39 +2036,41 @@ Inventario de hoy (`rg` sobre `src/`): `button(` 10 y `button_sized(` 8 en `main
 
 ## Checklist final
 
+Pasos 0 a 15 y 17 hechos (commit `cd561fc`, 19-10-2026); el resto, como se indica en cada línea.
+
 **Etapa 0 — Preparación**
-- [ ] P0 Rama `appkit-model`, gate verde, baseline de capturas con SHA.
-- [ ] P1 `lib.rs`, `snapshot.rs` (PNG, diff), demo igual que antes.
+- [x] P0 Rama `appkit-model`, gate verde, baseline de capturas con SHA.
+- [x] P1 `lib.rs`, `snapshot.rs` (PNG, diff), demo igual que antes.
 
 **Etapa 1 — Modelo**
-- [ ] P2 `SemanticColors`; `paint.rs` sin colores Kai fijos; capturas idénticas.
-- [ ] P3 `ThemeKind`, `Appearance`, `StyleCache` por tema, variantes `kai:`/`appkit:`/`dark:`/`light:`.
-- [ ] P4 `ControlProps` (tamaño heredable, estado on/off/mixed, default, key equivalent); `Key::Escape`.
-- [ ] P5 `WindowActivity` en `Interaction` y `PaintInput`; caret y selección según la ventana.
-- [ ] P6 Variantes `window-inactive`, `keyboard-focus`, `selected`, `mixed`, `control-*`; `focus_visible`; *bench* ≤ +5 %.
-- [ ] P7 `UiCommand`; `responder.rs` (acciones, cadena, key equivalents); Retorno/Esc como AppKit.
-- [ ] P8 `apply(&State)`; `h-control`/`rounded-control`/`px-control`/`text-control`/`ring-focus`/estilos de texto; *tracking*.
+- [x] P2 `SemanticColors`; `paint.rs` sin colores Kai fijos; capturas idénticas.
+- [x] P3 `ThemeKind`, `Appearance`, `StyleCache` por tema, variantes `kai:`/`appkit:`/`dark:`/`light:`.
+- [x] P4 `ControlProps` (tamaño heredable, estado on/off/mixed, default, key equivalent); `Key::Escape`.
+- [x] P5 `WindowActivity` en `Interaction` y `PaintInput`; caret y selección según la ventana.
+- [x] P6 Variantes `window-inactive`, `keyboard-focus`, `selected`, `mixed`, `control-*`; `focus_visible`; *bench* ≤ +5 %.
+- [x] P7 `UiCommand`; `responder.rs` (acciones, cadena, key equivalents); Retorno/Esc como AppKit.
+- [x] P8 `apply(&State)`; `h-control`/`rounded-control`/`px-control`/`text-control`/`ring-focus`/estilos de texto; *tracking*.
 
 **Etapa 2 — Componentes**
-- [ ] P9 Button: push, bordered, borderless, default/accent, tamaños; Kai idéntico.
-- [ ] P10 TextField: contorno AppKit, anillo de 3 pt fuera, sin etiqueta flotante.
-- [ ] P11 Card como group box; `group_box`.
-- [ ] P12 Sin `hover:` en AppKit; atenuación en ventana inactiva.
+- [x] P9 Button: push, bordered, borderless, default/accent, tamaños; Kai idéntico.
+- [x] P10 TextField: contorno AppKit, anillo de 3 pt fuera, sin etiqueta flotante.
+- [x] P11 Card como group box; `group_box`.
+- [x] P12 Sin `hover:` en AppKit; atenuación en ventana inactiva.
 
 **Etapa 3 — Tema AppKit (macOS 15)**
-- [ ] P13 `Theme::appkit_static(Aqua11, Light|Dark)` con las tablas de 11; criterio A0.
-- [ ] P14 Mezcla en gamma; separador α .098 sobre `#ececec` = `#d5d5d5`; baseline nueva.
-- [ ] P15 `objc2`; experimento de `colorspace` medido y anotado en 11 §4.4.
-- [ ] P16 `Theme::appkit` en runtime con *fallback*; observadores; criterios A2 (colores) y A6.
+- [x] P13 `Theme::appkit_static(Aqua11, Light|Dark)` con las tablas de 11; criterio A0.
+- [x] P14 Mezcla en gamma; separador α .098 sobre `#ececec` = `#d5d5d5`; baseline nueva.
+- [x] P15 `objc2`; experimento de `colorspace` medido y anotado en 11 §4.4.
+- [ ] P16 `Theme::appkit` en runtime con *fallback*; observadores; criterios A2 (colores) y A6. Pendiente: el tema se elige por versión de macOS (`appkit_current`) sin leer los colores de AppKit.
 
 **Etapa 4 — Prototipo**
 - [x] P17 Galería con todos los controles × 5 tamaños × tema × apariencia × ventana.
-- [ ] P18 36 capturas doradas con diff y tolerancia.
+- [ ] P18 36 capturas doradas con diff y tolerancia. Parcial: `snapshot::diff` con tolerancia y la baseline de la demo (21 capturas con SHA, `scripts/snapshot-baseline.sh`); faltan las doradas de la galería.
 - [ ] P19 Oráculo AppKit: IoU ≥ 0,98 y color ≤ 2/255 en push, default, borderless y text field; cifras [C] de 11 confirmadas o corregidas.
 
 **Etapa 5 — Después**
-- [ ] P20.1–20.9 Switch, checkbox/radio, pop-up, segmented, search field, formularios, sidebar, toolbar, scrollers.
-- [ ] P20.10 Glass26/Glass27 (A2b, formas, ventana, glass).
+- [ ] P20.1–20.9 Switch, checkbox/radio, pop-up, segmented, search field, formularios, sidebar, toolbar, scrollers. Parcial: 20.2 (sin radio suelto), 20.3, 20.4, 20.5, 20.7 y 20.8 hechos sin oráculo (ver «Estado de 20.2 a 20.5, 20.7 y 20.8»); faltan 20.1 (medidas con oráculo), 20.6 y 20.9.
+- [ ] P20.10 Glass26/Glass27 (A2b, formas, ventana, glass). Parcial: las generaciones Glass26 y Glass27 existen como tema estático (`theme/generation.rs`); faltan `metrics.rs`, las formas concéntricas, la sidebar flotante y el glass con desenfoque (hoy `glass:` es solo una variante de clases por tema).
 
 **Documentación al cerrar cada etapa**
 - [ ] [05](05-widgets-y-tema.md): nuevas clases, variantes, `ControlProps`, Retorno y botón por defecto.

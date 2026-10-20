@@ -8,11 +8,11 @@
 
 ## Índice
 
-1. [Resumen ejecutivo](#1-resumen-ejecutivo)
+1. [Resumen ejecutivo](#1-resumen-ejecutivo): [estado actual](#11-estado-al-20-de-octubre-de-2026) y [costo de lo que falta](#12-lo-que-falta-para-cada-hito-con-costo-estimado)
 2. [Evaluación de 09](#2-evaluación-de-09)
 3. [Qué significa «ser plataforma»](#3-qué-significa-ser-plataforma)
 4. [Principios](#4-principios)
-5. [Punto de partida verificado](#5-punto-de-partida-verificado)
+5. [Punto de partida verificado](#5-punto-de-partida-verificado) (línea base del 19-10-2026)
 6. [Modelo de identificación](#6-modelo-de-identificación)
 7. [Contratos centrales](#7-contratos-centrales)
 8. [Dos pistas y puntos de sincronización](#8-dos-pistas-y-puntos-de-sincronización) (incluye la pista de mapas, §8.1)
@@ -34,7 +34,49 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: las Etapas 0 a 3 están cerradas, y los Pasos 0 a 13 están hechos, el 1b incluido. La demo es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`). Una acción `Destructive` pedida por un agente espera a la persona en un diálogo, y cada llamada por JSON queda en la auditoría. Falta probarlo a mano con Cursor o Claude Desktop ([14](14-mcp.md)). En debug hay devtools: `KAI_DEVTOOLS=msgs,frames` y el inspector con ⌘⌥I. Sigue la Etapa 4. Antes del Paso 14 (DSP desktop, en `dsp-27/desktop/`) se avanza dentro de este repo con el backlog de widgets que pide el primer corte. Checkbox (con estado mixto), segmented control y `Select` ya están, en la galería (sección Selection) y en la demo. El `Select` abre su lista como capa de la `Session`, y el segmented es un grupo de foco: una sola parada de Tab, con flechas entre segmentos. La sidebar de secciones también está: reutiliza el grupo de foco, pero ahí ↑/↓ eligen la fila. La demo ya es un shell con sidebar, y `ui.ir_a` cambia de sección. Lo siguiente es confirmar el primer corte con el equipo de DSP y empezar el Paso 14, o el 14b si el corte necesita mapas o imágenes desde el principio.
+- **Dónde estamos**: Etapas 0 a 3 cerradas; la Etapa 4 (app guía) en curso. Detalle en §1.1 y, por paso, en las líneas **Estado** de §10 y en la checklist (§17).
+
+### 1.1 Estado al 20 de octubre de 2026
+
+| Etapa | Estado | Lo que falta |
+|---|---|---|
+| 0 — Librería usable (P0, P1, P1b) | ✅ Hecha | Probar el inspector (⌘⌥I) a mano en la ventana |
+| 1 — Identificación y pruebas (P2–P6) | ✅ Hecha | Revisar con Accessibility Inspector y VoiceOver |
+| 2 — Comandos (P7–P10) | ✅ Hecha | Probar a mano atajos con el menú y la paleta con VoiceOver |
+| 3 — Agentes (P11–P13) | ✅ Hecha | Probar a mano con Cursor o Claude Desktop ([14](14-mcp.md)) |
+| 4 — App guía (P14–P16, mapas M0–M2) | 🟡 En curso | Ver abajo |
+| 5 — Manifiesto y CLI (P17–P19) | 🟡 Empezada: solo `kai dev` | `kai.toml`, `kai new/test/doctor/commands/mcp` |
+| 6 — Distribución (P20–P21) | ⬜ Pendiente | Todo |
+| 7 — Escala (P22–P25) | ⬜ Pendiente, salvo mapas M3 adelantado | Router, varias ventanas, MCP completo, plugins |
+| 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` |
+| 9 — Multiplataforma (P27) | ⬜ Pendiente | Windows y Linux |
+
+**La Etapa 4 por partes:**
+
+- **Widgets del backlog** ✅: checkbox, segmented, `Select`, sidebar con riel, toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`. Todos en la demo, con un test de cobertura.
+- **Lenguaje de color de la selección** ✅: toda elección activa usa el `secondary` (cyan) como vidrio teñido (token `choice`). El azul (acento) queda para acción, encendido y foco. Detalle en el Paso 14.
+- **P14 DSP desktop** 🟡: login con llavero, shell con menú y la sección Áreas (mapa de Parral con las áreas del core, lista y color por área). Faltan editar áreas desde el escritorio, el flujo operativo y las notificaciones.
+- **P14b primitivas** 🟡: imágenes y geometría hechas; falta el clip redondeado de contenedores.
+- **P15 efectos** 🟡: pool de tareas, `keyed`/`cancel`, `after`, panel de archivos y archivos arrastrados. Faltan futures, suscripciones (websockets para notificaciones) y comandos MCP async. **Fallo conocido:** el panel de archivos es modal dentro del manejador de eventos y la app aborta si se cierra con el panel abierto (ver el Paso 15).
+- **P15b–P15d mapas** 🟡: mapa vectorial con áreas, edición de polígonos existentes y comandos `mapa.*`. Faltan los modos Punto y Línea, dibujar desde cero y `incidencias.set_ubicacion`.
+- **P16 persistencia** ⬜.
+
+**Cifras:** 487 tests de la librería (491 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 8 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
+
+### 1.2 Lo que falta para cada hito, con costo estimado
+
+Estimaciones de orden de magnitud, en días de trabajo como el de las sesiones con agente (el agente implementa y una persona revisa). No incluyen esperas externas (cuenta de Apple Developer, prueba en otro Mac).
+
+| Bloque | Pasos | Costo | Riesgo |
+|---|---|---|---|
+| Cerrar M3 (app guía en uso real) | Resto de P14, P15, P15b–d y P16 | 3–5 semanas | Medio: depende del corte que confirme DSP |
+| Corte A1: `kai.toml` y CLI de desarrollo | P17, P18 y P19 | ≈ 2 semanas | Bajo |
+| Resto de M4 (plataforma *preview*) | P20 (bundle, firma, notarización) y P21 (guías, semver, nombre) | 1,5–2,5 semanas | Medio: firma y notarización |
+| Escala | P22 (router; versión manual 3–5 días), P23 (varias ventanas, 3–4 semanas), P24, P25 | 2,5–3,5 meses | P23 es el más riesgoso |
+| Ergonomía | P26 (`tw!` solo: 2–3 días; macros completas: 4–6 semanas) | 1–1,5 meses | Mensajes de error y rust-analyzer |
+| Multiplataforma | P27 | 2–3 meses | Alto |
+
+**Recomendación (no decidida):** adelantar el corte A1 (P17–P19) antes de cerrar M3, con DSP como primer cliente (`desktop/kai.toml` y `kai dev` sin scripts). No cambia la arquitectura; solo rompe la dependencia formal del P17 con el P16. El router manual (P22 mínimo) también se puede adelantar cuando DSP pase de una sección a varias con detalle.
 
 ## 2. Evaluación de 09
 
@@ -88,7 +130,7 @@ Kai es plataforma, y no una colección de componentes, cuando se cumplen cuatro 
 
 ## 5. Punto de partida verificado
 
-Estado del código a la fecha de este documento (rama `main` más el árbol de trabajo).
+Estado del código cuando se escribió este documento (19 de octubre de 2026, antes del Paso 0). Se conserva como línea base para ver qué cambió; **el estado actual está en §1.1**. Desde entonces, casi todo lo de §5.2 se resolvió en las Etapas 0 a 3: `examples/`, API pública con internos ocultos, `test_id` y consultas, registro de comandos, roles (`Dialog`, `Switch`, `CheckBox`, `Alert`, `Table`, `Tree`…) y efectos async. Siguen pendientes la persistencia, el manifiesto, la CLI completa, el bundle y la firma.
 
 ### 5.1 Lo que ya existe y sirve a la plataforma
 
@@ -792,12 +834,14 @@ Reglas de la pista C:
 - **Comandos de la app** (ejemplos): `areas.crear`, `areas.editar_geometria`, `areas.archivar` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.cerrar` (`Destructive`), consultas `areas.listar`, `incidencias.buscar` (`Query` puras sobre el modelo cargado), `ui.ir_a(seccion)` (acción de UI).
 - **Pruebas**: el core se simula con un servidor HTTP falso en proceso (respuestas fijas por ruta) para que los tests de `TestApp` no dependan de Postgres; un job aparte, opcional, corre contra el core real con el seed de DSP.
 - **Hecho cuando**: un usuario de DSP crea y edita un área y registra una incidencia con ubicación desde la app de escritorio, con tests de flujo para cada tarea.
-- **Estado: empezado (esqueleto y login).** `dsp-27/desktop/` es un crate Rust que usa Kai por ruta.
-  - **Login:** contra `POST /api/auth/login`, con el token en el llavero de macOS (crate `keyring`). Al abrir, la sesión se valida con `GET /api/auth/me`; un 401 la borra.
-  - **Inicio y salida:** pantalla de inicio con la toolbar de Kai y el comando `sesion.cerrar`.
+- **Estado: empezado (login y Áreas de solo lectura).** `dsp-27/desktop/` es un crate Rust que usa Kai por ruta.
+  - **Login:** contra `POST /api/auth/login`, con el token en el llavero de macOS (crate `keyring`). Al abrir, la sesión se valida con `GET /api/auth/me`; un 401 la borra. En desarrollo, `DSP_DESKTOP_LLAVERO=memoria` evita el llavero.
+  - **Shell:** toolbar de Kai, menú Sesión y el comando `sesion.cerrar`.
+  - **Áreas de operación:** mapa de Parral a ancho completo (el extracto PMTiles de Kai) con las áreas de `GET /territory/areas` y un panel lateral con la lista. La fila elegida usa `CHOICE_ACTIVE`, se despliega con su detalle y encuadra el área; el color de cada área se cambia con `ColorField` y la paleta de DSP.
   - **Red:** HTTP con `ureq` dentro de `Effects::perform`; la URL sale de `DSP_API_URL`.
+  - **Desarrollo:** `npm run dev:core-desktop` levanta el core y la app con `kai dev` (Paso 18).
   - **Tests:** un core falso en proceso y un llavero en memoria, con `TestApp`. Un test `#[ignore]` corre contra el core real.
-  - **Siguiente corte:** Áreas de operación.
+  - **Siguiente corte:** formulario de área y edición del polígono con `polygon_editor`; después, el flujo operativo y las notificaciones.
 
 #### Paso 14b — Primitivas de renderer (mapas M0)
 
@@ -829,6 +873,7 @@ Reglas de la pista C:
 - **Hecho cuando**: el benchmark de frame no empeora durante una llamada de red en curso; los tests anteriores pasan.
 - **Nota**: esto revisa la exclusión de `Cmd`/`Sub` del [README](README.md) («Fuera del alcance inicial»); actualizarlo en el mismo cambio.
 - **Estado: parcial.** El ejecutor no es Tokio sino un pool propio de 4 hilos `std` (Tokio sigue siendo opcional, solo con `mcp`). `Effects::perform(tarea, Msg)` corre una función bloqueante en el pool; el resultado vuelve como `UserEvent::Task` por el `EventLoopProxy` y llega a `update` como `Msg` (en devtools, origen «Tarea»). `.keyed(key)` reemplaza la tarea o temporizador pendiente con la misma key y `Effects::cancel(key)` descarta su resultado; `after` ya existía. `Effects::pick_file(PickFile::images(título), |ruta| Msg)` abre un `NSOpenPanel` modal (objc2) y entrega la ruta o `None`; los archivos arrastrados desde Finder llegan con `on_drop_files` (origen «Archivos»). En `TestApp`: `run_until_idle()`, `on_file_pick(ruta)`, `drop_files(By, rutas)` y `hover_files()`. Pendientes: futures (`perform` recibe una función, no un `async`), suscripciones, comandos async que completan una invocación MCP (§7.3) y el test de frame durante una llamada de red.
+  - **Fallo conocido (panel de archivos):** `platform/file_panel.rs` llama a `NSOpenPanel.runModal()` dentro del manejador de eventos de winit (`WindowState::flush` en `runtime.rs`). Mientras el panel está abierto, el ciclo modal de AppKit vuelve a entrar en winit; si la app se termina en ese momento (Cmd+Q, o `kai dev` que la reinicia), winit hace panic por reentrada y el proceso aborta. Arreglo propuesto: `beginSheetModalForWindow:completionHandler:` (crate `block2`), que no bloquea, y entregar la ruta como un `UserEvent::FilePicked` por el `EventLoopProxy`.
 
 #### Paso 15b — Mapa raster (mapas M1)
 
@@ -962,6 +1007,7 @@ Reglas de la pista C:
 - **Depende de**: Paso 18.
 - **Diseño**: tokens Kai e iconos Lucide viajan dentro del crate, ya generados y versionados; `scripts/gen-icons.mjs` queda como herramienta interna de Kai; `kai icons add <nombre>` para apps (iconos propios en `assets/icons/`).
 - **Hecho cuando**: `fixtures/external-app` y una app creada con `kai new` compilan en un clon sin `kai-ui-web`.
+- **Estado: casi hecho en la práctica, sin verificar.** El catálogo de iconos ya vive generado y versionado en `src/icons/catalog.rs` (`scripts/gen-icons.mjs` solo hace falta para agregar iconos), y los tokens Kai están copiados en `theme.rs`, así que compilar no necesita `node_modules`. Faltan la prueba en un clon limpio, generar los tokens en vez de copiarlos (§12) y `kai icons add`.
 
 ### Etapa 6 — Distribución (hito M4: plataforma *preview*)
 
@@ -1059,19 +1105,21 @@ Reglas de la pista C:
 
 | Decisión | Opciones | Recomendación | Cuándo |
 |---|---|---|---|
-| Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Decidido en el Paso 12: Tokio `current_thread` en un hilo de servicio**, solo con la feature `mcp`; la UI sigue en winit | Paso 12 |
+| Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Decidido en el Paso 12: Tokio `current_thread` en un hilo de servicio**, solo con la feature `mcp`; la UI sigue en winit. Las tareas de la app (Paso 15) usan un pool propio de 4 hilos `std`, sin Tokio | Pasos 12 y 15 |
 | SDK MCP | `rmcp`, implementación propia | **Decidido en el Paso 12: `rmcp` 3.5** (`server` y `transport-io`, sin macros): MSRV 1.88, Apache-2.0, spec 2025-06-18 y posteriores, stdio de servidor | Paso 12 |
 | JSON Schema | `schemars`, manual | **Decidido en el Paso 11: `schemars` 1.2**, dialecto 2020-12, subesquemas en línea, RUT como `string` con `pattern`, montos enteros, enums con `tag`; snapshot en `mcp-schema.json` | Paso 11 |
 | Nombres de herramienta | `clientes.buscar`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
 | Menú nativo | `objc2-app-kit` propio, `muda` | **Decidido en el Paso 8: `muda` 0.19**, que ya usa el mismo objc2 que winit y trae los ítems predefinidos; `objc2-app-kit` propio solo si muda limita (submenús dinámicos, validación por la cadena de responders) | Paso 8 |
 | Validación de clases | Solo ejecución, `tw!`, `rsx!` | `tw!` primero; `rsx!` opcional después | Paso 26 (o antes) |
 | Deshacer | Inversos por acción, instantáneas del modelo | Inversos declarados para acciones de agente; instantáneas solo si el modelo es pequeño | Paso 25 |
-| Recarga en caliente | Reiniciar con estado de ventana, parcheo en vivo | Reiniciar con estado (seguro); parcheo en vivo fuera de alcance | Paso 18 |
+| Recarga en caliente | Reiniciar con estado de ventana, parcheo en vivo | **Decidido en el Paso 18: reiniciar con estado** (`kai dev`, ventana y `App::dev_state`); parcheo en vivo fuera de alcance | Paso 18 |
 | Cámara del mapa | Controlada por el `Model`, estado de UI con `Msg` al terminar el gesto | Estado de UI durante el gesto; `Msg` al terminar; `mapa.set_view` por el `Model` | Paso 15b |
 | Fuente de teselas en producción (DSP) | OSM estándar, proveedor comercial, PMTiles propio | **PMTiles propio de la región** (extracto vectorial de Protomaps, leído localmente); OSM raster queda como opción para otras regiones | Paso 15b / M3 |
 | Primer corte de DSP desktop | Áreas + flujo operativo, otro módulo | Áreas + flujo operativo + notificaciones (ejercitan mapa, formularios, tablas, async y websockets) | Paso 14 |
 | Nombre y publicación | `kai`/`kai-*` en crates.io, privado | Decidir con licencia en el Paso 21; mientras tanto `publish = false` | Paso 21 |
 | Tokens Kai | Copia manual en `theme.rs`, generados desde `tokens.css` | Generados y versionados dentro del crate | Paso 19 |
+| Orden de M3 y del corte A1 | Cerrar M3 primero, adelantar P17–P19 | Adelantar P17–P19 con DSP como cliente (§1.2); pendiente de decidir | Antes de seguir con P14 |
+| Color de la selección | Acento (azul), `secondary` (cyan) | **Decidido: `secondary` como vidrio teñido** (token `choice`); el acento queda para acción, encendido y foco | Paso 14 |
 
 ## 13. Riesgos
 
@@ -1091,6 +1139,7 @@ Reglas de la pista C:
 - **Evolución del spec MCP**: aislado en `src/mcp/` (luego `kai-mcp`); el registro no depende de una versión concreta.
 - **Recursos GPU entre ventanas** con escalas distintas: no probados (Paso 23).
 - **Firma y notarización**: dependen de cuentas de Apple Developer y de cambios en `notarytool`; la CLI falla con mensajes claros y no guarda secretos.
+- **Paneles modales del sistema**: un `runModal` dentro del manejador de eventos de winit hace que la app aborte si se termina con el panel abierto (fallo conocido del Paso 15). Todo panel del sistema (archivos, color, impresión) debe abrirse como hoja no bloqueante y devolver su resultado como evento.
 
 ### 13.3 De producto
 
@@ -1149,7 +1198,7 @@ Reglas de la pista C:
 
 **Etapa 0 — Librería usable**
 - [x] P0 `examples/demo.rs`, visibilidad de la API, `fixtures/external-app` en CI, `cargo doc` sin warnings.
-- [x] P1 `App` v2 con `Effects` vacío; `SimpleApp` compatible.
+- [x] P1 `App` v2 con `Effects` (vacío al principio; los efectos llegaron con el P15); `SimpleApp` compatible.
 - [x] P1b Devtools: log de `Msg`, inspector, tiempo por frame (debug y `KAI_DEVTOOLS`, sin feature). Falta probar ⌘⌥I a mano en la ventana.
 
 **Etapa 1 — Identificación y pruebas**
@@ -1173,18 +1222,20 @@ Reglas de la pista C:
 **Etapa 4 — App guía**
 - [x] Widgets previos al P14: checkbox (On, Off y mixto), segmented control (grupo de foco con flechas) y `Select` (lista de la `Session`, teclado completo, `AXPopUpButton` y `AXMenu`). Falta revisarlos con VoiceOver y la búsqueda por tipeo en la lista.
 - [x] Sidebar de secciones (`components::sidebar`): un grupo de foco que selecciona, donde ↑/↓ eligen la fila, como en Finder o Mail. AccessKit la publica como `AXOutline` con filas. La demo pasó a ser un shell con sidebar y `ui.ir_a`. Falta revisarla con VoiceOver.
-- [ ] P14 DSP desktop (login, áreas, flujo operativo, notificaciones) y widgets del backlog, cada uno con ids y tests.
+- [x] Backlog de widgets del P14: toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`, cada uno con ids y tests y en la demo.
+- [x] Lenguaje de color de la selección: token `choice`, `CHOICE_ACTIVE` y `CHOICE_HOVER` en sidebar, select (sin check y con `ChevronDown`), paleta, segmented, toolbar, tabla, `ColorField` y `MediaSlot`.
+- [ ] P14 DSP desktop (login, áreas, flujo operativo, notificaciones). Empezado: login con llavero, shell y Áreas de solo lectura con color por área.
 - [ ] P14b Primitivas de renderer: imágenes, geometría, transformaciones, clip redondeado (mapas M0). Hecho salvo el clip redondeado.
-- [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`.
+- [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`. Parcial: pool de tareas, `keyed`/`cancel`, `after`, panel de archivos, archivos arrastrados y `run_until_idle`. Faltan futures, suscripciones, MCP async y arreglar el aborto del panel de archivos.
 - [ ] P15b Mapa raster con capas de áreas y atribución (mapas M1). Parcial: mapa vectorial con áreas de DSP, sin raster.
 - [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b). Parcial: edición de polígonos existentes (`polygon_editor`).
-- [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2).
+- [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2). Empezado: `mapa.set_view/get_view/fit_bounds`, `areas.seleccionar` y `areas.editar_geometria`.
 - [ ] P16 `Store` con migración y guardado atómico.
 
 **Etapa 5 — Manifiesto y CLI**
 - [ ] P17 `kai.toml` mínimo con `[theme] kind` y `[mcp]` seguro por defecto.
-- [ ] P18 `kai new/dev/test/doctor/commands/mcp`.
-- [ ] P19 Tokens e iconos dentro del crate.
+- [ ] P18 `kai new/dev/test/doctor/commands/mcp`. Empezado: `kai dev` con reinicio que conserva la ventana y el estado de la app.
+- [ ] P19 Tokens e iconos dentro del crate. Casi hecho: iconos generados en el crate y tokens copiados; falta verificarlo en un clon sin `kai-ui-web`.
 
 **Etapa 6 — Distribución**
 - [ ] P20 `kai bundle/sign/notarize`; Gatekeeper sin avisos.

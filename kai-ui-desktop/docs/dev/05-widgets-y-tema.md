@@ -45,7 +45,8 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 - [x] Iconos Lucide como SVG rasterizados en un atlas de máscaras ([04](04-renderer-y-texto.md)).
 - [x] `main.rs`: demo con contador, formulario controlado, variantes de TextField, estadísticas y variantes de botón; un test garantiza que solo usa clases soportadas.
 - [x] Radios, bordes, sombras, anillos de foco y opacidad, gracias al renderer SDF ([04](04-renderer-y-texto.md)).
-- [ ] Select/AutoComplete, Dialog/Alert/Toast, textarea y formateadores del TextField, transiciones y animaciones.
+- [x] Después de L6 (Paso 14 de [13](13-hoja-de-ruta-plataforma.md)): checkbox, segmented, `Select`, sidebar, toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, `Avatar`, `MediaSlot` y `ColorField`. Su detalle está en [12](12-modelo-appkit.md) (Paso 20) y en el Paso 14 de 13, junto con el lenguaje de color de la selección (token `choice`).
+- [ ] AutoComplete, formateadores del TextField, transiciones y animaciones.
 
 ## Clases tipo Tailwind (`tw.rs`)
 

@@ -98,7 +98,8 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 
 ### Pendiente
 
-- [ ] Comparación automática de capturas contra referencias (requiere un runner con GPU y tolerancia de rasterización).
+- [x] Comparación de capturas con la baseline en local: `scripts/snapshot-baseline.sh --check` (SHA de 21 capturas) y `snapshot::diff` con tolerancia.
+- [ ] Comparación automática en CI (requiere un runner con GPU y tolerancia de rasterización).
 - [x] Iconos SVG (Lucide) en un atlas de máscaras.
 - [x] Imágenes rasterizadas (atlas RGBA, `object-*`, radio propio).
 - [x] Geometría vectorial con `lyon` (rellenos y trazos de ancho constante en pantalla), transformación afín por dibujo y MSAA 4×.

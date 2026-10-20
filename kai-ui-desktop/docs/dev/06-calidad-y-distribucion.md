@@ -21,9 +21,11 @@ Ejecutar los gates en cada fase L0–L6; ningún resultado manual pendiente se m
 
 - [x] CI: el job `desktop` de `.github/workflows/ci.yml` corre en `macos-latest` con Rust estable: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings` y `cargo test --locked`. Los tests son puros (sin ventana, superficie GPU ni portapapeles del sistema), así que funcionan en el runner.
 - [x] CI: el job `desktop-msrv` comprueba `cargo check --locked --all-targets` con Rust 1.89, el MSRV declarado (impuesto por `cosmic-text` 0.19).
-- [x] 95 tests unitarios cubren geometría, señales, dispatch y orden de foco, adaptador de plataforma, tema, parser de clases, estilo, árbol `Element`, layout, paint, lotes de dibujo, backend (partes puras, incluidas las instancias de iconos), atlas de iconos y rasterizado de todo el catálogo, text store, campo de texto (máscara, read-only), árbol AccessKit, componentes (cada variante del TextField usa solo clases conocidas), runtime (delegación de foco, `select_on_focus`) y la demo (`update`/`view`, clases soportadas, raíz que llena la ventana).
-- [x] Dos tests `#[ignore]` que se ejecutan a mano: el benchmark (abajo) y `snapshot_demo`, que renderiza la demo offscreen en la GPU local y deja capturas BMP en `kai-ui-desktop/target/snapshots/` ([04](04-renderer-y-texto.md#capturas)).
-- [ ] Comparación automática de capturas: requiere un runner con GPU; queda fuera de CI.
+- [x] CI: el job `kai-cli` corre fmt, clippy y tests del crate de la CLI.
+- [x] 487 tests normales (491 con `--features mcp`) cubren las capas base (geometría, señales, dispatch, layout, paint, backend, texto, AccessKit), los componentes, comandos, MCP, efectos, imágenes, mapas y la demo, casi todos con `TestApp` y sin ventana ni GPU. Más 4 doctests y 8 tests de `kai-cli`.
+- [x] 14 tests `#[ignore]` que se ejecutan a mano porque necesitan la GPU local o son lentos: benchmarks (layout y paint, abajo; scroll de la tabla; pan del mapa), capturas (`snapshot_demo`, galería, AppKit, tabla, sidebar, toasts…) y pruebas de dibujo (mezcla en gamma, imágenes, geometría). Las capturas quedan como BMP en `kai-ui-desktop/target/snapshots/` ([04](04-renderer-y-texto.md#capturas)).
+- [x] Comparación de capturas contra la línea base: `scripts/snapshot-baseline.sh --check` compara con `snapshots/baseline/SHA256SUMS`; `snapshot::diff` con tolerancia para revisar diferencias.
+- [ ] Comparación automática de capturas en CI: requiere un runner con GPU.
 - [ ] Auditoría VoiceOver completa, bundle `.app`, firma y notarización.
 
 ### Benchmark de vista + layout + paint

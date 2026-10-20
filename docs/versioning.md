@@ -7,7 +7,9 @@ La fuente de verdad es [`version.json`](../version.json) en la raíz del monorep
 | Web (`@felipechandiadev/ui`) | `kai-ui-web/package.json` | `web-vX.Y.Z` | GitHub Packages (npm) |
 | Desktop (`kai-ui-desktop-prototype`) | `kai-ui-desktop/Cargo.toml` | `desktop-vX.Y.Z` | GitHub Release (binario opcional en CI) |
 
-Web y desktop **no comparten número de versión** (web en 1.x, desktop en 0.x prototipo).
+Web y desktop **no comparten número de versión** (web en 1.x, desktop en 0.x preliminar).
+
+`kai-cli` (binario `kai`, versión 0.1.0 en `kai-cli/Cargo.toml`, `publish = false`) todavía no está en `version.json` ni tiene tag de release: se instala desde el repo con `cargo install --path kai-cli`. Se sumará cuando la CLI se distribuya (Paso 21 de la [hoja de ruta](../kai-ui-desktop/docs/dev/13-hoja-de-ruta-plataforma.md)).
 
 ## Comandos
 

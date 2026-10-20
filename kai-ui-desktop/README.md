@@ -1,16 +1,16 @@
 # Kai UI Desktop
 
-Prototipo inicial del framework de interfaz de escritorio de Kai en Rust.
+Framework de interfaz de escritorio de Kai en Rust (crate `kai`), con renderizador propio, por ahora solo para macOS. Es una versión preliminar (0.1.x): la API todavía cambia y el paquete no se publica.
 
-El proyecto web existente está en `../kai-ui-web`. Esta carpeta se reserva para la implementación desktop con renderizador propio, comenzando por macOS.
+El proyecto web está en `../kai-ui-web` y la CLI (`kai dev`) en `../kai-cli`. La primera app real que lo usa es DSP desktop (`dsp-27/desktop`).
 
 Versión del crate: `Cargo.toml` (sincronizado desde `../version.json`). Historial en [`CHANGELOG.md`](CHANGELOG.md). Release con tag `desktop-vX.Y.Z` — ver [`../docs/versioning.md`](../docs/versioning.md).
 
-La [guía de desarrollo](docs/dev/README.md) contiene la visión arquitectónica y el recorrido paso a paso.
+La [guía de desarrollo](docs/dev/README.md) contiene la visión arquitectónica y el recorrido paso a paso. El estado del camino hacia una plataforma completa (qué está hecho, qué falta y cuánto costaría) está en una tabla de una página: [hoja de ruta, §1.1](docs/dev/13-hoja-de-ruta-plataforma.md#11-estado-al-20-de-octubre-de-2026).
 
 ## Estado actual
 
-El prototipo abre una ventana con `winit`, dibuja sobre `wgpu` en Metal y presenta texto con `glyphon`/`cosmic-text`. Las apps siguen la arquitectura Elm: un modelo, mensajes, `update` y una `view` que devuelve un árbol tipo DOM (`Element<Msg>`), reconstruido en cada frame.
+Kai abre una ventana con `winit`, dibuja sobre `wgpu` en Metal y presenta texto con `glyphon`/`cosmic-text`. Las apps siguen la arquitectura Elm: un modelo, mensajes, `update` y una `view` que devuelve un árbol tipo DOM (`Element<Msg>`), reconstruido en cada frame.
 
 ```rust
 fn view(&self) -> Element<Msg> {
@@ -30,7 +30,9 @@ Las imágenes (`image(src)` con ruta, URL, bytes o RGBA) se decodifican fuera de
 
 El renderer también dibuja geometría: mallas teseladas con `lyon` (rellenos y trazos de ancho constante en pantalla) con una transformación afín por dibujo, y todos los pipelines usan MSAA 4×. Sobre eso está `kai::maps`: el elemento `map` con marcadores, pan con inercia, zoom anclado (rueda, pellizco, doble clic, teclado y botones) y atribución siempre visible. Dibuja un mapa base vectorial leído sin red de un extracto PMTiles de Protomaps (`assets/maps/parral.pmtiles`, Parral a z0–15), con estilo claro y oscuro desde los tokens y nombres de calles y localidades sin choques. Encima van capas de polígonos GeoJSON (`MapLayer::polygon`) con relleno, borde y nombre, que se resaltan bajo el puntero y entregan su id al hacer clic, y `fit_bounds` encuadra una caja. `polygon_editor` edita un polígono existente. La app guarda el borrador (`PolygonDraft`) en su modelo, y el editor permite arrastrar vértices, agregar uno con el punto medio de un borde y borrarlo con Supr. Las flechas mueven el vértice enfocado, Cmd+Z deshace, los bordes que se cruzan se marcan en rojo y el área se calcula en hectáreas.
 
-La demo (`cargo run`) muestra todos los componentes: una toolbar en lugar del header y una sidebar con las secciones Inicio, Campos, Botones, Selección, Contenedores, Badges y alertas, Multimedia, Tabla (con un avatar junto a cada nombre), Diálogos y avisos, y Mapa (Parral con los 5 sectores de partida de DSP, una lista que los selecciona y encuadra, «Editar sector» con Terminar y Cancelar, y un campo de color, `ColorField`, que cambia el del sector elegido con la paleta de DSP o un hex). Un test de cobertura falla si un constructor público de `components` o de `maps` no aparece en ella. La demo también expone los comandos `ui.ir_a`, `ui.alternar_sidebar` (Ctrl+Cmd+S), `avisos.mostrar`, `multimedia.cargar_url`, `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria` a scripts y agentes (`mcp-schema.json`). El último rechaza como error una geometría inválida: menos de 3 vértices, coordenadas fuera de rango o bordes que se cruzan. Hay 487 tests de la biblioteca (491 con `--features mcp`) y 4 doctests, y la baseline de capturas (`scripts/snapshot-baseline.sh`) tiene 20 imágenes: una por sección más la sidebar plegada, el diálogo, los avisos, Multimedia con un archivo arrastrado, el mapa con sectores, con uno seleccionado y con uno en edición, y las primitivas de imagen y de geometría.
+La demo (`cargo run`) muestra todos los componentes: una toolbar en lugar del header y una sidebar con las secciones Inicio, Campos, Botones, Selección, Contenedores, Badges y alertas, Multimedia, Tabla (con un avatar junto a cada nombre), Diálogos y avisos, y Mapa (Parral con los 5 sectores de partida de DSP, una lista que los selecciona y encuadra, «Editar sector» con Terminar y Cancelar, y un campo de color, `ColorField`, que cambia el del sector elegido con la paleta de DSP o un hex). Un test de cobertura falla si un constructor público de `components` o de `maps` no aparece en ella. La demo también expone los comandos `ui.ir_a`, `ui.alternar_sidebar` (Ctrl+Cmd+S), `avisos.mostrar`, `multimedia.cargar_url`, `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria` a scripts y agentes (`mcp-schema.json`). El último rechaza como error una geometría inválida: menos de 3 vértices, coordenadas fuera de rango o bordes que se cruzan. Hay 487 tests de la biblioteca (491 con `--features mcp`) y 4 doctests, y la baseline de capturas (`scripts/snapshot-baseline.sh`) tiene 21 imágenes: una por sección más la sidebar plegada, el diálogo, los avisos, Multimedia con un archivo arrastrado y con el puntero sobre una imagen, el mapa con sectores, con uno seleccionado y con uno en edición, y las primitivas de imagen y de geometría.
+
+Todo lo que es una elección activa (fila de la sidebar, opción del select, segmento, ítem de toolbar presionado, fila de tabla, muestra de color, imagen bajo el puntero) usa el `secondary` de Kai, cyan, como vidrio teñido: el token `choice` y las clases `components::CHOICE_ACTIVE` y `CHOICE_HOVER`, que las apps también usan en sus listas. El azul queda para acción, encendido y foco.
 
 Escritura normal, acentos, foco con Tab, portapapeles, IME japonés y cambio de pantalla se validaron manualmente en un Apple M4 con escala `2.00x` antes de la migración a la arquitectura Elm. Desde entonces, las capturas offscreen y los tests automáticos cubren el aspecto visual y el comportamiento.
 
@@ -83,8 +85,19 @@ cargo test --manifest-path kai-ui-desktop/Cargo.toml -- --ignored snapshot_demo
 
 Si `CARGO_TARGET_DIR` está definido, el binario actualizado está allí y no en `kai-ui-desktop/target/debug/`; usar `cargo run`.
 
-El CI (`.github/workflows/ci.yml`) ejecuta fmt, clippy y tests en macOS, además de un `cargo check` con el MSRV 1.89.
+Comparar las capturas con la baseline, y regenerarla cuando un cambio visual es intencional (la baseline vive en `snapshots/baseline/`, fuera de git, porque depende de la GPU de cada Mac):
 
-Los iconos se generan desde `lucide-react` con `node kai-ui-desktop/scripts/gen-icons.mjs` (requiere `npm ci` en `kai-ui-web`); los SVG resultantes y su licencia ISC quedan versionados en `assets/icons/`.
+```sh
+cd kai-ui-desktop
+cargo test --lib -- --ignored snapshot_demo && scripts/snapshot-baseline.sh --check
+scripts/snapshot-baseline.sh   # regenera la baseline
+```
 
-Siguiente: más componentes del catálogo (Select, Dialog, Toast), textarea y formateadores del TextField, transiciones y comparación automática de capturas, según la [guía de desarrollo](docs/dev/README.md).
+El CI (`.github/workflows/ci.yml`) ejecuta fmt, clippy y tests en macOS para la librería y para `kai-cli`, además de un `cargo check` con el MSRV 1.89.
+
+Los iconos se generan desde `lucide-react` con `node kai-ui-desktop/scripts/gen-icons.mjs` (requiere `npm ci` en `kai-ui-web`); los SVG resultantes y su licencia ISC quedan versionados en `assets/icons/`, y el catálogo generado en `src/icons/`, así que compilar no necesita `node_modules`.
+
+## Limitaciones conocidas
+
+- **Panel de archivos:** `Effects::pick_file` abre el `NSOpenPanel` como modal dentro del manejador de eventos. Si la app se termina con el panel abierto (Cmd+Q, o `kai dev` que la reinicia), el proceso aborta. El arreglo propuesto (hoja no bloqueante) está en el Paso 15 de la [hoja de ruta](docs/dev/13-hoja-de-ruta-plataforma.md).
+- **Faltan** persistencia (`Store`), `kai.toml`, el resto de la CLI (`kai new`, `kai test`…), bundle y firma, router, varias ventanas y Windows/Linux. El orden y el costo están en la [hoja de ruta, §1.2](docs/dev/13-hoja-de-ruta-plataforma.md#12-lo-que-falta-para-cada-hito-con-costo-estimado).

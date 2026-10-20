@@ -30,7 +30,15 @@ impl<T: SimpleApp> App for T { /* devuelve Effects::none() */ }
 runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 ```
 
-`Effects` es opaco y por ahora siempre vacío; el runtime lo descarta hasta que existan efectos async (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)).
+`Effects` es opaco y describe el trabajo que `update` le pide al runtime (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)):
+
+- `Effects::perform(tarea, a_msg)` corre una función bloqueante en un pool de 4 hilos (`effects.rs`); su resultado vuelve por el `EventLoopProxy` y entra a `update` como un `Msg`.
+- `Effects::after(duración, msg)` es un temporizador (los toasts lo usan para cerrarse).
+- `.keyed(key)` reemplaza la tarea o el temporizador pendiente con la misma key, y `Effects::cancel(key)` descarta su resultado.
+- `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS y entrega la ruta o `None`. Hoy el panel es modal dentro del manejador de eventos, y la app aborta si se termina con él abierto (fallo conocido, ver el Paso 15 de 13).
+- `Effects::none()` y `Effects::batch(..)` combinan.
+
+En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve el reloj de los temporizadores y `on_file_pick(ruta)` responde el panel de archivos. Faltan futures (`perform` recibe una función, no un `async`) y suscripciones.
 
 - **El estado de la app vive en el modelo.** `view` se ejecuta en cada frame y produce un árbol `Element<Msg>` nuevo; los ids se derivan de la ruta (o de `key`), así que foco, hover, scroll y el caret de cada input sobreviven a la reconstrucción.
 - **Eventos como mensajes.** `on_click(msg)`, `on_input(|valor| msg)` y `on_submit(msg)` registran el mensaje que el runtime envía a `update`. El clic burbujea desde el nodo más interno de `hit_path` hasta el control más cercano, igual que un evento DOM.
@@ -148,7 +156,7 @@ Un renderer propio no elimina la integración de plataforma. Validar portapapele
 
 ## Mantener fuera del MVP
 
-- Bus global de señales, suscripciones cruzadas, componentes con estado local oculto y comandos/efectos asíncronos (`Cmd`/`Sub` de Elm) hasta que una app los necesite.
+- Bus global de señales, suscripciones cruzadas y componentes con estado local oculto hasta que una app los necesite. Los efectos (`Cmd` de Elm) ya existen como `Effects`; las suscripciones (`Sub`) llegarán con los websockets de DSP (Paso 15 de 13).
 - Tokio como propietario del event loop gráfico.
 - Undo/redo, persistencia de acciones y serialización de cada mensaje.
 - Ejecución de comandos de IA/MCP dentro del núcleo visual. Una app puede añadir un adaptador opcional y controlado fuera del MVP.
