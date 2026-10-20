@@ -181,6 +181,8 @@ pub struct Style {
     pub min_height: Length,
     pub max_width: Length,
     pub max_height: Length,
+    /// Width ÷ height (`aspect-video`), used when one side is not set.
+    pub aspect_ratio: Option<f32>,
     pub overflow: Overflow,
     pub position: Position,
     pub inset: Edges<Length>,
@@ -225,6 +227,7 @@ impl Default for Style {
             min_height: Length::Auto,
             max_width: Length::Auto,
             max_height: Length::Auto,
+            aspect_ratio: None,
             overflow: Overflow::Visible,
             position: Position::Relative,
             inset: Edges::all(Length::Auto),
@@ -332,6 +335,7 @@ impl Style {
                 width: lpa(self.max_width),
                 height: lpa(self.max_height),
             },
+            aspect_ratio: self.aspect_ratio,
             margin: Rect {
                 left: lpa(self.margin.left),
                 right: lpa(self.margin.right),

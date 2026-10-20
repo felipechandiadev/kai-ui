@@ -429,6 +429,72 @@ impl ImageStore {
     }
 }
 
+/// `width × height` opaque pixels from `color(x, y)` (fractions 0..1).
+fn paint(width: u32, height: u32, color: impl Fn(f32, f32) -> [f32; 3]) -> Bitmap {
+    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let rgb = color(
+                (x as f32 + 0.5) / width as f32,
+                (y as f32 + 0.5) / height as f32,
+            );
+            pixels.extend(rgb.map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8));
+            pixels.push(255);
+        }
+    }
+    Bitmap::new(width, height, pixels)
+}
+
+fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t.clamp(0.0, 1.0))
+}
+
+/// A drawn portrait (head and shoulders on a gradient), made once: for
+/// the demo and the gallery, without files or network.
+#[doc(hidden)]
+pub fn sample_portrait() -> ImageSource {
+    static PORTRAIT: std::sync::OnceLock<Bitmap> = std::sync::OnceLock::new();
+    let bitmap = PORTRAIT.get_or_init(|| {
+        paint(160, 160, |x, y| {
+            let background = mix([0.11, 0.45, 0.68], [0.04, 0.24, 0.36], y);
+            let skin = [0.96, 0.80, 0.66];
+            let head = ((x - 0.5).powi(2) + (y - 0.40).powi(2)).sqrt() < 0.18;
+            let shoulders = ((x - 0.5) / 0.36).powi(2) + ((y - 1.0) / 0.34).powi(2) < 1.0;
+            if head {
+                skin
+            } else if shoulders {
+                [0.93, 0.95, 0.97]
+            } else {
+                background
+            }
+        })
+    });
+    ImageSource::Rgba(bitmap.clone())
+}
+
+/// A drawn 16:9 landscape (sky, sun and hills), made once.
+#[doc(hidden)]
+pub fn sample_landscape() -> ImageSource {
+    static LANDSCAPE: std::sync::OnceLock<Bitmap> = std::sync::OnceLock::new();
+    let bitmap = LANDSCAPE.get_or_init(|| {
+        paint(480, 270, |x, y| {
+            let sun = ((x - 0.74) / 0.5625).hypot(y - 0.3) < 0.09;
+            let far = 0.62 + 0.08 * (x * 7.0).sin();
+            let near = 0.78 + 0.06 * (x * 4.0 + 1.0).cos();
+            if y > near {
+                mix([0.30, 0.55, 0.25], [0.18, 0.38, 0.16], (y - near) * 4.0)
+            } else if y > far {
+                [0.42, 0.62, 0.52]
+            } else if sun {
+                [1.0, 0.86, 0.45]
+            } else {
+                mix([0.55, 0.78, 0.95], [0.95, 0.85, 0.75], y / far)
+            }
+        })
+    });
+    ImageSource::Rgba(bitmap.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,6 +527,16 @@ mod tests {
             format!("{:?}", ImageSource::bytes(vec![0u8; 4])),
             "Bytes(4 bytes)"
         );
+    }
+
+    #[test]
+    fn sample_images_are_made_once() {
+        assert_eq!(sample_portrait(), sample_portrait());
+        assert_ne!(sample_portrait(), sample_landscape());
+        let ImageSource::Rgba(landscape) = sample_landscape() else {
+            unreachable!()
+        };
+        assert_eq!((landscape.width(), landscape.height()), (480, 270));
     }
 
     #[test]

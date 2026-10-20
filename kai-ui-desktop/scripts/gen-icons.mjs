@@ -48,6 +48,8 @@ const ICONS = [
   "settings",
   "pencil",
   "layers",
+  "camera",
+  "image-plus",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

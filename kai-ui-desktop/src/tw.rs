@@ -320,6 +320,8 @@ enum Decl {
     Cursor(Cursor),
     PointerEvents(bool),
     ObjectFit(ObjectFit),
+    /// Width ÷ height; `None` is `aspect-auto`.
+    Aspect(Option<f32>),
     Placeholder(Color),
     TextColor(Color),
     FontSize(f32, Option<f32>),
@@ -483,6 +485,7 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::Cursor(cursor) => style.cursor = Some(cursor),
         Decl::PointerEvents(enabled) => style.pointer_events = enabled,
         Decl::ObjectFit(fit) => style.object_fit = fit,
+        Decl::Aspect(ratio) => style.aspect_ratio = ratio,
         Decl::Placeholder(color) => style.placeholder_color = Some(color),
         Decl::TextColor(color) => style.text.color = Some(color),
         Decl::FontSize(size, line_height) => {
@@ -680,6 +683,9 @@ impl Parser<'_> {
             "object-fill" => Decl::ObjectFit(ObjectFit::Fill),
             "object-cover" => Decl::ObjectFit(ObjectFit::Cover),
             "object-contain" => Decl::ObjectFit(ObjectFit::Contain),
+            "aspect-auto" => Decl::Aspect(None),
+            "aspect-square" => Decl::Aspect(Some(1.0)),
+            "aspect-video" => Decl::Aspect(Some(16.0 / 9.0)),
             "whitespace-nowrap" => Decl::NoWrap(true),
             "whitespace-normal" => Decl::NoWrap(false),
             "font-normal" => Decl::Weight(t.weight_regular),
@@ -1439,6 +1445,9 @@ mod tests {
         assert_eq!(fit("object-cover"), ObjectFit::Cover);
         assert_eq!(fit("object-contain"), ObjectFit::Contain);
         assert_eq!(fit("object-cover object-fill"), ObjectFit::Fill);
+        let aspect = |classes| parse(classes).resolve(State::default()).aspect_ratio;
+        assert_eq!(aspect("aspect-video"), Some(16.0 / 9.0));
+        assert_eq!(aspect("aspect-square aspect-auto"), None);
     }
 
     #[test]

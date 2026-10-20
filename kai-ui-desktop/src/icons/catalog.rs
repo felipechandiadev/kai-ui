@@ -39,6 +39,8 @@ pub enum Icon {
     Settings,
     Pencil,
     Layers,
+    Camera,
+    ImagePlus,
 }
 
 impl Icon {
@@ -78,6 +80,8 @@ impl Icon {
         Icon::Settings,
         Icon::Pencil,
         Icon::Layers,
+        Icon::Camera,
+        Icon::ImagePlus,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -118,6 +122,8 @@ impl Icon {
             Icon::Settings => "settings",
             Icon::Pencil => "pencil",
             Icon::Layers => "layers",
+            Icon::Camera => "camera",
+            Icon::ImagePlus => "image-plus",
         }
     }
 
@@ -163,6 +169,8 @@ impl Icon {
             Icon::Settings => include_str!("../../assets/icons/settings.svg"),
             Icon::Pencil => include_str!("../../assets/icons/pencil.svg"),
             Icon::Layers => include_str!("../../assets/icons/layers.svg"),
+            Icon::Camera => include_str!("../../assets/icons/camera.svg"),
+            Icon::ImagePlus => include_str!("../../assets/icons/image-plus.svg"),
         }
     }
 }

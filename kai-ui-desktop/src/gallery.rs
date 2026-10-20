@@ -4,15 +4,16 @@
 //! golden captures (Paso 18). `cargo run --example gallery`.
 
 use crate::components::{
-    BezelStyle, Button, SidebarGroup, SidebarItem, SwitchDensity, TextField, card, card_actions,
-    card_content, card_header, checkbox_with_options, group_box, paragraph, search_field,
-    segmented, segmented_with_options, select, select_with_options, sidebar, switch_with_options,
-    text_area, toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer,
-    toolbar_title,
+    ActionPlacement, Avatar, AvatarSize, BezelStyle, Button, MediaSlot, MediaVariant, SidebarGroup,
+    SidebarItem, SwitchDensity, TextField, card, card_actions, card_content, card_header,
+    checkbox_with_options, group_box, paragraph, search_field, segmented, segmented_with_options,
+    select, select_with_options, sidebar, switch_with_options, text_area, toolbar, toolbar_item,
+    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::icons::Icon;
 use crate::layout::WindowActivity;
+use crate::media::{sample_landscape, sample_portrait};
 use crate::runtime::SimpleApp;
 use crate::theme::{Appearance, Density, Theme};
 
@@ -31,19 +32,21 @@ pub enum Section {
     Selection,
     Navigation,
     Boxes,
+    Media,
     Text,
     Colors,
 }
 
 impl Section {
     /// Sections with content, in display order (without `All`).
-    pub const CONTENT: [Section; 8] = [
+    pub const CONTENT: [Section; 9] = [
         Self::Buttons,
         Self::Fields,
         Self::Toggles,
         Self::Selection,
         Self::Navigation,
         Self::Boxes,
+        Self::Media,
         Self::Text,
         Self::Colors,
     ];
@@ -57,6 +60,7 @@ impl Section {
             Self::Selection => "Selection",
             Self::Navigation => "Navigation",
             Self::Boxes => "Boxes",
+            Self::Media => "Media",
             Self::Text => "Text",
             Self::Colors => "Colors",
         }
@@ -279,7 +283,7 @@ impl Gallery {
                     Some(section) => gallery.section = section,
                     None => eprintln!(
                         "--section desconocida (todo, buttons, fields, toggles, selection, \
-                         navigation, boxes, text, colors)"
+                         navigation, boxes, media, text, colors)"
                     ),
                 },
                 other => eprintln!("argumento desconocido: {other}"),
@@ -314,6 +318,7 @@ impl Gallery {
             }),
             Section::Navigation => self.navigation(),
             Section::Boxes => boxes(),
+            Section::Media => media(),
             Section::Text => text_styles(),
             Section::Colors => self.colors(),
         }
@@ -603,6 +608,65 @@ fn boxes() -> Element<Msg> {
             ),
         ]),
         group_box(Some("Título"), [paragraph("Contenido del group box.")]).class("w-80"),
+    ])
+}
+
+/// Avatars in every size, and image slots empty, filled, disabled and
+/// with an error (procedural images, no files).
+fn media() -> Element<Msg> {
+    let sizes = [
+        AvatarSize::Xs,
+        AvatarSize::Sm,
+        AvatarSize::Md,
+        AvatarSize::Lg,
+    ];
+    let slot = |variant, current: bool, name: &'static str| {
+        MediaSlot::new(variant)
+            .current(current.then(|| match variant {
+                MediaVariant::Banner => sample_landscape(),
+                _ => sample_portrait(),
+            }))
+            .on_pick(Msg::Clicked(name))
+    };
+    div().class("flex flex-col gap-6").children([
+        div()
+            .class("flex items-center gap-4")
+            .children(sizes.map(|size| Avatar::new("Ana López").size(size).build()))
+            .children(sizes.map(|size| {
+                Avatar::new("Bruno Díaz")
+                    .image(sample_portrait())
+                    .size(size)
+                    .build()
+            }))
+            .child(Avatar::new("").size(AvatarSize::Sm).build()),
+        div().class("flex items-start gap-6").children([
+            div()
+                .class("w-40")
+                .child(slot(MediaVariant::Avatar(AvatarSize::Md), false, "avatar").build()),
+            div().class("w-40").child(
+                slot(MediaVariant::Avatar(AvatarSize::Md), true, "avatar-borde")
+                    .action_placement(ActionPlacement::Edge)
+                    .build(),
+            ),
+            div()
+                .class("w-40")
+                .child(slot(MediaVariant::Logo, true, "logo").build()),
+            div().class("w-40").child(
+                slot(MediaVariant::Logo, false, "logo-disabled")
+                    .disabled(true)
+                    .build(),
+            ),
+        ]),
+        div().class("flex items-start gap-6").children([
+            div()
+                .class("w-80")
+                .child(slot(MediaVariant::Banner, true, "banner").build()),
+            div().class("w-80").child(
+                slot(MediaVariant::Banner, false, "banner-error")
+                    .error(Some("Máximo 9MB".to_owned()))
+                    .build(),
+            ),
+        ]),
     ])
 }
 

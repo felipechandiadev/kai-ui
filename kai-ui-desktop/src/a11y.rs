@@ -198,6 +198,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::SearchInput
             | Role::MultilineTextInput
             | Role::PasswordInput
+            | Role::Image
     );
     if !matches!(source.content, Content::Text(_))
         && let Some(name) = accessible_name(layout, index)
