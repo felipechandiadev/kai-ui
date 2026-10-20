@@ -15,21 +15,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::mvt::{Bucket, TileMeshes, tessellate};
 use super::pmtiles::PmTiles;
+use super::style::MapStyle;
 use crate::geo::{Camera, TileId};
 
 /// Where a map's tiles come from: a PMTiles archive of vector tiles, and
-/// the buckets its style draws.
+/// the style that draws them.
 #[derive(Clone)]
 pub struct TileSource {
     path: Arc<Path>,
-    buckets: Arc<[Bucket]>,
+    style: &'static MapStyle,
 }
 
 impl TileSource {
-    pub fn pmtiles(path: impl Into<PathBuf>, buckets: Arc<[Bucket]>) -> Self {
+    pub fn pmtiles(path: impl Into<PathBuf>, style: &'static MapStyle) -> Self {
         Self {
             path: Arc::from(path.into()),
-            buckets,
+            style,
         }
     }
 
@@ -37,14 +38,14 @@ impl TileSource {
         &self.path
     }
 
-    pub fn buckets(&self) -> &[Bucket] {
-        &self.buckets
+    pub fn style(&self) -> &'static MapStyle {
+        self.style
     }
 
     fn key(&self) -> SourceKey {
         SourceKey(
             Arc::clone(&self.path),
-            Arc::as_ptr(&self.buckets).cast::<Bucket>() as usize,
+            std::ptr::from_ref(self.style) as usize,
         )
     }
 }
@@ -67,11 +68,12 @@ impl fmt::Debug for TileSource {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SourceKey(Arc<Path>, usize);
 
-/// The data zoom that serves view zoom `zoom`: tiles show about 512
-/// points wide (as MapLibre does with these tiles), and past the
-/// archive's `max_zoom` the deepest tiles are scaled up.
+/// The data zoom that serves view zoom `zoom`: tiles show 256 to 512
+/// points wide (so a town shows its streets from zoom 14, as on
+/// OpenStreetMap), and past the archive's `max_zoom` the deepest tiles are
+/// scaled up.
 pub fn data_zoom(zoom: f64, max_zoom: u8) -> u8 {
-    (zoom.round() - 1.0).clamp(0.0, f64::from(max_zoom)) as u8
+    (zoom + 1e-9).floor().clamp(0.0, f64::from(max_zoom)) as u8
 }
 
 /// A tile to draw: the data of `tile`, only inside `clip` when it stands
@@ -127,7 +129,7 @@ enum Slot {
 
 struct Archive {
     reader: Result<Arc<PmTiles>, String>,
-    buckets: Arc<[Bucket]>,
+    buckets: &'static [Bucket],
     tiles: HashMap<TileId, Slot>,
     /// Loaded, not yet shown, oldest first.
     fresh: VecDeque<TileId>,
@@ -140,7 +142,7 @@ impl Archive {
             reader: PmTiles::open(&source.path)
                 .map(Arc::new)
                 .map_err(|error| format!("{}: {error}", source.path.display())),
-            buckets: Arc::clone(&source.buckets),
+            buckets: source.style.buckets,
             tiles: HashMap::new(),
             fresh: VecDeque::new(),
             bytes: 0,
@@ -291,7 +293,7 @@ impl TileStore {
                         None => {
                             let cancel = Arc::new(AtomicBool::new(false));
                             archive.tiles.insert(at, Slot::Loading(Arc::clone(&cancel)));
-                            loads.push(load(&key, at, &reader, &archive.buckets, cancel));
+                            loads.push(load(&key, at, &reader, archive.buckets, cancel));
                             asked.insert(at);
                             waiting = true;
                         }
@@ -356,6 +358,24 @@ impl TileStore {
         };
         archive.tiles.insert(tile, slot);
     }
+
+    /// Every tile `camera` sees, loaded on this thread: for captures, which
+    /// have no task pool and draw one frame.
+    pub fn load_now(&mut self, source: &TileSource, camera: Camera) -> TileFrame {
+        // Each round loads a level up or reveals `PER_FRAME` tiles.
+        for _ in 0..256 {
+            let (frame, loads) = self.frame(source, camera);
+            if !frame.pending {
+                return frame;
+            }
+            for load in loads {
+                if let Ok(result) = (load.run)().downcast::<TileResult>() {
+                    self.finish(&load.source, load.tile, *result);
+                }
+            }
+        }
+        self.frame(source, camera).0
+    }
 }
 
 /// Drop the least recently used tiles until `archive` fits `budget`;
@@ -389,11 +409,10 @@ fn load(
     source: &SourceKey,
     tile: TileId,
     reader: &Arc<PmTiles>,
-    buckets: &Arc<[Bucket]>,
+    buckets: &'static [Bucket],
     cancel: Arc<AtomicBool>,
 ) -> TileLoad {
     let reader = Arc::clone(reader);
-    let buckets = Arc::clone(buckets);
     TileLoad {
         source: source.clone(),
         tile,
@@ -406,7 +425,7 @@ fn load(
                     .map_err(|error| error.to_string())
                     .and_then(|bytes| {
                         bytes
-                            .map(|bytes| tessellate(bytes, tile.z, &buckets))
+                            .map(|bytes| tessellate(bytes, tile.z, buckets))
                             .transpose()
                     })
             };
@@ -428,7 +447,10 @@ mod tests {
         width: 600.0,
         height: 400.0,
     };
-    const BUCKETS: [Bucket; 1] = [Bucket::fill("earth", &[])];
+    static STYLE: MapStyle = MapStyle {
+        buckets: &[Bucket::fill("earth", &[])],
+        layers: &[],
+    };
 
     fn land() -> Vec<u8> {
         tile(&[(
@@ -446,7 +468,7 @@ mod tests {
     fn source(name: &str) -> TileSource {
         let mut tiles = vec![(TileId::new(0, 0, 0), land())];
         for z in 10..=13 {
-            let camera = Camera::new(MapView::new(PLAZA, f64::from(z) + 1.0), SIZE);
+            let camera = Camera::new(MapView::new(PLAZA, f64::from(z)), SIZE);
             for tile in camera.visible_tiles(z) {
                 for dx in 0..3 {
                     tiles.push((TileId::new(z, tile.x + dx, tile.y), land()));
@@ -458,7 +480,7 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("kai-tiles-{name}-{}.pmtiles", std::process::id()));
         std::fs::write(&path, write_archive(&tiles, 13)).unwrap();
-        TileSource::pmtiles(path, Arc::from(BUCKETS.as_slice()))
+        TileSource::pmtiles(path, &STYLE)
     }
 
     fn camera(zoom: f64) -> Camera {
@@ -485,9 +507,10 @@ mod tests {
     }
 
     #[test]
-    fn data_zoom_shows_tiles_about_512_points_wide_and_overzooms() {
-        assert_eq!(data_zoom(14.0, 15), 13);
-        assert_eq!(data_zoom(14.6, 15), 14);
+    fn data_zoom_shows_tiles_256_to_512_points_wide_and_overzooms() {
+        assert_eq!(data_zoom(14.0, 15), 14);
+        assert_eq!(data_zoom(14.9, 15), 14);
+        assert_eq!(data_zoom(13.999_999_999_9, 15), 14, "rounding noise");
         assert_eq!(data_zoom(0.2, 15), 0);
         assert_eq!(data_zoom(19.0, 15), 15);
     }
@@ -496,7 +519,7 @@ mod tests {
     fn visible_tiles_load_center_first_and_then_draw() {
         let source = source("centro");
         let mut store = TileStore::default();
-        let view = camera(14.0);
+        let view = camera(13.0);
         let (frame, loads) = store.frame(&source, view);
         assert!(frame.tiles.is_empty() && frame.pending);
         let wanted = view.visible_tiles(13);
@@ -518,7 +541,7 @@ mod tests {
         let source = source("revelar");
         let mut store = TileStore::default();
         let view = Camera::new(
-            MapView::new(PLAZA, 14.0),
+            MapView::new(PLAZA, 13.0),
             Size {
                 width: 1600.0,
                 height: 1200.0,
@@ -537,8 +560,8 @@ mod tests {
     fn an_ancestor_stands_in_while_a_tile_loads() {
         let source = source("ancestro");
         let mut store = TileStore::default();
-        settle(&mut store, &source, camera(12.0));
-        let (frame, loads) = store.frame(&source, camera(14.0));
+        settle(&mut store, &source, camera(11.0));
+        let (frame, loads) = store.frame(&source, camera(13.0));
         assert!(!loads.is_empty());
         assert!(frame.pending);
         assert!(!frame.tiles.is_empty());
@@ -558,7 +581,7 @@ mod tests {
         assert!(frame.tiles.iter().all(|placed| placed.tile.z == 13));
         assert!(!frame.tiles.is_empty());
 
-        let far = Camera::new(MapView::new(LatLon::new(40.0, 10.0), 14.0), SIZE);
+        let far = Camera::new(MapView::new(LatLon::new(40.0, 10.0), 13.0), SIZE);
         let frame = settle(&mut store, &source, far);
         assert!(!frame.tiles.is_empty());
         assert!(
@@ -573,9 +596,9 @@ mod tests {
     fn tiles_that_leave_the_view_stop_loading() {
         let source = source("cancelar");
         let mut store = TileStore::default();
-        let (_, loads) = store.frame(&source, camera(14.0));
+        let (_, loads) = store.frame(&source, camera(13.0));
         assert!(!store.loading(&source).is_empty());
-        let (_, far_loads) = store.frame(&source, camera(11.0));
+        let (_, far_loads) = store.frame(&source, camera(10.0));
         let far: Vec<TileId> = far_loads.iter().map(|load| load.tile).collect();
         assert_eq!(store.loading(&source), {
             let mut far = far.clone();
@@ -595,24 +618,24 @@ mod tests {
     fn the_least_recently_used_tiles_leave_over_budget() {
         let source = source("lru");
         let mut store = TileStore::new(usize::MAX);
-        settle(&mut store, &source, camera(12.0));
+        settle(&mut store, &source, camera(11.0));
         let one_zoom = store.bytes(&source);
         store.budget = one_zoom;
-        settle(&mut store, &source, camera(14.0));
+        settle(&mut store, &source, camera(13.0));
         assert!(store.bytes(&source) <= one_zoom.max(1) * 2);
         // The zoom 11 tiles went; those of zoom 13 stayed.
-        let (frame, loads) = store.frame(&source, camera(14.0));
+        let (frame, loads) = store.frame(&source, camera(13.0));
         assert!(loads.is_empty());
         assert!(frame.tiles.iter().all(|placed| placed.tile.z == 13));
-        let (_, reloads) = store.frame(&source, camera(12.0));
+        let (_, reloads) = store.frame(&source, camera(11.0));
         assert!(!reloads.is_empty(), "evicted tiles load again");
     }
 
     #[test]
     fn a_missing_archive_draws_nothing_and_says_why() {
-        let source = TileSource::pmtiles("/no/existe.pmtiles", Arc::from(BUCKETS.as_slice()));
+        let source = TileSource::pmtiles("/no/existe.pmtiles", &STYLE);
         let mut store = TileStore::default();
-        let (frame, loads) = store.frame(&source, camera(14.0));
+        let (frame, loads) = store.frame(&source, camera(13.0));
         assert_eq!(frame, TileFrame::default());
         assert!(loads.is_empty());
         assert!(

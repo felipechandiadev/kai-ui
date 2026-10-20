@@ -700,6 +700,17 @@ impl Layout {
         &self.nodes[index]
     }
 
+    /// Every visible map, with its padding box (the area it draws in).
+    pub(crate) fn maps_mut(&mut self) -> impl Iterator<Item = (Rect, &mut MapSpec)> {
+        self.nodes
+            .iter_mut()
+            .filter(|node| !node.hidden)
+            .filter_map(|node| match &mut node.content {
+                Content::Map(spec) => Some((node.padding_box, &mut **spec)),
+                _ => None,
+            })
+    }
+
     pub fn bounds(&self, id: WidgetId) -> Option<Rect> {
         self.node(id).map(|node| node.bounds)
     }

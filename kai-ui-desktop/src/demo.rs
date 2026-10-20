@@ -28,6 +28,8 @@ use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image,
 use crate::geo::{LatLon, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
+use crate::maps::style::MapStyle;
+use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
 use crate::runtime::{self, App, Effects, PickFile};
@@ -154,6 +156,8 @@ impl Default for Demo {
 /// Plaza de Armas de Parral, where the map starts.
 const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
 const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 14.0);
+/// Protomaps extract of Parral (`scripts/extract-region.sh`).
+const PARRAL_PMTILES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/parral.pmtiles");
 
 /// Largest file the image fields take, in megabytes.
 const MAX_IMAGEN_MB: u64 = 5;
@@ -1830,6 +1834,7 @@ impl Demo {
             ),
             card_content().class("gap-3").children([
                 map(&vista)
+                    .basemap(TileSource::pmtiles(PARRAL_PMTILES, MapStyle::protomaps()))
                     .animate_view(self.animar_vista)
                     .on_view_change(Msg::MapaMovido)
                     .label("Mapa de Parral")
@@ -5570,6 +5575,7 @@ mod tests {
             ("demo-seleccion", Seccion::Seleccion),
             ("demo-contenedores", Seccion::Contenedores),
             ("demo-tabla", Seccion::Tabla),
+            ("demo-mapa", Seccion::Mapa),
         ] {
             let mut demo = Demo::at(seccion);
             if seccion == Seccion::Tabla {

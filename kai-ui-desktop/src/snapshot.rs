@@ -1,7 +1,8 @@
 //! Offscreen captures for visual review and regression tests.
 //!
 //! [`render`] reproduces what `runtime::WindowState::render` draws (layout
-//! with real text, input contents, paint and wgpu) into an RGBA image.
+//! with real text, input contents, map tiles, paint and wgpu) into an RGBA
+//! image; map tiles load on the spot instead of on the task pool.
 //! [`diff`] and [`diff_image`] compare captures with a per-channel
 //! tolerance. PNG support (`write_png`, `read_png`) needs the
 //! `snapshots` feature outside this crate's own tests; BMP needs nothing.
@@ -12,8 +13,10 @@ use cosmic_text::{FontSystem, Metrics};
 
 use crate::background::BackgroundEffect;
 use crate::element::{Element, Kind, WidgetId};
+use crate::geo::Camera;
 use crate::geometry::Size;
 use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, text_style};
+use crate::maps::tiles::TileStore;
 use crate::render::TextId;
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
@@ -101,7 +104,7 @@ fn render_with_layout<Msg>(
     let tree = shot.tree;
     let mut text = TextStore::new(FontSystem::new());
     let mut styles = StyleCache::default();
-    let layout = Layout::compute(
+    let mut layout = Layout::compute(
         tree,
         &LayoutInput {
             viewport: shot.logical,
@@ -112,6 +115,19 @@ fn render_with_layout<Msg>(
         &mut styles,
         &mut text,
     );
+    let mut tiles = TileStore::default();
+    for (area, spec) in layout.maps_mut() {
+        if let Some(source) = &spec.source {
+            let camera = Camera::new(
+                spec.view,
+                Size {
+                    width: area.width,
+                    height: area.height,
+                },
+            );
+            spec.tiles = tiles.load_now(source, camera);
+        }
+    }
     let mut decorations = Vec::new();
     tree.walk(&mut |element| {
         if let Kind::Input {

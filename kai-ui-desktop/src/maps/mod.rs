@@ -18,6 +18,7 @@
 pub mod camera;
 pub mod mvt;
 pub mod pmtiles;
+pub mod style;
 pub mod tiles;
 
 use crate::element::{Element, Kind, Role, icon, text};

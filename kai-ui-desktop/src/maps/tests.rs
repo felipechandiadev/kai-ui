@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::camera::{FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
 use super::mvt::Bucket;
+use super::style::{Ink, MapStyle, StyleLayer};
 use super::tiles::TileSource;
 use super::{Anchor, map, marker};
 use crate::components::{ButtonVariant, button};
@@ -43,10 +43,15 @@ impl Atlas {
     }
 }
 
+static LAND: MapStyle = MapStyle {
+    buckets: &[Bucket::fill("earth", &[])],
+    layers: &[StyleLayer::fill("earth", 0, Ink::Earth)],
+};
+
 fn parral() -> TileSource {
     TileSource::pmtiles(
         concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/parral.pmtiles"),
-        Arc::from([Bucket::fill("earth", &[])].as_slice()),
+        &LAND,
     )
 }
 
@@ -307,7 +312,7 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
     app.run_until_idle();
     let exact = |view: MapView| -> Vec<(TileId, Option<TileId>)> {
         Camera::new(view, SIZE)
-            .visible_tiles(13)
+            .visible_tiles(14)
             .into_iter()
             .map(|tile| (tile, None))
             .collect()
@@ -330,14 +335,14 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
     assert!(
         zoomed
             .iter()
-            .all(|(tile, clip)| tile.z == 13 && clip.is_some_and(|clip| clip.z == 14)),
-        "zoom 13 stands in for zoom 14: {zoomed:?}"
+            .all(|(tile, clip)| tile.z == 14 && clip.is_some_and(|clip| clip.z == 15)),
+        "zoom 14 stands in for zoom 15: {zoomed:?}"
     );
     app.run_until_idle();
     assert!(
         drawn(&app)
             .iter()
-            .all(|(tile, clip)| tile.z == 14 && clip.is_none())
+            .all(|(tile, clip)| tile.z == 15 && clip.is_none())
     );
 }
 
