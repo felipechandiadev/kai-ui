@@ -11,6 +11,7 @@
 //! text-editing state survive rebuilds as long as the structure does. Use
 //! keys for lists whose items can move.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -172,6 +173,11 @@ pub enum Role {
     /// Checkbox (`NSButton` `.checkbox`): On, Off or Mixed, from the control
     /// state; named after its title.
     Checkbox,
+    /// One choice among several (`NSSegmentedControl` select-one); its
+    /// [`Role::Radio`] items carry the state.
+    RadioGroup,
+    /// Item of a [`Role::RadioGroup`]: On when selected.
+    Radio,
     TextInput,
     Image,
     /// Modal panel over the window; its name is its title.
@@ -255,7 +261,7 @@ pub struct Element<Msg> {
     /// Name of this element inside its component (`"input"`, `"header"`…).
     /// Without its own `test_id`, it gets `<owner>.<part>` (see
     /// [`Element::assign_ids`]).
-    pub part: Option<&'static str>,
+    pub part: Option<Cow<'static, str>>,
     /// Component root: parts below it derive from its `test_id`, or get
     /// none when it has no id.
     pub parts_root: bool,
@@ -275,6 +281,8 @@ pub struct Element<Msg> {
     /// `preventDefault` on `mousedown`: it activates but keeps the focus
     /// where it was).
     pub focus_on_press: bool,
+    /// Its controls are one Tab stop; see [`Element::focus_group`].
+    pub focus_group: bool,
     pub handlers: Handlers<Msg>,
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
@@ -325,6 +333,7 @@ impl<Msg> Element<Msg> {
             description: None,
             delegates_focus: false,
             focus_on_press: true,
+            focus_group: false,
             handlers: Handlers::default(),
             command: None,
         }
@@ -374,8 +383,8 @@ impl<Msg> Element<Msg> {
     }
 
     /// Name this element inside its component; see [`Element::part`].
-    pub fn part(mut self, part: &'static str) -> Self {
-        self.part = Some(part);
+    pub fn part(mut self, part: impl Into<Cow<'static, str>>) -> Self {
+        self.part = Some(part.into());
         self
     }
 
@@ -467,6 +476,15 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Make the controls inside one Tab stop, as `NSSegmentedControl`: Tab
+    /// enters at the selected one (`On`, else the first) and leaves the
+    /// group; the arrow keys move the focus between them, and Space or
+    /// Return activates the focused one.
+    pub fn focus_group(mut self) -> Self {
+        self.focus_group = true;
+        self
+    }
+
     /// Inputs only: show bullets instead of the value.
     pub fn masked(mut self, on: bool) -> Self {
         if let Kind::Input { masked, .. } = &mut self.kind {
@@ -550,7 +568,7 @@ impl<Msg> Element<Msg> {
         }
         let own = self.test_id.clone();
         if own.is_none()
-            && let (Some(part), Some(owner)) = (self.part, owner)
+            && let (Some(part), Some(owner)) = (&self.part, owner)
         {
             self.test_id = Some(format!("{owner}.{part}"));
             self.derived_test_id = true;
@@ -742,6 +760,10 @@ struct FocusEntry {
     focus_on_press: bool,
     /// Text field with `on_submit`: it keeps Return for itself.
     submits: bool,
+    /// Nearest [`Element::focus_group`] ancestor.
+    group: Option<WidgetId>,
+    /// In the `On` state: Tab enters its group here.
+    selected: bool,
 }
 
 /// Focusable elements in document order (disabled controls are skipped),
@@ -757,25 +779,75 @@ pub struct FocusOrder {
 impl FocusOrder {
     pub fn from_tree<Msg>(root: &Element<Msg>) -> Self {
         let mut order = Self::default();
-        root.walk(&mut |element| {
-            if let Some(kind) = element.focus_kind() {
-                order.entries.push(FocusEntry {
-                    id: element.id,
-                    kind,
-                    focus_on_press: element.focus_on_press,
-                    submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
-                });
-            }
-            // A button that does not take focus on press can still have an
-            // equivalent.
-            if let Some(equivalent) = element.control.key_equivalent
-                && !element.disabled
-                && element.handlers.on_click.is_some()
-            {
-                order.equivalents.push((element.id, equivalent));
-            }
-        });
+        order.collect(root, None);
         order
+    }
+
+    fn collect<Msg>(&mut self, element: &Element<Msg>, group: Option<WidgetId>) {
+        if let Some(kind) = element.focus_kind() {
+            self.entries.push(FocusEntry {
+                id: element.id,
+                kind,
+                focus_on_press: element.focus_on_press,
+                submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
+                group,
+                selected: element.is_pressed(),
+            });
+        }
+        // A button that does not take focus on press can still have an
+        // equivalent.
+        if let Some(equivalent) = element.control.key_equivalent
+            && !element.disabled
+            && element.handlers.on_click.is_some()
+        {
+            self.equivalents.push((element.id, equivalent));
+        }
+        let group = if element.focus_group {
+            Some(element.id)
+        } else {
+            group
+        };
+        for child in &element.children {
+            self.collect(child, group);
+        }
+    }
+
+    fn members(&self, group: WidgetId) -> impl Iterator<Item = &FocusEntry> + Clone {
+        self.entries
+            .iter()
+            .filter(move |entry| entry.group == Some(group))
+    }
+
+    /// The member Tab stops at in `group`: the selected one, else the first.
+    fn group_stop(&self, group: WidgetId) -> Option<WidgetId> {
+        let mut members = self.members(group);
+        members
+            .clone()
+            .find(|entry| entry.selected)
+            .or_else(|| members.next())
+            .map(|entry| entry.id)
+    }
+
+    /// Where Tab counts `id` from: itself, or its group's stop.
+    fn stop_of(&self, id: WidgetId) -> Option<WidgetId> {
+        match self.entry(id)?.group {
+            Some(group) => self.group_stop(group),
+            None => Some(id),
+        }
+    }
+
+    /// The neighbor of `id` inside its focus group (arrow keys), staying
+    /// at the ends; `None` when `id` is in no group.
+    pub fn group_step(&self, id: WidgetId, backwards: bool) -> Option<WidgetId> {
+        let group = self.entry(id)?.group?;
+        let members: Vec<WidgetId> = self.members(group).map(|entry| entry.id).collect();
+        let index = members.iter().position(|member| *member == id)?;
+        let next = if backwards {
+            index.saturating_sub(1)
+        } else {
+            (index + 1).min(members.len() - 1)
+        };
+        Some(members[next])
     }
 
     fn entry(&self, id: WidgetId) -> Option<&FocusEntry> {
@@ -822,20 +894,33 @@ impl FocusOrder {
     }
 
     /// Tab / Shift+Tab successor, wrapping around. Without a current focus,
-    /// Tab starts at the first element and Shift+Tab at the last one.
+    /// Tab starts at the first element and Shift+Tab at the last one. A
+    /// focus group is a single stop (see [`Element::focus_group`]).
     pub fn next(&self, current: Option<WidgetId>, backwards: bool) -> Option<WidgetId> {
-        let len = self.entries.len();
+        let stops: Vec<WidgetId> = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .group
+                    .is_none_or(|group| self.group_stop(group) == Some(entry.id))
+            })
+            .map(|entry| entry.id)
+            .collect();
+        let len = stops.len();
         if len == 0 {
             return None;
         }
-        let position = current.and_then(|id| self.entries.iter().position(|entry| entry.id == id));
+        let position = current
+            .and_then(|id| self.stop_of(id))
+            .and_then(|id| stops.iter().position(|stop| *stop == id));
         let index = match (position, backwards) {
             (None, false) => 0,
             (None, true) => len - 1,
             (Some(index), false) => (index + 1) % len,
             (Some(index), true) => (index + len - 1) % len,
         };
-        Some(self.entries[index].id)
+        Some(stops[index])
     }
 }
 
@@ -1069,6 +1154,40 @@ mod tests {
         );
         let empty: Element<Msg> = div();
         assert_eq!(FocusOrder::from_tree(&empty).next(None, false), None);
+    }
+
+    #[test]
+    fn a_focus_group_is_one_tab_stop_walked_by_arrows() {
+        let segment = |on: bool| div().on_click(Msg::Clicked).pressed(on);
+        let mut tree: Element<Msg> = div().children([
+            div().on_click(Msg::Clicked),
+            div()
+                .focus_group()
+                .children([segment(false), segment(true), segment(false)]),
+            div().on_click(Msg::Clicked),
+        ]);
+        tree.assign_ids();
+        let before = tree.children[0].id;
+        let after = tree.children[2].id;
+        let members: Vec<WidgetId> = tree.children[1].children.iter().map(|s| s.id).collect();
+        let order = FocusOrder::from_tree(&tree);
+        assert_eq!(order.ids().count(), 5, "every member can take focus");
+        assert_eq!(order.next(Some(before), false), Some(members[1]));
+        assert_eq!(order.next(Some(members[2]), false), Some(after));
+        assert_eq!(order.next(Some(after), true), Some(members[1]));
+        assert_eq!(order.next(Some(members[0]), true), Some(before));
+        assert_eq!(order.group_step(members[1], true), Some(members[0]));
+        assert_eq!(order.group_step(members[0], true), Some(members[0]));
+        assert_eq!(order.group_step(members[2], false), Some(members[2]));
+        assert_eq!(order.group_step(before, false), None);
+
+        // Without a selected member Tab enters at the first one.
+        let mut plain: Element<Msg> = div().children([div()
+            .focus_group()
+            .children([segment(false), segment(false)])]);
+        plain.assign_ids();
+        let first = plain.children[0].children[0].id;
+        assert_eq!(FocusOrder::from_tree(&plain).next(None, false), Some(first));
     }
 
     #[test]

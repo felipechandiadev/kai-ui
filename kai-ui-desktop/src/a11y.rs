@@ -90,7 +90,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
         Content::Box => node.label.clone().or_else(|| {
             matches!(
                 effective_role(node),
-                KaiRole::Button | KaiRole::Switch | KaiRole::Checkbox
+                KaiRole::Button | KaiRole::Switch | KaiRole::Checkbox | KaiRole::Radio
             )
             .then(|| {
                 let mut parts = Vec::new();
@@ -118,6 +118,8 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Button => Role::Button,
         KaiRole::Switch => Role::Switch,
         KaiRole::Checkbox => Role::CheckBox,
+        KaiRole::RadioGroup => Role::RadioGroup,
+        KaiRole::Radio => Role::RadioButton,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
@@ -154,6 +156,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::DefaultButton
             | Role::Switch
             | Role::CheckBox
+            | Role::RadioButton
             | Role::TextInput
             | Role::PasswordInput
     );
@@ -208,7 +211,11 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             if let Some(state) = source.control_state
                 && matches!(
                     role,
-                    Role::Button | Role::DefaultButton | Role::Switch | Role::CheckBox
+                    Role::Button
+                        | Role::DefaultButton
+                        | Role::Switch
+                        | Role::CheckBox
+                        | Role::RadioButton
                 )
             {
                 node.set_toggled(match state {
@@ -399,6 +406,30 @@ mod tests {
             assert_eq!(check.toggled(), Some(toggled));
             assert!(check.children().is_empty());
         }
+    }
+
+    #[test]
+    fn segmented_is_a_radio_group_of_toggled_radio_buttons() {
+        let mut tree: Element<Msg> = div().child(
+            crate::components::segmented(&["Día", "Mes"], 1, |_| Msg::Clicked)
+                .label("Periodo")
+                .test_id("p"),
+        );
+        tree.assign_ids();
+        let group = tree.children[0].id;
+        let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
+        let update = a11y_tree(&snapshot(&layout, None));
+        let radio_group = node(&update, node_id(group));
+        assert_eq!(radio_group.role(), Role::RadioGroup);
+        assert_eq!(radio_group.label(), Some("Periodo"));
+        assert_eq!(radio_group.children().len(), 2);
+        let month = node(&update, radio_group.children()[1]);
+        assert_eq!(month.role(), Role::RadioButton);
+        assert_eq!(month.label(), Some("Mes"));
+        assert_eq!(month.author_id(), Some("p.1"));
+        assert_eq!(month.toggled(), Some(accesskit::Toggled::True));
+        let day = node(&update, radio_group.children()[0]);
+        assert_eq!(day.toggled(), Some(accesskit::Toggled::False));
     }
 
     #[test]

@@ -28,6 +28,11 @@ pub enum Action {
     Redo,
     /// `delete:`.
     Delete,
+    /// Arrow keys outside text and outside a focus group (`moveLeft:`…).
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
     /// Command of the app's registry ([`crate::commands`]), by id.
     Command(&'static str),
 }

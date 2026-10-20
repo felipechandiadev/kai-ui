@@ -5,7 +5,8 @@
 
 use crate::components::{
     BezelStyle, Button, SwitchDensity, TextField, card, card_actions, card_content, card_header,
-    checkbox_with_options, group_box, paragraph, switch_with_options,
+    checkbox_with_options, group_box, paragraph, segmented, segmented_with_options,
+    switch_with_options,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::layout::WindowActivity;
@@ -74,6 +75,8 @@ pub struct Gallery {
     pub switches: [bool; 2],
     /// Checkboxes of the Selection section: off, on and mixed rows.
     pub checks: [ControlState; 3],
+    /// Selected segment of the Selection section.
+    pub segment: usize,
     pub last_action: Option<&'static str>,
 }
 
@@ -87,6 +90,7 @@ impl Default for Gallery {
             text: "Texto".to_owned(),
             switches: [false, true],
             checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
+            segment: 0,
             last_action: None,
         }
     }
@@ -101,6 +105,7 @@ pub enum Msg {
     Edit(String),
     Switch(usize),
     Check(usize),
+    Segment(usize),
     Clicked(&'static str),
 }
 
@@ -128,12 +133,16 @@ const FIELD_ROWS: [&str; 5] = [
 const TOGGLE_ROWS: [&str; 3] = ["Apagado", "Encendido", "Disabled"];
 
 /// Rows of the Selection section.
-const SELECTION_ROWS: [&str; 4] = [
+const SELECTION_ROWS: [&str; 6] = [
     "Checkbox off",
     "Checkbox on",
     "Checkbox mixto",
     "Checkbox disabled",
+    "Segmented",
+    "Segmented disabled",
 ];
+
+const SEGMENTS: [&str; 3] = ["Día", "Semana", "Mes"];
 
 /// Text styles of the Text section (`docs/dev/11-tema-appkit.md`).
 const TEXT_STYLES: [&str; 11] = [
@@ -297,6 +306,11 @@ impl Gallery {
             "Checkbox on" => checkbox_with_options("Opción", self.checks[1], Msg::Check(1), false),
             "Checkbox mixto" => {
                 checkbox_with_options("Opción", self.checks[2], Msg::Check(2), false)
+            }
+            "Segmented" => segmented(&SEGMENTS, self.segment, Msg::Segment).label("Periodo"),
+            "Segmented disabled" => {
+                segmented_with_options(&SEGMENTS, 1, |_| Msg::Clicked("segmented"), true)
+                    .label("Periodo")
             }
             _ => checkbox_with_options("Opción", ControlState::On, Msg::Clicked("checkbox"), true),
         };
@@ -507,6 +521,7 @@ impl SimpleApp for Gallery {
                     ControlState::Off | ControlState::Mixed => ControlState::On,
                 }
             }
+            Msg::Segment(index) => self.segment = index,
             Msg::Clicked(name) => self.last_action = Some(name),
         }
     }
@@ -652,7 +667,8 @@ mod tests {
         // password toggle.
         let field_controls = 5;
         let enabled_switches = 2;
-        let enabled_selection = 3;
+        // Three checkboxes and the three segments of one control.
+        let enabled_selection = 3 + SEGMENTS.len();
         for (section, expected) in [
             (
                 Section::Buttons,
@@ -782,6 +798,56 @@ mod tests {
         assert_eq!(app.app().checks[2], ControlState::On, "mixed turns on");
         app.click(regular("Checkbox disabled"));
         assert_eq!(app.app().last_action, None);
+    }
+
+    #[test]
+    fn segmented_is_one_tab_stop_whose_arrows_move_focus_and_space_selects() {
+        use crate::ui_engine::{Key, Modifiers};
+
+        let mut app = TestApp::new(Gallery {
+            section: Section::Selection,
+            segment: 1,
+            ..Gallery::default()
+        });
+        let id = |row, size| By::test_id(cell_test_id(Section::Selection, row, size));
+        let segment = |name: &str| By::role(Role::Radio).name(name);
+        // From the last enabled checkbox (Mixto, XL) Tab enters the Mini
+        // segmented control at its selected segment.
+        let nth =
+            |app: &TestApp<Gallery>, name: &str, n: usize| app.screen().all(segment(name))[n].id();
+        let focused_name = |app: &TestApp<Gallery>| {
+            let id = app.session().focused().unwrap();
+            app.screen().by_id(id).unwrap().name()
+        };
+        app.click(id("Checkbox mixto", ControlSize::ExtraLarge));
+        app.press(Key::Tab, Modifiers::NONE);
+        let mini_week = nth(&app, "Semana", 0);
+        assert_eq!(app.session().focused(), Some(mini_week));
+
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        assert_eq!(app.app().segment, 1, "arrows only move the focus");
+        assert_eq!(
+            focused_name(&app).as_deref(),
+            Some("Mes"),
+            "it stops at the end"
+        );
+        app.press(Key::Space, Modifiers::NONE);
+        assert_eq!(app.app().segment, 2);
+        app.press(Key::ArrowLeft, Modifiers::NONE);
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.app().segment, 1);
+
+        // Tab leaves the group: the next stop is the Small control's
+        // selected segment.
+        app.press(Key::Tab, Modifiers::NONE);
+        assert_eq!(app.session().focused(), Some(nth(&app, "Semana", 1)));
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Tab, shift);
+        assert_eq!(app.session().focused(), Some(mini_week));
     }
 
     #[test]

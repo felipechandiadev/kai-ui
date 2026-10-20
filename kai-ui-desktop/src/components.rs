@@ -1847,6 +1847,60 @@ pub fn checkbox_with_options<Msg>(
         ])
 }
 
+/// Segmented control; see [`segmented_with_options`].
+pub fn segmented<Msg>(
+    options: &[&str],
+    selected: usize,
+    on_select: impl Fn(usize) -> Msg,
+) -> Element<Msg> {
+    segmented_with_options(options, selected, on_select, false)
+}
+
+/// Segmented control (`NSSegmentedControl`, select one): one segment per
+/// option, `selected` in the On state; a click or Space on a segment sends
+/// `on_select(index)`. It is one Tab stop whose segments the arrow keys
+/// walk ([`Element::focus_group`]). Name the group with `.label(..)`.
+/// Parts: one per segment, by index (`<id>.0`, `<id>.1`…).
+pub fn segmented_with_options<Msg>(
+    options: &[&str],
+    selected: usize,
+    on_select: impl Fn(usize) -> Msg,
+    disabled: bool,
+) -> Element<Msg> {
+    let segment_class = themed(
+        "flex items-center justify-center px-3 rounded-[4px] text-sm leading-5 font-medium \
+         whitespace-nowrap text-muted-foreground cursor-pointer hover:text-foreground \
+         selected:bg-background selected:text-foreground selected:shadow-sm \
+         focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 \
+         disabled:cursor-not-allowed",
+        "flex items-center justify-center px-control rounded-[4px] text-control \
+         whitespace-nowrap text-control-text cursor-default hover:bg-fill-3 \
+         selected:bg-control selected:shadow-bezel dark:selected:bg-control-pressed \
+         keyboard-focus:ring-focus window-inactive:ring-0 \
+         disabled:text-disabled-control-text",
+    );
+    div()
+        .class(&themed(
+            "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-md bg-neutral border \
+             border-border",
+            "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-control bg-fill-2",
+        ))
+        .role(Role::RadioGroup)
+        .focus_group()
+        .parts_root()
+        .children(options.iter().enumerate().map(|(index, label)| {
+            div()
+                .class(&segment_class)
+                .role(Role::Radio)
+                .key(index.to_string())
+                .part(index.to_string())
+                .pressed(index == selected)
+                .disabled(disabled)
+                .on_click(on_select(index))
+                .child(text(*label))
+        }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1854,7 +1908,8 @@ mod tests {
         FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity,
         TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
         card_content, card_header, checkbox, checkbox_with_options, dialog, group_box,
-        icon_button_sized, stat, switch_labeled, switch_with_options,
+        icon_button_sized, segmented, segmented_with_options, stat, switch_labeled,
+        switch_with_options,
     };
     use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
@@ -2099,6 +2154,14 @@ mod tests {
                     disabled,
                 ));
             }
+        }
+        for disabled in [false, true] {
+            assert_tree_known(&segmented_with_options(
+                &["Día", "Mes"],
+                1,
+                |_| Msg::Toggle,
+                disabled,
+            ));
         }
 
         assert_tree_known(
@@ -2587,6 +2650,7 @@ mod tests {
         for state in [ControlState::Off, ControlState::On, ControlState::Mixed] {
             all.push(checkbox("Acepto", state, Msg::Toggle));
         }
+        all.push(segmented(&["Día", "Mes"], 0, |_| Msg::Toggle));
         all.push(card().children([card_header("T", Some("S")), card_content(), card_actions()]));
         all.push(group_box(Some("Opciones"), [text("x")]));
         all.push(stat("Clics", "3", Some("hoy")));
@@ -2700,7 +2764,7 @@ mod tests {
                     }
                     // Autocomplete shells have no outline.
                     let outlined = resolve(&element.class, State::default()).border_width.top > 0.0;
-                    if element.part == Some("shell") && outlined {
+                    if element.part.as_deref() == Some("shell") && outlined {
                         shells += 1;
                         let border = resolve(&element.class, hovered()).border_color;
                         assert_eq!(border, Some(theme.semantic.tertiary_label));

@@ -303,6 +303,16 @@ fn key_commands(
 
     match (focused, kind) {
         (Some(focused), Some(FocusKind::Button)) => {
+            if modifiers == Modifiers::NONE
+                && let Some(backwards) = match key {
+                    Key::ArrowLeft | Key::ArrowUp => Some(true),
+                    Key::ArrowRight | Key::ArrowDown => Some(false),
+                    _ => None,
+                }
+                && let Some(next) = order.group_step(focused, backwards)
+            {
+                return vec![UiCommand::SetFocus(Some(next), FocusOrigin::Keyboard)];
+            }
             if repeat {
                 return Vec::new();
             }
@@ -357,8 +367,15 @@ fn standard_action(key: Key, modifiers: Modifiers) -> Option<Action> {
             _ => None,
         };
     }
+    if modifiers != Modifiers::NONE {
+        return None;
+    }
     match key {
-        Key::Backspace | Key::Delete if modifiers == Modifiers::NONE => Some(Action::Delete),
+        Key::Backspace | Key::Delete => Some(Action::Delete),
+        Key::ArrowLeft => Some(Action::MoveLeft),
+        Key::ArrowRight => Some(Action::MoveRight),
+        Key::ArrowUp => Some(Action::MoveUp),
+        Key::ArrowDown => Some(Action::MoveDown),
         _ => None,
     }
 }
@@ -722,6 +739,9 @@ mod tests {
         dispatch(&mut model, &order, Intent::SetFocus(Some(sample::button())));
         let copy = dispatch(&mut model, &order, cmd(Key::C, false));
         assert_eq!(copy.action, Some(Action::Copy));
+        let down = dispatch(&mut model, &order, plain(Key::ArrowDown));
+        assert_eq!(down.action, Some(Action::MoveDown), "not in a focus group");
+        assert_eq!(*model.focused.get(), Some(sample::button()));
 
         dispatch(&mut model, &order, Intent::SetFocus(Some(sample::field())));
         let copy = dispatch(&mut model, &order, cmd(Key::C, false));
