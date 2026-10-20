@@ -95,6 +95,10 @@ pub(crate) enum Effect<Msg> {
 /// app's message.
 pub(crate) type FilePicked<Msg> = Box<dyn FnOnce(Option<PathBuf>) -> Msg>;
 
+/// What a held timer still waits once the pointer and the focus leave its
+/// element ([`Effects::keyed`]).
+pub const HELD_TIMER_RESUME: Duration = Duration::from_secs(2);
+
 /// Extensions of the images `kai::media` decodes.
 pub const IMAGE_FILE_TYPES: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
@@ -185,6 +189,11 @@ impl<Msg> Effects<Msg> {
 
     /// Give these timers and tasks `key`: a new one with the same key
     /// replaces the pending one, and [`Effects::cancel`] drops it.
+    ///
+    /// A timer whose key is the `test_id` of an element waits while the
+    /// pointer or the focus is inside that element, and runs no sooner
+    /// than [`HELD_TIMER_RESUME`] after they leave: a toast does not close
+    /// while someone reads it or reaches its buttons (WCAG 2.2.1).
     pub fn keyed(mut self, key: impl Into<String>) -> Self {
         let key = key.into();
         for effect in &mut self.0 {

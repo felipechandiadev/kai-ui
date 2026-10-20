@@ -35,6 +35,7 @@ runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 - `Effects::perform(tarea, a_msg)` corre una función bloqueante en un pool de 4 hilos (`effects.rs`); su resultado vuelve por el `EventLoopProxy` y entra a `update` como un `Msg`.
 - `Effects::after(duración, msg)` es un temporizador (los toasts lo usan para cerrarse).
 - `.keyed(key)` reemplaza la tarea o el temporizador pendiente con la misma key, y `Effects::cancel(key)` descarta su resultado.
+- **Temporizadores retenidos.** Si la key de un temporizador es el `test_id` de un elemento, el temporizador espera mientras el puntero (`hover_path`) o el foco estén dentro de ese elemento. Cuando los dos salen, todavía espera al menos `HELD_TIMER_RESUME` (2 s). Así un toast (`toast_key(id)` es también su test id) no se cierra mientras alguien lo lee o llega a sus botones (WCAG 2.2.1). `toast_timer(&toast, close)` no crea temporizador para un error: queda hasta que se cierra.
 - `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS y entrega la ruta o `None`. Hoy el panel es modal dentro del manejador de eventos, y la app aborta si se termina con él abierto (fallo conocido, ver el Paso 15 de 13).
 - `Effects::none()` y `Effects::batch(..)` combinan.
 

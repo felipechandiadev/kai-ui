@@ -813,7 +813,7 @@ Reglas de la pista C:
   - `Select`/pop-up (`components::select`), segmented control (`components::segmented`, sirve para Punto · Línea · Área), checkbox (`components::checkbox`, con estado mixto) y badge de estado (`badge`).
   - Sidebar de secciones (`components::Sidebar`): grupos titulados, iconos y badges, el foco hace scroll hasta la fila, y se pliega a un riel de iconos de 48 pt con tooltips (`collapsed`, `on_toggle`; comando `ui.alternar_sidebar` en la demo).
   - Toolbar dibujada por Kai (`components::toolbar` y sus piezas), search field (`components::search_field`) y textarea (`components::text_area`, con alto automático y contador).
-  - `Dialog` completo (`components::Dialog`: `Element::modal` atrapa el foco, Esc cancela y el foco vuelve a quien lo abrió; la confirmación de agentes lo usa) y `Toast` (`components::toast_stack`, con cierre automático por `Effects::after` y `TestApp::advance`).
+  - `Dialog` completo (`components::Dialog`: `Element::modal` atrapa el foco, Esc cancela y el foco vuelve a quien lo abrió; la confirmación de agentes lo usa) y `Toast` (`components::toast_stack`, con cierre automático por `Effects::after` y `TestApp::advance`; se pausa con el puntero o el foco encima y los de error no se cierran solos).
   - Tabla y lista virtualizada (`components::Table` y `virtual_list`: la `Session` materializa solo las filas visibles; orden, selección y roles `Table`/`Row`/`Cell`; probadas con 10 000 filas).
   - Campo de color (`components::color_field`, builder `ColorField`), para el color de los tipos de área de DSP:
     - **Forma:** un campo hex (`#rgb` o `#rrggbb`) con la muestra del color dentro y, debajo, una paleta de colores sugeridos. Con `allow_empty`, la paleta suma «Sin color».

@@ -46,8 +46,8 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, FilePicked, PickFile, TaskDone, action_message, build_view_with,
-    cursor_for, pointer_target, report_once, selects_on_focus,
+    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, TaskDone, action_message,
+    build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -296,6 +296,9 @@ struct Timer<Msg> {
     key: Option<String>,
     due: Instant,
     msg: Msg,
+    /// The pointer or the focus is inside the element whose `test_id` is
+    /// `key` ([`Effects::keyed`]).
+    held: bool,
 }
 
 /// What started an [`Effects::perform`] task: it stays busy until the
@@ -606,7 +609,12 @@ impl<A: App> Session<A> {
                         self.timers.retain(|timer| timer.key.as_ref() != Some(key));
                     }
                     let due = self.now() + delay;
-                    self.timers.push(Timer { key, due, msg });
+                    self.timers.push(Timer {
+                        key,
+                        due,
+                        msg,
+                        held: false,
+                    });
                 }
                 Effect::Perform { key, task, done } => {
                     if let Some(key) = &key {
@@ -820,6 +828,12 @@ impl<A: App> Session<A> {
             self.invalidate();
             ran = true;
         }
+        self.update_held_timers();
+        for timer in &mut self.timers {
+            if timer.held && timer.due <= now {
+                timer.due = now + HELD_TIMER_RESUME;
+            }
+        }
         while let Some(index) = self
             .timers
             .iter()
@@ -833,6 +847,41 @@ impl<A: App> Session<A> {
             ran = true;
         }
         ran | self.report_maps()
+    }
+
+    /// Whether the pointer or the focus is inside the element whose
+    /// `test_id` is `key`.
+    fn timer_held(&self, key: &str) -> bool {
+        let Some(id) = self.tree.find_test_id(key).map(|element| element.id) else {
+            return false;
+        };
+        self.hover_path.contains(&id)
+            || self
+                .ui
+                .focused
+                .get()
+                .and_then(|focused| self.tree.path_to(focused))
+                .is_some_and(|path| path.contains(&id))
+    }
+
+    /// Hold the keyed timers whose element has the pointer or the focus;
+    /// one let go runs no sooner than [`HELD_TIMER_RESUME`] from now.
+    fn update_held_timers(&mut self) {
+        if self.timers.iter().all(|timer| timer.key.is_none()) {
+            return;
+        }
+        let now = self.now();
+        let held: Vec<bool> = self
+            .timers
+            .iter()
+            .map(|timer| timer.key.as_deref().is_some_and(|key| self.timer_held(key)))
+            .collect();
+        for (timer, held) in self.timers.iter_mut().zip(held) {
+            if timer.held && !held {
+                timer.due = timer.due.max(now + HELD_TIMER_RESUME);
+            }
+            timer.held = held;
+        }
     }
 
     pub fn app(&self) -> &A {
@@ -1888,6 +1937,7 @@ impl<A: App> Session<A> {
         if changed {
             self.hover_path = path;
             self.update_tooltip();
+            self.update_held_timers();
         }
         let area = self.area_at_pointer();
         let area_changed = area != self.map_hover;
@@ -1969,6 +2019,7 @@ impl<A: App> Session<A> {
         let result = dispatch(&mut self.ui, &self.focus_order, intent);
         let current_focus = *self.ui.focused.get();
         if previous_focus != current_focus {
+            self.update_held_timers();
             if let Some(id) = current_focus {
                 self.layout
                     .reveal(id, FOCUS_REVEAL_MARGIN, &mut self.scroll);

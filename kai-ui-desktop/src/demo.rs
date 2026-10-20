@@ -723,8 +723,9 @@ impl Demo {
         let id = self.next_toast;
         self.next_toast += 1;
         toast.id = id;
+        let timer = toast_timer(&toast, Msg::CloseToast(id));
         self.toasts.push(toast);
-        toast_timer(id, Msg::CloseToast(id))
+        timer
     }
 
     /// Ask the map to show `bounds` (a new request each time, so the same
@@ -4245,8 +4246,13 @@ mod tests {
         );
         app.screen().get_by_test_id("kai.aviso.2.action");
         app.advance(crate::components::TOAST_DURATION);
-        assert!(app.app().toasts.is_empty());
         assert!(app.screen().query(By::test_id("kai.aviso.1")).is_none());
+        assert!(
+            app.screen().query(By::test_id("kai.aviso.2")).is_some(),
+            "an error stays until closed"
+        );
+        app.click(By::test_id("kai.aviso.2.close"));
+        assert!(app.app().toasts.is_empty());
 
         assert_eq!(
             app.call("avisos.mostrar", json!({"variante": "advertencia"})),

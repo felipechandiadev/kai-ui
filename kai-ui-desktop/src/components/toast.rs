@@ -1,6 +1,7 @@
 //! Toasts: short notices stacked over the bottom right corner of the
-//! window that close on their own (12 Paso 20.7). The app keeps the list
-//! in its model and closes each one with [`toast_timer`].
+//! window that close on their own (12 Paso 20.7), except errors. The app
+//! keeps the list in its model and closes each one with [`toast_timer`],
+//! which waits while the pointer or the focus is on the toast.
 
 use std::time::Duration;
 
@@ -56,9 +57,14 @@ pub fn toast_key(id: u64) -> String {
 }
 
 /// Send `close` after [`TOAST_DURATION`]: what `update` returns when it
-/// adds toast `id`.
-pub fn toast_timer<Msg>(id: u64, close: Msg) -> Effects<Msg> {
-    Effects::after(TOAST_DURATION, close).keyed(toast_key(id))
+/// adds `toast`. The timer waits while the pointer or the focus is on the
+/// toast ([`Effects::keyed`]). An error has no timer: it stays until
+/// closed, so nobody misses it (WCAG 2.2.1).
+pub fn toast_timer<Msg>(toast: &Toast<Msg>, close: Msg) -> Effects<Msg> {
+    if toast.variant == AlertVariant::Error {
+        return Effects::none();
+    }
+    Effects::after(TOAST_DURATION, close).keyed(toast_key(toast.id))
 }
 
 /// The toasts, newest at the bottom, in a layer over the bottom right
@@ -162,8 +168,9 @@ mod tests {
     use super::{TOAST_DURATION, Toast, toast_key, toast_stack, toast_timer};
     use crate::components::{AlertVariant, ButtonVariant, button};
     use crate::element::{Element, Role, div};
-    use crate::runtime::{App, Effects};
+    use crate::runtime::{App, Effects, HELD_TIMER_RESUME};
     use crate::testing::{By, TestApp};
+    use crate::ui_engine::{Key, Modifiers};
 
     #[derive(Default)]
     struct Notices {
@@ -195,18 +202,22 @@ mod tests {
                     } else {
                         "Guardado"
                     };
-                    self.toasts.push(
-                        Toast::new(id, variant, title)
-                            .message("notas.txt")
-                            .action("Deshacer", Msg::Undo),
-                    );
-                    toast_timer(id, Msg::Close(id))
+                    let toast = Toast::new(id, variant, title)
+                        .message("notas.txt")
+                        .action("Deshacer", Msg::Undo);
+                    let timer = toast_timer(&toast, Msg::Close(id));
+                    self.toasts.push(toast);
+                    timer
                 }
                 Msg::Close(id) => {
                     self.toasts.retain(|toast| toast.id != id);
                     Effects::cancel(toast_key(id))
                 }
-                Msg::Snooze(id) => toast_timer(id, Msg::Close(id)),
+                Msg::Snooze(id) => self
+                    .toasts
+                    .iter()
+                    .find(|toast| toast.id == id)
+                    .map_or_else(Effects::none, |toast| toast_timer(toast, Msg::Close(id))),
                 Msg::Undo => {
                     self.undone += 1;
                     Effects::none()
@@ -237,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn toasts_close_on_their_own_after_four_seconds() {
+    fn toasts_close_on_their_own_after_four_seconds_but_errors_stay() {
         let mut app = TestApp::new(Notices::default());
         app.click(By::test_id("guardar"));
         let saved = app.screen().get(By::role(Role::Status).name("Guardado"));
@@ -252,9 +263,55 @@ mod tests {
         assert!(app.screen().query(By::test_id("kai.aviso.1")).is_none());
         assert!(app.screen().query(By::test_id("kai.aviso.2")).is_some());
 
-        app.advance(TOAST_DURATION);
-        assert!(app.screen().query(By::test_id("kai.aviso.2")).is_none());
-        assert_eq!(closes(&app), 2);
+        app.advance(TOAST_DURATION * 3);
+        assert!(
+            app.screen().query(By::test_id("kai.aviso.2")).is_some(),
+            "an error waits to be closed"
+        );
+        assert_eq!(closes(&app), 1);
+        app.click(By::test_id("kai.aviso.2.close"));
+        assert!(app.app().toasts.is_empty());
+    }
+
+    #[test]
+    fn the_pointer_on_a_toast_holds_it_open() {
+        let mut app = TestApp::new(Notices::default());
+        app.click(By::test_id("guardar"));
+        app.hover(By::test_id("kai.aviso.1.message"));
+        app.advance(TOAST_DURATION * 3);
+        assert_eq!(app.app().toasts.len(), 1, "held while the pointer is on it");
+
+        app.hover(By::test_id("guardar"));
+        app.advance(HELD_TIMER_RESUME - Duration::from_millis(1));
+        assert_eq!(app.app().toasts.len(), 1, "time to move back to it");
+        app.advance(Duration::from_millis(1));
+        assert!(app.app().toasts.is_empty());
+        assert_eq!(closes(&app), 1);
+    }
+
+    #[test]
+    fn the_focus_on_a_toast_holds_it_open() {
+        let mut app = TestApp::new(Notices::default());
+        app.click(By::test_id("guardar"));
+        let action = By::test_id("kai.aviso.1.action");
+        for _ in 0..6 {
+            if app.is_focused(action.clone()) {
+                break;
+            }
+            app.press(Key::Tab, Modifiers::NONE);
+        }
+        assert!(app.is_focused(action), "Tab reaches the toast's button");
+        app.advance(TOAST_DURATION * 2);
+        assert_eq!(app.app().toasts.len(), 1);
+
+        let back = Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Tab, back);
+        assert!(app.is_focused(By::test_id("posponer")));
+        app.advance(HELD_TIMER_RESUME);
+        assert!(app.app().toasts.is_empty(), "closes once the focus leaves");
     }
 
     #[test]
