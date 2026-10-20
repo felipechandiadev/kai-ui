@@ -16,10 +16,14 @@
 //! single `on_view_change`. A new view from the app glides there.
 
 pub mod camera;
+pub mod mvt;
+pub mod pmtiles;
+pub mod tiles;
 
 use crate::element::{Element, Kind, Role, icon, text};
 use crate::geo::{LatLon, MapView};
 use crate::icons::Icon;
+use tiles::{TileFrame, TileSource};
 
 /// Credit for the map data, shown in a corner of every map.
 pub const ATTRIBUTION: &str = "© OpenStreetMap contributors · Protomaps";
@@ -31,6 +35,10 @@ pub struct MapSpec {
     pub view: MapView,
     /// Glide to a new view from the app instead of jumping.
     pub animate: bool,
+    /// The basemap's tiles, if any.
+    pub source: Option<TileSource>,
+    /// The tiles to draw this frame (the session fills them in).
+    pub tiles: TileFrame,
 }
 
 impl MapSpec {
@@ -38,6 +46,8 @@ impl MapSpec {
         Self {
             view: view.clamped(),
             animate: true,
+            source: None,
+            tiles: TileFrame::default(),
         }
     }
 }
@@ -160,6 +170,14 @@ impl<Msg> Element<Msg> {
     pub fn animate_view(mut self, animate: bool) -> Self {
         if let Kind::Map(spec) = &mut self.kind {
             spec.animate = animate;
+        }
+        self
+    }
+
+    /// Maps only: draw the vector tiles of `source` under the markers.
+    pub fn basemap(mut self, source: TileSource) -> Self {
+        if let Kind::Map(spec) = &mut self.kind {
+            spec.source = Some(source);
         }
         self
     }

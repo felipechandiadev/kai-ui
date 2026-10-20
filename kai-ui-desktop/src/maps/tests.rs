@@ -1,11 +1,15 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::camera::{FLY_DURATION, SETTLE_DELAY, ZOOM_DURATION};
+use super::mvt::Bucket;
+use super::tiles::TileSource;
 use super::{Anchor, map, marker};
 use crate::components::{ButtonVariant, button};
 use crate::element::{Element, Role, div};
-use crate::geo::{Camera, LatLon, MapView};
+use crate::geo::{Camera, LatLon, MapView, TileId};
 use crate::geometry::{Point, Size};
+use crate::layout::Content;
 use crate::runtime::SimpleApp;
 use crate::testing::{By, TestApp};
 use crate::ui_engine::{Key, Modifiers};
@@ -27,14 +31,23 @@ enum Msg {
 
 struct Atlas {
     view: MapView,
+    basemap: Option<TileSource>,
 }
 
 impl Atlas {
     fn at(zoom: f64) -> Self {
         Self {
             view: MapView::new(PLAZA, zoom),
+            basemap: None,
         }
     }
+}
+
+fn parral() -> TileSource {
+    TileSource::pmtiles(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/parral.pmtiles"),
+        Arc::from([Bucket::fill("earth", &[])].as_slice()),
+    )
 }
 
 impl SimpleApp for Atlas {
@@ -52,8 +65,12 @@ impl SimpleApp for Atlas {
     }
 
     fn view(&self) -> Element<Msg> {
+        let mut atlas = map(&self.view);
+        if let Some(source) = &self.basemap {
+            atlas = atlas.basemap(source.clone());
+        }
         div().class("flex flex-col gap-2 p-4").children([
-            map(&self.view)
+            atlas
                 .on_view_change(Msg::Moved)
                 .label("Mapa")
                 .test_id("mapa")
@@ -263,6 +280,65 @@ fn zoom_buttons_and_keys_move_a_focused_map() {
     app.press(Key::Char('-'), Modifiers::NONE);
     app.advance(ZOOM_DURATION);
     assert_eq!(views(&app).last().map(|view| view.zoom), Some(14.0));
+}
+
+/// The tiles the map draws now: stand-ins (with the tile they cover)
+/// first.
+fn drawn(app: &TestApp<Atlas>) -> Vec<(TileId, Option<TileId>)> {
+    let id = app.screen().get(mapa()).id();
+    match &app.session().layout().node(id).unwrap().content {
+        Content::Map(spec) => spec
+            .tiles
+            .tiles
+            .iter()
+            .map(|placed| (placed.tile, placed.clip))
+            .collect(),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
+    let mut app = TestApp::new(Atlas {
+        basemap: Some(parral()),
+        ..Atlas::at(14.0)
+    });
+    assert!(app.tasks_pending(), "tiles load on the pool");
+    app.run_until_idle();
+    let exact = |view: MapView| -> Vec<(TileId, Option<TileId>)> {
+        Camera::new(view, SIZE)
+            .visible_tiles(13)
+            .into_iter()
+            .map(|tile| (tile, None))
+            .collect()
+    };
+    assert_eq!(drawn(&app), exact(app.app().view));
+
+    app.drag_and_hold(mapa(), -250.0, 0.0);
+    let moved = app.app().view;
+    let during = drawn(&app);
+    assert!(
+        during.iter().any(|(_, clip)| clip.is_none()),
+        "the tiles still in view stay"
+    );
+    app.run_until_idle();
+    assert_eq!(drawn(&app), exact(moved));
+
+    app.double_click_at(mapa(), 200.0, 150.0);
+    app.advance(ZOOM_DURATION);
+    let zoomed = drawn(&app);
+    assert!(
+        zoomed
+            .iter()
+            .all(|(tile, clip)| tile.z == 13 && clip.is_some_and(|clip| clip.z == 14)),
+        "zoom 13 stands in for zoom 14: {zoomed:?}"
+    );
+    app.run_until_idle();
+    assert!(
+        drawn(&app)
+            .iter()
+            .all(|(tile, clip)| tile.z == 14 && clip.is_none())
+    );
 }
 
 #[test]

@@ -241,9 +241,9 @@ impl<A: App> TestApp<A> {
     }
 
     /// Wait for every [`Effects::perform`] task, the ones their messages
-    /// start included, and every image loading, sending each message as
-    /// its task finishes, with a frame after each batch. Panics if they
-    /// take more than ten seconds.
+    /// start included, every image and every map tile loading, sending
+    /// each message as its task finishes, with a frame after each batch.
+    /// Panics if they take more than ten seconds.
     ///
     /// [`Effects::perform`]: crate::runtime::Effects::perform
     pub fn run_until_idle(&mut self) {
@@ -253,9 +253,10 @@ impl<A: App> TestApp<A> {
                 Instant::now() < limit,
                 "las tareas de Effects::perform no terminaron en 10 s"
             );
-            if self.session.wait_for_tasks(Duration::from_millis(50)) {
-                self.frame();
-            }
+            // Loaded map tiles show a few per frame: frames go on even when
+            // nothing new landed.
+            self.session.wait_for_tasks(Duration::from_millis(50));
+            self.frame();
         }
     }
 

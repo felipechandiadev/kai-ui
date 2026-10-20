@@ -27,14 +27,15 @@ use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
 };
-use crate::geo::MapView;
+use crate::geo::{Camera, MapView, TileId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
 use crate::layout::{
-    Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure, WindowActivity,
-    text_style,
+    Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure,
+    WindowActivity, text_style,
 };
 use crate::maps::camera::CameraState;
+use crate::maps::tiles::{SourceKey, TileResult, TileStore};
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
@@ -167,6 +168,13 @@ pub(crate) struct Session<A: App> {
     maps: HashMap<WidgetId, CameraState>,
     /// The map a pointer drag is moving.
     map_drag: Option<WidgetId>,
+    /// Basemap tiles of every map, loading on the task pool.
+    tiles: TileStore,
+    /// Loaded basemap tiles wait to be shown, a few per frame.
+    tiles_revealing: bool,
+    /// A map with a basemap changed size in the last layout: its tiles
+    /// were picked for the old one.
+    maps_resized: bool,
     /// Modifier keys held now (⇧ double click and ⌘ wheel on maps).
     modifiers: Modifiers,
 }
@@ -257,6 +265,8 @@ struct Tasks<Msg> {
     waiting: HashMap<u64, (Option<String>, TaskDone<Msg>)>,
     /// Images loading on the pool for the [`ImageStore`].
     images: HashMap<u64, ImageSource>,
+    /// Map tiles loading on the pool for the [`TileStore`].
+    tiles: HashMap<u64, (SourceKey, TileId)>,
 }
 
 impl<Msg> Default for Tasks<Msg> {
@@ -266,6 +276,7 @@ impl<Msg> Default for Tasks<Msg> {
             next: 1,
             waiting: HashMap::new(),
             images: HashMap::new(),
+            tiles: HashMap::new(),
         }
     }
 }
@@ -284,7 +295,7 @@ impl<Msg> Tasks<Msg> {
     }
 
     fn pending(&self) -> bool {
-        !self.waiting.is_empty() || !self.images.is_empty()
+        !self.waiting.is_empty() || !self.images.is_empty() || !self.tiles.is_empty()
     }
 }
 
@@ -471,6 +482,9 @@ impl<A: App> Session<A> {
             tooltip_pressed: None,
             maps: HashMap::new(),
             map_drag: None,
+            tiles: TileStore::default(),
+            tiles_revealing: false,
+            maps_resized: false,
             modifiers: Modifiers::NONE,
         };
         session.apply_effects(effects);
@@ -538,10 +552,11 @@ impl<A: App> Session<A> {
         self.tasks.inbox.set_waker(wake);
     }
 
-    /// Whether some [`Effects::perform`] task has not sent its message, or
-    /// some image is still loading.
+    /// Whether some [`Effects::perform`] task has not sent its message,
+    /// some image or map tile is still loading, or loaded map tiles wait
+    /// to be shown.
     pub fn tasks_pending(&self) -> bool {
-        self.tasks.pending()
+        self.tasks.pending() || self.tiles_revealing
     }
 
     /// Send the message of every task that finished, in the order they
@@ -555,6 +570,15 @@ impl<A: App> Session<A> {
                     .and_then(|output| output.downcast::<Result<LoadedImage, String>>().ok())
                     .map_or_else(|| Err("la carga falló".to_owned()), |result| *result);
                 self.images.finish(&source, result);
+                self.invalidate();
+                ran = true;
+                continue;
+            }
+            if let Some((source, tile)) = self.tasks.tiles.remove(&id) {
+                let result = output
+                    .and_then(|output| output.downcast::<TileResult>().ok())
+                    .map_or_else(|| Err("la carga falló".to_owned()), |result| *result);
+                self.tiles.finish(&source, tile, result);
                 self.invalidate();
                 ran = true;
                 continue;
@@ -1163,10 +1187,16 @@ impl<A: App> Session<A> {
         }
         for (id, camera) in &mut self.maps {
             if let Some(node) = self.layout.node(*id) {
-                camera.size = Size {
+                let size = Size {
                     width: node.padding_box.width,
                     height: node.padding_box.height,
                 };
+                if size != camera.size
+                    && matches!(&node.content, Content::Map(spec) if spec.source.is_some())
+                {
+                    self.maps_resized = true;
+                }
+                camera.size = size;
             }
         }
     }
@@ -1860,7 +1890,10 @@ impl<A: App> Session<A> {
     fn sync_maps(&mut self) {
         let now = self.now();
         let maps = &mut self.maps;
+        let tiles = &mut self.tiles;
+        let tasks = &mut self.tasks;
         let mut live = Vec::new();
+        let mut revealing = false;
         self.tree.walk_mut(&mut |element| {
             if let Kind::Map(spec) = &mut element.kind {
                 let camera = maps
@@ -1868,12 +1901,25 @@ impl<A: App> Session<A> {
                     .or_insert_with(|| CameraState::new(spec.view));
                 camera.sync_model(spec.view, spec.animate, now);
                 spec.view = camera.view;
+                if let Some(source) = &spec.source {
+                    let (frame, loads) = tiles.frame(source, Camera::new(camera.view, camera.size));
+                    for load in loads {
+                        let id = tasks.spawn(load.run);
+                        tasks.tiles.insert(id, (load.source, load.tile));
+                    }
+                    revealing |= frame.revealing;
+                    spec.tiles = frame;
+                }
                 live.push(element.id);
             }
         });
         maps.retain(|id, _| live.contains(id));
         if self.map_drag.is_some_and(|id| !live.contains(&id)) {
             self.map_drag = None;
+        }
+        self.tiles_revealing = revealing;
+        if revealing {
+            self.invalidate();
         }
     }
 
@@ -2239,6 +2285,10 @@ impl<A: App> Session<A> {
         self.relayout();
         if self.rows_stale() {
             self.keep_scroll_offsets();
+            self.rebuild();
+            self.relayout();
+        }
+        if std::mem::take(&mut self.maps_resized) {
             self.rebuild();
             self.relayout();
         }
