@@ -777,6 +777,12 @@ Reglas de la pista C:
 - **Comandos de la app** (ejemplos): `areas.crear`, `areas.editar_geometria`, `areas.archivar` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.cerrar` (`Destructive`), consultas `areas.listar`, `incidencias.buscar` (`Query` puras sobre el modelo cargado), `ui.ir_a(seccion)` (acción de UI).
 - **Pruebas**: el core se simula con un servidor HTTP falso en proceso (respuestas fijas por ruta) para que los tests de `TestApp` no dependan de Postgres; un job aparte, opcional, corre contra el core real con el seed de DSP.
 - **Hecho cuando**: un usuario de DSP crea y edita un área y registra una incidencia con ubicación desde la app de escritorio, con tests de flujo para cada tarea.
+- **Estado: empezado (esqueleto y login).** `dsp-27/desktop/` es un crate Rust que usa Kai por ruta.
+  - **Login:** contra `POST /api/auth/login`, con el token en el llavero de macOS (crate `keyring`). Al abrir, la sesión se valida con `GET /api/auth/me`; un 401 la borra.
+  - **Inicio y salida:** pantalla de inicio con la toolbar de Kai y el comando `sesion.cerrar`.
+  - **Red:** HTTP con `ureq` dentro de `Effects::perform`; la URL sale de `DSP_API_URL`.
+  - **Tests:** un core falso en proceso y un llavero en memoria, con `TestApp`. Un test `#[ignore]` corre contra el core real.
+  - **Siguiente corte:** Áreas de operación.
 
 #### Paso 14b — Primitivas de renderer (mapas M0)
 
