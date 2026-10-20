@@ -34,7 +34,7 @@
 - **Lo que se corrige**: el orden (profundidad antes que amplitud), la pureza del `Msg` (sin canales de respuesta dentro), la semántica de `Safety` (separar consultas de acciones) y los valores por defecto de exposición a agentes (nada expuesto salvo lista explícita).
 - **Lo que se añade**: una **etapa de identificación y pruebas** antes del registro de comandos, para que todo lo que venga después nazca con tests legibles; **herramientas de desarrollo** mínimas; y una **app guía real** que decide qué widgets y servicios se construyen. La app guía es **DSP desktop**: cliente de escritorio del core de DSP-27 (`/Users/felipe/dev/dsp-27`), que incluye mapas con edición de geometrías ([10](10-mapas.md)).
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
-- **Siguiente paso concreto**: las Etapas 1, 2 y 3 están cerradas, y los Pasos 0 a 13 están hechos, salvo el 1b. La demo es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`). Una acción `Destructive` pedida por un agente espera a la persona en un diálogo, y cada llamada por JSON queda en la auditoría. Falta probarlo a mano con Cursor o Claude Desktop ([14](14-mcp.md)). Sigue la Etapa 4: el Paso 14 (DSP desktop, en `dsp-27/desktop/`) decide qué widgets y efectos faltan. Antes conviene confirmar el primer corte con el equipo de DSP. El Paso 1b (devtools) puede ir antes si hace falta depurar.
+- **Siguiente paso concreto**: las Etapas 0 a 3 están cerradas, y los Pasos 0 a 13 están hechos, el 1b incluido. La demo es un servidor MCP por stdio (`--features mcp`, `--mcp`, con `rmcp`). Una acción `Destructive` pedida por un agente espera a la persona en un diálogo, y cada llamada por JSON queda en la auditoría. Falta probarlo a mano con Cursor o Claude Desktop ([14](14-mcp.md)). En debug hay devtools: `KAI_DEVTOOLS=msgs,frames` y el inspector con ⌘⌥I. Sigue la Etapa 4. Antes del Paso 14 (DSP desktop, en `dsp-27/desktop/`) se puede avanzar dentro de este repo con el backlog de widgets que pide el primer corte: sidebar, `Select`, segmented (Punto · Línea · Área) y checkbox. El primer corte hay que confirmarlo con el equipo de DSP.
 
 ## 2. Evaluación de 09
 
@@ -402,6 +402,20 @@ Reglas de la pista C:
 - **Tests**: el volcado del árbol es una función pura con test de snapshot de texto.
 - **Hecho cuando**: un bug de foco o de layout se diagnostica solo con el inspector y el log.
 - **Riesgos**: coste en release; todo detrás de feature.
+- **Estado**: hecho, con un cambio de diseño: no hay feature `devtools`. Todo depende de `cfg!(debug_assertions)`, como `KAI_LINEAR_BLEND`, así que en release queda apagado. Todo sale por stderr, porque con `--mcp` stdout es del protocolo; `devtools.rs` está en el test que lo revisa.
+  - **Log de `Msg` (`KAI_DEVTOOLS=msgs`):** cada mensaje sale con su origen y el tiempo de `update`, por ejemplo `msg Puntero       Increment · update 0.02 ms`. Los orígenes (`MsgSource`) son Puntero, Teclado, Accesibilidad, Menú, Script y `Agente <cliente>`.
+    - La sesión fija el origen en cada entrada (`pointer_button`, `accessibility_action`, `menu_command`, `send_command`, `call` y las llamadas de agentes) y lo restaura al salir.
+    - El más interno gana: una llamada de agente que la persona permitió con un clic cuenta como del agente.
+    - Lo que entra por `apply_intent` sin origen es teclado o IME.
+    - `TestApp::message_sources()` los devuelve junto con `messages()`, y `TestApp::perform` pasa por el camino del menú.
+  - **Tiempos por frame (`KAI_DEVTOOLS=frames`):** p50 y p95 de view, layout, paint y render, cada 120 frames completos. Los frames que solo animan el fondo no cuentan. `all` enciende el log y los tiempos.
+  - **Inspector (⌘⌥I en debug):** el overlay `kai.inspector` (`z-100`, `pointer-events-none`) no cambia el hit-test, los clics ni la paleta.
+    - Contornea el elemento más interno bajo el puntero (`kai.inspector.outline`).
+    - Un panel (`kai.inspector.panel`), en la mitad de la ventana que queda libre, muestra rol, id, nombre accesible, `test_id`, bounds y clases. Si un clic iría a otro control, agrega «clic → Button … [header.sumar]».
+    - Al abrirse imprime el árbol completo con `devtools::dump`; `TestApp::dump()` devuelve el mismo texto y `TestApp::hover(by)` mueve el puntero sin hacer clic.
+    - Los `WidgetId` del volcado son los hashes reales, los mismos que usa AccessKit.
+  - **Tests:** `parse`, la línea del log, los percentiles, el volcado de un árbol chico, el origen de cada vía en la demo (`messages_record_where_they_came_from`), y el inspector sobre `header.sumar` (`the_inspector_describes_what_is_under_the_pointer`).
+  - **Prueba manual:** con el inspector abierto desde el arranque (un cambio local, no commiteado), el panel aparece en la ventana real sobre el contenido. Falta abrirlo con ⌘⌥I y recorrer controles con el puntero, porque Computer Use no tenía permisos de Accesibilidad.
 
 ### Etapa 1 — Identificación y pruebas (hito M1b: se puede probar por diseño)
 
@@ -1079,7 +1093,7 @@ Reglas de la pista C:
 **Etapa 0 — Librería usable**
 - [x] P0 `examples/demo.rs`, visibilidad de la API, `fixtures/external-app` en CI, `cargo doc` sin warnings.
 - [x] P1 `App` v2 con `Effects` vacío; `SimpleApp` compatible.
-- [ ] P1b Devtools: log de `Msg`, inspector, tiempo por frame.
+- [x] P1b Devtools: log de `Msg`, inspector, tiempo por frame (debug y `KAI_DEVTOOLS`, sin feature). Falta probar ⌘⌥I a mano en la ventana.
 
 **Etapa 1 — Identificación y pruebas**
 - [x] P2 `test_id` → `LayoutNode` → AccessKit `author_id`; duplicados de `key` y `test_id` en debug. Falta comprobarlo a mano con Accessibility Inspector.
