@@ -16,7 +16,9 @@ pub mod background;
 pub mod commands;
 pub mod components;
 pub mod element;
+pub mod geo;
 pub mod icons;
+pub mod maps;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod media;

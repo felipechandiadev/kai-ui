@@ -17,12 +17,16 @@ use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::media::{FakeImageLoader, ImageLoader};
 use crate::platform_adapter::adapt_key_input;
-use crate::runtime::{App, PickFile};
+use crate::runtime::{App, LINE_SCROLL, PickFile};
 use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
 use crate::text_field::ClipboardPort;
 use crate::theme::{Density, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent};
+
+/// Pointer moves in a [`TestApp::drag`], one every [`DRAG_STEP`].
+pub const DRAG_STEPS: u32 = 8;
+pub const DRAG_STEP: Duration = Duration::from_millis(16);
 
 /// In-memory clipboard. Clones share the contents, so a test can keep one
 /// and hand another to [`TestAppBuilder::clipboard`].
@@ -489,7 +493,7 @@ impl<A: App> TestApp<A> {
 
     /// Press and release the primary button at `point`, whatever is there.
     #[cfg(test)]
-    pub(crate) fn click_at(&mut self, point: crate::geometry::Point) {
+    pub(crate) fn click_point(&mut self, point: crate::geometry::Point) {
         self.session.pointer_moved(Some(point));
         self.frame();
         self.session.pointer_button(true);
@@ -585,6 +589,115 @@ impl<A: App> TestApp<A> {
         self.hover(over);
         self.session.scroll_by(delta_y);
         self.frame();
+    }
+
+    /// Move the pointer over the element and scroll by `(dx, dy)` points as
+    /// a trackpad does (positive moves the content right and down): it pans
+    /// a map, elsewhere only `dy` scrolls.
+    #[track_caller]
+    pub fn scroll_wheel_xy(&mut self, over: By, dx: f32, dy: f32) {
+        self.hover(over);
+        self.session.wheel(Point { x: dx, y: dy }, false);
+        self.frame();
+    }
+
+    /// Move the pointer over the element and turn a mouse wheel by
+    /// `notches` (positive away from the person): a map zooms in a level
+    /// per notch.
+    #[track_caller]
+    pub fn wheel_notches(&mut self, over: By, notches: f32) {
+        self.hover(over);
+        self.session.wheel(
+            Point {
+                x: 0.0,
+                y: notches * LINE_SCROLL,
+            },
+            true,
+        );
+        self.frame();
+    }
+
+    /// A whole trackpad pinch over the element's center, scaling by
+    /// `factor` (2.0 zooms a map in a level).
+    #[track_caller]
+    pub fn pinch(&mut self, over: By, factor: f64) {
+        self.hover(over);
+        self.session.pinch(factor - 1.0, true);
+        self.frame();
+    }
+
+    /// Press at the element's center, move the pointer by `(dx, dy)` points
+    /// in [`DRAG_STEPS`] steps of [`DRAG_STEP`] and release at once: a
+    /// flick, after which a map glides on ([`Self::advance`] lets it).
+    #[track_caller]
+    pub fn drag(&mut self, by: By, dx: f32, dy: f32) {
+        self.drag_steps(by, dx, dy);
+        self.session.pointer_button(false);
+        self.frame();
+    }
+
+    /// [`Self::drag`], holding still for a moment before releasing: the
+    /// content stops where the pointer left it.
+    #[track_caller]
+    pub fn drag_and_hold(&mut self, by: By, dx: f32, dy: f32) {
+        self.drag_steps(by, dx, dy);
+        self.advance(Duration::from_millis(150));
+        self.session.pointer_button(false);
+        self.frame();
+    }
+
+    #[track_caller]
+    fn drag_steps(&mut self, by: By, dx: f32, dy: f32) {
+        self.hover(by);
+        let start = self.session.cursor().unwrap_or_default();
+        self.session.pointer_clicks(true, 1);
+        self.frame();
+        for step in 1..=DRAG_STEPS {
+            let t = step as f32 / DRAG_STEPS as f32;
+            self.advance(DRAG_STEP);
+            self.session.pointer_moved(Some(Point {
+                x: start.x + dx * t,
+                y: start.y + dy * t,
+            }));
+            self.frame();
+        }
+    }
+
+    /// Click at `(x, y)` points from the element's top left corner.
+    #[track_caller]
+    pub fn click_at(&mut self, by: By, x: f32, y: f32) {
+        self.click_series_at(by, x, y, 1);
+    }
+
+    /// [`Self::click_at`] twice in a row.
+    #[track_caller]
+    pub fn double_click_at(&mut self, by: By, x: f32, y: f32) {
+        self.click_series_at(by, x, y, 2);
+    }
+
+    #[track_caller]
+    fn click_series_at(&mut self, by: By, x: f32, y: f32, clicks: u32) {
+        let id = self.id_of(by);
+        if self.session.reveal(id) {
+            self.frame();
+        }
+        let bounds = self.session.layout().bounds(id).unwrap_or_default();
+        self.session.pointer_moved(Some(Point {
+            x: bounds.x + x,
+            y: bounds.y + y,
+        }));
+        self.frame();
+        for count in 1..=clicks {
+            self.session.pointer_clicks(true, count);
+            self.session.pointer_button(false);
+            self.frame();
+        }
+    }
+
+    /// Hold `modifiers` (⇧, ⌘…) for the pointer gestures that follow, as
+    /// the window reports them; [`Modifiers::NONE`] lets go.
+    pub fn hold_modifiers(&mut self, modifiers: Modifiers) {
+        self.session.set_modifiers(modifiers);
     }
 
     /// Scroll virtual list `list` ([`Element::virtual_rows`]) until its

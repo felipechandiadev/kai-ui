@@ -27,12 +27,14 @@ use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
 };
+use crate::geo::MapView;
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
 use crate::layout::{
     Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure, WindowActivity,
     text_style,
 };
+use crate::maps::camera::CameraState;
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
@@ -51,6 +53,9 @@ use accesskit::{ActionRequest, TreeUpdate};
 use cosmic_text::{FontSystem, Metrics};
 
 pub(crate) use calls::{AgentCall, CONFIRMATION};
+
+/// Points an arrow key moves a focused map.
+const MAP_KEY_STEP: f64 = 80.0;
 
 /// Extra room kept visible around a focused element when scrolling to it
 /// (focus rings are 2px wide with a 2px offset).
@@ -158,6 +163,12 @@ pub(crate) struct Session<A: App> {
     /// Element whose tooltip a press hid: it stays hidden until the
     /// pointer leaves it.
     tooltip_pressed: Option<WidgetId>,
+    /// Camera of every map of the last rebuild.
+    maps: HashMap<WidgetId, CameraState>,
+    /// The map a pointer drag is moving.
+    map_drag: Option<WidgetId>,
+    /// Modifier keys held now (⇧ double click and ⌘ wheel on maps).
+    modifiers: Modifiers,
 }
 
 struct Tooltip {
@@ -458,6 +469,9 @@ impl<A: App> Session<A> {
             tooltips: HashMap::new(),
             tooltip: None,
             tooltip_pressed: None,
+            maps: HashMap::new(),
+            map_drag: None,
+            modifiers: Modifiers::NONE,
         };
         session.apply_effects(effects);
         session.notify_resized();
@@ -674,6 +688,7 @@ impl<A: App> Session<A> {
             .iter()
             .map(|timer| timer.due)
             .chain(tooltip)
+            .chain(self.maps.values().filter_map(CameraState::deadline))
             .min()
     }
 
@@ -703,7 +718,7 @@ impl<A: App> Session<A> {
             self.with_source(MsgSource::Timer, |session| session.send(timer.msg));
             ran = true;
         }
-        ran
+        ran | self.report_maps()
     }
 
     pub fn app(&self) -> &A {
@@ -842,6 +857,7 @@ impl<A: App> Session<A> {
         self.tree = build_view_with(&self.app, &self.commands);
         self.build_rows(pin);
         self.images.resolve(&mut self.tree);
+        self.sync_maps();
         self.tooltips.clear();
         collect_tooltips(&self.tree, &mut self.tooltips);
         if self
@@ -1143,6 +1159,14 @@ impl<A: App> Session<A> {
                     field.set_width(font_system, line.width);
                     field.set_height(font_system, line.height);
                 }
+            }
+        }
+        for (id, camera) in &mut self.maps {
+            if let Some(node) = self.layout.node(*id) {
+                camera.size = Size {
+                    width: node.padding_box.width,
+                    height: node.padding_box.height,
+                };
             }
         }
     }
@@ -1676,7 +1700,11 @@ impl<A: App> Session<A> {
             self.invalidate();
             return;
         }
-        if self.palette_key(&intent) || self.popup_key(&intent) || self.row_key(&intent) {
+        if self.palette_key(&intent)
+            || self.popup_key(&intent)
+            || self.row_key(&intent)
+            || self.map_key(&intent)
+        {
             return;
         }
         let previous_focus = *self.ui.focused.get();
@@ -1738,6 +1766,18 @@ impl<A: App> Session<A> {
             && self.opens_popup(activation.widget)
         {
             self.open_popup(activation.widget);
+        } else if let Some(activation) = result.activated
+            && let Some((map, control)) = self.map_control(activation.widget)
+        {
+            let now = self.now();
+            if let Some(camera) = self.maps.get_mut(&map) {
+                let center = Point {
+                    x: camera.size.width / 2.0,
+                    y: camera.size.height / 2.0,
+                };
+                camera.zoom_by(control.delta(), center, now);
+            }
+            self.invalidate();
         } else if let Some(activation) = result.activated
             && let Some(msg) = self
                 .handler(activation.widget)
@@ -1814,6 +1854,220 @@ impl<A: App> Session<A> {
         }
     }
 
+    /// Give every map of the new tree its camera (new maps start at the
+    /// app's view), let a changed app view move it, and show the camera's
+    /// view; cameras of maps that left are dropped.
+    fn sync_maps(&mut self) {
+        let now = self.now();
+        let maps = &mut self.maps;
+        let mut live = Vec::new();
+        self.tree.walk_mut(&mut |element| {
+            if let Kind::Map(spec) = &mut element.kind {
+                let camera = maps
+                    .entry(element.id)
+                    .or_insert_with(|| CameraState::new(spec.view));
+                camera.sync_model(spec.view, spec.animate, now);
+                spec.view = camera.view;
+                live.push(element.id);
+            }
+        });
+        maps.retain(|id, _| live.contains(id));
+        if self.map_drag.is_some_and(|id| !live.contains(&id)) {
+            self.map_drag = None;
+        }
+    }
+
+    /// Advance map animations to now, keeping frames coming while one
+    /// runs, and report the gestures that ended.
+    fn step_maps(&mut self) {
+        let now = self.now();
+        let mut animating = false;
+        for camera in self.maps.values_mut() {
+            camera.step(now);
+            animating |= camera.animating();
+        }
+        if animating {
+            self.invalidate();
+        }
+        self.report_maps();
+    }
+
+    /// Whether a map glides or zooms on its own: the window needs frames.
+    pub fn animating(&self) -> bool {
+        self.maps.values().any(CameraState::animating)
+    }
+
+    /// Send `on_view_change` for every map whose gesture settled; returns
+    /// whether any did.
+    fn report_maps(&mut self) -> bool {
+        let now = self.now();
+        let mut reports: Vec<(WidgetId, MapView)> = self
+            .maps
+            .iter_mut()
+            .filter_map(|(id, camera)| camera.take_report(now).map(|view| (*id, view)))
+            .collect();
+        reports.sort_by_key(|(id, _)| *id);
+        let mut sent = false;
+        for (id, view) in reports {
+            self.invalidate();
+            if let Some(handler) = self
+                .handler(id)
+                .and_then(|handlers| handlers.on_view_change.clone())
+            {
+                let source = self.source.clone().unwrap_or(MsgSource::Pointer);
+                self.with_source(source, |session| session.send(handler(view)));
+                sent = true;
+            }
+        }
+        sent
+    }
+
+    /// The pointer in map `id`'s local points.
+    fn map_local(&self, id: WidgetId) -> Option<Point> {
+        let cursor = self.cursor?;
+        let area = self.layout.node(id)?.padding_box;
+        Some(Point {
+            x: cursor.x - area.x,
+            y: cursor.y - area.y,
+        })
+    }
+
+    /// The innermost map under the pointer and the pointer in its points.
+    fn map_at_pointer(&self) -> Option<(WidgetId, Point)> {
+        let id = self
+            .hover_path
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.maps.contains_key(id))?;
+        Some((id, self.map_local(id)?))
+    }
+
+    /// A press on a map (not on a control inside it): one starts a drag,
+    /// a double click zooms in (out with ⇧) around the pointer.
+    fn press_map(&mut self, target: Option<WidgetId>, clicks: u32) {
+        let Some((id, local)) = self.map_at_pointer() else {
+            return;
+        };
+        if target != Some(id) {
+            return;
+        }
+        let now = self.now();
+        let shift = self.modifiers.shift;
+        let Some(camera) = self.maps.get_mut(&id) else {
+            return;
+        };
+        if clicks >= 2 {
+            camera.zoom_by(if shift { -1.0 } else { 1.0 }, local, now);
+        } else {
+            camera.press(local, now);
+            self.map_drag = Some(id);
+        }
+    }
+
+    /// End a map drag: the map may glide on, else the gesture reports.
+    fn release_map(&mut self) {
+        let Some(id) = self.map_drag.take() else {
+            return;
+        };
+        let now = self.now();
+        if let Some(camera) = self.maps.get_mut(&id) {
+            camera.release(now);
+        }
+        self.report_maps();
+    }
+
+    /// The map a zoom button belongs to, and the button.
+    fn map_control(&self, widget: WidgetId) -> Option<(WidgetId, crate::maps::MapControl)> {
+        let control = self.tree.find(widget)?.map_control?;
+        let path = self.tree.path_to(widget)?;
+        let map = path
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.maps.contains_key(id))?;
+        Some((map, control))
+    }
+
+    /// Arrow keys pan a focused map and `+`/`−` zoom it.
+    fn map_key(&mut self, intent: &Intent) -> bool {
+        let Intent::Text(TextIntent::KeyDown { key, modifiers, .. }) = intent else {
+            return false;
+        };
+        if modifiers.command || modifiers.control || modifiers.option {
+            return false;
+        }
+        let Some(id) = self.focused().filter(|id| self.maps.contains_key(id)) else {
+            return false;
+        };
+        let now = self.now();
+        let Some(camera) = self.maps.get_mut(&id) else {
+            return false;
+        };
+        let center = Point {
+            x: camera.size.width / 2.0,
+            y: camera.size.height / 2.0,
+        };
+        match key {
+            Key::ArrowLeft => camera.pan(MAP_KEY_STEP, 0.0, now),
+            Key::ArrowRight => camera.pan(-MAP_KEY_STEP, 0.0, now),
+            Key::ArrowUp => camera.pan(0.0, MAP_KEY_STEP, now),
+            Key::ArrowDown => camera.pan(0.0, -MAP_KEY_STEP, now),
+            Key::Char('+' | '=') => camera.zoom_by(1.0, center, now),
+            Key::Char('-' | '_') => camera.zoom_by(-1.0, center, now),
+            _ => return false,
+        }
+        self.invalidate();
+        true
+    }
+
+    /// Modifier keys held now.
+    pub fn set_modifiers(&mut self, modifiers: Modifiers) {
+        self.modifiers = modifiers;
+    }
+
+    /// A wheel or trackpad scroll of `delta` points (positive moves the
+    /// content right and down). Over a map, pixel deltas pan it and wheel
+    /// notches (`lines`) or ⌘ zoom it a level per notch around the
+    /// pointer; elsewhere it scrolls ([`Self::scroll_by`]).
+    pub fn wheel(&mut self, delta: Point, lines: bool) {
+        if let Some((id, local)) = self.map_at_pointer() {
+            let now = self.now();
+            let zoom = lines || self.modifiers.command;
+            if let Some(camera) = self.maps.get_mut(&id) {
+                if zoom {
+                    if delta.y != 0.0 {
+                        camera.zoom_by(f64::from(delta.y.signum()), local, now);
+                    }
+                } else {
+                    camera.pan(f64::from(delta.x), f64::from(delta.y), now);
+                }
+            }
+            self.invalidate();
+            return;
+        }
+        self.scroll_by(delta.y);
+    }
+
+    /// A trackpad pinch over a map: scale by `1 + delta` around the
+    /// pointer; `ended` reports the gesture at once.
+    pub fn pinch(&mut self, delta: f64, ended: bool) {
+        let Some((id, local)) = self.map_at_pointer() else {
+            return;
+        };
+        let now = self.now();
+        if let Some(camera) = self.maps.get_mut(&id) {
+            camera.pinch(1.0 + delta, local, now);
+            if ended {
+                camera.end_gesture();
+            }
+        }
+        self.invalidate();
+        self.with_source(MsgSource::Pointer, |session| {
+            session.report_maps();
+        });
+    }
+
     /// Scroll the innermost scroll container under the pointer by `delta_y`
     /// logical points (positive scrolls content up, like a wheel down).
     pub fn scroll_by(&mut self, delta_y: f32) {
@@ -1835,10 +2089,19 @@ impl<A: App> Session<A> {
             self.refresh_hover();
             self.apply_intent(Intent::CancelPointer);
             self.dragging = None;
+            self.release_map();
             self.invalidate();
             return;
         }
         let mut redraw = self.refresh_hover();
+        if let Some(id) = self.map_drag
+            && let Some(local) = self.map_local(id)
+        {
+            let now = self.now();
+            if let Some(camera) = self.maps.get_mut(&id) {
+                redraw |= camera.drag_to(local, now);
+            }
+        }
         if let Some(popup) = &mut self.popup
             && let Some(index) = popup
                 .rows
@@ -1916,6 +2179,7 @@ impl<A: App> Session<A> {
         if pressed {
             let previous_focus = *self.ui.focused.get();
             self.apply_intent(Intent::PointerDown(target));
+            self.press_map(target, clicks);
             let selected_on_focus = target
                 .is_some_and(|id| previous_focus != Some(id) && selects_on_focus(&self.tree, id));
             self.dragging = target.filter(|_| self.is_text_field(target) && !selected_on_focus);
@@ -1929,6 +2193,7 @@ impl<A: App> Session<A> {
         } else {
             self.apply_intent(Intent::PointerUp(target));
             self.dragging = None;
+            self.release_map();
         }
         self.invalidate();
     }
@@ -1942,6 +2207,7 @@ impl<A: App> Session<A> {
         } else {
             self.apply_intent(Intent::CancelPointer);
             self.dragging = None;
+            self.release_map();
             for field in self.text_fields.values_mut() {
                 field.set_preedit(&mut self.text.font_system, None);
             }
@@ -1958,6 +2224,7 @@ impl<A: App> Session<A> {
     pub fn prepare_frame(&mut self) {
         self.dirty = false;
         let started = Instant::now();
+        self.step_maps();
         self.rebuild();
         if let Some(focus) = self.modal_focus.take() {
             self.relayout();

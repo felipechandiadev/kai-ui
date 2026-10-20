@@ -18,8 +18,10 @@ use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 use crate::element::{
     ControlSize, ControlState, Element, KeyEquivalent, Kind, Role, Rows, WidgetId,
 };
+use crate::geo::Camera;
 use crate::geometry::{Insets, Point, Rect, Size};
 use crate::icons::Icon;
+use crate::maps::{MapSpec, Marker};
 use crate::media::LoadedImage;
 use crate::render::TextId;
 use crate::render::text::TextStyle;
@@ -147,6 +149,8 @@ pub enum Content {
     },
     /// The decoded image, once the session has it.
     Image(Option<LoadedImage>),
+    /// A map with its camera's view.
+    Map(Box<MapSpec>),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -200,6 +204,8 @@ pub struct LayoutNode {
     pub scroll: Option<ScrollState>,
     /// Text area: the text box, or the vertically centered input line.
     pub text_box: Option<Rect>,
+    /// Placed on a coordinate of the enclosing map.
+    pub marker: Option<Marker>,
 }
 
 impl LayoutNode {
@@ -347,6 +353,7 @@ impl Builder<'_> {
                 }
             }
             Kind::Image { loaded, .. } => Content::Image(loaded.clone()),
+            Kind::Map(spec) => Content::Map(spec.clone()),
         };
         let index = self.nodes.len();
         let node = LayoutNode {
@@ -383,6 +390,7 @@ impl Builder<'_> {
             clip: None,
             scroll: None,
             text_box: None,
+            marker: element.marker,
         };
         let child_inherited = Inherited {
             text,
@@ -428,7 +436,7 @@ impl Builder<'_> {
         }
 
         let handle = match element.kind {
-            Kind::Div => {
+            Kind::Div | Kind::Map(_) => {
                 let mut children = Vec::with_capacity(element.children.len());
                 for child in &element.children {
                     children.push(self.build(child, Some(index), child_inherited)?);
@@ -659,6 +667,7 @@ impl Layout {
             input.scroll,
             text,
         );
+        place_markers(&mut nodes);
 
         let mut paint_order = Vec::with_capacity(nodes.len());
         push_paint_order(&nodes, 0, &mut paint_order);
@@ -835,7 +844,7 @@ fn place(
     });
     if !node.hidden {
         match &node.content {
-            Content::Box | Content::Icon(_) | Content::Image(_) => {}
+            Content::Box | Content::Icon(_) | Content::Image(_) | Content::Map(_) => {}
             Content::Text(content) => {
                 // Re-wrap at the final width so the buffer is ready to draw.
                 if !node.text.nowrap {
@@ -891,6 +900,61 @@ fn place(
         place(
             nodes, handles, taffy, child, origin, child_clip, offsets, text,
         );
+    }
+}
+
+/// Move every marker (and its subtree) so its anchor point lands on the
+/// projection of its coordinate in the nearest enclosing map.
+fn place_markers(nodes: &mut [LayoutNode]) {
+    for index in 0..nodes.len() {
+        let Some(marker) = nodes[index].marker else {
+            continue;
+        };
+        let mut parent = nodes[index].parent;
+        let map = loop {
+            let Some(at) = parent else {
+                break None;
+            };
+            if let Content::Map(spec) = &nodes[at].content {
+                break Some((spec.view, nodes[at].padding_box));
+            }
+            parent = nodes[at].parent;
+        };
+        let Some((view, area)) = map else {
+            continue;
+        };
+        let camera = Camera::new(
+            view,
+            Size {
+                width: area.width,
+                height: area.height,
+            },
+        );
+        let at = camera.to_local(marker.at);
+        let bounds = nodes[index].bounds;
+        let (anchor_x, anchor_y) = marker.anchor.offset(bounds.width, bounds.height);
+        let delta = Point {
+            x: area.x + at.x - anchor_x - bounds.x,
+            y: area.y + at.y - anchor_y - bounds.y,
+        };
+        let clip = nodes[index].clip;
+        shift_subtree(nodes, index, delta, clip);
+    }
+}
+
+/// Translate a node and its descendants by `delta`; clips made inside the
+/// subtree (different from `outer`) move with it.
+fn shift_subtree(nodes: &mut [LayoutNode], index: usize, delta: Point, outer: Option<Rect>) {
+    let node = &mut nodes[index];
+    node.bounds = node.bounds.translated(delta);
+    node.padding_box = node.padding_box.translated(delta);
+    node.content_box = node.content_box.translated(delta);
+    node.text_box = node.text_box.map(|rect| rect.translated(delta));
+    if node.clip != outer {
+        node.clip = node.clip.map(|rect| rect.translated(delta));
+    }
+    for child in node.children.clone() {
+        shift_subtree(nodes, child, delta, outer);
     }
 }
 

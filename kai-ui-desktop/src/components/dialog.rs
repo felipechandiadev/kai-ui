@@ -300,7 +300,7 @@ mod tests {
         assert!(app.is_focused(By::test_id("motivo")), "Tab stays inside");
 
         let other = app.screen().get(By::test_id("otro")).bounds();
-        app.click_at(crate::geometry::Point {
+        app.click_point(crate::geometry::Point {
             x: other.x + other.width / 2.0,
             y: other.y + other.height / 2.0,
         });

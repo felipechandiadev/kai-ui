@@ -41,6 +41,8 @@ pub enum Icon {
     Layers,
     Camera,
     ImagePlus,
+    MapPin,
+    Map,
 }
 
 impl Icon {
@@ -82,6 +84,8 @@ impl Icon {
         Icon::Layers,
         Icon::Camera,
         Icon::ImagePlus,
+        Icon::MapPin,
+        Icon::Map,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -124,6 +128,8 @@ impl Icon {
             Icon::Layers => "layers",
             Icon::Camera => "camera",
             Icon::ImagePlus => "image-plus",
+            Icon::MapPin => "map-pin",
+            Icon::Map => "map",
         }
     }
 
@@ -171,6 +177,8 @@ impl Icon {
             Icon::Layers => include_str!("../../assets/icons/layers.svg"),
             Icon::Camera => include_str!("../../assets/icons/camera.svg"),
             Icon::ImagePlus => include_str!("../../assets/icons/image-plus.svg"),
+            Icon::MapPin => include_str!("../../assets/icons/map-pin.svg"),
+            Icon::Map => include_str!("../../assets/icons/map.svg"),
         }
     }
 }

@@ -563,7 +563,7 @@ mod tests {
             x: bubble.x + bubble.width / 2.0,
             y: bubble.y + bubble.height / 2.0,
         };
-        app.click_at(center);
+        app.click_point(center);
         assert_eq!(app.messages(), [], "the click goes through to the content");
         app.press(Key::Tab, Modifiers::NONE);
         assert!(app.is_focused(row("Campos")));

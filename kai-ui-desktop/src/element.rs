@@ -17,7 +17,9 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::geo::MapView;
 use crate::icons::Icon;
+use crate::maps::{MapControl, MapSpec, Marker};
 use crate::media::{ImageSource, LoadedImage};
 use crate::responder::Action;
 use crate::ui_engine::{Key, Modifiers};
@@ -268,6 +270,9 @@ pub enum Kind {
         /// Filled in by the session once decoded; `None` draws nothing.
         loaded: Option<LoadedImage>,
     },
+    /// Interactive map ([`crate::maps::map`]): focusable, dragged and
+    /// zoomed by the session; its children are markers and its controls.
+    Map(Box<MapSpec>),
 }
 
 /// Visible lines of a multiline input: it grows with its text from `min`
@@ -289,6 +294,8 @@ pub struct Handlers<Msg> {
     pub on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
     /// Drop zone: the files dropped on it ([`Element::on_drop_files`]).
     pub on_drop_files: Option<Rc<dyn Fn(Vec<PathBuf>) -> Msg>>,
+    /// Map: the view once a gesture ends ([`Element::on_view_change`]).
+    pub on_view_change: Option<Rc<dyn Fn(MapView) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -300,6 +307,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_action: None,
             on_select: None,
             on_drop_files: None,
+            on_view_change: None,
         }
     }
 }
@@ -313,6 +321,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_action: self.on_action.clone(),
             on_select: self.on_select.clone(),
             on_drop_files: self.on_drop_files.clone(),
+            on_view_change: self.on_view_change.clone(),
         }
     }
 }
@@ -326,6 +335,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_action", &self.on_action.is_some())
             .field("on_select", &self.on_select.is_some())
             .field("on_drop_files", &self.on_drop_files.is_some())
+            .field("on_view_change", &self.on_view_change.is_some())
             .finish()
     }
 }
@@ -425,6 +435,10 @@ pub struct Element<Msg> {
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
     pub command: Option<&'static str>,
+    /// Pinned to a coordinate of the enclosing map ([`crate::maps::marker`]).
+    pub marker: Option<Marker>,
+    /// A map's zoom button, which the session handles.
+    pub map_control: Option<MapControl>,
 }
 
 pub fn div<Msg>() -> Element<Msg> {
@@ -466,7 +480,7 @@ pub fn input<Msg>(value: impl Into<String>, placeholder: impl Into<String>) -> E
 }
 
 impl<Msg> Element<Msg> {
-    fn new(kind: Kind) -> Self {
+    pub(crate) fn new(kind: Kind) -> Self {
         Self {
             id: WidgetId(0),
             key: None,
@@ -495,6 +509,8 @@ impl<Msg> Element<Msg> {
             tooltip: None,
             handlers: Handlers::default(),
             command: None,
+            marker: None,
+            map_control: None,
         }
     }
 
@@ -1011,9 +1027,11 @@ impl<Msg> Element<Msg> {
         }
         match self.kind {
             Kind::Input { .. } => Some(FocusKind::TextField),
+            Kind::Map(_) => Some(FocusKind::Button),
             _ if self.handlers.on_click.is_some()
                 || self.handlers.on_select.is_some()
-                || self.command.is_some() =>
+                || self.command.is_some()
+                || self.map_control.is_some() =>
             {
                 Some(FocusKind::Button)
             }
@@ -1032,10 +1050,11 @@ impl<Msg> Element<Msg> {
     /// Clickable or editable, enabled or not: such elements are hit-test
     /// targets and expose semantic roles.
     pub fn is_control(&self) -> bool {
-        matches!(self.kind, Kind::Input { .. })
+        matches!(self.kind, Kind::Input { .. } | Kind::Map(_))
             || self.handlers.on_click.is_some()
             || self.handlers.on_select.is_some()
             || self.command.is_some()
+            || self.map_control.is_some()
     }
 
     /// Concatenated text of the subtree, used as default accessible name.
@@ -1070,6 +1089,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_action.is_some()
                 || h.on_select.is_some()
                 || h.on_drop_files.is_some()
+                || h.on_view_change.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

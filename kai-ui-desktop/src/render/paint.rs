@@ -199,6 +199,7 @@ impl Painter<'_> {
                 }
             }
             Content::Image(None) => {}
+            Content::Map(_) => {}
         }
         let mut children = node.children.clone();
         children.sort_by_key(|child| layout.get(*child).style.z_index);

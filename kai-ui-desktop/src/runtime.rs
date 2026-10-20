@@ -15,7 +15,8 @@
 //! own, except an animated [`App::background`], which asks for frames at
 //! [`FRAME_INTERVAL`] only while the window is visible, active and motion
 //! is not reduced. Those frames reuse the last prepared draws unless
-//! something else changed (`dirty`). Pending timers ([`Effects::after`])
+//! something else changed (`dirty`). A map that glides or zooms on its own
+//! also asks for frames until it settles. Pending timers ([`Effects::after`])
 //! wake the loop at the nearest one (`ControlFlow::WaitUntil`).
 
 use std::any::Any;
@@ -30,7 +31,7 @@ use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{CursorIcon, Window, WindowId},
 };
@@ -39,7 +40,7 @@ use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAM
 use crate::commands::{Availability, CommandRegistry, CommandState};
 use crate::devtools::{FrameStats, FrameTimes};
 use crate::element::{Element, Kind, WidgetId};
-use crate::geometry::{PhysicalPoint, ScaleFactor, Size};
+use crate::geometry::{PhysicalPoint, Point, ScaleFactor, Size};
 use crate::layout::{Content, Layout, WindowActivity};
 use crate::platform_adapter::{adapt_ime_event, adapt_keyboard_event, adapt_modifiers};
 use crate::render::wgpu_backend::WgpuRenderer;
@@ -50,7 +51,8 @@ use crate::text_field::SystemClipboard;
 use crate::theme::{Appearance, Theme};
 use crate::ui_engine::{ClickCounter, Modifiers};
 
-const LINE_SCROLL: f32 = 40.0;
+/// Points per wheel notch.
+pub(crate) const LINE_SCROLL: f32 = 40.0;
 
 /// What `update` asks the runtime to do, as a value (a subset of 13,
 /// Paso 15): [`Effects::after`] sends a message later,
@@ -744,7 +746,7 @@ impl<A: App> WindowState<A> {
     /// Frame for `RedrawRequested`: a full one, or only the next frame of
     /// the background animation when nothing else changed.
     fn redraw(&mut self) -> Result<(), String> {
-        if !self.session.is_dirty() && self.background_running() {
+        if !self.session.is_dirty() && !self.session.animating() && self.background_running() {
             let seconds = self.clock.tick(Instant::now(), true);
             let layer = self.background_layer.map(|layer| layer.at(seconds));
             if self.renderer.redraw_background(layer.as_ref())? {
@@ -758,7 +760,7 @@ impl<A: App> WindowState<A> {
     /// for events.
     fn control_flow(&mut self) -> ControlFlow {
         let timer = self.session.next_deadline();
-        if !self.background_running() {
+        if !self.background_running() && !self.session.animating() {
             self.next_frame = None;
             return timer.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
         }
@@ -790,13 +792,26 @@ impl<A: App> WindowState<A> {
     }
 
     fn scroll_wheel(&mut self, delta: MouseScrollDelta) {
-        let delta_y = match delta {
-            MouseScrollDelta::LineDelta(_, lines) => lines * LINE_SCROLL,
+        let (delta, lines) = match delta {
+            MouseScrollDelta::LineDelta(x, y) => (
+                Point {
+                    x: x * LINE_SCROLL,
+                    y: y * LINE_SCROLL,
+                },
+                true,
+            ),
             MouseScrollDelta::PixelDelta(position) => {
-                position.y as f32 / self.scale_factor.as_f32()
+                let scale = self.scale_factor.as_f32();
+                (
+                    Point {
+                        x: position.x as f32 / scale,
+                        y: position.y as f32 / scale,
+                    },
+                    false,
+                )
             }
         };
-        self.session.scroll_by(delta_y);
+        self.session.wheel(delta, lines);
     }
 
     fn render(&mut self) -> Result<(), String> {
@@ -929,6 +944,11 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             WindowEvent::Focused(active) => state.session.set_window_active(active),
             WindowEvent::ModifiersChanged(modifiers) => {
                 state.modifiers = adapt_modifiers(modifiers.state());
+                state.session.set_modifiers(state.modifiers);
+            }
+            WindowEvent::PinchGesture { delta, phase, .. } => {
+                let ended = matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled);
+                state.session.pinch(delta, ended);
             }
             WindowEvent::MouseInput {
                 state: button_state,

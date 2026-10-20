@@ -1139,7 +1139,7 @@ mod tests {
                 y: bounds.y + bounds.height / 2.0,
             }
         };
-        app.click_at(center);
+        app.click_point(center);
         assert!(!app.session().popup_open());
         assert_eq!(app.app().checks[0], ControlState::Off, "the click is spent");
         assert!(app.messages().is_empty());
@@ -1147,7 +1147,7 @@ mod tests {
         // Clicking the button again closes the list too.
         app.click(select_cell("Select"));
         assert!(app.session().popup_open());
-        app.click_at(center);
+        app.click_point(center);
         app.click(select_cell("Select disabled"));
         assert!(
             !app.session().popup_open(),

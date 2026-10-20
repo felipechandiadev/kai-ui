@@ -25,8 +25,10 @@ use crate::components::{
     validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
+use crate::geo::{LatLon, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
+use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
 use crate::runtime::{self, App, Effects, PickFile};
 use crate::theme::{
@@ -94,6 +96,9 @@ struct Demo {
     dialogo: Option<Dialogo>,
     toasts: Vec<Toast<Msg>>,
     next_toast: u64,
+    /// Mapa: what it shows, and whether a new view glides there.
+    vista: MapView,
+    animar_vista: bool,
 }
 
 impl Default for Demo {
@@ -140,9 +145,15 @@ impl Default for Demo {
             dialogo: None,
             toasts: Vec::new(),
             next_toast: 1,
+            vista: VISTA_INICIAL,
+            animar_vista: true,
         }
     }
 }
+
+/// Plaza de Armas de Parral, where the map starts.
+const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
+const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 14.0);
 
 /// Largest file the image fields take, in megabytes.
 const MAX_IMAGEN_MB: u64 = 5;
@@ -403,12 +414,14 @@ enum Seccion {
     Multimedia,
     /// Tabla de 10 000 clientes y lista virtualizada.
     Tabla,
+    /// Mapa interactivo de Parral.
+    Mapa,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
     Dialogos,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 9] = [
+    const ALL: [Seccion; 10] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
@@ -417,6 +430,7 @@ impl Seccion {
         Self::Badges,
         Self::Multimedia,
         Self::Tabla,
+        Self::Mapa,
         Self::Dialogos,
     ];
 
@@ -434,6 +448,7 @@ impl Seccion {
             Self::Badges => "badges",
             Self::Multimedia => "multimedia",
             Self::Tabla => "tabla",
+            Self::Mapa => "mapa",
             Self::Dialogos => "dialogos",
         }
     }
@@ -449,6 +464,7 @@ impl Seccion {
             Self::Badges => ("Badges y alertas", Icon::Tag),
             Self::Multimedia => ("Multimedia", Icon::Image),
             Self::Tabla => ("Tabla", Icon::Table),
+            Self::Mapa => ("Mapa", Icon::Map),
             Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
         };
         SidebarItem::new(label).icon(glyph)
@@ -517,6 +533,13 @@ enum Msg {
     ImagenElegida(Campo, Option<PathBuf>),
     /// Loads the avatar from a URL; empty, back to the icon.
     CargarUrl(String),
+    /// A gesture on the map ended there.
+    MapaMovido(MapView),
+    /// Shows `vista` on the map, gliding there when `animar`.
+    FijarVista {
+        vista: MapView,
+        animar: bool,
+    },
 }
 
 impl Demo {
@@ -727,6 +750,48 @@ impl Action for CargarUrl {
     }
 }
 
+/// Moves the map of «Mapa», as a drag or the zoom buttons would.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FijarVista {
+    #[schemars(description = "Centro del mapa (grados)")]
+    center: LatLon,
+    #[schemars(description = "Zoom de 0 (el mundo entero) a 20 (una calle)")]
+    zoom: f64,
+    #[schemars(description = "Deslizarse hasta la vista (por omisión) o saltar")]
+    #[serde(default)]
+    animate: Option<bool>,
+}
+
+impl Action for FijarVista {
+    type App = Demo;
+    const ID: &'static str = "mapa.set_view";
+    const TITLE: &'static str = "Mover el mapa";
+    fn description() -> &'static str {
+        "Centra el mapa de la sección Mapa en un punto, con el zoom dado"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::FijarVista {
+            vista: MapView::new(self.center, self.zoom),
+            animar: self.animate.unwrap_or(true),
+        }
+    }
+}
+
+/// What the map of «Mapa» shows, as of the last gesture.
+#[derive(Deserialize, JsonSchema)]
+struct VistaDelMapa;
+
+impl Query for VistaDelMapa {
+    type App = Demo;
+    type Output = MapView;
+    const ID: &'static str = "mapa.get_view";
+    const TITLE: &'static str = "Vista del mapa";
+    fn run(demo: &Demo, _: Self) -> Result<MapView, CommandError> {
+        Ok(demo.vista)
+    }
+}
+
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
 struct Saludo;
@@ -775,6 +840,8 @@ impl App for Demo {
         // It takes a variant: no menu item, as `ui.ir_a`.
         registry.action::<MostrarAviso>().expose();
         registry.action::<CargarUrl>().expose();
+        registry.action::<FijarVista>().expose();
+        registry.query::<VistaDelMapa>().expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -906,6 +973,11 @@ impl App for Demo {
             Msg::SelectRow(index) => self.cliente = self.rows.get(index).copied(),
             Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
             Msg::CloseDialog => self.dialogo = None,
+            Msg::MapaMovido(vista) => self.vista = vista,
+            Msg::FijarVista { vista, animar } => {
+                self.vista = vista.clamped();
+                self.animar_vista = animar;
+            }
         }
         Effects::none()
     }
@@ -1167,6 +1239,7 @@ impl App for Demo {
             Seccion::Badges => vec![badges_and_alerts],
             Seccion::Multimedia => vec![self.avatars(), self.image_fields()],
             Seccion::Tabla => vec![self.client_table(), self.simple_list()],
+            Seccion::Mapa => vec![self.mapa()],
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
 
@@ -1218,7 +1291,7 @@ impl Demo {
                 ]
                 .map(Seccion::item),
             ),
-            SidebarGroup::titled("Datos", [Seccion::Tabla.item()]),
+            SidebarGroup::titled("Datos", [Seccion::Tabla.item(), Seccion::Mapa.item()]),
             SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
         ];
         Sidebar::new(&groups, self.seccion.index(), |index| {
@@ -1747,6 +1820,47 @@ impl Demo {
         ])
     }
 
+    /// Mapa: Parral with a pin on the plaza, and where the map is.
+    fn mapa(&self) -> Element<Msg> {
+        let vista = self.vista;
+        card().class("w-full max-w-3xl").test_id("mapa").children([
+            card_header(
+                "Parral",
+                Some("Arrastra, usa la rueda o pellizca; doble clic acerca y ⇧ doble clic aleja"),
+            ),
+            card_content().class("gap-3").children([
+                map(&vista)
+                    .animate_view(self.animar_vista)
+                    .on_view_change(Msg::MapaMovido)
+                    .label("Mapa de Parral")
+                    .test_id("mapa.vista")
+                    .class("w-full h-96 border border-border")
+                    .children([marker(
+                        PLAZA_DE_ARMAS,
+                        Anchor::Bottom,
+                        icon(Icon::MapPin).class("size-8 text-primary"),
+                    )
+                    .alt("Plaza de Armas")]),
+                div()
+                    .class("flex items-center justify-between gap-3")
+                    .children([
+                        caption(format!(
+                            "{:.4}, {:.4} · zoom {:.1}",
+                            vista.center.lat, vista.center.lon, vista.zoom
+                        ))
+                        .role(Role::Status)
+                        .test_id("mapa.posicion"),
+                        button("Volver a la plaza", ButtonVariant::Outlined)
+                            .on_click(Msg::FijarVista {
+                                vista: VISTA_INICIAL,
+                                animar: true,
+                            })
+                            .test_id("mapa.volver"),
+                    ]),
+            ]),
+        ])
+    }
+
     /// Diálogos y avisos: open a dialog, show toasts, open the palette.
     fn dialogs_and_toasts(&self) -> Element<Msg> {
         card()
@@ -2105,7 +2219,10 @@ fn demo_theme() -> Theme {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{Campo, CargarUrl, Dialogo, ImageSource, SortDirection, VarianteAviso};
+    use super::{
+        Campo, CargarUrl, Dialogo, ImageSource, LatLon, MapView, PLAZA_DE_ARMAS, SortDirection,
+        VISTA_INICIAL, VarianteAviso,
+    };
 
     use cosmic_text::{
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
@@ -2826,6 +2943,7 @@ mod tests {
             Seccion::Badges => "badges",
             Seccion::Multimedia => "multimedia.campos",
             Seccion::Tabla => "tabla.clientes",
+            Seccion::Mapa => "mapa.vista",
             Seccion::Dialogos => "dialogos",
         }
     }
@@ -2886,6 +3004,7 @@ mod tests {
                 "Badges y alertas",
                 "Multimedia",
                 "Tabla",
+                "Mapa",
                 "Diálogos y avisos",
             ]
         );
@@ -2899,7 +3018,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 9] = [
+        const SOURCES: [&str; 10] = [
             include_str!("components.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
@@ -2909,8 +3028,11 @@ mod tests {
             include_str!("components/text_area.rs"),
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
+            include_str!("maps/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 13] = [
+        const NOT_WIDGETS: [&str; 15] = [
+            "MapSpec",
+            "Marker",
             "validate_image_file",
             "themed",
             "appkit_button_classes",
@@ -3098,6 +3220,18 @@ mod tests {
                 Tabla,
                 None,
                 By::role(Role::List).name("Elementos"),
+            ),
+            (
+                &["map"],
+                Mapa,
+                None,
+                By::role(Role::Group).name("Mapa de Parral"),
+            ),
+            (
+                &["marker"],
+                Mapa,
+                None,
+                By::role(Role::Image).name("Plaza de Armas"),
             ),
             (
                 &["Dialog", "dialog"],
@@ -3579,6 +3713,8 @@ mod tests {
                 "ui.alternar_sidebar",
                 "avisos.mostrar",
                 "multimedia.cargar_url",
+                "mapa.set_view",
+                "mapa.get_view",
                 "kai.paleta",
             ]
         );
@@ -3853,7 +3989,7 @@ mod tests {
         assert!(!app.session().palette_open());
 
         app.press(Key::Char('p'), CMD_SHIFT);
-        app.click_at(crate::geometry::Point { x: 4.0, y: 4.0 });
+        app.click_point(crate::geometry::Point { x: 4.0, y: 4.0 });
         assert!(!app.session().palette_open());
         assert_eq!(
             app.messages(),
@@ -4099,7 +4235,58 @@ mod tests {
                 "ui.alternar_sidebar",
                 "avisos.mostrar",
                 "multimedia.cargar_url",
+                "mapa.set_view",
+                "mapa.get_view",
             ]
+        );
+    }
+
+    #[test]
+    fn the_map_follows_gestures_and_agents() {
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let vista = By::test_id("mapa.vista");
+        app.drag_and_hold(vista.clone(), -100.0, 0.0);
+        let [Msg::MapaMovido(moved)] = app.messages() else {
+            panic!("{:?}", app.messages());
+        };
+        assert!(moved.center.lon > PLAZA_DE_ARMAS.lon, "{moved:?}");
+        assert_eq!(app.app().vista, *moved);
+        assert_eq!(
+            app.call("mapa.get_view", json!({})),
+            Ok(serde_json::to_value(app.app().vista).unwrap())
+        );
+
+        let terminal = MapView::new(LatLon::new(-36.155, -71.82), 15.0);
+        let call = json!({
+            "center": {"lat": -36.155, "lon": -71.82},
+            "zoom": 15,
+            "animate": false,
+        });
+        assert_eq!(app.call("mapa.set_view", call), Ok(json!(null)));
+        assert_eq!(app.app().vista, terminal);
+        assert!(!app.session().animating(), "it jumps");
+        app.screen()
+            .get(By::role(Role::Status).name("-36.1550, -71.8200 · zoom 15.0"));
+        let pin = app
+            .screen()
+            .get(By::role(Role::Image).name("Plaza de Armas"))
+            .bounds();
+        let map = app.screen().get(vista.clone()).bounds();
+        assert!(
+            pin.y + pin.height < map.y + map.height / 2.0,
+            "the plaza is north of the terminal"
+        );
+
+        app.click(By::test_id("mapa.volver"));
+        assert!(app.session().animating(), "it glides back");
+        app.advance(Duration::from_secs(1));
+        assert_eq!(app.app().vista, VISTA_INICIAL);
+        assert!(
+            !app.messages()
+                .iter()
+                .skip(1)
+                .any(|msg| matches!(msg, Msg::MapaMovido(_))),
+            "the app's moves are not reported back"
         );
     }
 

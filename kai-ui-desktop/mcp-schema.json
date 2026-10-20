@@ -162,6 +162,11 @@
                 "type": "string"
               },
               {
+                "const": "mapa",
+                "description": "Mapa interactivo de Parral.",
+                "type": "string"
+              },
+              {
                 "const": "dialogos",
                 "description": "Diálogos, avisos (toasts) y la paleta de comandos.",
                 "type": "string"
@@ -238,6 +243,102 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Cargar imagen desde URL"
+    },
+    {
+      "description": "Centra el mapa de la sección Mapa en un punto, con el zoom dado",
+      "exposed": true,
+      "id": "mapa.set_view",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "animate": {
+            "default": null,
+            "description": "Deslizarse hasta la vista (por omisión) o saltar",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "center": {
+            "description": "Centro del mapa (grados)",
+            "properties": {
+              "lat": {
+                "description": "Latitude, −90 (south) to 90 (north).",
+                "format": "double",
+                "type": "number"
+              },
+              "lon": {
+                "description": "Longitude, −180 (west) to 180 (east).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          },
+          "zoom": {
+            "description": "Zoom de 0 (el mundo entero) a 20 (una calle)",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center",
+          "zoom"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mover el mapa"
+    },
+    {
+      "exposed": true,
+      "id": "mapa.get_view",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "properties": {
+          "center": {
+            "description": "A place on Earth, in degrees (WGS 84).",
+            "properties": {
+              "lat": {
+                "description": "Latitude, −90 (south) to 90 (north).",
+                "format": "double",
+                "type": "number"
+              },
+              "lon": {
+                "description": "Longitude, −180 (west) to 180 (east).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          },
+          "zoom": {
+            "description": "0 (the whole world in one 256-point tile) to 20.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center",
+          "zoom"
+        ],
+        "type": "object"
+      },
+      "title": "Vista del mapa"
     }
   ],
   "format": 1
