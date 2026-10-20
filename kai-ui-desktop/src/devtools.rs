@@ -83,6 +83,8 @@ pub enum MsgSource {
     Agent(String),
     /// A timer the app asked for with `Effects::after`.
     Timer,
+    /// The window's size ([`App::resized`](crate::runtime::App::resized)).
+    Window,
 }
 
 impl fmt::Display for MsgSource {
@@ -95,6 +97,7 @@ impl fmt::Display for MsgSource {
             Self::Script => f.write_str("Script"),
             Self::Agent(client) => write!(f, "Agente {client}"),
             Self::Timer => f.write_str("Temporizador"),
+            Self::Window => f.write_str("Ventana"),
         }
     }
 }

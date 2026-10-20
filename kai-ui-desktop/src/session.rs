@@ -17,9 +17,12 @@ use crate::background::BackgroundEffect;
 use crate::commands::{
     Availability, CommandError, CommandKind, CommandRegistry, CommandState, PALETTE,
 };
+use crate::components::themed;
 use crate::components::{MENU, MenuFrame, PaletteItem, command_palette, select_menu};
 use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
-use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
+use crate::element::{
+    Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
+};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
 use crate::layout::{
@@ -133,6 +136,84 @@ pub(crate) struct Session<A: App> {
     row_pin: Option<(WidgetId, usize)>,
     /// Rows built for each virtual list in the last rebuild.
     row_windows: Vec<(WidgetId, Range<usize>)>,
+    /// [`Element::tooltip`] of every element of the last rebuild.
+    tooltips: HashMap<WidgetId, String>,
+    /// The tooltip of the element under the pointer, waiting or shown.
+    tooltip: Option<Tooltip>,
+    /// Element whose tooltip a press hid: it stays hidden until the
+    /// pointer leaves it.
+    tooltip_pressed: Option<WidgetId>,
+}
+
+struct Tooltip {
+    anchor: WidgetId,
+    due: Instant,
+    shown: bool,
+}
+
+/// Test id of the tooltip bubble.
+pub(crate) const TOOLTIP: &str = "kai.tooltip";
+
+/// Where the tooltip for `anchor` goes: to its right for an element at the
+/// left edge of the window (a sidebar rail), else below it, or above when
+/// there is no room below. Its size is estimated from the text.
+fn tooltip_origin(anchor: Rect, text: &str, viewport: Size) -> Point {
+    const GAP: f32 = 6.0;
+    const MARGIN: f32 = 8.0;
+    const HEIGHT: f32 = 24.0;
+    let width = (text.chars().count() as f32 * 6.5 + 16.0).min(280.0);
+    let fit_x = |x: f32| x.min(viewport.width - width - MARGIN).max(MARGIN);
+    let fit_y = |y: f32| y.min(viewport.height - HEIGHT - MARGIN).max(MARGIN);
+    if anchor.x + anchor.width <= 64.0 {
+        return Point {
+            x: anchor.x + anchor.width + GAP,
+            y: fit_y(anchor.y + (anchor.height - HEIGHT) / 2.0),
+        };
+    }
+    let below = anchor.y + anchor.height + GAP;
+    let y = if below + HEIGHT + MARGIN <= viewport.height {
+        below
+    } else {
+        anchor.y - GAP - HEIGHT
+    };
+    Point {
+        x: fit_x(anchor.x),
+        y: fit_y(y),
+    }
+}
+
+/// The tooltip overlay: a bubble with `text` at `origin`, over everything
+/// and taking no pointer.
+fn tooltip_bubble<Msg>(text: &str, origin: Point) -> Element<Msg> {
+    div()
+        .class("absolute inset-0 z-60 pointer-events-none")
+        .child(
+            div()
+                .class(&format!(
+                    "absolute left-[{:.0}px] top-[{:.0}px] max-w-[280px] {}",
+                    origin.x,
+                    origin.y,
+                    themed(
+                        "px-2 py-1 rounded-md text-xs bg-foreground text-background shadow-md",
+                        "px-1.5 py-0.5 rounded-[4px] text-caption1 text-label \
+                         bg-control-background border border-separator shadow-md",
+                    )
+                ))
+                .role(Role::Tooltip)
+                .label(text)
+                .test_id(TOOLTIP)
+                .child(crate::element::text(text).class("whitespace-nowrap")),
+        )
+}
+
+/// Collect the [`Element::tooltip`] of `element` and its descendants.
+fn collect_tooltips<Msg>(element: &Element<Msg>, into: &mut HashMap<WidgetId, String>) {
+    if let Some(tooltip) = &element.tooltip {
+        into.insert(element.id, tooltip.clone());
+    }
+    for child in &element.children {
+        collect_tooltips(child, into);
+    }
 }
 
 struct Timer<Msg> {
@@ -315,11 +396,22 @@ impl<A: App> Session<A> {
             clock: None,
             row_pin: None,
             row_windows: Vec::new(),
+            tooltips: HashMap::new(),
+            tooltip: None,
+            tooltip_pressed: None,
         };
         session.apply_effects(effects);
+        session.notify_resized();
         session.rebuild();
         session.relayout();
         session
+    }
+
+    /// Tell the app the window's size ([`App::resized`]).
+    fn notify_resized(&mut self) {
+        if let Some(msg) = self.app.resized(self.viewport) {
+            self.with_source(MsgSource::Window, |session| session.send(msg));
+        }
     }
 
     fn now(&self) -> Instant {
@@ -356,14 +448,32 @@ impl<A: App> Session<A> {
 
     /// When the earliest pending timer is due.
     pub fn next_deadline(&self) -> Option<Instant> {
-        self.timers.iter().map(|timer| timer.due).min()
+        let tooltip = self
+            .tooltip
+            .as_ref()
+            .filter(|tooltip| !tooltip.shown)
+            .map(|tooltip| tooltip.due);
+        self.timers
+            .iter()
+            .map(|timer| timer.due)
+            .chain(tooltip)
+            .min()
     }
 
-    /// Send the message of every timer that is due, earliest first.
-    /// Returns whether one ran.
+    /// Send the message of every timer that is due, earliest first, and
+    /// show the waiting tooltip when its time comes. Returns whether
+    /// anything ran.
     pub fn run_timers(&mut self) -> bool {
         let now = self.now();
         let mut ran = false;
+        if let Some(tooltip) = &mut self.tooltip
+            && !tooltip.shown
+            && tooltip.due <= now
+        {
+            tooltip.shown = true;
+            self.invalidate();
+            ran = true;
+        }
         while let Some(index) = self
             .timers
             .iter()
@@ -494,7 +604,10 @@ impl<A: App> Session<A> {
 
     /// Window content size in logical points.
     pub fn set_viewport(&mut self, viewport: Size) {
-        self.viewport = viewport;
+        if viewport != self.viewport {
+            self.viewport = viewport;
+            self.notify_resized();
+        }
         self.invalidate();
     }
 
@@ -511,9 +624,19 @@ impl<A: App> Session<A> {
             .or_else(|| self.focused_row().map(|(list, index, ..)| (list, index)));
         self.tree = build_view_with(&self.app, &self.commands);
         self.build_rows(pin);
+        self.tooltips.clear();
+        collect_tooltips(&self.tree, &mut self.tooltips);
+        if self
+            .tooltip
+            .as_ref()
+            .is_some_and(|tooltip| !self.tooltips.contains_key(&tooltip.anchor))
+        {
+            self.tooltip = None;
+        }
         self.track_modal();
         self.add_agent_status();
         self.add_inspector();
+        self.add_tooltip();
         self.add_popup();
         self.add_palette();
         self.add_confirmation();
@@ -1119,6 +1242,62 @@ impl<A: App> Session<A> {
         self.tree.assign_ids();
     }
 
+    /// Append the shown tooltip, before the palette and the dialog so those
+    /// stay last.
+    fn add_tooltip(&mut self) {
+        let Some(tooltip) = self.tooltip.as_ref().filter(|tooltip| tooltip.shown) else {
+            return;
+        };
+        let (Some(text), Some(node)) = (
+            self.tooltips.get(&tooltip.anchor),
+            self.layout.node(tooltip.anchor),
+        ) else {
+            return;
+        };
+        let anchor = node.visible_bounds().unwrap_or(node.bounds);
+        let bubble = tooltip_bubble(text, tooltip_origin(anchor, text, self.viewport));
+        self.tree.children.push(bubble);
+        self.tree.assign_ids();
+    }
+
+    /// Follow the hover path: the innermost element under the pointer with
+    /// a tooltip starts waiting for it, at once if another one was showing.
+    fn update_tooltip(&mut self) {
+        let anchor = self
+            .hover_path
+            .iter()
+            .rev()
+            .find(|id| self.tooltips.contains_key(id))
+            .copied();
+        if self.tooltip_pressed != anchor {
+            self.tooltip_pressed = None;
+        }
+        let anchor = anchor.filter(|&id| self.tooltip_pressed != Some(id));
+        if self.tooltip.as_ref().map(|tooltip| tooltip.anchor) == anchor {
+            return;
+        }
+        let warm = self.tooltip.as_ref().is_some_and(|tooltip| tooltip.shown);
+        if warm {
+            self.invalidate();
+        }
+        let due = self.now() + TOOLTIP_DELAY;
+        self.tooltip = anchor.map(|anchor| Tooltip {
+            anchor,
+            due,
+            shown: warm,
+        });
+    }
+
+    /// A press hides the tooltip until the pointer leaves its element.
+    fn dismiss_tooltip(&mut self) {
+        if let Some(tooltip) = self.tooltip.take() {
+            self.tooltip_pressed = Some(tooltip.anchor);
+            if tooltip.shown {
+                self.invalidate();
+            }
+        }
+    }
+
     /// Whether the inspector overlay is open.
     #[cfg(test)]
     pub fn inspector_open(&self) -> bool {
@@ -1227,6 +1406,7 @@ impl<A: App> Session<A> {
         }
         self.outbox.cursor = Some(cursor_for(&self.layout, &path));
         self.hover_path = path;
+        self.update_tooltip();
         true
     }
 
@@ -1475,6 +1655,9 @@ impl<A: App> Session<A> {
     }
 
     fn press_pointer(&mut self, pressed: bool, clicks: u32) {
+        if pressed {
+            self.dismiss_tooltip();
+        }
         let target = pointer_target(&self.layout, &self.hover_path);
         if pressed
             && let Some(popup) = &self.popup

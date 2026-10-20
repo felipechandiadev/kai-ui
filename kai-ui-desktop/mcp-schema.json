@@ -152,6 +152,19 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Ir a sección"
+    },
+    {
+      "description": "Colapsa la barra lateral a un riel de íconos o la expande",
+      "exposed": true,
+      "id": "ui.alternar_sidebar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mostrar u ocultar barra lateral"
     }
   ],
   "format": 1

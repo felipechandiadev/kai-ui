@@ -24,9 +24,11 @@ pub fn toolbar<Msg>(items: impl IntoIterator<Item = Element<Msg>>) -> Element<Ms
 }
 
 /// Toolbar button: an icon without a border that shows one under the
-/// pointer, named `label` for accessibility. Chain `.on_click(..)` or
-/// `.on_command(..)`, and `.pressed(..)` for a toggle.
+/// pointer, named `label` for accessibility and showing it as its tooltip.
+/// Chain `.on_click(..)` or `.on_command(..)`, and `.pressed(..)` for a
+/// toggle.
 pub fn toolbar_item<Msg>(glyph: Icon, label: impl Into<String>) -> Element<Msg> {
+    let label = label.into();
     div()
         .class(&themed(
             "inline-flex items-center justify-center shrink-0 size-9 rounded-md border \
@@ -41,6 +43,7 @@ pub fn toolbar_item<Msg>(glyph: Icon, label: impl Into<String>) -> Element<Msg> 
              window-inactive:text-tertiary-label disabled:text-disabled-control-text",
         ))
         .role(Role::Button)
+        .tooltip(label.as_str())
         .label(label)
         .child(icon(glyph).class(&themed("size-5", "size-4")))
 }
@@ -196,5 +199,19 @@ mod tests {
             item.node().control_state,
             Some(crate::element::ControlState::On)
         );
+    }
+
+    #[test]
+    fn items_show_their_name_as_a_tooltip() {
+        let mut app = TestApp::new(Window::default());
+        app.hover(By::test_id("barra.agregar"));
+        app.advance(crate::element::TOOLTIP_DELAY);
+        let tooltip = app.screen().get_by_test_id(crate::session::TOOLTIP);
+        let item = app.screen().get_by_test_id("barra.agregar").bounds();
+        assert_eq!(
+            tooltip.name(),
+            app.screen().get_by_test_id("barra.agregar").name()
+        );
+        assert!(tooltip.bounds().y >= item.y + item.height, "below the item");
     }
 }

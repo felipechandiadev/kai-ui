@@ -112,6 +112,18 @@ impl KeyEquivalent {
         }
     }
 
+    /// Control + Command + `key` (`⌃⌘S`).
+    pub const fn ctrl_cmd(key: Key) -> Self {
+        Self {
+            key,
+            modifiers: Modifiers {
+                control: true,
+                command: true,
+                ..Modifiers::NONE
+            },
+        }
+    }
+
     /// Menu-style label (`⌘S`, `↩`, `⎋`), exposed to assistive technology.
     pub fn label(&self) -> String {
         let m = self.modifiers;
@@ -334,6 +346,10 @@ pub struct Options {
     pub open: bool,
 }
 
+/// How long the pointer rests on an element before its
+/// [`Element::tooltip`] shows.
+pub const TOOLTIP_DELAY: std::time::Duration = std::time::Duration::from_millis(600);
+
 #[derive(Debug)]
 pub struct Element<Msg> {
     pub id: WidgetId,
@@ -388,6 +404,9 @@ pub struct Element<Msg> {
     pub row_count: Option<usize>,
     /// Place of this row in its table or list, from 0.
     pub row_index: Option<usize>,
+    /// Help text the session shows next to the pointer after a pause
+    /// ([`Element::tooltip`]).
+    pub tooltip: Option<String>,
     pub handlers: Handlers<Msg>,
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
@@ -446,6 +465,7 @@ impl<Msg> Element<Msg> {
             virtual_rows: None,
             row_count: None,
             row_index: None,
+            tooltip: None,
             handlers: Handlers::default(),
             command: None,
         }
@@ -575,6 +595,16 @@ impl<Msg> Element<Msg> {
 
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// Help text (`toolTip`, `title`): the session shows it in a bubble
+    /// when the pointer rests on this element for [`TOOLTIP_DELAY`] (at
+    /// once while another tooltip is showing), and hides it when
+    /// the pointer leaves or presses. It is visual only: give the element
+    /// its accessible name with [`Element::label`].
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 

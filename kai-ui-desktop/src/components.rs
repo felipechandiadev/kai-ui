@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 mod dialog;
 mod search;
+mod sidebar;
 mod table;
 mod text_area;
 mod toast;
@@ -17,6 +18,7 @@ mod toolbar;
 
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use search::{SearchField, search_field};
+pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
 pub use text_area::{TextArea, text_area};
 pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};
@@ -2080,156 +2082,6 @@ pub fn segmented_with_options<Msg>(
                 .on_click(on_select(index))
                 .child(text(*label))
         }))
-}
-
-/// Row of a [`sidebar`]: a title, an optional icon before it and an
-/// optional badge (a count) after it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SidebarItem {
-    pub label: String,
-    pub icon: Option<Icon>,
-    pub badge: Option<String>,
-}
-
-impl SidebarItem {
-    pub fn new(label: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            icon: None,
-            badge: None,
-        }
-    }
-
-    pub fn icon(mut self, icon: Icon) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-
-    pub fn badge(mut self, badge: impl Into<String>) -> Self {
-        self.badge = Some(badge.into());
-        self
-    }
-}
-
-/// Rows of a [`sidebar`], under a title or not.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SidebarGroup {
-    pub title: Option<String>,
-    pub items: Vec<SidebarItem>,
-}
-
-impl SidebarGroup {
-    pub fn titled(title: impl Into<String>, items: impl IntoIterator<Item = SidebarItem>) -> Self {
-        Self {
-            title: Some(title.into()),
-            items: items.into_iter().collect(),
-        }
-    }
-
-    pub fn untitled(items: impl IntoIterator<Item = SidebarItem>) -> Self {
-        Self {
-            title: None,
-            items: items.into_iter().collect(),
-        }
-    }
-}
-
-/// Sidebar of sections (a source list): one row per item, `selected`
-/// counted across groups in order. It is one Tab stop that enters at the
-/// selected row, and ↑ and ↓ move the selection, sending
-/// `on_select(index)` as a click does ([`Element::selecting_focus_group`]).
-/// The selected row is tinted glass like the info [`alert`] (a translucent
-/// `info` fill and border), and hovering a row previews a fainter version
-/// of it. Give it a width and a background
-/// with `.class(..)`. Parts: one per row, by index (`<id>.0`…).
-pub fn sidebar<Msg>(
-    groups: &[SidebarGroup],
-    selected: usize,
-    on_select: impl Fn(usize) -> Msg,
-) -> Element<Msg> {
-    let mut index = 0;
-    let sections = groups.iter().map(|group| {
-        let mut children = Vec::new();
-        if let Some(title) = &group.title {
-            children.push(
-                text(title.as_str())
-                    .class(&themed(
-                        "px-3 pb-1 text-xs font-medium text-muted-foreground",
-                        "px-2 pb-0.5 text-footnote font-semibold text-secondary-label",
-                    ))
-                    .role(Role::Heading),
-            );
-        }
-        for item in &group.items {
-            children.push(sidebar_row(item, index, index == selected, &on_select));
-            index += 1;
-        }
-        div().class("flex flex-col gap-px").children(children)
-    });
-    let sections: Vec<Element<Msg>> = sections.collect();
-    div()
-        .class(&themed(
-            "group flex flex-col gap-4 p-3 overflow-y-auto",
-            "group flex flex-col gap-3 px-2.5 py-2 overflow-y-auto",
-        ))
-        .role(Role::Sidebar)
-        .selecting_focus_group()
-        .parts_root()
-        .children(sections)
-}
-
-fn sidebar_row<Msg>(
-    item: &SidebarItem,
-    index: usize,
-    selected: bool,
-    on_select: &impl Fn(usize) -> Msg,
-) -> Element<Msg> {
-    // Every row has a border so the selected one does not shift its content.
-    let (row, glyph, badge) = if selected {
-        (
-            themed(
-                "border-info bg-info/20 hover:bg-info/25 text-foreground font-medium",
-                "border-info bg-info/20 hover:bg-info/25 text-label glass:font-semibold",
-            ),
-            "text-info".to_owned(),
-            "text-info".to_owned(),
-        )
-    } else {
-        (
-            themed(
-                "border-transparent text-foreground hover:bg-info/10 hover:border-info/40",
-                "border-transparent text-label hover:bg-info/10 hover:border-info/40",
-            ),
-            themed("text-muted-foreground", "text-control-accent"),
-            themed("text-muted-foreground", "text-secondary-label"),
-        )
-    };
-    let mut children = Vec::new();
-    if let Some(glyph_icon) = item.icon {
-        children.push(icon(glyph_icon).class(&format!("size-4 shrink-0 {glyph}")));
-    }
-    children.push(text(item.label.as_str()).class("flex-1 truncate"));
-    if let Some(count) = &item.badge {
-        children.push(
-            text(count.as_str()).class(&format!("{badge} {}", themed("text-xs", "text-footnote"))),
-        );
-    }
-    div()
-        .class(&format!(
-            "{} {row}",
-            themed(
-                "flex items-center gap-2 h-9 px-3 border rounded-md text-sm cursor-pointer \
-                 focus-visible:ring-2 focus-visible:ring-primary/40",
-                "flex items-center gap-1.5 h-7 px-2 border rounded-[5px] text-control cursor-default",
-            )
-        ))
-        .role(Role::SidebarItem)
-        .key(index.to_string())
-        .part(index.to_string())
-        .label(item.label.as_str())
-        .pressed(selected)
-        .on_click(on_select(index))
-        .children(children)
 }
 
 #[cfg(test)]

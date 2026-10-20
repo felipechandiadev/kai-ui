@@ -10,12 +10,13 @@ use crate::commands::{
 };
 use crate::components::{
     AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
-    IconButtonSize, IconButtonVariant, LabelLayout, SidebarGroup, SidebarItem, SwitchDensity,
-    TextField, alert, badge, button, button_sized, caption, card, card_actions, card_content,
-    card_header, checkbox, icon_button_sized, paragraph, segmented, select, sidebar, stat,
+    IconButtonSize, IconButtonVariant, LabelLayout, Sidebar, SidebarGroup, SidebarItem,
+    SwitchDensity, TextField, alert, badge, button, button_sized, caption, card, card_actions,
+    card_content, card_header, checkbox, icon_button_sized, paragraph, segmented, select, stat,
     switch_labeled,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
+use crate::geometry::Size;
 use crate::icons::Icon;
 use crate::runtime::{self, SimpleApp};
 use crate::theme::{
@@ -46,6 +47,10 @@ struct Demo {
     terms: bool,
     /// Section shown next to the sidebar.
     seccion: Seccion,
+    /// The sidebar is a rail of icons.
+    sidebar_collapsed: bool,
+    /// The first window size has set `sidebar_collapsed`.
+    sized: bool,
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
@@ -71,6 +76,8 @@ impl Default for Demo {
             role: None,
             terms: false,
             seccion: Seccion::Inicio,
+            sidebar_collapsed: false,
+            sized: false,
             background: BackgroundKind::None,
             background_motion: BackgroundMotion::Static,
         }
@@ -167,6 +174,11 @@ enum Msg {
     SetRole(usize),
     ToggleTerms,
     IrA(Seccion),
+    ToggleSidebar,
+    /// First window size: whether it is narrower than `sm`.
+    InitialWidth {
+        narrow: bool,
+    },
     SetBackground(BackgroundKind),
     ToggleBackgroundMotion,
 }
@@ -312,6 +324,21 @@ impl Action for IrA {
     }
 }
 
+#[derive(Clone, Deserialize, JsonSchema)]
+struct AlternarSidebar;
+
+impl Action for AlternarSidebar {
+    type App = Demo;
+    const ID: &'static str = "ui.alternar_sidebar";
+    const TITLE: &'static str = "Mostrar u ocultar barra lateral";
+    fn description() -> &'static str {
+        "Colapsa la barra lateral a un riel de íconos o la expande"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::ToggleSidebar
+    }
+}
+
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
 struct Saludo;
@@ -352,6 +379,17 @@ impl SimpleApp for Demo {
         registry.query::<Saludo>().expose();
         // It takes a section, so it has no menu item nor shortcut.
         registry.action::<IrA>().expose();
+        registry
+            .action::<AlternarSidebar>()
+            .shortcut(Shortcut::ctrl_cmd(Key::Char('s')))
+            .menu("Ver")
+            .expose();
+    }
+
+    fn resized(&self, size: Size) -> Option<Msg> {
+        (!self.sized).then_some(Msg::InitialWidth {
+            narrow: size.width < 640.0,
+        })
     }
 
     fn title(&self) -> String {
@@ -394,6 +432,11 @@ impl SimpleApp for Demo {
             Msg::SetRole(index) => self.role = Some(index),
             Msg::ToggleTerms => self.terms = !self.terms,
             Msg::IrA(seccion) => self.seccion = seccion,
+            Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
+            Msg::InitialWidth { narrow } => {
+                self.sidebar_collapsed = narrow;
+                self.sized = true;
+            }
             Msg::SetBackground(kind) => self.background = kind,
             Msg::ToggleBackgroundMotion => {
                 self.background_motion = match self.background_motion {
@@ -696,15 +739,20 @@ impl Demo {
                 ],
             ),
         ];
-        sidebar(&groups, self.seccion.index(), |index| {
+        Sidebar::new(&groups, self.seccion.index(), |index| {
             Msg::IrA(Seccion::ALL[index])
         })
-        .class(
-            "w-40 sm:w-52 shrink-0 border-r border-border/70 bg-background \
-             appkit:border-separator appkit:bg-fill-4",
-        )
+        .collapsed(self.sidebar_collapsed)
+        .on_toggle(Msg::ToggleSidebar)
         .label("Secciones")
         .test_id("nav")
+        .build()
+        .class(if self.sidebar_collapsed {
+            "shrink-0"
+        } else {
+            "w-40 sm:w-52 shrink-0"
+        })
+        .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
     }
 
     /// Card with every control size (`NSControl.ControlSize`, mini … extra
@@ -1315,32 +1363,33 @@ mod tests {
         let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
         assert_eq!(kinds[0], FocusKind::Button, "header quick action button");
         assert_eq!(kinds[1..5], [FocusKind::Button; 4], "sidebar rows");
+        assert_eq!(kinds[5], FocusKind::Button, "sidebar collapse button");
         // Background panel: four effect segments (one Tab stop); the
         // "Animado" switch starts disabled (no effect).
-        assert_eq!(kinds[5..9], [FocusKind::Button; 4], "background effects");
+        assert_eq!(kinds[6..10], [FocusKind::Button; 4], "background effects");
         assert_eq!(
-            kinds[9],
+            kinds[10],
             FocusKind::Button,
             "Incrementar; Reiniciar starts disabled"
         );
-        assert_eq!(kinds[10], FocusKind::TextField, "Nombre");
-        assert_eq!(kinds[11], FocusKind::TextField, "Correo");
-        assert_eq!(kinds[12], FocusKind::Button, "select rol");
-        assert_eq!(kinds[13], FocusKind::Button, "checkbox términos");
-        assert_eq!(kinds[14], FocusKind::Button, "switch notificaciones");
-        assert_eq!(kinds[15], FocusKind::Button, "Limpiar");
-        assert_eq!(kinds.len(), 16, "Enviar starts disabled");
+        assert_eq!(kinds[11], FocusKind::TextField, "Nombre");
+        assert_eq!(kinds[12], FocusKind::TextField, "Correo");
+        assert_eq!(kinds[13], FocusKind::Button, "select rol");
+        assert_eq!(kinds[14], FocusKind::Button, "checkbox términos");
+        assert_eq!(kinds[15], FocusKind::Button, "switch notificaciones");
+        assert_eq!(kinds[16], FocusKind::Button, "Limpiar");
+        assert_eq!(kinds.len(), 17, "Enviar starts disabled");
         let campos = Demo::at(Seccion::Campos);
         let order = FocusOrder::from_tree(&build_view(&campos));
         let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
-        assert_eq!(kinds[5], FocusKind::TextField, "Buscar");
-        assert_eq!(kinds[6], FocusKind::TextField, "Contraseña");
-        assert_eq!(kinds[7], FocusKind::Button, "Toggle password");
+        assert_eq!(kinds[6], FocusKind::TextField, "Buscar");
+        assert_eq!(kinds[7], FocusKind::TextField, "Contraseña");
+        assert_eq!(kinds[8], FocusKind::Button, "Toggle password");
         // With an effect the switch joins the order.
         let mut glow = Demo::default();
         glow.update(Msg::SetBackground(BackgroundKind::Glow));
         let order = FocusOrder::from_tree(&build_view(&glow));
-        assert_eq!(order.ids().count(), 16 + 1);
+        assert_eq!(order.ids().count(), 17 + 1);
     }
 
     /// The background panel sets the effect and its motion; the app hands
@@ -1609,8 +1658,8 @@ mod tests {
     fn background_effects_are_one_segmented_tab_stop() {
         let mut app = TestApp::new(Demo::default());
         let segment = |name: &str| By::role(Role::Radio).name(name);
-        // Header button, sidebar, then the effects.
-        for _ in 0..3 {
+        // Header button, sidebar, its collapse button, then the effects.
+        for _ in 0..4 {
             app.press(Key::Tab, Modifiers::NONE);
         }
         assert!(app.is_focused(segment("Ninguno")));
@@ -1668,6 +1717,45 @@ mod tests {
         assert!(app.call("ui.ir_a", json!({"seccion": "mapas"})).is_err());
         assert!(app.call("ui.ir_a", json!({})).is_err());
         assert_eq!(app.app().seccion, Seccion::Botones);
+    }
+
+    /// ⌃⌘S, the sidebar's own button and `ui.alternar_sidebar` collapse it
+    /// to the rail and back; a window narrower than `sm` starts with it
+    /// collapsed, and resizing later leaves the person's choice alone.
+    #[test]
+    fn the_sidebar_collapses_to_a_rail_by_shortcut_button_or_command() {
+        let mut app = TestApp::new(Demo::default());
+        let width = |app: &TestApp<Demo>| app.screen().get_by_test_id("nav").bounds().width;
+        assert!(width(&app) > 48.0);
+        let ctrl_cmd = Modifiers {
+            control: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Char('s'), ctrl_cmd);
+        assert_eq!(app.messages(), [Msg::ToggleSidebar]);
+        assert_eq!(width(&app), 48.0);
+        assert_eq!(
+            app.screen()
+                .get(By::role(Role::SidebarItem).name("Campos"))
+                .role(),
+            Role::SidebarItem,
+            "rows keep their names in the rail"
+        );
+        app.click(By::test_id("nav.alternar"));
+        assert!(width(&app) > 48.0);
+        assert_eq!(app.call("ui.alternar_sidebar", json!({})), Ok(json!(null)));
+        assert!(app.app().sidebar_collapsed);
+
+        let narrow = TestApp::builder(Demo::default())
+            .viewport(560.0, 700.0)
+            .build();
+        assert!(narrow.app().sidebar_collapsed);
+        assert_eq!(width(&narrow), 48.0);
+        let wide = TestApp::builder(Demo::default())
+            .viewport(1024.0, 700.0)
+            .build();
+        assert!(!wide.app().sidebar_collapsed);
     }
 
     /// The content is keyed by section, so a section never inherits the
@@ -1749,6 +1837,7 @@ mod tests {
                 "form.alternar_contrasena",
                 "form.ultimo_envio",
                 "ui.ir_a",
+                "ui.alternar_sidebar",
                 "kai.paleta",
             ]
         );
@@ -1797,9 +1886,13 @@ mod tests {
                 shortcut: Some(KeyEquivalent::cmd(Key::Char('0'))),
             }
         );
-        assert_eq!(model[2].items.len(), 1);
-        assert_eq!(model[2].items[0].id, PALETTE);
-        assert!(model[2].items[0].enabled);
+        let ver: Vec<_> = model[2].items.iter().map(|item| item.id).collect();
+        assert_eq!(ver, ["ui.alternar_sidebar", PALETTE]);
+        assert_eq!(
+            model[2].items[0].shortcut,
+            Some(KeyEquivalent::ctrl_cmd(Key::Char('s')))
+        );
+        assert!(model[2].items[1].enabled);
     }
 
     const CMD: Modifiers = Modifiers {
@@ -1903,7 +1996,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            5,
+            6,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -2262,6 +2355,7 @@ mod tests {
                 "form.limpiar",
                 "form.ultimo_envio",
                 "ui.ir_a",
+                "ui.alternar_sidebar",
             ]
         );
     }

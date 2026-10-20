@@ -37,7 +37,7 @@ use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAM
 use crate::commands::{Availability, CommandRegistry, CommandState};
 use crate::devtools::{FrameStats, FrameTimes};
 use crate::element::{Element, Kind, WidgetId};
-use crate::geometry::{PhysicalPoint, ScaleFactor};
+use crate::geometry::{PhysicalPoint, ScaleFactor, Size};
 use crate::layout::{Content, Layout, WindowActivity};
 use crate::platform_adapter::{adapt_ime_event, adapt_keyboard_event, adapt_modifiers};
 use crate::render::wgpu_backend::WgpuRenderer;
@@ -162,6 +162,14 @@ pub trait App: 'static {
         None
     }
 
+    /// Message for a new size of the window's content, in logical points:
+    /// once after `init` and again on every resize. Default: none. Apps
+    /// use it for what classes like `sm:` cannot do, such as starting
+    /// with the sidebar collapsed in a narrow window.
+    fn resized(&self, _size: Size) -> Option<Self::Msg> {
+        None
+    }
+
     /// Declare the app's commands, once at startup (see [`crate::commands`]).
     fn commands(_registry: &mut CommandRegistry<Self>)
     where
@@ -190,6 +198,11 @@ pub trait SimpleApp: 'static {
 
     /// See [`App::window_override`].
     fn window_override(&self) -> Option<WindowActivity> {
+        None
+    }
+
+    /// See [`App::resized`].
+    fn resized(&self, _size: Size) -> Option<Self::Msg> {
         None
     }
 
@@ -227,6 +240,10 @@ impl<T: SimpleApp> App for T {
 
     fn window_override(&self) -> Option<WindowActivity> {
         SimpleApp::window_override(self)
+    }
+
+    fn resized(&self, size: Size) -> Option<Self::Msg> {
+        SimpleApp::resized(self, size)
     }
 
     fn commands(registry: &mut CommandRegistry<Self>) {
