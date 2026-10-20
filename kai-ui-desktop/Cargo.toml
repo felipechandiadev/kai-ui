@@ -33,6 +33,8 @@ bytemuck = { version = "1.25", features = ["derive"] }
 glyphon = "0.12.0"
 # Decoding of `kai::media` images (PNG, JPEG, WebP), off the UI thread.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# Fill and stroke meshes for `DrawOp::Geometry` (maps, vector shapes).
+lyon_tessellation = "1"
 pollster = "0.4"
 png = { version = "0.18.1", optional = true }
 cosmic-text = "0.19.0"

@@ -3,9 +3,11 @@
 //! Paint code produces a [`DrawList`] in logical window coordinates and in
 //! painter's order (later ops cover earlier ones, text included); a backend
 //! (currently [`wgpu_backend::WgpuRenderer`]) turns it into GPU work.
-//! [`resolve`] splits the list into alternating quad, image and text
-//! [`Batch`]es that keep that order and carries each op's effective clip.
+//! [`resolve`] splits the list into alternating quad, image, geometry and
+//! text [`Batch`]es that keep that order and carries each op's effective
+//! clip.
 
+pub mod geometry;
 pub mod icons;
 pub mod images;
 pub mod paint;
@@ -16,6 +18,7 @@ use crate::background::BackgroundLayer;
 use crate::element::WidgetId;
 use crate::geometry::{Point, Rect};
 use crate::icons::Icon;
+pub use geometry::{Affine2, GeometryDraw, Mesh};
 pub use images::Bitmap;
 
 /// Straight-alpha color in the sRGB color space, as authored in design tokens.
@@ -224,6 +227,8 @@ impl ImageDraw {
 pub enum DrawOp {
     Quad(Quad),
     Image(ImageDraw),
+    /// A triangle mesh (fill or screen-width stroke), antialiased by MSAA.
+    Geometry(GeometryDraw),
     /// Intersect the current clip with `rect` until the matching `PopClip`.
     PushClip(Rect),
     PopClip,
@@ -263,6 +268,10 @@ impl DrawList {
         self.ops.push(DrawOp::Image(image));
     }
 
+    pub fn geometry(&mut self, draw: GeometryDraw) {
+        self.ops.push(DrawOp::Geometry(draw));
+    }
+
     pub fn push_clip(&mut self, rect: Rect) {
         self.ops.push(DrawOp::PushClip(rect));
     }
@@ -299,11 +308,19 @@ pub struct ClippedImage {
     pub clip: Option<Rect>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClippedGeometry {
+    pub draw: GeometryDraw,
+    /// Effective clip; `None` means unclipped (whole surface).
+    pub clip: Option<Rect>,
+}
+
 /// Consecutive ops of one kind; batches are drawn in order.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Batch {
     Quads(Vec<ClippedQuad>),
     Images(Vec<ClippedImage>),
+    Geometry(Vec<ClippedGeometry>),
     Texts(Vec<TextDraw>),
 }
 
@@ -377,6 +394,26 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                     _ => batches.push(Batch::Images(vec![item])),
                 }
             }
+            DrawOp::Geometry(draw) => {
+                let Some(clip) = current.rect() else {
+                    continue;
+                };
+                let Some(extent) = draw.extent() else {
+                    continue;
+                };
+                let clipped_out = clip.is_some_and(|clip| extent.intersection(clip).is_none());
+                if draw.color.a == 0 || draw.mesh.is_empty() || clipped_out {
+                    continue;
+                }
+                let item = ClippedGeometry {
+                    draw: draw.clone(),
+                    clip,
+                };
+                match batches.last_mut() {
+                    Some(Batch::Geometry(draws)) => draws.push(item),
+                    _ => batches.push(Batch::Geometry(vec![item])),
+                }
+            }
             DrawOp::Text { id, origin, color } => {
                 let Some(clip) = current.rect() else {
                     continue;
@@ -443,7 +480,7 @@ mod tests {
             .iter()
             .map(|batch| match batch {
                 Batch::Quads(quads) => (true, quads.len()),
-                Batch::Images(_) => unreachable!("no images here"),
+                Batch::Images(_) | Batch::Geometry(_) => unreachable!("no images here"),
                 Batch::Texts(texts) => (false, texts.len()),
             })
             .collect();
@@ -528,6 +565,7 @@ mod tests {
             .map(|batch| match batch {
                 Batch::Quads(quads) => ("quads", quads.len()),
                 Batch::Images(images) => ("images", images.len()),
+                Batch::Geometry(_) => unreachable!("no geometry here"),
                 Batch::Texts(texts) => ("texts", texts.len()),
             })
             .collect();
@@ -551,5 +589,70 @@ mod tests {
             panic!("images");
         };
         assert_eq!(first[1].image.radius, 20.0);
+    }
+
+    #[test]
+    fn geometry_batches_between_quads_and_images_and_drops_when_hidden() {
+        use super::images::test_pattern;
+        use super::{Affine2, GeometryDraw, ImageDraw, Mesh};
+        use std::sync::Arc;
+        let red = Color::rgb(255, 0, 0);
+        let triangle = Arc::new(Mesh::fill(
+            &[vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 10.0, y: 0.0 },
+                Point { x: 0.0, y: 10.0 },
+            ]],
+            1.0,
+        ));
+        let at = |x: f32| Affine2::scale_translate(1.0, x, 0.0);
+        let mut list = DrawList::new(Color::rgb(0, 0, 0));
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+        list.geometry(GeometryDraw::fill(triangle.clone(), at(0.0), red));
+        list.geometry(GeometryDraw::stroke(triangle.clone(), at(5.0), red, 2.0));
+        list.image(ImageDraw::new(rect(0.0, 0.0, 4.0, 4.0), test_pattern(2, 2)));
+        list.geometry(GeometryDraw::fill(
+            triangle.clone(),
+            at(0.0),
+            Color::rgba(255, 0, 0, 0),
+        ));
+        list.geometry(GeometryDraw::fill(
+            Arc::new(Mesh::fill(&[], 1.0)),
+            at(0.0),
+            red,
+        ));
+        list.push_clip(rect(0.0, 0.0, 20.0, 20.0));
+        list.geometry(GeometryDraw::fill(triangle.clone(), at(100.0), red));
+        list.geometry(GeometryDraw::stroke(triangle.clone(), at(22.0), red, 2.0));
+        list.pop_clip();
+        list.fill_rect(rect(0.0, 0.0, 10.0, 10.0), red);
+
+        let batches = resolve(&list);
+        let shape: Vec<(&str, usize)> = batches
+            .iter()
+            .map(|batch| match batch {
+                Batch::Quads(quads) => ("quads", quads.len()),
+                Batch::Images(images) => ("images", images.len()),
+                Batch::Geometry(draws) => ("geometry", draws.len()),
+                Batch::Texts(texts) => ("texts", texts.len()),
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("quads", 1),
+                ("geometry", 2),
+                ("images", 1),
+                ("geometry", 1),
+                ("quads", 1)
+            ],
+            "transparent, empty and clipped-out geometry is dropped; a stroke \
+             just past the clip still reaches into it"
+        );
+        let Batch::Geometry(clipped) = &batches[3] else {
+            panic!("geometry");
+        };
+        assert_eq!(clipped[0].clip, Some(rect(0.0, 0.0, 20.0, 20.0)));
+        assert_eq!(clipped[0].draw.width, 2.0);
     }
 }
