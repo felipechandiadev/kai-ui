@@ -14,17 +14,16 @@ use crate::commands::{
     describe_json,
 };
 use crate::components::{
-    ActionPlacement, AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button,
-    ButtonSize, ButtonVariant, CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth,
-    FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout,
-    MediaSlot, MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity,
-    Table, TextField, Toast, alert, avatar, badge, button, button_sized, caption, card,
-    card_actions, card_content, card_header, checkbox, checkbox_with_options, color_field,
-    group_box, heading, icon_button, icon_button_sized, paragraph, search_field, segmented,
-    segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
-    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
-    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
-    virtual_list,
+    AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
+    CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, FieldBezel, FieldDensity,
+    FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, Sidebar,
+    SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table, TextField, Toast, alert,
+    avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
+    checkbox, checkbox_with_options, color_field, group_box, heading, icon_button,
+    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
+    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
+    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
+    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
@@ -2111,8 +2110,8 @@ impl Demo {
             ])
     }
 
-    /// Multimedia: the profile photo (button on the edge), logo and
-    /// banner fields: a click or the button opens the file panel, a file
+    /// Multimedia: the profile photo, logo and banner fields: a click on
+    /// the image opens the file panel, a file
     /// dropped from Finder replaces the image, and a refused one shows its
     /// error.
     fn image_fields(&self) -> Element<Msg> {
@@ -2153,7 +2152,6 @@ impl Demo {
                                 &self.foto,
                                 "multimedia.foto",
                             )
-                            .action_placement(ActionPlacement::Edge)
                             .build(),
                         ),
                         labeled(
@@ -3854,10 +3852,10 @@ mod tests {
         let preview = |id: &str| By::test_id(format!("multimedia.{id}.preview"));
         assert_eq!(
             app.screen().get(preview("portada")).name().as_deref(),
-            Some("Seleccionar imagen")
+            Some("Agregar imagen")
         );
 
-        app.click(By::test_id("multimedia.portada.action"));
+        app.click(preview("portada"));
         let request = app.file_pick_request().expect("the panel is open");
         assert_eq!(request.title, "Elegir portada");
         app.on_file_pick(Some(foto.clone()));
@@ -3868,7 +3866,7 @@ mod tests {
         );
         assert_eq!(
             app.screen().get(preview("portada")).name().as_deref(),
-            Some("Actualizar imagen")
+            Some("Cambiar imagen")
         );
         assert!(
             app.messages()
@@ -3877,7 +3875,7 @@ mod tests {
 
         let before = app.app().foto.clone();
         app.on_file_pick(None);
-        app.click(By::test_id("multimedia.foto.action"));
+        app.click(preview("foto"));
         assert_eq!(app.app().foto, before, "cancelled");
 
         app.drop_files(preview("logo"), [dir.join("nota.txt")]);
@@ -6643,6 +6641,19 @@ mod tests {
             &Interaction {
                 hovered: tree.path_to(banner).unwrap(),
                 file_drag: true,
+                ..Interaction::default()
+            },
+            &scrolled_to(&out.theme, &media, wide, "Campos de imagen"),
+        );
+        let logo = find(&media, By::test_id("multimedia.logo.preview"));
+        snapshot(
+            out,
+            "demo-multimedia-hover",
+            &media,
+            wide,
+            2.0,
+            &Interaction {
+                hovered: tree.path_to(logo).unwrap(),
                 ..Interaction::default()
             },
             &scrolled_to(&out.theme, &media, wide, "Campos de imagen"),

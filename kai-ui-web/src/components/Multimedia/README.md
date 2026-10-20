@@ -45,4 +45,4 @@ Client component. Next lo incluye en el HTML y lo hidrata.
 />
 ```
 
-En Kai UI Desktop el equivalente es `MediaSlot` (`MediaVariant::Avatar/Banner/Logo`, `ActionPlacement::Below/Edge`), con `Avatar` aparte para mostrar sin editar.
+En Kai UI Desktop el equivalente es `MediaSlot` (`MediaVariant::Avatar/Banner/Logo`), con `Avatar` aparte para mostrar sin editar. Allí no hay botón de acción: la vista previa es el control («Agregar imagen» / «Cambiar imagen») y bajo el puntero toma el vidrio de elección (`choice`) con una pastilla de cámara.

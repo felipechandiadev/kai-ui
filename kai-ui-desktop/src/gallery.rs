@@ -4,10 +4,10 @@
 //! golden captures (Paso 18). `cargo run --example gallery`.
 
 use crate::components::{
-    ActionPlacement, Avatar, AvatarSize, BezelStyle, Button, MediaSlot, MediaVariant, SidebarGroup,
-    SidebarItem, SwitchDensity, TextField, card, card_actions, card_content, card_header,
-    checkbox_with_options, group_box, paragraph, search_field, segmented, segmented_with_options,
-    select, select_with_options, sidebar, switch_with_options, text_area, toolbar, toolbar_item,
+    Avatar, AvatarSize, BezelStyle, Button, MediaSlot, MediaVariant, SidebarGroup, SidebarItem,
+    SwitchDensity, TextField, card, card_actions, card_content, card_header, checkbox_with_options,
+    group_box, paragraph, search_field, segmented, segmented_with_options, select,
+    select_with_options, sidebar, switch_with_options, text_area, toolbar, toolbar_item,
     toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
@@ -643,11 +643,9 @@ fn media() -> Element<Msg> {
             div()
                 .class("w-40")
                 .child(slot(MediaVariant::Avatar(AvatarSize::Md), false, "avatar").build()),
-            div().class("w-40").child(
-                slot(MediaVariant::Avatar(AvatarSize::Md), true, "avatar-borde")
-                    .action_placement(ActionPlacement::Edge)
-                    .build(),
-            ),
+            div()
+                .class("w-40")
+                .child(slot(MediaVariant::Avatar(AvatarSize::Md), true, "avatar-foto").build()),
             div()
                 .class("w-40")
                 .child(slot(MediaVariant::Logo, true, "logo").build()),

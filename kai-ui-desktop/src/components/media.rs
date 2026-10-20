@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use super::{AlertVariant, IconButtonSize, IconButtonVariant, alert, icon_button_sized};
+use super::{AlertVariant, alert};
 use crate::element::{Element, Role, div, icon, image};
 use crate::icons::Icon;
 use crate::media::ImageSource;
@@ -119,28 +119,20 @@ pub enum MediaVariant {
     Logo,
 }
 
-/// Where the action button of an avatar [`MediaSlot`] goes: under the
-/// circle, or as a badge on its edge. Banners and logos always have it
-/// below.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ActionPlacement {
-    #[default]
-    Below,
-    Edge,
-}
-
-/// The image field of a form: a preview area (click to choose a file,
-/// or drop one from Finder) and an action button, «Agregar foto» (`Plus`)
-/// while empty and «Cambiar foto» (`Camera`) with an image. The app opens
-/// the file panel on [`MediaSlot::on_pick`] (`Effects::pick_file`),
-/// validates the file ([`validate_image_file`]) and passes the result
-/// back as [`MediaSlot::current`] or [`MediaSlot::error`].
+/// The image field of a form: the preview is the control. A click, Space
+/// or Return on it opens the file panel, and a file dropped on it from
+/// Finder replaces the image. Under the pointer (and while a file is
+/// dragged over it) it takes the choice look ([`super::CHOICE_ACTIVE`]):
+/// a `choice` border and tint over the image, with a pill naming the
+/// action («Agregar imagen» or «Cambiar imagen»). The app opens the file
+/// panel on [`MediaSlot::on_pick`] (`Effects::pick_file`), validates the
+/// file ([`validate_image_file`]) and passes the result back as
+/// [`MediaSlot::current`] or [`MediaSlot::error`].
 ///
-/// Parts: `<id>.preview`, `<id>.action` and `<id>.error`.
+/// Parts: `<id>.preview`, `<id>.tint`, `<id>.hint` and `<id>.error`.
 pub struct MediaSlot<Msg> {
     variant: MediaVariant,
     current: Option<ImageSource>,
-    placement: ActionPlacement,
     on_pick: Option<Msg>,
     on_drop: Option<Rc<dyn Fn(PathBuf) -> Msg>>,
     error: Option<String>,
@@ -153,7 +145,6 @@ impl<Msg: Clone + 'static> MediaSlot<Msg> {
         Self {
             variant,
             current: None,
-            placement: ActionPlacement::default(),
             on_pick: None,
             on_drop: None,
             error: None,
@@ -168,12 +159,7 @@ impl<Msg: Clone + 'static> MediaSlot<Msg> {
         self
     }
 
-    pub fn action_placement(mut self, placement: ActionPlacement) -> Self {
-        self.placement = placement;
-        self
-    }
-
-    /// Sent by the button and by a click on the preview.
+    /// Sent by a click, Space or Return on the preview.
     pub fn on_pick(mut self, msg: Msg) -> Self {
         self.on_pick = Some(msg);
         self
@@ -203,84 +189,87 @@ impl<Msg: Clone + 'static> MediaSlot<Msg> {
 
     pub fn build(self) -> Element<Msg> {
         let has_media = self.current.is_some();
-        let edge = matches!(self.variant, MediaVariant::Avatar(_))
-            && self.placement == ActionPlacement::Edge;
-        let surface = "relative flex items-center justify-center overflow-hidden shrink-0 \
-                       hover:border-primary drag:ring-2 drag:ring-primary \
+        let surface = "group relative flex items-center justify-center overflow-hidden shrink-0 \
                        focus-visible:ring-2 focus-visible:ring-primary/40";
-        let cursor = if self.disabled {
+        let interaction = if self.disabled {
             "cursor-not-allowed"
         } else {
-            "cursor-pointer"
+            "cursor-pointer hover:border-choice drag:border-choice drag:ring-2 drag:ring-choice"
         };
-        let (area_class, image_class, placeholder) = match self.variant {
+        let (area_class, radius, image_class, placeholder) = match self.variant {
             MediaVariant::Avatar(size) => {
                 let (circle, icon_size) = size.classes();
                 (
                     format!("{circle} rounded-full border-[3px] border-secondary bg-muted/70"),
-                    "rounded-full object-cover",
+                    "rounded-full",
+                    "object-cover",
                     icon(Icon::User).class(&format!("{icon_size} text-secondary")),
                 )
             }
             MediaVariant::Banner => (
                 "w-full max-w-[448px] aspect-video rounded-lg border border-border bg-muted/55"
                     .to_owned(),
-                "rounded-lg object-cover",
+                "rounded-lg",
+                "object-cover",
                 icon(Icon::ImagePlus).class("size-12 text-secondary"),
             ),
             MediaVariant::Logo => (
                 "size-32 rounded-lg border border-border bg-muted/55".to_owned(),
-                "rounded-lg object-contain",
+                "rounded-lg",
+                "object-contain",
                 icon(Icon::ImagePlus).class("size-12 text-secondary"),
             ),
         };
+        let label = if has_media {
+            "Cambiar imagen"
+        } else {
+            "Agregar imagen"
+        };
         let mut area = div()
-            .class(&format!("{surface} {area_class} {cursor}"))
+            .class(&format!("{surface} {area_class} {interaction}"))
             .role(Role::Button)
-            .label(if has_media {
-                "Actualizar imagen"
-            } else {
-                "Seleccionar imagen"
-            })
+            .label(label)
+            .tooltip(label)
             .disabled(self.disabled)
             .part("preview")
             .child(placeholder);
         if let Some(source) = self.current {
-            area = area
-                .child(image(source).class(&format!("absolute inset-0 size-full {image_class}")));
-        }
-
-        let (icon_kind, label) = if has_media {
-            (Icon::Camera, "Cambiar foto")
-        } else {
-            (Icon::Plus, "Agregar foto")
-        };
-        let mut action = icon_button_sized(
-            icon_kind,
-            label,
-            IconButtonVariant::Secondary,
-            if edge {
-                IconButtonSize::Sm
-            } else {
-                IconButtonSize::Md
-            },
-        )
-        .disabled(self.disabled)
-        .part("action");
-        if edge {
-            let badge = match self.variant {
-                MediaVariant::Avatar(AvatarSize::Lg) => "",
-                _ => "size-6",
-            };
-            action = action.class(&format!(
-                "{badge} rounded-full border-2 border-background shadow-sm"
-            ));
+            area = area.child(image(source).class(&format!(
+                "absolute inset-0 size-full {radius} {image_class}"
+            )));
         }
 
         if !self.disabled {
+            // Over the image, so the tint shows on it; it lets the pointer
+            // through to the preview.
+            area = area.child(
+                div()
+                    .class(&format!(
+                        "absolute inset-0 {radius} pointer-events-none bg-transparent \
+                         group-hover:bg-choice/20"
+                    ))
+                    .part("tint"),
+            );
+            if has_media {
+                area = area.child(
+                    div()
+                        .class(
+                            "absolute inset-0 flex items-center justify-center \
+                             pointer-events-none opacity-0 group-hover:opacity-100",
+                        )
+                        .part("hint")
+                        .child(
+                            div()
+                                .class(
+                                    "flex items-center justify-center size-8 rounded-full \
+                                     bg-background/85 text-foreground shadow-sm",
+                                )
+                                .child(icon(Icon::Camera).class("size-4")),
+                        ),
+                );
+            }
             if let Some(msg) = self.on_pick {
-                area = area.on_click(msg.clone());
-                action = action.on_click(msg);
+                area = area.on_click(msg);
             }
             if let Some(on_drop) = self.on_drop {
                 area = area.on_drop_files(move |paths| {
@@ -289,33 +278,13 @@ impl<Msg: Clone + 'static> MediaSlot<Msg> {
             }
         }
 
-        let body = if edge {
-            let offset = match self.variant {
-                MediaVariant::Avatar(AvatarSize::Lg) => "bottom-[5.5px] right-[5.5px]",
-                MediaVariant::Avatar(AvatarSize::Md) => "bottom-[4.5px] right-[4.5px]",
-                _ => "bottom-[3px] right-[3px]",
-            };
-            vec![
-                div()
-                    .class("relative inline-flex shrink-0 p-0.5")
-                    .children([
-                        area,
-                        div()
-                            .class(&format!("absolute z-10 {offset}"))
-                            .child(action),
-                    ]),
-            ]
-        } else {
-            vec![area, action]
-        };
         let mut root = div()
             .class(&format!(
-                "flex flex-col items-center w-full {} {}",
-                if edge { "gap-1" } else { "gap-3" },
+                "flex flex-col items-center gap-3 w-full {}",
                 if self.disabled { "opacity-60" } else { "" }
             ))
             .parts_root()
-            .children(body);
+            .child(area);
         if let Some(error) = self.error {
             root = root.child(
                 alert(AlertVariant::Error, error)
@@ -366,22 +335,11 @@ mod tests {
         Drop(PathBuf),
     }
 
+    #[derive(Default)]
     struct Slots {
         current: Option<ImageSource>,
-        placement: ActionPlacement,
         error: Option<String>,
         disabled: bool,
-    }
-
-    impl Default for Slots {
-        fn default() -> Self {
-            Self {
-                current: None,
-                placement: ActionPlacement::Below,
-                error: None,
-                disabled: false,
-            }
-        }
     }
 
     impl SimpleApp for Slots {
@@ -403,7 +361,6 @@ mod tests {
                 ),
                 MediaSlot::new(MediaVariant::Avatar(AvatarSize::Md))
                     .current(self.current.clone())
-                    .action_placement(self.placement)
                     .on_pick(Msg::Pick)
                     .on_drop(Msg::Drop)
                     .error(self.error.clone())
@@ -453,63 +410,86 @@ mod tests {
         assert_eq!(images, [48.0], "one circle, 96 points wide");
     }
 
-    #[test]
-    fn the_action_says_add_without_an_image_and_change_with_one() {
-        let app = slots(Slots::default());
-        let action = app.screen().get(By::test_id("foto.action"));
-        assert_eq!(action.name().as_deref(), Some("Agregar foto"));
-        assert_eq!(
-            app.screen()
-                .get(By::test_id("foto.preview"))
-                .name()
-                .as_deref(),
-            Some("Seleccionar imagen")
-        );
-
-        let app = slots(Slots {
+    fn with_image() -> Slots {
+        Slots {
             current: Some(ImageSource::rgba(1, 1, vec![0; 4])),
             ..Slots::default()
-        });
-        app.screen()
-            .get(By::role(Role::Button).name("Cambiar foto"));
-        app.screen()
-            .get(By::role(Role::Button).name("Actualizar imagen"));
+        }
     }
 
     #[test]
-    fn edge_puts_the_action_on_the_circle_and_below_under_it() {
-        let below = slots(Slots::default());
-        let preview = below.screen().get(By::test_id("foto.preview")).bounds();
-        let action = below.screen().get(By::test_id("foto.action")).bounds();
-        assert!(action.y >= preview.y + preview.height, "below the circle");
+    fn the_image_is_the_only_control_named_after_its_action() {
+        let app = slots(Slots::default());
+        let screen = app.screen();
+        let preview = screen.get(By::test_id("foto.preview"));
+        assert_eq!(preview.role(), Role::Button);
+        assert_eq!(preview.name().as_deref(), Some("Agregar imagen"));
+        assert_eq!(
+            screen.all(By::role(Role::Button)).len(),
+            1,
+            "no extra add or camera button"
+        );
+        assert!(screen.query(By::test_id("foto.hint")).is_none());
 
-        let edge = slots(Slots {
-            placement: ActionPlacement::Edge,
-            ..Slots::default()
+        let app = slots(with_image());
+        app.screen()
+            .get(By::role(Role::Button).name("Cambiar imagen"));
+        assert!(app.screen().query(By::test_id("foto.hint")).is_some());
+    }
+
+    #[test]
+    fn hovering_the_image_tints_it_with_the_choice_color() {
+        let mut app = slots(with_image());
+        let tint = |app: &TestApp<Slots>| {
+            app.screen()
+                .get(By::test_id("foto.tint"))
+                .node()
+                .style
+                .background
+        };
+        let hint = |app: &TestApp<Slots>| app.screen().get(By::test_id("foto.hint")).node().opacity;
+        assert_eq!(tint(&app).map(|color| color.a), Some(0), "clear at rest");
+        assert_eq!(hint(&app), 0.0);
+
+        app.hover(By::test_id("foto.preview"));
+        let choice = app.session().theme().color("choice").unwrap();
+        let hovered = tint(&app).expect("tinted");
+        assert_eq!(
+            (hovered.r, hovered.g, hovered.b),
+            (choice.r, choice.g, choice.b)
+        );
+        assert!(hovered.a > 0 && hovered.a < 255, "a tint over the image");
+        assert_eq!(hint(&app), 1.0, "the camera pill shows");
+        let border = app
+            .screen()
+            .get(By::test_id("foto.preview"))
+            .node()
+            .style
+            .border_color;
+        assert_eq!(border, Some(choice));
+
+        // The tint and the pill let the click through to the preview.
+        let bounds = app.screen().get(By::test_id("foto.preview")).bounds();
+        app.click_point(crate::geometry::Point {
+            x: bounds.x + bounds.width / 2.0,
+            y: bounds.y + bounds.height / 2.0,
         });
-        let preview = edge.screen().get(By::test_id("foto.preview")).bounds();
-        let action = edge.screen().get(By::test_id("foto.action")).bounds();
-        assert_eq!(action.width, 24.0, "a small badge");
-        assert!(action.y < preview.y + preview.height, "over the circle");
-        assert!(action.x + action.width > preview.x + preview.width - 10.0);
+        assert_eq!(app.messages(), [Msg::Pick]);
+        assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
     }
 
     #[test]
     fn clicks_and_drops_pick_but_not_when_disabled() {
         let mut app = slots(Slots::default());
-        app.click(By::test_id("foto.action"));
         app.click(By::test_id("foto.preview"));
         app.drop_files(By::test_id("foto.preview"), ["/a.png", "/b.png"]);
-        assert_eq!(
-            app.messages(),
-            [Msg::Pick, Msg::Pick, Msg::Drop("/a.png".into())]
-        );
+        assert_eq!(app.messages(), [Msg::Pick, Msg::Drop("/a.png".into())]);
 
         let mut app = slots(Slots {
             disabled: true,
             ..Slots::default()
         });
-        app.click(By::test_id("foto.action"));
+        assert!(app.screen().query(By::test_id("foto.tint")).is_none());
         app.click(By::test_id("foto.preview"));
         app.hover_files();
         assert!(app.messages().is_empty());

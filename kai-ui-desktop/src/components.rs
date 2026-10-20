@@ -21,9 +21,7 @@ mod toolbar;
 pub use crate::render::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
-pub use media::{
-    ActionPlacement, Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file,
-};
+pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
