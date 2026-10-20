@@ -213,10 +213,10 @@ impl Default for BackgroundEffect {
 pub const DARK_INTENSITY: f32 = 0.65;
 
 /// Extra share of white over the aurora in light appearances, on top of the
-/// reference's 40 % white veil (Felipe: same hues, at least 20 % whiter).
+/// reference's 40 % white veil (Felipe: same hues, clearly whiter).
 /// Dark appearances keep the veil only: whitening a dark window would grey
 /// it out.
-pub const AURORA_WHITEN: f32 = 0.20;
+pub const AURORA_WHITEN: f32 = 0.40;
 
 /// An effect resolved for one window and frame: what the renderer draws.
 /// Paint builds it from the effect, the root's background color and the

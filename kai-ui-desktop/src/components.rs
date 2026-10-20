@@ -2131,10 +2131,9 @@ impl SidebarGroup {
 /// counted across groups in order. It is one Tab stop that enters at the
 /// selected row, and ↑ and ↓ move the selection, sending
 /// `on_select(index)` as a click does ([`Element::selecting_focus_group`]).
-/// In AppKit the selection is the accent while the focus is inside and
-/// gray otherwise or with the window inactive, as in Finder; the gray is a
-/// translucent fill (`bg-fill-2`), because the opaque `selection-inactive`
-/// disappears on a sidebar background. Give it a width and a background
+/// The selected row is tinted glass like the info [`alert`] (a translucent
+/// `info` fill and border), and hovering a row previews a fainter version
+/// of it. Give it a width and a background
 /// with `.class(..)`. Parts: one per row, by index (`<id>.0`…).
 pub fn sidebar<Msg>(
     groups: &[SidebarGroup],
@@ -2178,27 +2177,22 @@ fn sidebar_row<Msg>(
     selected: bool,
     on_select: &impl Fn(usize) -> Msg,
 ) -> Element<Msg> {
-    // `tw` has one state variant per class, so the selected row gets its
-    // own classes instead of `window-inactive:selected:`.
-    let emphasis = "group-focus-within:text-on-accent window-inactive:text-control-accent";
+    // Every row has a border so the selected one does not shift its content.
     let (row, glyph, badge) = if selected {
         (
             themed(
-                "bg-primary/10 text-primary font-medium",
-                "bg-fill-2 text-label glass:font-semibold \
-                 group-focus-within:bg-selection group-focus-within:text-on-accent \
-                 window-inactive:bg-fill-2 window-inactive:text-label",
+                "border-info bg-info/20 hover:bg-info/25 text-foreground font-medium",
+                "border-info bg-info/20 hover:bg-info/25 text-label glass:font-semibold",
             ),
-            themed("text-primary", &format!("text-control-accent {emphasis}")),
-            themed(
-                "text-primary",
-                "text-secondary-label group-focus-within:text-on-accent \
-                 window-inactive:text-secondary-label",
-            ),
+            "text-info".to_owned(),
+            "text-info".to_owned(),
         )
     } else {
         (
-            themed("text-foreground hover:bg-muted", "text-label"),
+            themed(
+                "border-transparent text-foreground hover:bg-info/10 hover:border-info/40",
+                "border-transparent text-label hover:bg-info/10 hover:border-info/40",
+            ),
             themed("text-muted-foreground", "text-control-accent"),
             themed("text-muted-foreground", "text-secondary-label"),
         )
@@ -2217,9 +2211,9 @@ fn sidebar_row<Msg>(
         .class(&format!(
             "{} {row}",
             themed(
-                "flex items-center gap-2 h-9 px-3 rounded-md text-sm cursor-pointer \
+                "flex items-center gap-2 h-9 px-3 border rounded-md text-sm cursor-pointer \
                  focus-visible:ring-2 focus-visible:ring-primary/40",
-                "flex items-center gap-1.5 h-7 px-2 rounded-[5px] text-control cursor-default",
+                "flex items-center gap-1.5 h-7 px-2 border rounded-[5px] text-control cursor-default",
             )
         ))
         .role(Role::SidebarItem)
