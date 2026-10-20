@@ -17,7 +17,7 @@ use crate::commands::{
     Availability, CommandError, CommandKind, CommandRegistry, CommandState, PALETTE,
 };
 use crate::components::{PaletteItem, command_palette};
-use crate::devtools::{Devtools, FrameTimes, MsgSource, format_msg};
+use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -105,6 +105,8 @@ pub(crate) struct Session<A: App> {
     devtools: Devtools,
     /// View and layout times of the last frame.
     frame: FrameTimes,
+    /// The inspector overlay is open (⌘⌥I, debug builds).
+    inspector: bool,
     outbox: Outbox,
     registry: CommandRegistry<A>,
     /// Availability of every command after the last `update`.
@@ -127,6 +129,23 @@ struct Palette {
     panel: WidgetId,
     /// Rows of the last `view`, in order, with their command ids.
     rows: Vec<(WidgetId, &'static str)>,
+}
+
+/// ⌘⌥I, which toggles the inspector.
+fn is_inspector_key(intent: &Intent) -> bool {
+    matches!(
+        intent,
+        Intent::Text(TextIntent::KeyDown {
+            key: Key::Char('i'),
+            modifiers: Modifiers {
+                command: true,
+                option: true,
+                shift: false,
+                control: false,
+            },
+            repeat: false,
+        })
+    )
 }
 
 /// Actions the palette lists for `query`: neither hidden, nor needing an
@@ -199,6 +218,7 @@ impl<A: App> Session<A> {
             source: None,
             devtools: Devtools::from_env(),
             frame: FrameTimes::default(),
+            inspector: false,
             outbox: Outbox {
                 commands: Some(commands.clone()),
                 ..Outbox::default()
@@ -341,6 +361,7 @@ impl<A: App> Session<A> {
         }
         self.tree = build_view_with(&self.app, &self.commands);
         self.add_agent_status();
+        self.add_inspector();
         self.add_palette();
         self.add_confirmation();
         self.background = self.app.background();
@@ -569,6 +590,42 @@ impl<A: App> Session<A> {
         }
     }
 
+    /// Append the open inspector to the tree, describing the innermost
+    /// element under the pointer. It goes before the palette and the
+    /// dialog so those stay last; `z-100` paints it over them.
+    fn add_inspector(&mut self) {
+        if !self.inspector {
+            return;
+        }
+        let index_of = |id: WidgetId| self.layout.nodes().iter().position(|node| node.id == id);
+        let target = self.hover_path.last().and_then(|&id| {
+            let index = index_of(id)?;
+            let node = self.layout.get(index);
+            let class = self
+                .tree
+                .find(id)
+                .map_or("", |element| element.class.as_str());
+            let bounds = node.visible_bounds().unwrap_or(node.bounds);
+            let mut lines = describe(&self.layout, index, class);
+            if let Some(control) = pointer_target(&self.layout, &self.hover_path)
+                .filter(|&control| control != id)
+                .and_then(index_of)
+            {
+                let control = describe(&self.layout, control, "");
+                lines.push(format!("clic → {}", control[..control.len() - 1].join(" ")));
+            }
+            Some((bounds, lines))
+        });
+        self.tree.children.push(inspector(target, self.viewport));
+        self.tree.assign_ids();
+    }
+
+    /// Whether the inspector overlay is open.
+    #[cfg(test)]
+    pub fn inspector_open(&self) -> bool {
+        self.inspector
+    }
+
     /// Append the open palette to the tree, after the app's ids are set.
     fn add_palette(&mut self) {
         let Some(palette) = &mut self.palette else {
@@ -713,6 +770,14 @@ impl<A: App> Session<A> {
     }
 
     pub fn apply_intent(&mut self, intent: Intent) {
+        if cfg!(debug_assertions) && is_inspector_key(&intent) {
+            self.inspector = !self.inspector;
+            if self.inspector {
+                eprintln!("{}", dump(&self.tree, &self.layout));
+            }
+            self.invalidate();
+            return;
+        }
         if self.palette_key(&intent) {
             return;
         }

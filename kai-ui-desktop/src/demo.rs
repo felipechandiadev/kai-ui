@@ -2155,6 +2155,74 @@ mod tests {
             .get(By::role(Role::Status).name("Agente: Cursor · Reiniciar"));
     }
 
+    const CMD_OPTION: Modifiers = Modifiers {
+        command: true,
+        option: true,
+        ..Modifiers::NONE
+    };
+
+    #[test]
+    fn the_inspector_describes_what_is_under_the_pointer() {
+        let mut app = TestApp::new(Demo::default());
+        assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
+        app.press(Key::Char('i'), CMD_OPTION);
+        assert!(app.session().inspector_open());
+        assert_eq!(app.messages(), [], "⌘⌥I is not ⌘I");
+        app.screen().get(By::test_id("kai.inspector.panel"));
+        assert!(
+            app.screen()
+                .query(By::test_id("kai.inspector.outline"))
+                .is_none()
+        );
+
+        app.hover(By::test_id("header.sumar"));
+        let screen = app.screen();
+        let panel = screen.get(By::test_id("kai.inspector.panel"));
+        let shown: Vec<String> = screen
+            .within(panel)
+            .all(By::role(Role::Label))
+            .iter()
+            .filter_map(|line| line.name())
+            .collect();
+        let shown = shown.join("\n");
+        assert!(
+            shown.starts_with("Image #"),
+            "the icon is under the pointer: {shown}"
+        );
+        assert!(
+            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [header.sumar]"),
+            "{shown}"
+        );
+        let outline = screen.get(By::test_id("kai.inspector.outline")).bounds();
+        let icon = screen
+            .within(screen.get(By::test_id("header.sumar")))
+            .get(By::role(Role::Image))
+            .bounds();
+        assert_eq!(
+            (outline.x, outline.y, outline.width, outline.height),
+            (
+                icon.x.round(),
+                icon.y.round(),
+                icon.width.round(),
+                icon.height.round()
+            )
+        );
+        assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
+
+        app.click(By::test_id("header.sumar"));
+        assert_eq!(app.app().clicks, 1, "the inspector takes no clicks");
+
+        app.press(Key::Char('p'), CMD_SHIFT);
+        assert!(app.is_focused(By::test_id("kai.paleta.buscar")));
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(!app.session().palette_open());
+        assert!(app.session().inspector_open());
+
+        app.press(Key::Char('i'), CMD_OPTION);
+        assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
+        assert!(app.dump().contains("[header.sumar]"));
+    }
+
     #[test]
     fn messages_record_where_they_came_from() {
         let mut app = TestApp::new(Demo::default());

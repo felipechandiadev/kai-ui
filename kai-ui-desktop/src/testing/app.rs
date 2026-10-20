@@ -491,6 +491,25 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// Scroll the element into view and move the pointer to its center,
+    /// without pressing.
+    #[track_caller]
+    pub fn hover(&mut self, by: By) {
+        let id = self.id_of(by);
+        if self.session.reveal(id) {
+            self.frame();
+        }
+        let center = self.center_of(id);
+        self.session.pointer_moved(Some(center));
+        self.frame();
+    }
+
+    /// The laid-out tree as text, one node per line (role, id, name,
+    /// `test_id`, bounds, classes): what the inspector prints.
+    pub fn dump(&self) -> String {
+        crate::devtools::dump(self.session.tree(), self.session.layout())
+    }
+
     /// Click the input, then type `text` one character at a time, each
     /// followed by a frame (the app sees one message per character).
     #[track_caller]
