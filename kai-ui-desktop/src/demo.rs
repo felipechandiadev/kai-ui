@@ -19,10 +19,10 @@ use crate::components::{
     IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, Sidebar, SidebarGroup,
     SidebarItem, SortDirection, SwitchDensity, Table, TextField, Toast, alert, avatar, badge,
     button, button_sized, caption, card, card_actions, card_content, card_header, checkbox,
-    checkbox_with_options, group_box, heading, icon_button, icon_button_sized, paragraph,
-    search_field, segmented, segmented_with_options, select, select_with_options, stat, switch,
-    switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar,
-    toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    checkbox_with_options, color_field, group_box, heading, icon_button, icon_button_sized,
+    paragraph, search_field, segmented, segmented_with_options, select, select_with_options, stat,
+    switch, switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer,
+    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
     validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
@@ -188,6 +188,26 @@ struct Sector {
     nombre: String,
     tipo: String,
     capa: MapLayer,
+    /// Its color as typed in Mapa: hex, or empty for the color of its type.
+    color: String,
+}
+
+/// The five starting colors of DSP's area types.
+const PALETA_DSP: [(&str, Color); 5] = [
+    ("Azul", Color::hex(0x1e73ae)),
+    ("Naranjo", Color::hex(0xc45c26)),
+    ("Verde", Color::hex(0x2d6a4f)),
+    ("Violeta", Color::hex(0x7c3aed)),
+    ("Ámbar", Color::hex(0xb45309)),
+];
+
+/// The color of an area type, as in DSP's `operation_area_types`.
+fn color_del_tipo(tipo: &str) -> Color {
+    match tipo {
+        "territorio" => Color::hex(0x1e73ae),
+        "barrio" => Color::hex(0x2d6a4f),
+        _ => Color::hex(0xc45c26),
+    }
 }
 
 impl Sector {
@@ -204,19 +224,15 @@ impl Sector {
         }
     }
 
-    /// The color of its type, as in DSP's `operation_area_types`.
+    /// The color typed for it, or else the one of its type (also while
+    /// the typed hex is incomplete).
     fn color(&self) -> Color {
-        match self.tipo.as_str() {
-            "territorio" => Color::hex(0x1e73ae),
-            "barrio" => Color::hex(0x2d6a4f),
-            _ => Color::hex(0xc45c26),
-        }
+        Color::parse_hex(&self.color).unwrap_or_else(|| color_del_tipo(&self.tipo))
     }
 
     /// Background class of its color.
     fn swatch(&self) -> String {
-        let Color { r, g, b, .. } = self.color();
-        format!("bg-[#{r:02x}{g:02x}{b:02x}]")
+        format!("bg-[{}]", self.color().to_hex())
     }
 }
 
@@ -231,11 +247,15 @@ static SECTORES: LazyLock<Vec<Sector>> = LazyLock::new(|| {
     polygons(DSP_AREAS)
         .expect("assets/maps/dsp-areas.geojson")
         .into_iter()
-        .map(|(capa, properties)| Sector {
-            code: text(&properties, "code"),
-            nombre: text(&properties, "name"),
-            tipo: text(&properties, "type"),
-            capa,
+        .map(|(capa, properties)| {
+            let tipo = text(&properties, "type");
+            Sector {
+                code: text(&properties, "code"),
+                nombre: text(&properties, "name"),
+                color: color_del_tipo(&tipo).to_hex(),
+                tipo,
+                capa,
+            }
         })
         .collect()
 });
@@ -651,6 +671,8 @@ enum Msg {
     /// Moves the map to show all of the box.
     Encuadrar(LatLonBounds),
     ToggleAreas,
+    /// What the color field of the selected sector holds.
+    ColorSector(String),
     /// Starts editing the outline of the sector with this code.
     EditarArea(String),
     /// A change to the draft of the sector being edited (`Finish` keeps
@@ -1307,6 +1329,16 @@ impl App for Demo {
             }
             Msg::Encuadrar(bounds) => self.encuadrar(bounds),
             Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
+            Msg::ColorSector(color) => {
+                let code = self.area.clone();
+                if let Some(sector) = self
+                    .sectores
+                    .iter_mut()
+                    .find(|s| Some(&s.code) == code.as_ref())
+                {
+                    sector.color = color;
+                }
+            }
             Msg::EditarArea(code) => {
                 if self.edicion.is_none()
                     && let Some(anillo) = self.sector(&code).map(Sector::anillo)
@@ -2290,6 +2322,20 @@ impl Demo {
                         .test_id("mapa.terminar"),
                 ])
         });
+        let color = self
+            .area
+            .as_deref()
+            .and_then(|code| self.sector(code))
+            .filter(|_| self.edicion.is_none())
+            .map(|sector| {
+                div().class("flex w-80").child(
+                    color_field("Color del sector", &sector.color, Msg::ColorSector)
+                        .palette(PALETA_DSP)
+                        .allow_empty(true)
+                        .test_id("mapa.color")
+                        .build(),
+                )
+            });
         let editar = button("Editar sector", ButtonVariant::Outlined)
             .on_click(Msg::EditarArea(self.area.clone().unwrap_or_default()))
             .disabled(self.area.is_none() || self.edicion.is_some())
@@ -2317,6 +2363,7 @@ impl Demo {
                 ])]
                 .into_iter()
                 .chain(edicion)
+                .chain(color)
                 .chain([
                     caption(estado).test_id("mapa.sector"),
                     div()
@@ -3497,8 +3544,9 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 12] = [
+        const SOURCES: [&str; 13] = [
             include_str!("components.rs"),
+            include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
             include_str!("components/search.rs"),
@@ -3723,6 +3771,12 @@ mod tests {
                 Mapa,
                 None,
                 By::role(Role::List).name("Sectores"),
+            ),
+            (
+                &["color_field", "ColorField"],
+                Mapa,
+                Some("mapa.sector.AOP26000002"),
+                By::role(Role::Group).name("Color del sector"),
             ),
             (
                 &["Dialog", "dialog"],
@@ -5031,6 +5085,38 @@ mod tests {
 
     fn vertice(n: usize) -> By {
         By::test_id(format!("mapa.vista.vertex.{n}"))
+    }
+
+    /// The selected sector takes a color from the palette or typed; while
+    /// the hex is incomplete, and with «Sin color», it shows its type's.
+    #[test]
+    fn the_selected_sector_changes_color_with_the_color_field() {
+        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let campo = By::role(Role::Group).name("Color del sector");
+        assert!(app.screen().query(campo.clone()).is_none(), "no sector yet");
+        app.click(By::test_id(format!("mapa.sector.{CATILLO}")));
+        let catillo = |app: &TestApp<Demo>| app.app().sector(CATILLO).unwrap().clone();
+        let del_tipo = catillo(&app).color();
+        assert_eq!(app.value(By::test_id("mapa.color.hex")), del_tipo.to_hex());
+
+        app.click(By::role(Role::Radio).name("Violeta"));
+        assert_eq!(catillo(&app).color, "#7c3aed");
+        assert_eq!(catillo(&app).swatch(), "bg-[#7c3aed]");
+
+        app.click(By::test_id("mapa.color.clear"));
+        app.type_text(By::test_id("mapa.color.hex"), "#12");
+        assert_eq!(catillo(&app).color(), del_tipo);
+        app.screen().get(By::test_id("mapa.color.error"));
+        app.type_text(By::test_id("mapa.color.hex"), "3456");
+        assert_eq!(catillo(&app).color(), super::Color::hex(0x123456));
+
+        app.click(By::test_id("mapa.color.clear"));
+        assert_eq!(catillo(&app).color(), del_tipo);
+        app.click(By::test_id("mapa.editar"));
+        assert!(
+            app.screen().query(campo).is_none(),
+            "hidden while the outline is edited"
+        );
     }
 
     #[test]

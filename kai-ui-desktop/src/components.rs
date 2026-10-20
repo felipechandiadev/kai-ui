@@ -8,6 +8,7 @@
 
 use std::rc::Rc;
 
+mod color;
 mod dialog;
 mod media;
 mod search;
@@ -17,6 +18,8 @@ mod text_area;
 mod toast;
 mod toolbar;
 
+pub use crate::render::Color;
+pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use media::{
     ActionPlacement, Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file,

@@ -772,6 +772,13 @@ Reglas de la pista C:
   - Toolbar dibujada por Kai (`components::toolbar` y sus piezas), search field (`components::search_field`) y textarea (`components::text_area`, con alto automático y contador).
   - `Dialog` completo (`components::Dialog`: `Element::modal` atrapa el foco, Esc cancela y el foco vuelve a quien lo abrió; la confirmación de agentes lo usa) y `Toast` (`components::toast_stack`, con cierre automático por `Effects::after` y `TestApp::advance`).
   - Tabla y lista virtualizada (`components::Table` y `virtual_list`: la `Session` materializa solo las filas visibles; orden, selección y roles `Table`/`Row`/`Cell`; probadas con 10 000 filas).
+  - Campo de color (`components::color_field`, builder `ColorField`), para el color de los tipos de área de DSP:
+    - **Forma:** un campo hex (`#rgb` o `#rrggbb`) con la muestra del color dentro y, debajo, una paleta de colores sugeridos. Con `allow_empty`, la paleta suma «Sin color».
+    - **Valor:** la app guarda el texto, no un `Color`. Todo pasa por `on_input`, así que un hex a medio escribir se queda en el campo. Un texto que no es color muestra el error (`Role::Alert`), y la app lee el color con `Color::parse_hex`; `Color::to_hex` hace lo inverso.
+    - **Accesibilidad:** la paleta es un `RadioGroup` con `focus_group`. Cada color tiene nombre («Azul») y su hex como descripción.
+    - **Partes:** `<id>.hex` (su input es `<id>.hex.input`), `<id>.swatch`, `<id>.palette`, `<id>.palette.<i>`, `<id>.clear` y `<id>.error`.
+    - **Demo:** en Mapa cambia el color del sector elegido, con la paleta de los cinco colores de DSP.
+    - **Pendiente:** el botón de color con popover (antes hace falta un popover genérico) y el panel nativo de macOS (`NSColorPanel`).
   - Pendientes para después: los de mapa de los Pasos 15b–15c.
 - **Edición de texto** ✅: navegación por palabra y línea (Option/Cmd + flechas, Option/Cmd + Backspace), doble y triple clic.
 - **Comandos de la app** (ejemplos): `areas.crear`, `areas.editar_geometria`, `areas.archivar` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.cerrar` (`Destructive`), consultas `areas.listar`, `incidencias.buscar` (`Query` puras sobre el modelo cargado), `ui.ir_a(seccion)` (acción de UI).
