@@ -81,6 +81,8 @@ pub enum MsgSource {
     Script,
     /// An agent's call, with the client's name.
     Agent(String),
+    /// A timer the app asked for with `Effects::after`.
+    Timer,
 }
 
 impl fmt::Display for MsgSource {
@@ -92,6 +94,7 @@ impl fmt::Display for MsgSource {
             Self::Menu => f.write_str("Menú"),
             Self::Script => f.write_str("Script"),
             Self::Agent(client) => write!(f, "Agente {client}"),
+            Self::Timer => f.write_str("Temporizador"),
         }
     }
 }

@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -87,6 +88,7 @@ impl<A: App> TestAppBuilder<A> {
             Box::new(self.clipboard.clone()),
         );
         session.record_messages();
+        session.set_clock(Instant::now());
         let mut app = TestApp {
             session,
             clipboard: self.clipboard,
@@ -199,6 +201,22 @@ impl<A: App> TestApp<A> {
     #[cfg(test)]
     pub(crate) fn session(&self) -> &Session<A> {
         &self.session
+    }
+
+    /// Let `by` pass on the test app's clock, which only moves here: the
+    /// timers due in that span ([`Effects::after`]) send their messages in
+    /// order, each at its own time, with a frame after each one.
+    ///
+    /// [`Effects::after`]: crate::runtime::Effects::after
+    pub fn advance(&mut self, by: Duration) {
+        let end = self.session.clock() + by;
+        while let Some(due) = self.session.next_deadline().filter(|due| *due <= end) {
+            self.session.set_clock(due);
+            self.session.run_timers();
+            self.frame();
+        }
+        self.session.set_clock(end);
+        self.frame();
     }
 
     /// Run an action as a script or an agent would, without the UI: its

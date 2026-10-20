@@ -30,7 +30,8 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, action_message, build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
+    App, Effect, Effects, action_message, build_view_with, cursor_for, pointer_target, report_once,
+    selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -121,6 +122,16 @@ pub(crate) struct Session<A: App> {
     /// Focus to set once the frame's tree is laid out (a modal appeared or
     /// left).
     modal_focus: Option<ModalFocus>,
+    /// Pending [`Effects::after`] timers, in the order they were asked for.
+    timers: Vec<Timer<A::Msg>>,
+    /// The time tests set; `None` follows the real clock.
+    clock: Option<Instant>,
+}
+
+struct Timer<Msg> {
+    key: Option<String>,
+    due: Instant,
+    msg: Msg,
 }
 
 /// An [`Element::modal`] panel of the app while it is in the tree.
@@ -248,7 +259,7 @@ impl<A: App> Session<A> {
         measure: Measure,
         clipboard: Box<dyn ClipboardPort>,
     ) -> Self {
-        let _effects = app.init();
+        let effects = app.init();
         let registry = CommandRegistry::of();
         report_once("Comandos inválidos", registry.validate());
         let commands = registry.states(&app);
@@ -293,10 +304,70 @@ impl<A: App> Session<A> {
             agents: calls::Agents::default(),
             modal: None,
             modal_focus: None,
+            timers: Vec::new(),
+            clock: None,
         };
+        session.apply_effects(effects);
         session.rebuild();
         session.relayout();
         session
+    }
+
+    fn now(&self) -> Instant {
+        self.clock.unwrap_or_else(Instant::now)
+    }
+
+    /// Stop following the real clock: from now on time is `at` until set
+    /// again (`TestApp::advance`).
+    pub fn set_clock(&mut self, at: Instant) {
+        self.clock = Some(at);
+    }
+
+    /// The current time, real or set.
+    pub fn clock(&self) -> Instant {
+        self.now()
+    }
+
+    fn apply_effects(&mut self, effects: Effects<A::Msg>) {
+        for effect in effects.into_vec() {
+            match effect {
+                Effect::After { key, delay, msg } => {
+                    if let Some(key) = &key {
+                        self.timers.retain(|timer| timer.key.as_ref() != Some(key));
+                    }
+                    let due = self.now() + delay;
+                    self.timers.push(Timer { key, due, msg });
+                }
+                Effect::Cancel(key) => self
+                    .timers
+                    .retain(|timer| timer.key.as_deref() != Some(key.as_str())),
+            }
+        }
+    }
+
+    /// When the earliest pending timer is due.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.timers.iter().map(|timer| timer.due).min()
+    }
+
+    /// Send the message of every timer that is due, earliest first.
+    /// Returns whether one ran.
+    pub fn run_timers(&mut self) -> bool {
+        let now = self.now();
+        let mut ran = false;
+        while let Some(index) = self
+            .timers
+            .iter()
+            .enumerate()
+            .filter(|(_, timer)| timer.due <= now)
+            .min_by_key(|(_, timer)| timer.due)
+            .map(|(index, _)| index)
+        {
+            let timer = self.timers.remove(index);
+            self.with_source(MsgSource::Timer, |session| session.send(timer.msg));
+            ran = true;
+        }
+        ran
     }
 
     pub fn app(&self) -> &A {
@@ -606,10 +677,12 @@ impl<A: App> Session<A> {
         if self.devtools.msgs {
             let line = format!("{msg:?}");
             let started = Instant::now();
-            let _effects = self.app.update(msg);
+            let effects = self.app.update(msg);
             eprintln!("{}", format_msg(&source, &line, started.elapsed()));
+            self.apply_effects(effects);
         } else {
-            let _effects = self.app.update(msg);
+            let effects = self.app.update(msg);
+            self.apply_effects(effects);
         }
         self.invalidate();
     }

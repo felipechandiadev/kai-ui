@@ -15,15 +15,15 @@
 //! own, except an animated [`App::background`], which asks for frames at
 //! [`FRAME_INTERVAL`] only while the window is visible, active and motion
 //! is not reduced. Those frames reuse the last prepared draws unless
-//! something else changed (`dirty`).
+//! something else changed (`dirty`). Pending timers ([`Effects::after`])
+//! wake the loop at the nearest one (`ControlFlow::WaitUntil`).
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
-use std::marker::PhantomData;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use winit::{
     application::ApplicationHandler,
@@ -50,29 +50,83 @@ use crate::ui_engine::{ClickCounter, Modifiers};
 
 const LINE_SCROLL: f32 = 40.0;
 
-/// What `update` asks the runtime to do, as a value. Opaque and always
-/// empty until async effects exist (13, Paso 15); the runtime drops it.
+/// What `update` asks the runtime to do, as a value. For now only timers
+/// (a subset of 13, Paso 15): [`Effects::after`] sends a message later.
 #[must_use]
-pub struct Effects<Msg>(PhantomData<fn() -> Msg>);
+pub struct Effects<Msg>(Vec<Effect<Msg>>);
+
+pub(crate) enum Effect<Msg> {
+    /// Send `msg` after `delay`. A keyed timer replaces the pending one
+    /// with the same key.
+    After {
+        key: Option<String>,
+        delay: Duration,
+        msg: Msg,
+    },
+    /// Drop the pending timer with this key.
+    Cancel(String),
+}
 
 impl<Msg> Effects<Msg> {
     pub fn none() -> Self {
-        Self(PhantomData)
+        Self(Vec::new())
     }
 
     pub fn batch(effects: impl IntoIterator<Item = Self>) -> Self {
-        effects.into_iter().for_each(drop);
-        Self::none()
+        Self(effects.into_iter().flat_map(|effects| effects.0).collect())
     }
 
     pub fn is_none(&self) -> bool {
-        true
+        self.0.is_empty()
+    }
+
+    /// Send `msg` to `update` once `delay` has passed. The window does not
+    /// wake up before that; tests move time with `TestApp::advance`.
+    pub fn after(delay: Duration, msg: Msg) -> Self {
+        Self(vec![Effect::After {
+            key: None,
+            delay,
+            msg,
+        }])
+    }
+
+    /// Give these timers `key`: a new timer with the same key replaces
+    /// the pending one, and [`Effects::cancel`] drops it.
+    pub fn keyed(mut self, key: impl Into<String>) -> Self {
+        let key = key.into();
+        for effect in &mut self.0 {
+            if let Effect::After { key: slot, .. } = effect {
+                *slot = Some(key.clone());
+            }
+        }
+        self
+    }
+
+    /// Drop the pending timer with `key`, if any.
+    pub fn cancel(key: impl Into<String>) -> Self {
+        Self(vec![Effect::Cancel(key.into())])
+    }
+
+    pub(crate) fn into_vec(self) -> Vec<Effect<Msg>> {
+        self.0
     }
 }
 
-impl<Msg> fmt::Debug for Effects<Msg> {
+impl<Msg: Debug> fmt::Debug for Effects<Msg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Effects::none()")
+        if self.0.is_empty() {
+            return f.write_str("Effects::none()");
+        }
+        let mut list = f.debug_list();
+        for effect in &self.0 {
+            match effect {
+                Effect::After { key, delay, msg } => {
+                    list.entry(&format_args!("after({delay:?}, {msg:?}, key: {key:?})"))
+                }
+                Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
+            };
+        }
+        list.finish()
     }
 }
 
@@ -568,11 +622,13 @@ impl<A: App> WindowState<A> {
         self.render()
     }
 
-    /// Schedule the next animation frame, or go back to waiting for events.
+    /// Schedule the next animation frame or timer, or go back to waiting
+    /// for events.
     fn control_flow(&mut self) -> ControlFlow {
+        let timer = self.session.next_deadline();
         if !self.background_running() {
             self.next_frame = None;
-            return ControlFlow::Wait;
+            return timer.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
         }
         let now = Instant::now();
         let due = *self.next_frame.get_or_insert(now);
@@ -580,7 +636,8 @@ impl<A: App> WindowState<A> {
             self.window.request_redraw();
             self.next_frame = Some(now + FRAME_INTERVAL);
         }
-        ControlFlow::WaitUntil(self.next_frame.unwrap_or(now + FRAME_INTERVAL))
+        let frame = self.next_frame.unwrap_or(now + FRAME_INTERVAL);
+        ControlFlow::WaitUntil(timer.map_or(frame, |timer| timer.min(frame)))
     }
 
     fn update_accessibility(&mut self) {
@@ -772,6 +829,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(state) = self.state.as_mut() {
+            if state.session.run_timers() {
+                state.flush();
+            }
             event_loop.set_control_flow(state.control_flow());
         }
     }
@@ -890,6 +950,16 @@ mod tests {
         assert!(batch.is_none());
         assert!(Effects::<Msg>::batch([]).is_none());
         assert_eq!(format!("{batch:?}"), "Effects::none()");
+
+        let timers = Effects::batch([
+            Effects::after(std::time::Duration::from_secs(1), Msg::Clicked).keyed("uno"),
+            Effects::cancel("dos"),
+        ]);
+        assert!(!timers.is_none());
+        assert_eq!(
+            format!("{timers:?}"),
+            r#"[after(1s, Clicked, key: Some("uno")), cancel("dos")]"#
+        );
     }
 
     #[test]

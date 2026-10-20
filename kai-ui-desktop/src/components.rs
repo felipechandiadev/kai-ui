@@ -11,11 +11,13 @@ use std::rc::Rc;
 mod dialog;
 mod search;
 mod text_area;
+mod toast;
 mod toolbar;
 
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use search::{SearchField, search_field};
 pub use text_area::{TextArea, text_area};
+pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};
 pub use toolbar::{
     toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
 };
@@ -1381,7 +1383,26 @@ pub enum AlertVariant {
 
 /// `.fs-alert` message box with Lucide icon and semantic border/background.
 pub fn alert<Msg>(variant: AlertVariant, message: impl Into<String>) -> Element<Msg> {
-    let (icon_kind, border_and_bg, icon_color) = match variant {
+    let (icon_kind, border_and_bg, icon_color) = alert_look(variant);
+    div()
+        .class(&format!(
+            "relative flex items-center gap-3 w-full p-4 rounded-lg text-sm leading-5 {border_and_bg}"
+        ))
+        .role(Role::Status)
+        .parts_root()
+        .children([
+            icon(icon_kind)
+                .class(&format!("size-5 shrink-0 {icon_color}"))
+                .part("icon"),
+            text(message)
+                .class("flex-1 text-sm font-normal text-foreground")
+                .part("message"),
+        ])
+}
+
+/// Icon, tinted border and background, and icon color of an [`alert`].
+fn alert_look(variant: AlertVariant) -> (Icon, &'static str, &'static str) {
+    match variant {
         AlertVariant::Success => (
             Icon::CircleCheckBig,
             "border border-success bg-success/20",
@@ -1398,21 +1419,7 @@ pub fn alert<Msg>(variant: AlertVariant, message: impl Into<String>) -> Element<
             "border border-error bg-error/20",
             "text-error",
         ),
-    };
-    div()
-        .class(&format!(
-            "relative flex items-center gap-3 w-full p-4 rounded-lg text-sm leading-5 {border_and_bg}"
-        ))
-        .role(Role::Status)
-        .parts_root()
-        .children([
-            icon(icon_kind)
-                .class(&format!("size-5 shrink-0 {icon_color}"))
-                .part("icon"),
-            text(message)
-                .class("flex-1 text-sm font-normal text-foreground")
-                .part("message"),
-        ])
+    }
 }
 
 /// A row of [`command_palette`].
