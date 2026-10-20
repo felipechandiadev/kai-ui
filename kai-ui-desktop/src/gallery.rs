@@ -5,8 +5,8 @@
 
 use crate::components::{
     BezelStyle, Button, SwitchDensity, TextField, card, card_actions, card_content, card_header,
-    checkbox_with_options, group_box, paragraph, segmented, segmented_with_options,
-    switch_with_options,
+    checkbox_with_options, group_box, paragraph, segmented, segmented_with_options, select,
+    select_with_options, switch_with_options,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::layout::WindowActivity;
@@ -77,6 +77,8 @@ pub struct Gallery {
     pub checks: [ControlState; 3],
     /// Selected segment of the Selection section.
     pub segment: usize,
+    /// Choices of the Select and Select vacío rows.
+    pub choices: [Option<usize>; 2],
     pub last_action: Option<&'static str>,
 }
 
@@ -91,6 +93,7 @@ impl Default for Gallery {
             switches: [false, true],
             checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
             segment: 0,
+            choices: [Some(0), None],
             last_action: None,
         }
     }
@@ -106,6 +109,8 @@ pub enum Msg {
     Switch(usize),
     Check(usize),
     Segment(usize),
+    /// Row of the Select section and option index.
+    Choose(usize, usize),
     Clicked(&'static str),
 }
 
@@ -133,16 +138,21 @@ const FIELD_ROWS: [&str; 5] = [
 const TOGGLE_ROWS: [&str; 3] = ["Apagado", "Encendido", "Disabled"];
 
 /// Rows of the Selection section.
-const SELECTION_ROWS: [&str; 6] = [
+const SELECTION_ROWS: [&str; 9] = [
     "Checkbox off",
     "Checkbox on",
     "Checkbox mixto",
     "Checkbox disabled",
     "Segmented",
     "Segmented disabled",
+    "Select",
+    "Select vacío",
+    "Select disabled",
 ];
 
 const SEGMENTS: [&str; 3] = ["Día", "Semana", "Mes"];
+
+const FRUITS: [&str; 4] = ["Manzana", "Pera", "Uva", "Frutilla"];
 
 /// Text styles of the Text section (`docs/dev/11-tema-appkit.md`).
 const TEXT_STYLES: [&str; 11] = [
@@ -311,6 +321,15 @@ impl Gallery {
             "Segmented disabled" => {
                 segmented_with_options(&SEGMENTS, 1, |_| Msg::Clicked("segmented"), true)
                     .label("Periodo")
+            }
+            "Select" => select(&FRUITS, self.choices[0], "Elegir", |index| {
+                Msg::Choose(0, index)
+            }),
+            "Select vacío" => select(&FRUITS, self.choices[1], "Elegir", |index| {
+                Msg::Choose(1, index)
+            }),
+            "Select disabled" => {
+                select_with_options(&FRUITS, Some(1), "Elegir", |_| Msg::Clicked("select"), true)
             }
             _ => checkbox_with_options("Opción", ControlState::On, Msg::Clicked("checkbox"), true),
         };
@@ -522,6 +541,7 @@ impl SimpleApp for Gallery {
                 }
             }
             Msg::Segment(index) => self.segment = index,
+            Msg::Choose(row, index) => self.choices[row] = Some(index),
             Msg::Clicked(name) => self.last_action = Some(name),
         }
     }
@@ -667,8 +687,9 @@ mod tests {
         // password toggle.
         let field_controls = 5;
         let enabled_switches = 2;
-        // Three checkboxes and the three segments of one control.
-        let enabled_selection = 3 + SEGMENTS.len();
+        // Three checkboxes, the three segments of one control and two
+        // selects.
+        let enabled_selection = 3 + SEGMENTS.len() + 2;
         for (section, expected) in [
             (
                 Section::Buttons,
@@ -848,6 +869,162 @@ mod tests {
         };
         app.press(Key::Tab, shift);
         assert_eq!(app.session().focused(), Some(mini_week));
+    }
+
+    fn selection_app() -> TestApp<Gallery> {
+        TestApp::new(Gallery {
+            section: Section::Selection,
+            ..Gallery::default()
+        })
+    }
+
+    fn select_cell(row: &str) -> By {
+        By::test_id(cell_test_id(Section::Selection, row, ControlSize::Regular))
+    }
+
+    #[test]
+    fn select_opens_its_list_under_it_and_a_click_picks() {
+        let mut app = selection_app();
+        app.click(select_cell("Select vacío"));
+        assert!(app.session().popup_open());
+        let screen = app.screen();
+        let trigger = screen.get(select_cell("Select vacío"));
+        let panel = screen.get(By::role(Role::Menu));
+        assert_eq!(panel.test_id(), Some("kai.menu"));
+        assert!(panel.bounds().y >= trigger.bounds().y + trigger.bounds().height);
+        assert_eq!(panel.bounds().x, trigger.bounds().x);
+        assert_eq!(screen.all(By::role(Role::MenuItem)).len(), FRUITS.len());
+
+        app.click(By::test_id("kai.menu.2"));
+        assert!(!app.session().popup_open());
+        assert_eq!(app.app().choices[1], Some(2));
+        assert_eq!(app.messages().last(), Some(&Msg::Choose(1, 2)));
+        assert!(app.is_focused(select_cell("Select vacío")));
+        assert_eq!(
+            app.screen()
+                .get(select_cell("Select vacío"))
+                .name()
+                .as_deref(),
+            Some("Uva")
+        );
+    }
+
+    #[test]
+    fn select_list_follows_the_keyboard() {
+        use crate::ui_engine::{Key, Modifiers};
+
+        let mut app = selection_app();
+        let none = Modifiers::NONE;
+        app.click(select_cell("Select"));
+        app.press(Key::Escape, none);
+        assert!(!app.session().popup_open());
+        assert!(app.is_focused(select_cell("Select")));
+        assert!(app.messages().is_empty(), "Escape picks nothing");
+
+        // ↓ opens at the current choice (Manzana) and moves through it.
+        app.press(Key::ArrowDown, none);
+        assert!(app.session().popup_open());
+        assert!(app.is_focused(By::test_id("kai.menu.0")));
+        app.press(Key::ArrowDown, none);
+        assert!(app.is_focused(By::test_id("kai.menu.1")));
+        app.press(Key::Char('x'), none);
+        assert!(app.session().popup_open(), "other keys do nothing");
+        app.press(Key::Enter, none);
+        assert_eq!(app.app().choices[0], Some(1));
+        assert!(app.is_focused(select_cell("Select")));
+
+        app.press(Key::Space, none);
+        assert!(app.is_focused(By::test_id("kai.menu.1")), "opens at Pera");
+        app.press(Key::End, none);
+        app.press(Key::Space, none);
+        assert_eq!(app.app().choices[0], Some(FRUITS.len() - 1));
+
+        app.press(Key::Enter, none);
+        assert!(app.session().popup_open());
+        app.press(Key::Tab, none);
+        assert!(!app.session().popup_open());
+        assert!(app.is_focused(select_cell("Select")));
+    }
+
+    #[test]
+    fn a_click_outside_the_list_only_closes_it() {
+        let mut app = selection_app();
+        app.click(select_cell("Select"));
+        let checkbox = By::test_id(cell_test_id(
+            Section::Selection,
+            "Checkbox off",
+            ControlSize::Regular,
+        ));
+        let screen = app.screen();
+        let center = {
+            let bounds = screen.get(checkbox.clone()).bounds();
+            crate::geometry::Point {
+                x: bounds.x + bounds.width / 2.0,
+                y: bounds.y + bounds.height / 2.0,
+            }
+        };
+        app.click_at(center);
+        assert!(!app.session().popup_open());
+        assert_eq!(app.app().checks[0], ControlState::Off, "the click is spent");
+        assert!(app.messages().is_empty());
+
+        // Clicking the button again closes the list too.
+        app.click(select_cell("Select"));
+        assert!(app.session().popup_open());
+        app.click_at(center);
+        app.click(select_cell("Select disabled"));
+        assert!(
+            !app.session().popup_open(),
+            "a disabled select does not open"
+        );
+    }
+
+    #[test]
+    fn select_list_is_an_expanded_pop_up_with_options_for_assistive_technology() {
+        let mut app = selection_app();
+        let trigger = app.screen().get(select_cell("Select")).id();
+        let tree = app.session().a11y_tree(1.0);
+        let node = |tree: &accesskit::TreeUpdate, id: crate::element::WidgetId| {
+            tree.nodes
+                .iter()
+                .find(|(node, _)| *node == crate::a11y::node_id(id))
+                .map(|(_, node)| node.clone())
+                .unwrap()
+        };
+        let closed = node(&tree, trigger);
+        assert_eq!(closed.role(), accesskit::Role::ComboBox);
+        assert_eq!(closed.is_expanded(), Some(false));
+        assert_eq!(closed.value(), Some("Manzana"));
+
+        app.accessibility_action(&accesskit::ActionRequest {
+            action: accesskit::Action::Click,
+            target_tree: accesskit::TreeId::ROOT,
+            target_node: crate::a11y::node_id(trigger),
+            data: None,
+        });
+        assert!(app.session().popup_open());
+        let tree = app.session().a11y_tree(1.0);
+        assert_eq!(node(&tree, trigger).is_expanded(), Some(true));
+        let screen = app.screen();
+        let first = node(&tree, screen.get(By::test_id("kai.menu.0")).id());
+        assert_eq!(first.role(), accesskit::Role::MenuListOption);
+        assert_eq!(first.label(), Some("Manzana"));
+        assert_eq!(first.is_selected(), Some(true));
+        let second = node(&tree, screen.get(By::test_id("kai.menu.1")).id());
+        assert_eq!(second.is_selected(), Some(false));
+        assert_eq!(
+            node(&tree, screen.get(By::role(Role::Menu)).id()).role(),
+            accesskit::Role::MenuListPopup
+        );
+    }
+
+    #[test]
+    fn opening_the_palette_closes_the_list() {
+        let mut app = selection_app();
+        app.click(select_cell("Select"));
+        assert!(app.perform(crate::commands::PALETTE));
+        assert!(!app.session().popup_open());
+        assert!(app.session().palette_open());
     }
 
     #[test]

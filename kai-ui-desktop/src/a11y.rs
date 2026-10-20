@@ -90,7 +90,12 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
         Content::Box => node.label.clone().or_else(|| {
             matches!(
                 effective_role(node),
-                KaiRole::Button | KaiRole::Switch | KaiRole::Checkbox | KaiRole::Radio
+                KaiRole::Button
+                    | KaiRole::Switch
+                    | KaiRole::Checkbox
+                    | KaiRole::Radio
+                    | KaiRole::PopUpButton
+                    | KaiRole::MenuItem
             )
             .then(|| {
                 let mut parts = Vec::new();
@@ -120,6 +125,10 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Checkbox => Role::CheckBox,
         KaiRole::RadioGroup => Role::RadioGroup,
         KaiRole::Radio => Role::RadioButton,
+        // `accesskit_macos` publishes `ComboBox` as `AXPopUpButton`.
+        KaiRole::PopUpButton => Role::ComboBox,
+        KaiRole::Menu => Role::MenuListPopup,
+        KaiRole::MenuItem => Role::MenuListOption,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
@@ -157,6 +166,8 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::Switch
             | Role::CheckBox
             | Role::RadioButton
+            | Role::ComboBox
+            | Role::MenuListOption
             | Role::TextInput
             | Role::PasswordInput
     );
@@ -195,6 +206,15 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     }
     if role == Role::Dialog {
         node.set_modal();
+    }
+    if let Some(expanded) = source.expanded {
+        node.set_expanded(expanded);
+        let mut parts = Vec::new();
+        text_content(layout, index, &mut parts);
+        node.set_value(parts.join(" "));
+    }
+    if role == Role::MenuListOption {
+        node.set_selected(source.control_state == Some(ControlState::On));
     }
     if let Some(description) = &source.description {
         node.set_description(description.as_str());

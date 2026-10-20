@@ -16,7 +16,7 @@ use crate::background::BackgroundEffect;
 use crate::commands::{
     Availability, CommandError, CommandKind, CommandRegistry, CommandState, PALETTE,
 };
-use crate::components::{PaletteItem, command_palette};
+use crate::components::{MENU, MenuFrame, PaletteItem, command_palette, select_menu};
 use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
 use crate::element::{Element, FocusKind, FocusOrder, Handlers, Kind, WidgetId};
 use crate::geometry::{Point, Rect, Size};
@@ -112,8 +112,52 @@ pub(crate) struct Session<A: App> {
     /// Availability of every command after the last `update`.
     commands: Vec<CommandState>,
     palette: Option<Palette>,
+    /// The open list of a pop-up button.
+    popup: Option<Popup>,
     /// Agent calls, their confirmation dialog and the audit log.
     agents: calls::Agents,
+}
+
+/// The list of a pop-up button ([`Element::options`]) while it is open:
+/// an overlay the session appends to the app's tree and drives itself, as
+/// the palette. The button gets the focus back when it closes.
+struct Popup {
+    owner: WidgetId,
+    /// Row the keys act on, an index into `rows`.
+    highlighted: usize,
+    root: WidgetId,
+    panel: WidgetId,
+    /// Rows of the last `view`, in order.
+    rows: Vec<WidgetId>,
+}
+
+/// What a key does to the open pop-up list.
+enum PopupKey {
+    Highlight(usize),
+    Choose(usize),
+    Close,
+    Ignore,
+}
+
+/// Where the list of a pop-up button at `anchor` goes: below it, or above
+/// when there is more room there; rows are estimated as tall as the button.
+fn menu_frame(anchor: Rect, rows: usize, viewport: Size) -> MenuFrame {
+    const GAP: f32 = 4.0;
+    const MARGIN: f32 = 8.0;
+    let height = rows as f32 * anchor.height.max(20.0) + 12.0;
+    let below = viewport.height - (anchor.y + anchor.height + GAP) - MARGIN;
+    let above = anchor.y - GAP - MARGIN;
+    let (y, max_height) = if height <= below || below >= above {
+        (anchor.y + anchor.height + GAP, below)
+    } else {
+        ((anchor.y - GAP - height.min(above)).max(MARGIN), above)
+    };
+    MenuFrame {
+        x: anchor.x.max(0.0),
+        y,
+        min_width: anchor.width,
+        max_height: max_height.max(anchor.height),
+    }
 }
 
 /// The command palette while it is open: an overlay the session appends to
@@ -226,6 +270,7 @@ impl<A: App> Session<A> {
             registry,
             commands,
             palette: None,
+            popup: None,
             agents: calls::Agents::default(),
         };
         session.rebuild();
@@ -362,6 +407,7 @@ impl<A: App> Session<A> {
         self.tree = build_view_with(&self.app, &self.commands);
         self.add_agent_status();
         self.add_inspector();
+        self.add_popup();
         self.add_palette();
         self.add_confirmation();
         self.background = self.app.background();
@@ -371,13 +417,20 @@ impl<A: App> Session<A> {
             self.theme = theme;
             self.outbox.theme = Some(theme);
         }
-        // While the palette or the confirmation dialog is open only it
-        // takes focus and keys. The palette's own shortcut closes it; the
-        // dialog takes no shortcuts.
+        // While the palette, the confirmation dialog or a pop-up list is
+        // open only it takes focus and keys. The palette's own shortcut
+        // closes it; the dialog takes no shortcuts.
         let confirming = self.confirmation_open();
-        let overlay = (self.palette.is_some() || confirming)
-            .then(|| self.tree.children.last())
-            .flatten();
+        let overlay = if self.palette.is_some() || confirming {
+            self.tree.children.last()
+        } else {
+            self.popup.as_ref().and_then(|popup| {
+                self.tree
+                    .children
+                    .iter()
+                    .find(|child| child.id == popup.root)
+            })
+        };
         self.focus_order = FocusOrder::from_tree(overlay.unwrap_or(&self.tree));
         self.focus_order.set_commands(
             self.commands
@@ -508,6 +561,7 @@ impl<A: App> Session<A> {
         if self.confirmation_open() {
             return false;
         }
+        self.close_popup();
         if id == PALETTE {
             if self.palette.is_some() {
                 self.close_palette();
@@ -556,6 +610,7 @@ impl<A: App> Session<A> {
     }
 
     fn open_palette(&mut self) {
+        self.close_popup();
         self.palette = Some(Palette {
             query: String::new(),
             selected: 0,
@@ -588,6 +643,161 @@ impl<A: App> Session<A> {
             self.close_palette();
             self.send(msg);
         }
+    }
+
+    /// Whether a pop-up list is open.
+    #[cfg(test)]
+    pub fn popup_open(&self) -> bool {
+        self.popup.is_some()
+    }
+
+    /// Activating `id` opens its list: a pop-up button without `on_click`.
+    fn opens_popup(&self, id: WidgetId) -> bool {
+        self.handler(id)
+            .is_some_and(|handlers| handlers.on_select.is_some() && handlers.on_click.is_none())
+    }
+
+    fn open_popup(&mut self, owner: WidgetId) {
+        let Some(options) = self
+            .tree
+            .find(owner)
+            .and_then(|element| element.options.as_ref())
+            .filter(|options| !options.items.is_empty())
+        else {
+            return;
+        };
+        self.popup = Some(Popup {
+            owner,
+            highlighted: options.selected.unwrap_or(0),
+            root: WidgetId(0),
+            panel: WidgetId(0),
+            rows: Vec::new(),
+        });
+        self.rebuild();
+        self.relayout();
+        self.focus_popup_row();
+    }
+
+    /// Close the open list, giving the focus back to its button.
+    fn close_popup(&mut self) {
+        let Some(popup) = self.popup.take() else {
+            return;
+        };
+        self.rebuild();
+        self.relayout();
+        self.apply_intent(Intent::SetFocus(Some(popup.owner)));
+        self.invalidate();
+    }
+
+    /// Close the list and send the button's `on_select(index)`.
+    fn choose_from_popup(&mut self, index: usize) {
+        let Some(owner) = self.popup.as_ref().map(|popup| popup.owner) else {
+            return;
+        };
+        let on_select = self
+            .handler(owner)
+            .and_then(|handlers| handlers.on_select.clone());
+        self.close_popup();
+        if let Some(on_select) = on_select {
+            self.send(on_select(index));
+        }
+    }
+
+    /// Focus the highlighted row, so assistive technology reads it.
+    fn focus_popup_row(&mut self) {
+        let row = self
+            .popup
+            .as_ref()
+            .and_then(|popup| popup.rows.get(popup.highlighted).copied());
+        if row.is_some() {
+            self.apply_intent(Intent::SetFocus(row));
+        }
+        self.invalidate();
+    }
+
+    /// Append the open pop-up list to the tree, under its button. It closes
+    /// when its button is gone, disabled or without options, and while the
+    /// confirmation dialog is open.
+    fn add_popup(&mut self) {
+        let confirming = self.confirmation_open();
+        let Some(popup) = &mut self.popup else {
+            return;
+        };
+        let options = self
+            .tree
+            .find_mut(popup.owner)
+            .filter(|element| !element.disabled && !confirming)
+            .and_then(|element| element.options.as_mut())
+            .filter(|options| !options.items.is_empty());
+        let (Some(options), Some(anchor)) = (options, self.layout.node(popup.owner)) else {
+            self.popup = None;
+            return;
+        };
+        options.open = true;
+        let items = options.items.clone();
+        let selected = options.selected;
+        popup.highlighted = popup.highlighted.min(items.len() - 1);
+        let frame = menu_frame(anchor.bounds, items.len(), self.viewport);
+        self.tree
+            .children
+            .push(select_menu(&items, selected, popup.highlighted, frame));
+        self.tree.assign_ids();
+        popup.root = self
+            .tree
+            .children
+            .last()
+            .map_or(WidgetId(0), |root| root.id);
+        let find = |test_id: &str| {
+            self.tree
+                .find_test_id(test_id)
+                .map_or(WidgetId(0), |element| element.id)
+        };
+        popup.panel = find(MENU);
+        popup.rows = (0..items.len())
+            .map(|index| find(&format!("{MENU}.{index}")))
+            .collect();
+    }
+
+    /// Keys the open pop-up list takes before anything else: arrows move
+    /// the highlight, Return or Space pick it, Escape, ⌘. or Tab close the
+    /// list; other keys and text do nothing while it is open.
+    fn popup_key(&mut self, intent: &Intent) -> bool {
+        let Some(popup) = &self.popup else {
+            return false;
+        };
+        let Intent::Text(text) = intent else {
+            return false;
+        };
+        let last = popup.rows.len().saturating_sub(1);
+        let action = match text {
+            TextIntent::KeyDown {
+                key,
+                modifiers,
+                repeat,
+            } => match (key, *modifiers == Modifiers::NONE) {
+                (Key::ArrowDown, true) => PopupKey::Highlight((popup.highlighted + 1).min(last)),
+                (Key::ArrowUp, true) => PopupKey::Highlight(popup.highlighted.saturating_sub(1)),
+                (Key::Home, true) => PopupKey::Highlight(0),
+                (Key::End, true) => PopupKey::Highlight(last),
+                (Key::Enter | Key::Space, true) if !repeat => PopupKey::Choose(popup.highlighted),
+                (Key::Escape | Key::Tab, true) => PopupKey::Close,
+                (Key::Period, false) if modifiers.command => PopupKey::Close,
+                _ => PopupKey::Ignore,
+            },
+            _ => PopupKey::Ignore,
+        };
+        match action {
+            PopupKey::Highlight(index) => {
+                if let Some(popup) = &mut self.popup {
+                    popup.highlighted = index;
+                }
+                self.focus_popup_row();
+            }
+            PopupKey::Choose(index) => self.choose_from_popup(index),
+            PopupKey::Close => self.close_popup(),
+            PopupKey::Ignore => {}
+        }
+        true
     }
 
     /// Append the open inspector to the tree, describing the innermost
@@ -778,7 +988,7 @@ impl<A: App> Session<A> {
             self.invalidate();
             return;
         }
-        if self.palette_key(&intent) {
+        if self.palette_key(&intent) || self.popup_key(&intent) {
             return;
         }
         let previous_focus = *self.ui.focused.get();
@@ -830,6 +1040,17 @@ impl<A: App> Session<A> {
         {
             self.run_from_palette(id);
         } else if let Some(activation) = result.activated
+            && let Some(index) = self
+                .popup
+                .as_ref()
+                .and_then(|popup| popup.rows.iter().position(|row| *row == activation.widget))
+        {
+            self.choose_from_popup(index);
+        } else if let Some(activation) = result.activated
+            && self.opens_popup(activation.widget)
+        {
+            self.open_popup(activation.widget);
+        } else if let Some(activation) = result.activated
             && let Some(msg) = self
                 .handler(activation.widget)
                 .and_then(|handlers| handlers.on_click.clone())
@@ -842,6 +1063,10 @@ impl<A: App> Session<A> {
             self.decide(calls::Decision::Deny);
         } else if self.palette.is_some() && result.action == Some(Action::CancelOperation) {
             self.close_palette();
+        } else if matches!(result.action, Some(Action::MoveUp | Action::MoveDown))
+            && let Some(id) = current_focus.filter(|id| self.opens_popup(*id))
+        {
+            self.open_popup(id);
         } else if let Some(action) = result.action
             && let Some(msg) = action_message(&self.tree, current_focus, action)
         {
@@ -918,6 +1143,16 @@ impl<A: App> Session<A> {
             return;
         }
         let mut redraw = self.refresh_hover();
+        if let Some(popup) = &mut self.popup
+            && let Some(index) = popup
+                .rows
+                .iter()
+                .position(|row| self.hover_path.contains(row))
+            && index != popup.highlighted
+        {
+            popup.highlighted = index;
+            redraw = true;
+        }
         if let Some(id) = self.dragging
             && let Some(local) = self.text_field_local(id)
             && let Some(field) = self.text_fields.get_mut(&id)
@@ -938,6 +1173,13 @@ impl<A: App> Session<A> {
 
     fn press_pointer(&mut self, pressed: bool) {
         let target = pointer_target(&self.layout, &self.hover_path);
+        if pressed
+            && let Some(popup) = &self.popup
+            && !self.hover_path.contains(&popup.panel)
+        {
+            self.close_popup();
+            return;
+        }
         if pressed
             && let Some(palette) = &self.palette
             && !self.hover_path.contains(&palette.panel)

@@ -178,6 +178,13 @@ pub enum Role {
     RadioGroup,
     /// Item of a [`Role::RadioGroup`]: On when selected.
     Radio,
+    /// Button that opens a list to pick from (`NSPopUpButton`); named
+    /// after the current choice.
+    PopUpButton,
+    /// The open list of a [`Role::PopUpButton`].
+    Menu,
+    /// Option of a [`Role::Menu`]: On when it is the current choice.
+    MenuItem,
     TextInput,
     Image,
     /// Modal panel over the window; its name is its title.
@@ -209,6 +216,8 @@ pub struct Handlers<Msg> {
     /// Standard actions this element handles when they travel the
     /// responder chain (`None` = handles none).
     pub on_action: Option<Rc<dyn Fn(Action) -> Option<Msg>>>,
+    /// Pop-up button: the option picked from its list, by index.
+    pub on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -218,6 +227,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_input: None,
             on_submit: None,
             on_action: None,
+            on_select: None,
         }
     }
 }
@@ -229,6 +239,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_input: self.on_input.clone(),
             on_submit: self.on_submit.clone(),
             on_action: self.on_action.clone(),
+            on_select: self.on_select.clone(),
         }
     }
 }
@@ -240,8 +251,19 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_input", &self.on_input.is_some())
             .field("on_submit", &self.on_submit)
             .field("on_action", &self.on_action.is_some())
+            .field("on_select", &self.on_select.is_some())
             .finish()
     }
+}
+
+/// The list of a pop-up button ([`Element::options`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    pub items: Vec<String>,
+    /// The current choice, checked in the list.
+    pub selected: Option<usize>,
+    /// The list is open; the session sets it while it shows the list.
+    pub open: bool,
 }
 
 #[derive(Debug)]
@@ -283,6 +305,8 @@ pub struct Element<Msg> {
     pub focus_on_press: bool,
     /// Its controls are one Tab stop; see [`Element::focus_group`].
     pub focus_group: bool,
+    /// Pop-up button list; see [`Element::options`].
+    pub options: Option<Options>,
     pub handlers: Handlers<Msg>,
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
@@ -334,6 +358,7 @@ impl<Msg> Element<Msg> {
             delegates_focus: false,
             focus_on_press: true,
             focus_group: false,
+            options: None,
             handlers: Handlers::default(),
             command: None,
         }
@@ -542,6 +567,26 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Make this a pop-up button (`NSPopUpButton`) over `items`, with
+    /// `selected` checked: a click, Space, Return or an arrow key opens the
+    /// list, which the session shows and drives (arrows, Return, Escape,
+    /// click outside); picking sends [`Element::on_select`].
+    pub fn options(mut self, items: Vec<String>, selected: Option<usize>) -> Self {
+        self.options = Some(Options {
+            items,
+            selected,
+            open: false,
+        });
+        self
+    }
+
+    /// Message for the option picked from the list of
+    /// [`Element::options`], by index.
+    pub fn on_select(mut self, handler: impl Fn(usize) -> Msg + 'static) -> Self {
+        self.handlers.on_select = Some(Rc::new(handler));
+        self
+    }
+
     /// Handle standard actions (Escape → `CancelOperation`, Cmd+Z → `Undo`…)
     /// that the focused element or a descendant did not consume. Return
     /// `None` to let the action continue up the responder chain.
@@ -664,6 +709,15 @@ impl<Msg> Element<Msg> {
         self.children.iter().find_map(|child| child.find(id))
     }
 
+    pub fn find_mut(&mut self, id: WidgetId) -> Option<&mut Element<Msg>> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.children
+            .iter_mut()
+            .find_map(|child| child.find_mut(id))
+    }
+
     /// Ids from the root to `id`, inclusive.
     pub fn path_to(&self, id: WidgetId) -> Option<Vec<WidgetId>> {
         if self.id == id {
@@ -683,7 +737,10 @@ impl<Msg> Element<Msg> {
         }
         match self.kind {
             Kind::Input { .. } => Some(FocusKind::TextField),
-            _ if self.handlers.on_click.is_some() || self.command.is_some() => {
+            _ if self.handlers.on_click.is_some()
+                || self.handlers.on_select.is_some()
+                || self.command.is_some() =>
+            {
                 Some(FocusKind::Button)
             }
             _ => None,
@@ -703,6 +760,7 @@ impl<Msg> Element<Msg> {
     pub fn is_control(&self) -> bool {
         matches!(self.kind, Kind::Input { .. })
             || self.handlers.on_click.is_some()
+            || self.handlers.on_select.is_some()
             || self.command.is_some()
     }
 
@@ -728,6 +786,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_input.is_some()
                 || h.on_submit.is_some()
                 || h.on_action.is_some()
+                || h.on_select.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

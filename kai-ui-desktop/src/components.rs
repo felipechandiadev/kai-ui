@@ -1847,6 +1847,180 @@ pub fn checkbox_with_options<Msg>(
         ])
 }
 
+/// Select; see [`select_with_options`].
+pub fn select<Msg>(
+    options: &[&str],
+    selected: Option<usize>,
+    placeholder: &str,
+    on_select: impl Fn(usize) -> Msg + 'static,
+) -> Element<Msg> {
+    select_with_options(options, selected, placeholder, on_select, false)
+}
+
+/// Select, a pop-up button (`NSPopUpButton`): shows the chosen option, or
+/// `placeholder` without one, and opens the list of `options` on click,
+/// Space, Return or an arrow key. The session shows and drives the list
+/// ([`select_menu`]); picking sends `on_select(index)`. Name it with
+/// `.label(..)` when a separate title describes it. Parts: `value`.
+pub fn select_with_options<Msg>(
+    options: &[&str],
+    selected: Option<usize>,
+    placeholder: &str,
+    on_select: impl Fn(usize) -> Msg + 'static,
+    disabled: bool,
+) -> Element<Msg> {
+    let choice = selected.and_then(|index| options.get(index));
+    let value = text(choice.copied().unwrap_or(placeholder))
+        .class(&themed(
+            &format!(
+                "flex-1 truncate {}",
+                if choice.is_some() {
+                    "text-foreground"
+                } else {
+                    "text-muted-foreground"
+                }
+            ),
+            &format!(
+                "flex-1 truncate {}",
+                if disabled {
+                    "text-disabled-control-text"
+                } else if choice.is_some() {
+                    "text-control-text"
+                } else {
+                    "text-placeholder"
+                }
+            ),
+        ))
+        .part("value");
+    let interaction = if disabled {
+        "opacity-50 cursor-not-allowed"
+    } else {
+        "cursor-pointer hover:border-primary"
+    };
+    let appkit_hover = if disabled {
+        ""
+    } else {
+        "hover:bg-bezel-hover active:bg-control-pressed"
+    };
+    let appkit_arrows = if disabled {
+        "bg-transparent text-disabled-control-text"
+    } else {
+        "bg-control-accent text-on-accent window-inactive:bg-transparent \
+         window-inactive:text-control-text glass:bg-transparent glass:text-control-text"
+    };
+    div()
+        .class(&themed(
+            &format!(
+                "inline-flex items-center gap-2 h-control px-3 min-w-40 rounded-md border \
+                 border-border bg-background text-sm leading-5 focus-visible:ring-2 \
+                 focus-visible:ring-primary/40 {interaction}"
+            ),
+            &format!(
+                "inline-flex items-center gap-1.5 h-control pl-2 pr-0.5 min-w-24 \
+                 rounded-control text-control bg-control border-[0.5px] border-separator \
+                 shadow-bezel dark:border-0 glass:bg-fill-2 glass:border-0 glass:shadow-none \
+                 cursor-default keyboard-focus:ring-focus window-inactive:ring-0 {appkit_hover}"
+            ),
+        ))
+        .role(Role::PopUpButton)
+        .parts_root()
+        .disabled(disabled)
+        .options(
+            options.iter().map(|option| (*option).to_owned()).collect(),
+            selected,
+        )
+        .on_select(on_select)
+        .children([
+            value,
+            icon(Icon::ChevronDown).class(&themed("size-4 text-muted-foreground", "hidden")),
+            div()
+                .class(&themed(
+                    "hidden",
+                    &format!(
+                        "flex items-center justify-center shrink-0 size-check rounded-[3px] \
+                         {appkit_arrows}"
+                    ),
+                ))
+                .child(icon(Icon::ChevronsUpDown).class("size-full stroke-[2.5]")),
+        ])
+}
+
+/// Where [`select_menu`] puts its list: window coordinates and size limits.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuFrame {
+    pub x: f32,
+    pub y: f32,
+    pub min_width: f32,
+    pub max_height: f32,
+}
+
+/// The open list of a [`select`]: a transparent layer over the window
+/// (a click on it closes the list) and the panel `kai.menu` at `frame`,
+/// with one row per item (`kai.menu.<index>`), `selected` checked and
+/// `highlighted` marked (the session moves it with the keys and the
+/// pointer). Behavior lives in the session that shows it; the elements
+/// send no messages.
+pub fn select_menu<Msg>(
+    items: &[String],
+    selected: Option<usize>,
+    highlighted: usize,
+    frame: MenuFrame,
+) -> Element<Msg> {
+    let rows = items.iter().enumerate().map(|(index, item)| {
+        let (kai_mark, appkit_mark) = if index == highlighted {
+            ("bg-primary/10", "bg-control-accent text-on-accent")
+        } else {
+            ("", "")
+        };
+        let mut check = div().class("flex items-center justify-center shrink-0 size-3.5");
+        if selected == Some(index) {
+            check = check.child(icon(Icon::Check).class("size-full stroke-[3]"));
+        }
+        let mut row = div()
+            .class(&themed(
+                &format!(
+                    "flex items-center gap-1.5 px-2 py-1.5 rounded text-sm leading-5 \
+                     whitespace-nowrap text-foreground cursor-pointer {kai_mark}"
+                ),
+                &format!(
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-body \
+                     whitespace-nowrap text-label cursor-default {appkit_mark}"
+                ),
+            ))
+            .role(Role::MenuItem)
+            .key(index.to_string())
+            .test_id(format!("kai.menu.{index}"))
+            .label(item.clone())
+            .pressed(selected == Some(index))
+            .focus_on_press(false)
+            .children([check, text(item.clone())]);
+        row.command = Some(MENU);
+        row
+    });
+    div().class("absolute inset-0 z-50").key(MENU).child(
+        div()
+            .class(&format!(
+                "absolute flex flex-col overflow-y-auto left-[{:.0}px] top-[{:.0}px] \
+                     min-w-[{:.0}px] max-h-[{:.0}px] {}",
+                frame.x,
+                frame.y,
+                frame.min_width,
+                frame.max_height,
+                themed(
+                    "p-1 rounded-md border border-border bg-background shadow-lg",
+                    "p-[5px] rounded-[6px] border-[0.5px] border-separator bg-window shadow-lg",
+                )
+            ))
+            .role(Role::Menu)
+            .test_id(MENU)
+            .children(rows),
+    )
+}
+
+/// Test id of the open [`select_menu`] panel; its rows are
+/// `kai.menu.<index>`.
+pub const MENU: &str = "kai.menu";
+
 /// Segmented control; see [`segmented_with_options`].
 pub fn segmented<Msg>(
     options: &[&str],
@@ -1905,11 +2079,11 @@ pub fn segmented_with_options<Msg>(
 mod tests {
     use super::{
         AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, FieldBezel,
-        FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity,
-        TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
-        card_content, card_header, checkbox, checkbox_with_options, dialog, group_box,
-        icon_button_sized, segmented, segmented_with_options, stat, switch_labeled,
-        switch_with_options,
+        FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MenuFrame,
+        SwitchDensity, TextField, alert, badge, badge_classes, button, button_classes, card,
+        card_actions, card_content, card_header, checkbox, checkbox_with_options, dialog,
+        group_box, icon_button_sized, segmented, segmented_with_options, select_menu,
+        select_with_options, stat, switch_labeled, switch_with_options,
     };
     use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
@@ -2162,7 +2336,27 @@ mod tests {
                 |_| Msg::Toggle,
                 disabled,
             ));
+            for selected in [None, Some(1)] {
+                assert_tree_known(&select_with_options(
+                    &["Día", "Mes"],
+                    selected,
+                    "Elegir",
+                    |_| Msg::Toggle,
+                    disabled,
+                ));
+            }
         }
+        assert_tree_known(&select_menu::<Msg>(
+            &["Día".to_owned(), "Mes".to_owned()],
+            Some(0),
+            1,
+            MenuFrame {
+                x: 10.0,
+                y: 20.0,
+                min_width: 120.0,
+                max_height: 300.0,
+            },
+        ));
 
         assert_tree_known(
             &TextField::new("Monto", "")

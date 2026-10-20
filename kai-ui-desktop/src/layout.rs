@@ -167,6 +167,8 @@ pub struct LayoutNode {
     pub focus_delegate: Option<WidgetId>,
     /// Clickable or editable (see [`Element::is_control`]).
     pub control: bool,
+    /// Pop-up button: whether its list is open (see [`Element::options`]).
+    pub expanded: Option<bool>,
     pub style: Style,
     pub text: ComputedText,
     /// Product of the opacities of this node and its ancestors.
@@ -346,6 +348,7 @@ impl Builder<'_> {
                 .then(|| element.first_input())
                 .flatten(),
             control: element.is_control(),
+            expanded: element.options.as_ref().map(|options| options.open),
             opacity: inherited.opacity * style.opacity,
             hidden: inherited.hidden || style.display == Display::None,
             pointer_events: inherited.pointer_events && style.pointer_events,
