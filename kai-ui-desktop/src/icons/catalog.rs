@@ -20,6 +20,8 @@ pub enum Icon {
     X,
     CircleX,
     LoaderCircle,
+    Check,
+    ChevronsUpDown,
 }
 
 impl Icon {
@@ -40,6 +42,8 @@ impl Icon {
         Icon::X,
         Icon::CircleX,
         Icon::LoaderCircle,
+        Icon::Check,
+        Icon::ChevronsUpDown,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -61,6 +65,8 @@ impl Icon {
             Icon::X => "x",
             Icon::CircleX => "circle-x",
             Icon::LoaderCircle => "loader-circle",
+            Icon::Check => "check",
+            Icon::ChevronsUpDown => "chevrons-up-down",
         }
     }
 
@@ -87,6 +93,8 @@ impl Icon {
             Icon::X => include_str!("../../assets/icons/x.svg"),
             Icon::CircleX => include_str!("../../assets/icons/circle-x.svg"),
             Icon::LoaderCircle => include_str!("../../assets/icons/loader-circle.svg"),
+            Icon::Check => include_str!("../../assets/icons/check.svg"),
+            Icon::ChevronsUpDown => include_str!("../../assets/icons/chevrons-up-down.svg"),
         }
     }
 }

@@ -169,6 +169,9 @@ pub enum Role {
     Button,
     /// On/off toggle (`NSSwitch`); its state is the control state.
     Switch,
+    /// Checkbox (`NSButton` `.checkbox`): On, Off or Mixed, from the control
+    /// state; named after its title.
+    Checkbox,
     TextInput,
     Image,
     /// Modal panel over the window; its name is its title.

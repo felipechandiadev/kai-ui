@@ -29,6 +29,8 @@ const ICONS = [
   "x",
   "circle-x",
   "loader-circle",
+  "check",
+  "chevrons-up-down",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

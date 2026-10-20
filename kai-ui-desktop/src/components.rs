@@ -9,7 +9,9 @@
 use std::rc::Rc;
 
 use crate::commands::Action;
-use crate::element::{ControlSize, Element, KeyEquivalent, Role, div, icon, input, text};
+use crate::element::{
+    ControlSize, ControlState, Element, KeyEquivalent, Role, div, icon, input, text,
+};
 use crate::icons::Icon;
 use crate::runtime::App;
 
@@ -1751,16 +1753,110 @@ pub fn switch_with_options<Msg>(
         .child(div().class(&format!("rounded-full bg-white shadow-sm {thumb_size}")))
 }
 
+/// Checkbox (`NSButton` `.checkbox`) titled `label`; see
+/// [`checkbox_with_options`].
+pub fn checkbox<Msg>(label: &str, state: ControlState, on_toggle: Msg) -> Element<Msg> {
+    checkbox_with_options(label, state, on_toggle, false)
+}
+
+/// Checkbox: the box and its title are one control, so a click on the
+/// title toggles too. `Mixed` shows a dash; what a click does from each
+/// state is up to the app (`on_toggle`). The box follows the control size
+/// (`size-check`). Parts: `box` and `label`.
+pub fn checkbox_with_options<Msg>(
+    label: &str,
+    state: ControlState,
+    on_toggle: Msg,
+    disabled: bool,
+) -> Element<Msg> {
+    let on = state != ControlState::Off;
+    let (kai_box, appkit_box) = if on {
+        (
+            "bg-primary border-primary text-white",
+            "bg-control-accent text-on-accent window-inactive:bg-control \
+             window-inactive:text-control-text window-inactive:border-[0.5px] \
+             window-inactive:border-separator",
+        )
+    } else if disabled {
+        (
+            "bg-background border-border",
+            "bg-control border-[0.5px] border-separator shadow-bezel dark:border-0",
+        )
+    } else {
+        (
+            "bg-background border-border group-hover:border-primary",
+            "bg-control border-[0.5px] border-separator shadow-bezel dark:border-0 \
+             group-hover:bg-bezel-hover",
+        )
+    };
+    let appkit_dim = if disabled { "opacity-50" } else { "" };
+    let mut mark = div()
+        .class(&themed(
+            &format!(
+                "flex items-center justify-center shrink-0 size-check rounded-[4px] border \
+                 {kai_box}"
+            ),
+            &format!(
+                "flex items-center justify-center shrink-0 size-check rounded-[3px] p-px \
+                 {appkit_box} {appkit_dim}"
+            ),
+        ))
+        .part("box");
+    let glyph = match state {
+        ControlState::On => Some(Icon::Check),
+        ControlState::Mixed => Some(Icon::Minus),
+        ControlState::Off => None,
+    };
+    if let Some(glyph) = glyph {
+        mark = mark.child(icon(glyph).class("size-full stroke-[3]"));
+    }
+    let interaction = if disabled {
+        "opacity-50 cursor-not-allowed"
+    } else {
+        "cursor-pointer"
+    };
+    div()
+        .class(&themed(
+            &format!(
+                "group inline-flex items-center gap-2 rounded-sm focus-visible:ring-2 \
+                 focus-visible:ring-primary/40 {interaction}"
+            ),
+            "group inline-flex items-center gap-1.5 rounded-control cursor-default \
+             keyboard-focus:ring-focus window-inactive:ring-0",
+        ))
+        .role(Role::Checkbox)
+        .parts_root()
+        .disabled(disabled)
+        .state(state)
+        .on_click(on_toggle)
+        .children([
+            mark,
+            text(label)
+                .class(&themed(
+                    "text-sm leading-5 font-medium text-foreground whitespace-nowrap",
+                    &format!(
+                        "text-control whitespace-nowrap {}",
+                        if disabled {
+                            "text-disabled-control-text"
+                        } else {
+                            "text-control-text"
+                        }
+                    ),
+                ))
+                .part("label"),
+        ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, FieldBezel,
         FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, SwitchDensity,
         TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
-        card_content, card_header, dialog, group_box, icon_button_sized, stat, switch_labeled,
-        switch_with_options,
+        card_content, card_header, checkbox, checkbox_with_options, dialog, group_box,
+        icon_button_sized, stat, switch_labeled, switch_with_options,
     };
-    use crate::element::{ControlSize, Element, FocusOrder, Kind, Role, div, text};
+    use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
     use crate::geometry::{Rect, Size};
     use crate::icons::Icon;
     use crate::layout::testing::FixedMeasure;
@@ -1992,6 +2088,16 @@ mod tests {
                         density,
                     ));
                 }
+            }
+        }
+        for state in [ControlState::Off, ControlState::On, ControlState::Mixed] {
+            for disabled in [false, true] {
+                assert_tree_known(&checkbox_with_options(
+                    "Acepto",
+                    state,
+                    Msg::Toggle,
+                    disabled,
+                ));
             }
         }
 
@@ -2477,6 +2583,9 @@ mod tests {
                 false,
                 SwitchDensity::Default,
             ));
+        }
+        for state in [ControlState::Off, ControlState::On, ControlState::Mixed] {
+            all.push(checkbox("Acepto", state, Msg::Toggle));
         }
         all.push(card().children([card_header("T", Some("S")), card_content(), card_actions()]));
         all.push(group_box(Some("Opciones"), [text("x")]));
@@ -3138,5 +3247,38 @@ mod tests {
         );
         assert_eq!(bare.role, Some(Role::Switch));
         assert_eq!(bare.label.as_deref(), Some("Desactivado"));
+    }
+
+    #[test]
+    fn checkbox_is_one_control_with_its_state_and_mark() {
+        let on = assigned(checkbox("Acepto", ControlState::On, Msg::Toggle).test_id("ok"));
+        assert_eq!(on.role, Some(Role::Checkbox));
+        assert_eq!(on.control.state, Some(ControlState::On));
+        assert_eq!(on.handlers.on_click, Some(Msg::Toggle));
+        assert_eq!(part(&on, "ok.label").text_content(), "Acepto");
+        assert_eq!(
+            part(&on, "ok.box").children[0].kind,
+            Kind::Icon(Icon::Check)
+        );
+        assert!(
+            !part(&on, "ok.label").is_control(),
+            "the title is not a control of its own"
+        );
+
+        let mixed = assigned(checkbox("Todo", ControlState::Mixed, Msg::Toggle).test_id("t"));
+        assert_eq!(
+            part(&mixed, "t.box").children[0].kind,
+            Kind::Icon(Icon::Minus)
+        );
+        let off = assigned(checkbox("Nada", ControlState::Off, Msg::Toggle).test_id("n"));
+        assert!(part(&off, "n.box").children.is_empty());
+
+        let disabled = assigned(checkbox_with_options(
+            "No",
+            ControlState::Off,
+            Msg::Toggle,
+            true,
+        ));
+        assert_eq!(FocusOrder::from_tree(&disabled).ids().count(), 0);
     }
 }

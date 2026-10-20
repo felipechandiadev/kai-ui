@@ -33,7 +33,7 @@
 //! last: `grid grid-cols-1 sm:grid-cols-2` stacks in a narrow window.
 //!
 //! Control metrics follow the node's effective control size: `h-control`,
-//! `min-h-control`, `h-field`, `h-field-square`, `rounded-control`,
+//! `min-h-control`, `h-field`, `h-field-square`, `size-check`, `rounded-control`,
 //! `px-control` and `text-control` read the per-size arrays of
 //! [`crate::theme::ControlTokens`]; `gap-control` and `ring-focus` (width,
 //! offset and `focus` color) read the theme too. The macOS text styles are
@@ -323,6 +323,7 @@ enum Decl {
     // By control size (`h-control`, `px-control`…), indexed by
     // `ControlSize::index()` of the resolved state.
     HeightBySize(BySize),
+    SizeBySize(BySize),
     MinHeightBySize(BySize),
     RadiusBySize(BySize),
     PaddingXBySize(BySize),
@@ -485,6 +486,10 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::NoWrap(nowrap) => style.text.nowrap = Some(nowrap),
         Decl::Stroke(width) => style.text.stroke_width = Some(width),
         Decl::HeightBySize(values) => style.height = Length::Px(values[size]),
+        Decl::SizeBySize(values) => {
+            style.width = Length::Px(values[size]);
+            style.height = Length::Px(values[size]);
+        }
         Decl::MinHeightBySize(values) => style.min_height = Length::Px(values[size]),
         Decl::RadiusBySize(values) => style.radius = values[size],
         Decl::PaddingXBySize(values) => set_sides(&mut style.padding, Sides::X, values[size]),
@@ -667,6 +672,7 @@ impl Parser<'_> {
             "h-control" => Decl::HeightBySize(controls.button_height),
             "min-h-control" => Decl::MinHeightBySize(controls.button_height),
             "h-field" => Decl::HeightBySize(controls.field_height),
+            "size-check" => Decl::SizeBySize(controls.check_size),
             "h-field-square" => Decl::HeightBySize(controls.field_square_height),
             "rounded-control" => Decl::RadiusBySize(controls.radius),
             "rounded-field" => Decl::RadiusBySize(controls.field_radius),

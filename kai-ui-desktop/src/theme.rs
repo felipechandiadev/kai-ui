@@ -338,6 +338,8 @@ pub struct ControlTokens {
     /// `text-control`: font size and line height.
     pub font_size: BySize,
     pub line_height: BySize,
+    /// `size-check`: side of a checkbox's box.
+    pub check_size: BySize,
     /// `gap-control`: space between neighboring controls.
     pub gap: f32,
     /// `ring-focus`: 3 / 0 in AppKit, 2 / 2 in Kai.
@@ -735,6 +737,8 @@ fn kai_controls(
             t.font_size_page_title,
         ],
         line_height: [xs, sm, sm, lg, lg],
+        // `size-4` like the web checkbox; larger with the large text.
+        check_size: [REM, REM, REM, 1.25 * REM, 1.25 * REM],
         gap: space.space_2,
         focus_ring_width: 2.0,
         focus_ring_offset: 2.0,

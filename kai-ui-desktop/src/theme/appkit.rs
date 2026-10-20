@@ -209,6 +209,8 @@ pub(super) const AQUA11_CONTROLS: ControlTokens = ControlTokens {
     font_size: [9.0, 11.0, 13.0, 13.0, 13.0],
     // Natural line heights of 11 and 13 pt; 9 pt → 11 (?).
     line_height: [11.0, 13.0, 16.0, 16.0, 16.0],
+    // Box of `NSButton` `.checkbox` [C].
+    check_size: [10.0, 12.0, 14.0, 16.0, 16.0],
     gap: 8.0,
     // 3 pt outward, no offset [B-med].
     focus_ring_width: 3.0,

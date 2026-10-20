@@ -5,9 +5,9 @@
 
 use crate::components::{
     BezelStyle, Button, SwitchDensity, TextField, card, card_actions, card_content, card_header,
-    group_box, paragraph, switch_with_options,
+    checkbox_with_options, group_box, paragraph, switch_with_options,
 };
-use crate::element::{ControlSize, Element, Role, div, text};
+use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::layout::WindowActivity;
 use crate::runtime::SimpleApp;
 use crate::theme::{Appearance, Density, Theme};
@@ -24,6 +24,7 @@ pub enum Section {
     Buttons,
     Fields,
     Toggles,
+    Selection,
     Boxes,
     Text,
     Colors,
@@ -31,10 +32,11 @@ pub enum Section {
 
 impl Section {
     /// Sections with content, in display order (without `All`).
-    pub const CONTENT: [Section; 6] = [
+    pub const CONTENT: [Section; 7] = [
         Self::Buttons,
         Self::Fields,
         Self::Toggles,
+        Self::Selection,
         Self::Boxes,
         Self::Text,
         Self::Colors,
@@ -46,6 +48,7 @@ impl Section {
             Self::Buttons => "Buttons",
             Self::Fields => "Fields",
             Self::Toggles => "Toggles",
+            Self::Selection => "Selection",
             Self::Boxes => "Boxes",
             Self::Text => "Text",
             Self::Colors => "Colors",
@@ -69,6 +72,8 @@ pub struct Gallery {
     pub section: Section,
     pub text: String,
     pub switches: [bool; 2],
+    /// Checkboxes of the Selection section: off, on and mixed rows.
+    pub checks: [ControlState; 3],
     pub last_action: Option<&'static str>,
 }
 
@@ -81,6 +86,7 @@ impl Default for Gallery {
             section: Section::All,
             text: "Texto".to_owned(),
             switches: [false, true],
+            checks: [ControlState::Off, ControlState::On, ControlState::Mixed],
             last_action: None,
         }
     }
@@ -94,6 +100,7 @@ pub enum Msg {
     Show(Section),
     Edit(String),
     Switch(usize),
+    Check(usize),
     Clicked(&'static str),
 }
 
@@ -119,6 +126,14 @@ const FIELD_ROWS: [&str; 5] = [
 
 /// Rows of the Toggles section.
 const TOGGLE_ROWS: [&str; 3] = ["Apagado", "Encendido", "Disabled"];
+
+/// Rows of the Selection section.
+const SELECTION_ROWS: [&str; 4] = [
+    "Checkbox off",
+    "Checkbox on",
+    "Checkbox mixto",
+    "Checkbox disabled",
+];
 
 /// Text styles of the Text section (`docs/dev/11-tema-appkit.md`).
 const TEXT_STYLES: [&str; 11] = [
@@ -200,7 +215,8 @@ impl Gallery {
                 "--section" => match args.next().as_deref().and_then(Section::parse) {
                     Some(section) => gallery.section = section,
                     None => eprintln!(
-                        "--section desconocida (todo, buttons, fields, toggles, boxes, text, colors)"
+                        "--section desconocida (todo, buttons, fields, toggles, selection, boxes, \
+                         text, colors)"
                     ),
                 },
                 other => eprintln!("argumento desconocido: {other}"),
@@ -229,6 +245,9 @@ impl Gallery {
             }
             Section::Toggles => sized_grid(section, &TOGGLE_ROWS, |row, size| {
                 self.toggle_cell(row, size)
+            }),
+            Section::Selection => sized_grid(section, &SELECTION_ROWS, |row, size| {
+                self.selection_cell(row, size)
             }),
             Section::Boxes => boxes(),
             Section::Text => text_styles(),
@@ -270,6 +289,18 @@ impl Gallery {
             _ => switch_with_options(false, Msg::Clicked("disabled"), true, density),
         };
         div().control_size(size).child(switch)
+    }
+
+    fn selection_cell(&self, row: &str, size: ControlSize) -> Element<Msg> {
+        let control = match row {
+            "Checkbox off" => checkbox_with_options("Opción", self.checks[0], Msg::Check(0), false),
+            "Checkbox on" => checkbox_with_options("Opción", self.checks[1], Msg::Check(1), false),
+            "Checkbox mixto" => {
+                checkbox_with_options("Opción", self.checks[2], Msg::Check(2), false)
+            }
+            _ => checkbox_with_options("Opción", ControlState::On, Msg::Clicked("checkbox"), true),
+        };
+        control.control_size(size)
     }
 
     fn colors(&self) -> Element<Msg> {
@@ -468,6 +499,14 @@ impl SimpleApp for Gallery {
             Msg::Show(section) => self.section = section,
             Msg::Edit(value) => self.text = value,
             Msg::Switch(index) => self.switches[index] = !self.switches[index],
+            // A mixed checkbox turns on, as `NSButton` without
+            // `allowsMixedState`.
+            Msg::Check(index) => {
+                self.checks[index] = match self.checks[index] {
+                    ControlState::On => ControlState::Off,
+                    ControlState::Off | ControlState::Mixed => ControlState::On,
+                }
+            }
             Msg::Clicked(name) => self.last_action = Some(name),
         }
     }
@@ -549,6 +588,7 @@ mod tests {
             (Section::Buttons, BUTTON_ROWS.len()),
             (Section::Fields, FIELD_ROWS.len()),
             (Section::Toggles, TOGGLE_ROWS.len()),
+            (Section::Selection, SELECTION_ROWS.len()),
         ] {
             let mut tree = gallery.section_view(section);
             tree.assign_ids();
@@ -574,7 +614,10 @@ mod tests {
         assert_eq!(tree.validate_ids(), Vec::<String>::new());
         let mut tagged = Vec::new();
         tree.walk(&mut |element| {
-            if let Some(test_id) = &element.test_id {
+            // Parts (`<cell>.label`…) derive from the cell's id.
+            if let Some(test_id) = &element.test_id
+                && (element.part.is_none() || element.is_control())
+            {
                 assert!(element.is_control(), "{test_id} is not a control");
                 tagged.push(test_id.clone());
             }
@@ -583,6 +626,7 @@ mod tests {
             (Section::Buttons, &BUTTON_ROWS[..]),
             (Section::Fields, &FIELD_ROWS[..]),
             (Section::Toggles, &TOGGLE_ROWS[..]),
+            (Section::Selection, &SELECTION_ROWS[..]),
         ] {
             for row in rows {
                 for size in ControlSize::ALL {
@@ -594,7 +638,8 @@ mod tests {
         assert!(tagged.contains(&"gallery.fields.con-valor.xl".to_owned()));
         assert_eq!(
             tagged.len(),
-            ControlSize::ALL.len() * (BUTTON_ROWS.len() + FIELD_ROWS.len() + TOGGLE_ROWS.len())
+            ControlSize::ALL.len()
+                * (BUTTON_ROWS.len() + FIELD_ROWS.len() + TOGGLE_ROWS.len() + SELECTION_ROWS.len())
         );
     }
 
@@ -607,6 +652,7 @@ mod tests {
         // password toggle.
         let field_controls = 5;
         let enabled_switches = 2;
+        let enabled_selection = 3;
         for (section, expected) in [
             (
                 Section::Buttons,
@@ -614,6 +660,7 @@ mod tests {
             ),
             (Section::Fields, sizes * field_controls),
             (Section::Toggles, sizes * enabled_switches),
+            (Section::Selection, sizes * enabled_selection),
             (Section::Boxes, 1),
         ] {
             let mut tree = gallery.section_view(section);
@@ -711,6 +758,30 @@ mod tests {
                 crate::snapshot::write_png(&dir.join(file), &image).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn checkboxes_toggle_by_click_on_the_title_and_by_space() {
+        use crate::ui_engine::{Key, Modifiers};
+
+        let mut app = TestApp::new(Gallery {
+            section: Section::Selection,
+            ..Gallery::default()
+        });
+        let regular =
+            |row| By::test_id(cell_test_id(Section::Selection, row, ControlSize::Regular));
+        app.click(By::test_id(format!(
+            "{}.label",
+            cell_test_id(Section::Selection, "Checkbox off", ControlSize::Regular)
+        )));
+        assert_eq!(app.app().checks[0], ControlState::On);
+        assert!(app.is_focused(regular("Checkbox off")));
+        app.press(Key::Space, Modifiers::NONE);
+        assert_eq!(app.app().checks[0], ControlState::Off);
+        app.click(regular("Checkbox mixto"));
+        assert_eq!(app.app().checks[2], ControlState::On, "mixed turns on");
+        app.click(regular("Checkbox disabled"));
+        assert_eq!(app.app().last_action, None);
     }
 
     #[test]
