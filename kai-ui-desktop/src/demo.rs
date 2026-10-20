@@ -1,24 +1,31 @@
 //! Kai UI Desktop demo, shared by the `kai-ui-desktop-prototype` binary
 //! (`cargo run`) and `examples/demo.rs` (`cargo run --example demo`).
 
+use std::rc::Rc;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
 use crate::commands::{
-    Action, Availability, CommandError, CommandRegistry, Query, Safety, Shortcut, describe_json,
+    Action, Availability, CommandError, CommandRegistry, PALETTE, Query, Safety, Shortcut,
+    describe_json,
 };
 use crate::components::{
-    AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, FieldDensity, FieldVariant,
-    IconButtonSize, IconButtonVariant, LabelLayout, Sidebar, SidebarGroup, SidebarItem,
-    SwitchDensity, TextField, alert, badge, button, button_sized, caption, card, card_actions,
-    card_content, card_header, checkbox, icon_button_sized, paragraph, segmented, select, stat,
-    switch_labeled,
+    AlertVariant, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant, Column, Dialog,
+    DialogWidth, FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant,
+    LabelLayout, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table,
+    TextField, Toast, alert, badge, button, button_sized, caption, card, card_actions,
+    card_content, card_header, checkbox, checkbox_with_options, group_box, heading, icon_button,
+    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
+    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
+    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
+    toolbar_spacer, toolbar_title, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::geometry::Size;
 use crate::icons::Icon;
-use crate::runtime::{self, SimpleApp};
+use crate::runtime::{self, App, Effects};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -26,7 +33,7 @@ use crate::ui_engine::Key;
 use crate::version;
 
 /// Demo model: everything the screen shows derives from it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Demo {
     clicks: u32,
     name: String,
@@ -54,6 +61,29 @@ struct Demo {
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
+    /// Campos: PIN (a plain `password` field), notes, the search field.
+    pin: String,
+    show_pin: bool,
+    notes: String,
+    lookup: String,
+    /// Selección.
+    wifi: bool,
+    /// Permissions under «Todos» (mixed while some are on).
+    permisos: [bool; 3],
+    /// Index into [`PAISES`].
+    pais: Option<usize>,
+    /// Index into [`ALINEACIONES`].
+    alineacion: usize,
+    /// Tabla: the toolbar search, the sort and the selected client.
+    query: String,
+    sort: (usize, SortDirection),
+    /// Client numbers in display order: filtered by `query`, sorted.
+    rows: Rc<[u32]>,
+    cliente: Option<u32>,
+    /// Diálogos y avisos.
+    dialogo: Option<Dialogo>,
+    toasts: Vec<Toast<Msg>>,
+    next_toast: u64,
 }
 
 impl Default for Demo {
@@ -80,6 +110,193 @@ impl Default for Demo {
             sized: false,
             background: BackgroundKind::None,
             background_motion: BackgroundMotion::Static,
+            pin: String::new(),
+            show_pin: false,
+            notes: String::new(),
+            lookup: String::new(),
+            wifi: true,
+            permisos: [true, false, true],
+            pais: Some(0),
+            alineacion: 0,
+            query: String::new(),
+            sort: (0, SortDirection::Ascending),
+            rows: clientes("", (0, SortDirection::Ascending)),
+            cliente: None,
+            dialogo: None,
+            toasts: Vec::new(),
+            next_toast: 1,
+        }
+    }
+}
+
+/// Rows of the client table.
+const CLIENTES: u32 = 10_000;
+
+/// One client of the generated table: number, name, city, plan, amount.
+struct Cliente {
+    numero: u32,
+    nombre: String,
+    ciudad: &'static str,
+    plan: &'static str,
+    monto: u32,
+}
+
+/// Client `numero` (1-based), the same every time.
+fn cliente(numero: u32) -> Cliente {
+    const NOMBRES: [&str; 12] = [
+        "Ana", "Bruno", "Carla", "Diego", "Elena", "Felipe", "Gabriela", "Hugo", "Inés", "Javier",
+        "Laura", "Matías",
+    ];
+    const APELLIDOS: [&str; 10] = [
+        "Rojas",
+        "Muñoz",
+        "Soto",
+        "Contreras",
+        "Silva",
+        "Martínez",
+        "Sepúlveda",
+        "Morales",
+        "Fuentes",
+        "Vega",
+    ];
+    const CIUDADES: [&str; 8] = [
+        "Santiago",
+        "Valparaíso",
+        "Concepción",
+        "La Serena",
+        "Antofagasta",
+        "Temuco",
+        "Puerto Montt",
+        "Arica",
+    ];
+    const PLANES: [&str; 3] = ["Básico", "Pro", "Empresa"];
+    let n = numero as usize;
+    let mix = n.wrapping_mul(2_654_435_761) >> 7;
+    Cliente {
+        numero,
+        nombre: format!(
+            "{} {}",
+            NOMBRES[n % NOMBRES.len()],
+            APELLIDOS[(n / NOMBRES.len() + mix) % APELLIDOS.len()]
+        ),
+        ciudad: CIUDADES[mix % CIUDADES.len()],
+        plan: PLANES[(mix / 7) % PLANES.len()],
+        monto: (mix % 9_000 + 100) as u32 * 10,
+    }
+}
+
+/// Columns of the client table; sortable ones by `sort.0`.
+fn columnas() -> Vec<Column> {
+    vec![
+        Column::new("N.º").fixed(72.0).sortable().numeric(),
+        Column::new("Nombre").flex(2.0).sortable(),
+        Column::new("Ciudad").flex(1.5).sortable(),
+        Column::new("Plan").fixed(96.0),
+        Column::new("Monto").fixed(112.0).sortable().numeric(),
+    ]
+}
+
+/// Text of `column` for `cliente`.
+fn celda(cliente: &Cliente, column: usize) -> String {
+    match column {
+        0 => cliente.numero.to_string(),
+        1 => cliente.nombre.clone(),
+        2 => cliente.ciudad.to_owned(),
+        3 => cliente.plan.to_owned(),
+        _ => format!("$ {}", cliente.monto),
+    }
+}
+
+/// Client numbers whose name or city contains `query` (ignoring case),
+/// sorted by `sort`.
+fn clientes(query: &str, (column, direction): (usize, SortDirection)) -> Rc<[u32]> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() && column == 0 {
+        return match direction {
+            SortDirection::Ascending => (1..=CLIENTES).collect(),
+            SortDirection::Descending => (1..=CLIENTES).rev().collect(),
+        };
+    }
+    let mut rows: Vec<Cliente> = (1..=CLIENTES)
+        .map(cliente)
+        .filter(|c| {
+            query.is_empty()
+                || c.nombre.to_lowercase().contains(&query)
+                || c.ciudad.to_lowercase().contains(&query)
+        })
+        .collect();
+    match column {
+        1 => rows.sort_by(|a, b| a.nombre.cmp(&b.nombre).then(a.numero.cmp(&b.numero))),
+        2 => rows.sort_by(|a, b| a.ciudad.cmp(b.ciudad).then(a.numero.cmp(&b.numero))),
+        4 => rows.sort_by(|a, b| a.monto.cmp(&b.monto).then(a.numero.cmp(&b.numero))),
+        _ => {}
+    }
+    if direction == SortDirection::Descending {
+        rows.reverse();
+    }
+    rows.into_iter().map(|c| c.numero).collect()
+}
+
+/// Options of the country select (Selección).
+const PAISES: [&str; 4] = ["Chile", "Argentina", "Perú", "Uruguay"];
+/// Options of the alignment segmented control (Selección).
+const ALINEACIONES: [&str; 3] = ["Izquierda", "Centro", "Derecha"];
+/// Permissions under «Todos» (Selección).
+const PERMISOS: [&str; 3] = ["Leer", "Escribir", "Compartir"];
+
+/// The open dialog of «Diálogos y avisos».
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Dialogo {
+    Guardar,
+    Eliminar,
+}
+
+/// Variant of a toast, for `avisos.mostrar`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum VarianteAviso {
+    Exito,
+    Error,
+    Advertencia,
+    Info,
+}
+
+impl VarianteAviso {
+    const ALL: [VarianteAviso; 4] = [Self::Exito, Self::Error, Self::Advertencia, Self::Info];
+
+    fn alert(self) -> AlertVariant {
+        match self {
+            Self::Exito => AlertVariant::Success,
+            Self::Error => AlertVariant::Error,
+            Self::Advertencia => AlertVariant::Warning,
+            Self::Info => AlertVariant::Info,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Exito => "exito",
+            Self::Error => "error",
+            Self::Advertencia => "advertencia",
+            Self::Info => "info",
+        }
+    }
+
+    /// Button label, toast title and message.
+    fn texts(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Exito => ("Éxito", "Cambios guardados", "Se guardaron hace un momento"),
+            Self::Error => (
+                "Error",
+                "No se pudo enviar",
+                "Revisa la conexión y reintenta",
+            ),
+            Self::Advertencia => ("Advertencia", "Espacio casi lleno", "Quedan 200 MB libres"),
+            Self::Info => (
+                "Info",
+                "Nueva versión",
+                "Kai UI Desktop se actualizará al cerrar",
+            ),
         }
     }
 }
@@ -125,12 +342,29 @@ enum Seccion {
     Campos,
     /// Botones, tamaños e IconButtons.
     Botones,
+    /// Switches, checkboxes, selects y controles segmentados.
+    Seleccion,
+    /// Cards, group boxes, estadísticas y texto.
+    Contenedores,
     /// Badges y alertas.
     Badges,
+    /// Tabla de 10 000 clientes y lista virtualizada.
+    Tabla,
+    /// Diálogos, avisos (toasts) y la paleta de comandos.
+    Dialogos,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 4] = [Self::Inicio, Self::Campos, Self::Botones, Self::Badges];
+    const ALL: [Seccion; 8] = [
+        Self::Inicio,
+        Self::Campos,
+        Self::Botones,
+        Self::Seleccion,
+        Self::Contenedores,
+        Self::Badges,
+        Self::Tabla,
+        Self::Dialogos,
+    ];
 
     fn index(self) -> usize {
         Self::ALL.iter().position(|s| *s == self).unwrap_or(0)
@@ -141,8 +375,27 @@ impl Seccion {
             Self::Inicio => "inicio",
             Self::Campos => "campos",
             Self::Botones => "botones",
+            Self::Seleccion => "seleccion",
+            Self::Contenedores => "contenedores",
             Self::Badges => "badges",
+            Self::Tabla => "tabla",
+            Self::Dialogos => "dialogos",
         }
+    }
+
+    /// Sidebar row.
+    fn item(self) -> SidebarItem {
+        let (label, glyph) = match self {
+            Self::Inicio => ("Inicio", Icon::House),
+            Self::Campos => ("Campos", Icon::TextCursorInput),
+            Self::Botones => ("Botones", Icon::MousePointerClick),
+            Self::Seleccion => ("Selección", Icon::ToggleLeft),
+            Self::Contenedores => ("Contenedores", Icon::LayoutGrid),
+            Self::Badges => ("Badges y alertas", Icon::Tag),
+            Self::Tabla => ("Tabla", Icon::Table),
+            Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
+        };
+        SidebarItem::new(label).icon(glyph)
     }
 }
 
@@ -157,6 +410,9 @@ enum Field {
     Code,
     Quantity,
     Autocomplete,
+    Pin,
+    Notes,
+    Lookup,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +437,23 @@ enum Msg {
     },
     SetBackground(BackgroundKind),
     ToggleBackgroundMotion,
+    TogglePin,
+    ToggleWifi,
+    /// `None` is «Todos».
+    TogglePermiso(Option<usize>),
+    SetPais(usize),
+    SetAlineacion(usize),
+    /// The toolbar search, which filters the table.
+    Query(String),
+    Sort(usize, SortDirection),
+    /// A row of the table, in display order.
+    SelectRow(usize),
+    OpenDialog(Dialogo),
+    CloseDialog,
+    /// The dialog's default button.
+    ConfirmDialog,
+    ShowToast(VarianteAviso),
+    CloseToast(u64),
 }
 
 impl Demo {
@@ -193,6 +466,15 @@ impl Demo {
         self.email.clear();
         self.role = None;
         self.terms = false;
+    }
+
+    /// Add `toast` with the next id, and the timer that closes it.
+    fn show_toast(&mut self, mut toast: Toast<Msg>) -> Effects<Msg> {
+        let id = self.next_toast;
+        self.next_toast += 1;
+        toast.id = id;
+        self.toasts.push(toast);
+        toast_timer(id, Msg::CloseToast(id))
     }
 }
 
@@ -339,6 +621,26 @@ impl Action for AlternarSidebar {
     }
 }
 
+/// Shows a toast, as the buttons of «Diálogos y avisos» do.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MostrarAviso {
+    #[schemars(description = "Variante del aviso")]
+    variante: VarianteAviso,
+}
+
+impl Action for MostrarAviso {
+    type App = Demo;
+    const ID: &'static str = "avisos.mostrar";
+    const TITLE: &'static str = "Mostrar aviso";
+    fn description() -> &'static str {
+        "Muestra un aviso (toast) que se cierra solo a los 4 segundos"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::ShowToast(self.variante)
+    }
+}
+
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
 struct Saludo;
@@ -353,7 +655,7 @@ impl Query for Saludo {
     }
 }
 
-impl SimpleApp for Demo {
+impl App for Demo {
     type Msg = Msg;
 
     fn commands(registry: &mut CommandRegistry<Self>) {
@@ -384,6 +686,8 @@ impl SimpleApp for Demo {
             .shortcut(Shortcut::ctrl_cmd(Key::Char('s')))
             .menu("Ver")
             .expose();
+        // It takes a variant: no menu item, as `ui.ir_a`.
+        registry.action::<MostrarAviso>().expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -401,8 +705,34 @@ impl SimpleApp for Demo {
         }
     }
 
-    fn update(&mut self, msg: Msg) {
+    fn update(&mut self, msg: Msg) -> Effects<Msg> {
         match msg {
+            Msg::ShowToast(variante) => {
+                let (_, title, message) = variante.texts();
+                let mut toast = Toast::new(0, variante.alert(), title).message(message);
+                if variante == VarianteAviso::Error {
+                    toast = toast.action("Reintentar", Msg::ShowToast(VarianteAviso::Exito));
+                }
+                return self.show_toast(toast);
+            }
+            Msg::CloseToast(id) => {
+                self.toasts.retain(|toast| toast.id != id);
+                return Effects::cancel(toast_key(id));
+            }
+            Msg::ConfirmDialog => {
+                let toast = match self.dialogo.take() {
+                    Some(Dialogo::Guardar) => {
+                        let (_, title, message) = VarianteAviso::Exito.texts();
+                        Toast::new(0, AlertVariant::Success, title).message(message)
+                    }
+                    Some(Dialogo::Eliminar) => {
+                        Toast::new(0, AlertVariant::Info, "Borrador eliminado")
+                            .message("Se movió a la papelera")
+                    }
+                    None => return Effects::none(),
+                };
+                return self.show_toast(toast);
+            }
             Msg::Increment => self.clicks += 1,
             Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
             Msg::Reset => self.clicks = 0,
@@ -425,6 +755,9 @@ impl SimpleApp for Demo {
                     Field::Code => &mut self.code,
                     Field::Quantity => &mut self.quantity,
                     Field::Autocomplete => &mut self.autocomplete,
+                    Field::Pin => &mut self.pin,
+                    Field::Notes => &mut self.notes,
+                    Field::Lookup => &mut self.lookup,
                 } = value;
             }
             Msg::TogglePassword => self.show_password = !self.show_password,
@@ -444,7 +777,28 @@ impl SimpleApp for Demo {
                     BackgroundMotion::Animated => BackgroundMotion::Static,
                 };
             }
+            Msg::TogglePin => self.show_pin = !self.show_pin,
+            Msg::ToggleWifi => self.wifi = !self.wifi,
+            Msg::TogglePermiso(Some(index)) => self.permisos[index] = !self.permisos[index],
+            Msg::TogglePermiso(None) => {
+                let all = !self.permisos.iter().all(|on| *on);
+                self.permisos = [all; 3];
+            }
+            Msg::SetPais(index) => self.pais = Some(index),
+            Msg::SetAlineacion(index) => self.alineacion = index,
+            Msg::Query(query) => {
+                self.query = query;
+                self.rows = clientes(&self.query, self.sort);
+            }
+            Msg::Sort(column, direction) => {
+                self.sort = (column, direction);
+                self.rows = clientes(&self.query, self.sort);
+            }
+            Msg::SelectRow(index) => self.cliente = self.rows.get(index).copied(),
+            Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
+            Msg::CloseDialog => self.dialogo = None,
         }
+        Effects::none()
     }
 
     fn background(&self) -> BackgroundEffect {
@@ -452,33 +806,33 @@ impl SimpleApp for Demo {
     }
 
     fn view(&self) -> Element<Msg> {
-        let header = div()
-            .class(
-                "flex items-center justify-between gap-4 h-14 px-6 bg-background \
-                 border-b border-border/70 shadow-md z-10",
+        let version = format!("v{}", version::VERSION);
+        let header = toolbar([
+            toolbar_item(
+                Icon::PanelLeft,
+                if self.sidebar_collapsed {
+                    "Mostrar barra lateral"
+                } else {
+                    "Ocultar barra lateral"
+                },
             )
-            .role(Role::Header)
-            .children([
-                div().class("flex items-center gap-3").children([
-                    text("Kai UI Desktop")
-                        .class("text-lg font-semibold text-primary whitespace-nowrap"),
-                    badge(
-                        format!("v{}", version::VERSION),
-                        BadgeVariant::PrimaryOutlined,
-                    ),
-                ]),
-                div().class("flex items-center gap-3").children([
-                    caption("Elm · clases Tailwind · wgpu").class("truncate"),
-                    icon_button_sized(
-                        Icon::Plus,
-                        "Sumar clic",
-                        IconButtonVariant::Primary,
-                        IconButtonSize::Sm,
-                    )
-                    .test_id("header.sumar")
-                    .on_command(Incrementar),
-                ]),
-            ]);
+            .on_command(AlternarSidebar)
+            .test_id("barra.sidebar"),
+            toolbar_title("Kai UI Desktop", Some(&version)),
+            toolbar_spacer().test_id("barra.espacio"),
+            toolbar_item(Icon::Plus, "Sumar clic")
+                .on_command(Incrementar)
+                .test_id("barra.sumar"),
+            toolbar_separator().test_id("barra.separador"),
+            toolbar_search(
+                search_field(&self.query, Msg::Query)
+                    .placeholder("Filtrar clientes")
+                    .label("Filtrar clientes")
+                    .on_submit(Msg::IrA(Seccion::Tabla))
+                    .test_id("barra.buscar")
+                    .build(),
+            ),
+        ]);
 
         let alert_banner = alert(
             AlertVariant::Info,
@@ -599,38 +953,41 @@ impl SimpleApp for Demo {
                 stat("Envíos", self.submissions.len().to_string(), Some(&last)),
             ]);
 
-        let badges_and_alerts = card().class("w-full max-w-3xl").children([
-            card_header(
-                "Badges y Alertas",
-                Some("Indicadores de estado y mensajes del sistema"),
-            ),
-            card_content().class("gap-4").children([
-                div().class("flex flex-col gap-2").children([
-                    caption("Badges sólidos:"),
-                    div().class("flex flex-wrap items-center gap-2").children([
-                        badge("Primary", BadgeVariant::Primary),
-                        badge("Secondary", BadgeVariant::Secondary),
-                        badge("Success", BadgeVariant::Success),
-                        badge("Error", BadgeVariant::Error),
-                        badge("Warning", BadgeVariant::Warning),
-                        badge("Info", BadgeVariant::Info),
+        let badges_and_alerts = card()
+            .class("w-full max-w-3xl")
+            .test_id("badges")
+            .children([
+                card_header(
+                    "Badges y Alertas",
+                    Some("Indicadores de estado y mensajes del sistema"),
+                ),
+                card_content().class("gap-4").children([
+                    div().class("flex flex-col gap-2").children([
+                        caption("Badges sólidos:"),
+                        div().class("flex flex-wrap items-center gap-2").children([
+                            badge("Primary", BadgeVariant::Primary),
+                            badge("Secondary", BadgeVariant::Secondary),
+                            badge("Success", BadgeVariant::Success),
+                            badge("Error", BadgeVariant::Error),
+                            badge("Warning", BadgeVariant::Warning),
+                            badge("Info", BadgeVariant::Info),
+                        ]),
+                        caption("Badges con borde:"),
+                        div().class("flex flex-wrap items-center gap-2").children([
+                            badge("Primary", BadgeVariant::PrimaryOutlined),
+                            badge("Secondary", BadgeVariant::SecondaryOutlined),
+                            badge("Success", BadgeVariant::SuccessOutlined),
+                            badge("Error", BadgeVariant::ErrorOutlined),
+                            badge("Warning", BadgeVariant::WarningOutlined),
+                            badge("Info", BadgeVariant::InfoOutlined),
+                        ]),
                     ]),
-                    caption("Badges con borde:"),
-                    div().class("flex flex-wrap items-center gap-2").children([
-                        badge("Primary", BadgeVariant::PrimaryOutlined),
-                        badge("Secondary", BadgeVariant::SecondaryOutlined),
-                        badge("Success", BadgeVariant::SuccessOutlined),
-                        badge("Error", BadgeVariant::ErrorOutlined),
-                        badge("Warning", BadgeVariant::WarningOutlined),
-                        badge("Info", BadgeVariant::InfoOutlined),
+                    div().class("grid grid-cols-2 gap-3 pt-2").children([
+                        alert(AlertVariant::Success, "Operación guardada con éxito"),
+                        alert(AlertVariant::Warning, "Revisa los campos requeridos"),
                     ]),
                 ]),
-                div().class("grid grid-cols-2 gap-3 pt-2").children([
-                    alert(AlertVariant::Success, "Operación guardada con éxito"),
-                    alert(AlertVariant::Warning, "Revisa los campos requeridos"),
-                ]),
-            ]),
-        ]);
+            ]);
 
         let buttons_section = card().class("w-full max-w-3xl").children([
             card_header(
@@ -694,37 +1051,46 @@ impl SimpleApp for Demo {
                 form,
                 stats,
             ],
-            Seccion::Campos => vec![self.fields()],
-            Seccion::Botones => vec![buttons_section, self.control_sizes()],
+            Seccion::Campos => vec![self.fields(), self.more_fields()],
+            Seccion::Botones => vec![buttons_section, self.appkit_buttons(), self.control_sizes()],
+            Seccion::Seleccion => vec![self.selection()],
+            Seccion::Contenedores => self.containers(),
             Seccion::Badges => vec![badges_and_alerts],
+            Seccion::Tabla => vec![self.client_table(), self.simple_list()],
+            Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
 
+        let mut layers = vec![
+            header,
+            div().class("flex-1 flex min-h-0").children([
+                self.sidebar(),
+                // Keyed by section: each one keeps its own scroll.
+                div()
+                    .class("flex-1 overflow-y-auto")
+                    .key(self.seccion.key())
+                    .test_id("contenido")
+                    .child(
+                        div()
+                            .class("flex flex-col items-center gap-6 p-6")
+                            .children(cards),
+                    ),
+            ]),
+            toast_stack(&self.toasts, Msg::CloseToast),
+        ];
+        if let Some(dialogo) = self.dialogo {
+            layers.push(self.dialog(dialogo));
+        }
         div()
             // `neutral` is systemGray in AppKit: use the window background.
-            .class("w-full h-full flex flex-col bg-neutral appkit:bg-window")
+            .class("relative w-full h-full flex flex-col bg-neutral appkit:bg-window")
             .role(Role::Main)
-            .children([
-                header,
-                div().class("flex-1 flex min-h-0").children([
-                    self.sidebar(),
-                    // Keyed by section: each one keeps its own scroll.
-                    div()
-                        .class("flex-1 overflow-y-auto")
-                        .key(self.seccion.key())
-                        .test_id("contenido")
-                        .child(
-                            div()
-                                .class("flex flex-col items-center gap-6 p-6")
-                                .children(cards),
-                        ),
-                ]),
-            ])
+            .children(layers)
     }
 }
 
 impl Demo {
     fn sidebar(&self) -> Element<Msg> {
-        let mut inicio = SidebarItem::new("Inicio").icon(Icon::House);
+        let mut inicio = Seccion::Inicio.item();
         if !self.submissions.is_empty() {
             inicio = inicio.badge(self.submissions.len().to_string());
         }
@@ -733,26 +1099,436 @@ impl Demo {
             SidebarGroup::titled(
                 "Componentes",
                 [
-                    SidebarItem::new("Campos").icon(Icon::TextCursorInput),
-                    SidebarItem::new("Botones").icon(Icon::MousePointerClick),
-                    SidebarItem::new("Badges y alertas").icon(Icon::Tag),
-                ],
+                    Seccion::Campos,
+                    Seccion::Botones,
+                    Seccion::Seleccion,
+                    Seccion::Contenedores,
+                    Seccion::Badges,
+                ]
+                .map(Seccion::item),
             ),
+            SidebarGroup::titled("Datos", [Seccion::Tabla.item()]),
+            SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
         ];
         Sidebar::new(&groups, self.seccion.index(), |index| {
             Msg::IrA(Seccion::ALL[index])
         })
         .collapsed(self.sidebar_collapsed)
-        .on_toggle(Msg::ToggleSidebar)
         .label("Secciones")
         .test_id("nav")
         .build()
         .class(if self.sidebar_collapsed {
-            "shrink-0"
+            ""
         } else {
             "w-40 sm:w-52 shrink-0"
         })
         .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
+    }
+
+    /// Buttons of the AppKit API (`Button::new`): the three bezels, accent,
+    /// destructive, cancel (Escape) and disabled, and an `icon_button`.
+    fn appkit_buttons(&self) -> Element<Msg> {
+        let built = |button: Button<Msg>, id: &str| button.build().test_id(id);
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("botones.appkit")
+            .children([
+                card_header(
+                    "Button::new",
+                    Some("Biseles push, bordered y borderless; acento, destructivo y Esc"),
+                ),
+                card_content().class("gap-4").children([
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        built(
+                            Button::new("Push")
+                                .bezel(BezelStyle::Push)
+                                .on_click(Msg::Increment),
+                            "botones.push",
+                        ),
+                        built(
+                            Button::new("Bordered")
+                                .bezel(BezelStyle::Bordered)
+                                .on_click(Msg::Increment),
+                            "botones.bordered",
+                        ),
+                        built(
+                            Button::new("Borderless")
+                                .bezel(BezelStyle::Borderless)
+                                .on_click(Msg::Increment),
+                            "botones.borderless",
+                        ),
+                    ]),
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        built(
+                            Button::new("Acento").accent(true).on_click(Msg::Increment),
+                            "botones.acento",
+                        ),
+                        built(
+                            Button::new("Destructivo")
+                                .destructive(true)
+                                .on_click(Msg::Reset),
+                            "botones.destructivo",
+                        ),
+                        built(
+                            Button::new("Cancelar (Esc)")
+                                .cancel_button()
+                                .on_click(Msg::Reset),
+                            "botones.cancelar",
+                        ),
+                        built(
+                            Button::new("Pequeño")
+                                .control_size(ControlSize::Small)
+                                .disabled(true),
+                            "botones.pequeno",
+                        ),
+                        icon_button(Icon::Settings, "Ajustes", IconButtonVariant::Secondary)
+                            .on_click(Msg::Increment)
+                            .test_id("botones.icono"),
+                    ]),
+                ]),
+            ])
+    }
+
+    /// Campos, second card: a plain `password` field, the AppKit rounded
+    /// bezel, adornments, the placeholder color, a search field and a
+    /// text area.
+    fn more_fields(&self) -> Element<Msg> {
+        let edit = |field: Field| move |value: String| Msg::Edit(field, value);
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("campos.mas")
+            .children([
+                card_header(
+                    "Más campos",
+                    Some("Bisel redondeado, adornos, color del placeholder, búsqueda y notas"),
+                ),
+                card_content().class("gap-4").children([
+                    div()
+                        .class("grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5")
+                        .children([
+                            TextField::new("PIN", &self.pin)
+                                .test_id("campos.pin")
+                                .password(self.show_pin, Msg::TogglePin)
+                                .on_input(edit(Field::Pin))
+                                .build(),
+                            TextField::new("Usuario", &self.lookup)
+                                .test_id("campos.redondeado")
+                                .bezel(FieldBezel::Rounded)
+                                .placeholder("Placeholder en color primario")
+                                .placeholder_color("primary/60")
+                                .on_input(edit(Field::Lookup))
+                                .build(),
+                            TextField::new("Sitio", "kai.cl")
+                                .test_id("campos.adornos")
+                                .start_adornment(text("https://").class(
+                                    "text-sm text-muted-foreground appkit:text-secondary-label",
+                                ))
+                                .end_adornment(
+                                    icon(Icon::CircleCheckBig).class("size-4 text-success"),
+                                )
+                                .read_only(true)
+                                .build(),
+                            search_field(&self.lookup, edit(Field::Lookup))
+                                .placeholder("Buscar en la ayuda")
+                                .label("Buscar en la ayuda")
+                                .test_id("campos.busqueda")
+                                .build(),
+                        ]),
+                    text_area("Notas", &self.notes)
+                        .test_id("campos.notas")
+                        .placeholder("Varias líneas; Retorno agrega una")
+                        .auto_grow(3, 6)
+                        .max_length(280)
+                        .counter(true)
+                        .helper_text("Crece hasta 6 líneas")
+                        .on_input(edit(Field::Notes))
+                        .build(),
+                ]),
+            ])
+    }
+
+    /// Selección: switches, checkboxes (one mixed), selects and segmented
+    /// controls, enabled and disabled.
+    fn selection(&self) -> Element<Msg> {
+        let state = |on: bool| {
+            if on {
+                ControlState::On
+            } else {
+                ControlState::Off
+            }
+        };
+        let all = match self.permisos.iter().filter(|on| **on).count() {
+            0 => ControlState::Off,
+            3 => ControlState::On,
+            _ => ControlState::Mixed,
+        };
+        let label = |content: &str| {
+            text(content).class("text-sm font-medium text-foreground appkit:text-label")
+        };
+        let mut checks = vec![
+            checkbox_with_options("Todos", all, Msg::TogglePermiso(None), false)
+                .test_id("seleccion.todos"),
+        ];
+        for (index, name) in PERMISOS.iter().enumerate() {
+            checks.push(
+                checkbox_with_options(
+                    name,
+                    state(self.permisos[index]),
+                    Msg::TogglePermiso(Some(index)),
+                    false,
+                )
+                .class("ml-6")
+                .test_id(format!("seleccion.permiso.{index}")),
+            );
+        }
+        checks.push(
+            checkbox_with_options(
+                "Administrar",
+                ControlState::Off,
+                Msg::TogglePermiso(None),
+                true,
+            )
+            .class("ml-6")
+            .test_id("seleccion.administrar"),
+        );
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("seleccion")
+            .children([
+                card_header(
+                    "Selección",
+                    Some("Switch, checkbox con estado mixto, select y control segmentado"),
+                ),
+                card_content().class("gap-5").children([
+                    div().class("flex flex-wrap items-center gap-6").children([
+                        div().class("flex items-center gap-2").children([
+                            switch(self.wifi, Msg::ToggleWifi)
+                                .label("Wi-Fi")
+                                .test_id("seleccion.wifi"),
+                            label("Wi-Fi"),
+                        ]),
+                        div().class("flex items-center gap-2").children([
+                            switch_with_options(
+                                true,
+                                Msg::ToggleWifi,
+                                true,
+                                SwitchDensity::Compact,
+                            )
+                            .label("Bluetooth")
+                            .test_id("seleccion.bluetooth"),
+                            label("Bluetooth (deshabilitado)"),
+                        ]),
+                    ]),
+                    div()
+                        .class("flex flex-col items-start gap-2")
+                        .children(checks),
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        label("País"),
+                        select_with_options(&PAISES, self.pais, "Elegir país", Msg::SetPais, false)
+                            .label("País")
+                            .test_id("seleccion.pais"),
+                        select_with_options(&PAISES, None, "Sin región", Msg::SetPais, true)
+                            .label("Región")
+                            .test_id("seleccion.region"),
+                    ]),
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        label("Alineación"),
+                        segmented_with_options(
+                            &ALINEACIONES,
+                            self.alineacion,
+                            Msg::SetAlineacion,
+                            false,
+                        )
+                        .label("Alineación")
+                        .test_id("seleccion.alineacion"),
+                        segmented_with_options(&["Día", "Semana"], 0, |_| Msg::Increment, true)
+                            .label("Vista")
+                            .test_id("seleccion.vista"),
+                    ]),
+                ]),
+            ])
+    }
+
+    /// Contenedores: a full card, group boxes, statistics and text styles.
+    fn containers(&self) -> Vec<Element<Msg>> {
+        vec![
+            card()
+                .class("w-full max-w-3xl")
+                .test_id("contenedores.card")
+                .children([
+                    card_header("Card completa", Some("Encabezado, contenido y acciones")),
+                    card_content().children([
+                        heading("Título de sección"),
+                        paragraph(
+                            "Un párrafo de cuerpo: el texto largo se ajusta al ancho de la \
+                             card y mantiene el interlineado del tema.",
+                        ),
+                        caption("Una leyenda, para notas y metadatos."),
+                    ]),
+                    card_actions().children([
+                        button("Descartar", ButtonVariant::Text).on_click(Msg::Reset),
+                        button("Aceptar", ButtonVariant::Primary).on_click(Msg::Increment),
+                    ]),
+                ]),
+            div()
+                .class("grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-3xl")
+                .children([
+                    group_box(
+                        Some("Preferencias"),
+                        [switch_labeled(
+                            "Sincronizar",
+                            self.wifi,
+                            Msg::ToggleWifi,
+                            false,
+                            SwitchDensity::Default,
+                        )],
+                    )
+                    .test_id("contenedores.grupo"),
+                    group_box(
+                        None,
+                        [caption("Un group box sin título agrupa sin encabezado.")],
+                    )
+                    .test_id("contenedores.sin_titulo"),
+                ]),
+            div()
+                .class("grid grid-cols-3 gap-4 w-full max-w-3xl")
+                .test_id("contenedores.stats")
+                .children([
+                    stat("Clientes", CLIENTES.to_string(), Some("en la tabla")),
+                    stat("Filtrados", self.rows.len().to_string(), None),
+                    stat("Avisos", self.toasts.len().to_string(), Some("abiertos")),
+                ]),
+        ]
+    }
+
+    /// Tabla: ten thousand generated clients, sorted by the header and
+    /// filtered by the toolbar search.
+    fn client_table(&self) -> Element<Msg> {
+        let rows = Rc::clone(&self.rows);
+        let selected = self
+            .cliente
+            .and_then(|numero| self.rows.iter().position(|row| *row == numero));
+        let summary = match self.cliente {
+            Some(numero) => format!("Seleccionado: {}", cliente(numero).nombre),
+            None => "Elige una fila con un clic o con ↑ ↓".to_owned(),
+        };
+        let shown = if self.query.trim().is_empty() {
+            format!("{} clientes", self.rows.len())
+        } else {
+            format!(
+                "{} de {CLIENTES} con «{}»",
+                self.rows.len(),
+                self.query.trim()
+            )
+        };
+        card().class("w-full max-w-3xl").test_id("tabla").children([
+            card_header(
+                "Clientes",
+                Some("10 000 filas; solo se construyen las visibles"),
+            ),
+            card_content().class("gap-3").children([
+                div()
+                    .class("flex items-center justify-between gap-3")
+                    .children([
+                        caption(shown).role(Role::Status).test_id("tabla.total"),
+                        caption(summary).test_id("tabla.seleccion"),
+                    ]),
+                Table::new(columnas(), self.rows.len(), move |row, column| {
+                    rows.get(row)
+                        .map_or_else(String::new, |numero| celda(&cliente(*numero), column))
+                })
+                .sort(self.sort.0, self.sort.1)
+                .on_sort(Msg::Sort)
+                .selected(selected)
+                .on_select(Msg::SelectRow)
+                .label("Clientes")
+                .test_id("tabla.clientes")
+                .build()
+                .class("h-[360px] rounded-md border border-border appkit:border-separator"),
+            ]),
+        ])
+    }
+
+    /// Tabla: a plain virtual list.
+    fn simple_list(&self) -> Element<Msg> {
+        card().class("w-full max-w-3xl").children([
+            card_header("Lista virtualizada", Some("1 000 elementos de 28 pt")),
+            card_content().child(
+                virtual_list(
+                    1_000,
+                    28.0,
+                    Rc::new(|index| {
+                        div()
+                            .class(
+                                "flex items-center px-3 text-sm text-foreground \
+                                 appkit:text-label",
+                            )
+                            .child(text(format!("Elemento {}", index + 1)))
+                    }),
+                )
+                .label("Elementos")
+                .test_id("tabla.lista")
+                .class("h-48 rounded-md border border-border appkit:border-separator"),
+            ),
+        ])
+    }
+
+    /// Diálogos y avisos: open a dialog, show toasts, open the palette.
+    fn dialogs_and_toasts(&self) -> Element<Msg> {
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("dialogos")
+            .children([
+                card_header(
+                    "Diálogos y avisos",
+                    Some("Modales con foco atrapado, avisos que se cierran solos y la paleta"),
+                ),
+                card_content().class("gap-4").children([
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        caption("Diálogos:"),
+                        button("Guardar cambios…", ButtonVariant::Outlined)
+                            .on_click(Msg::OpenDialog(Dialogo::Guardar))
+                            .test_id("dialogos.guardar"),
+                        button("Eliminar borrador…", ButtonVariant::Danger)
+                            .on_click(Msg::OpenDialog(Dialogo::Eliminar))
+                            .test_id("dialogos.eliminar"),
+                    ]),
+                    div()
+                        .class("flex flex-wrap items-center gap-3")
+                        .child(caption("Avisos:"))
+                        .children(VarianteAviso::ALL.map(|variante| {
+                            button(variante.texts().0, ButtonVariant::Secondary)
+                                .on_click(Msg::ShowToast(variante))
+                                .test_id(format!("avisos.{}", variante.key()))
+                        })),
+                    div().class("flex flex-wrap items-center gap-3").children([
+                        caption("Comandos:"),
+                        Button::new("Abrir la paleta (⇧⌘P)")
+                            .bezel(BezelStyle::Borderless)
+                            .build()
+                            .run_command(PALETTE)
+                            .test_id("dialogos.paleta"),
+                    ]),
+                ]),
+            ])
+    }
+
+    /// The open dialog.
+    fn dialog(&self, dialogo: Dialogo) -> Element<Msg> {
+        let dialog = match dialogo {
+            Dialogo::Guardar => Dialog::new("¿Guardar los cambios?")
+                .message("Los cambios quedarán disponibles para todo el equipo.")
+                .default_button("Guardar", Msg::ConfirmDialog),
+            Dialogo::Eliminar => Dialog::new("¿Eliminar el borrador?")
+                .message("Esta acción no se puede deshacer.")
+                .destructive(true)
+                .width(DialogWidth::Sm)
+                .default_button("Eliminar", Msg::ConfirmDialog),
+        };
+        dialog
+            .cancel_button("Cancelar", Msg::CloseDialog)
+            .test_id("dialogo")
+            .build()
     }
 
     /// Card with every control size (`NSControl.ControlSize`, mini … extra
@@ -1055,6 +1831,8 @@ fn demo_theme() -> Theme {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use super::{Dialogo, SortDirection, VarianteAviso};
+
     use cosmic_text::{
         Action, Attrs, Buffer, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping,
     };
@@ -1069,7 +1847,7 @@ mod tests {
     use crate::commands::{
         Availability, CommandError, DIALECT, Origin, Outcome, PALETTE, describe_json,
     };
-    use crate::element::{FocusKind, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
+    use crate::element::{ControlState, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
     use crate::geometry::{Rect, Size};
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
@@ -1083,10 +1861,15 @@ mod tests {
                 ..Self::default()
             }
         }
+
+        /// `update`, dropping its effects.
+        fn apply(&mut self, msg: Msg) {
+            let _ = self.update(msg);
+        }
     }
     use crate::render::paint::{PaintInput, paint};
     use crate::render::text::TextStore;
-    use crate::runtime::{SimpleApp, build_view};
+    use crate::runtime::{App, build_view};
     use crate::snapshot::{self, Shot};
     use crate::testing::{By, Confirm, Key, Modifiers, MsgSource, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
@@ -1228,16 +2011,16 @@ mod tests {
     #[test]
     fn update_follows_messages_and_view_reflects_the_model() {
         let mut demo = Demo::default();
-        demo.update(Msg::Increment);
-        demo.update(Msg::Increment);
+        demo.apply(Msg::Increment);
+        demo.apply(Msg::Increment);
         assert_eq!(demo.clicks, 2);
         assert_eq!(
             demo.title(),
             format!("Kai UI Desktop v{} — 2 clics", crate::version::VERSION)
         );
-        demo.update(Msg::Submit);
+        demo.apply(Msg::Submit);
         assert!(demo.submissions.is_empty(), "empty names are not submitted");
-        demo.update(Msg::NameChanged("  Ana ".to_owned()));
+        demo.apply(Msg::NameChanged("  Ana ".to_owned()));
         let view = build_view(&demo);
         let mut texts = Vec::new();
         view.walk(&mut |element| {
@@ -1247,10 +2030,10 @@ mod tests {
         });
         assert!(texts.contains(&"Hola, Ana 👋".to_owned()));
         assert!(texts.contains(&"2".to_owned()));
-        demo.update(Msg::Submit);
+        demo.apply(Msg::Submit);
         assert_eq!(demo.submissions, vec!["Ana".to_owned()]);
         assert!(demo.name.is_empty());
-        demo.update(Msg::Reset);
+        demo.apply(Msg::Reset);
         assert_eq!(demo.clicks, 0);
     }
 
@@ -1271,7 +2054,7 @@ mod tests {
         let empty = dispatch(&mut model, &order, return_key.clone());
         assert_eq!(empty.activated, None, "«Enviar» is disabled without a name");
 
-        demo.update(Msg::NameChanged("Ana".to_owned()));
+        demo.apply(Msg::NameChanged("Ana".to_owned()));
         let send = find(&demo, By::test_id("form.enviar"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let result = dispatch(&mut model, &order, return_key.clone());
@@ -1358,38 +2141,65 @@ mod tests {
 
     #[test]
     fn demo_focus_order_follows_document_order_and_skips_disabled() {
-        let demo = Demo::default();
-        let order = FocusOrder::from_tree(&build_view(&demo));
-        let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
-        assert_eq!(kinds[0], FocusKind::Button, "header quick action button");
-        assert_eq!(kinds[1..5], [FocusKind::Button; 4], "sidebar rows");
-        assert_eq!(kinds[5], FocusKind::Button, "sidebar collapse button");
-        // Background panel: four effect segments (one Tab stop); the
-        // "Animado" switch starts disabled (no effect).
-        assert_eq!(kinds[6..10], [FocusKind::Button; 4], "background effects");
+        // Toolbar items (one stop), its search, the sidebar (one stop),
+        // the background effects (one stop; «Animado» starts disabled),
+        // «Incrementar» («Reiniciar» starts disabled) and the form
+        // («Enviar» starts disabled).
+        let inicio = [
+            "barra.sidebar",
+            "barra.buscar.input",
+            "nav.0",
+            "fondo.efecto.0",
+            "contador.incrementar",
+            "form.nombre.input",
+            "form.correo.input",
+            "form.rol",
+            "form.terminos",
+            "form.notificaciones.track",
+            "form.limpiar",
+        ];
+        assert_eq!(tab_stops(&mut TestApp::new(Demo::default())), inicio);
+
+        let campos = tab_stops(&mut TestApp::new(Demo::at(Seccion::Campos)));
+        assert_eq!(campos[2], "nav.1", "the sidebar enters at the selection");
+        let password = campos.iter().position(|stop| stop == "form.password.input");
         assert_eq!(
-            kinds[10],
-            FocusKind::Button,
-            "Incrementar; Reiniciar starts disabled"
+            campos[password.unwrap() + 1],
+            "form.password.toggle",
+            "the eye follows its field"
         );
-        assert_eq!(kinds[11], FocusKind::TextField, "Nombre");
-        assert_eq!(kinds[12], FocusKind::TextField, "Correo");
-        assert_eq!(kinds[13], FocusKind::Button, "select rol");
-        assert_eq!(kinds[14], FocusKind::Button, "checkbox términos");
-        assert_eq!(kinds[15], FocusKind::Button, "switch notificaciones");
-        assert_eq!(kinds[16], FocusKind::Button, "Limpiar");
-        assert_eq!(kinds.len(), 17, "Enviar starts disabled");
-        let campos = Demo::at(Seccion::Campos);
-        let order = FocusOrder::from_tree(&build_view(&campos));
-        let kinds: Vec<FocusKind> = order.ids().map(|id| order.kind(id).unwrap()).collect();
-        assert_eq!(kinds[6], FocusKind::TextField, "Buscar");
-        assert_eq!(kinds[7], FocusKind::TextField, "Contraseña");
-        assert_eq!(kinds[8], FocusKind::Button, "Toggle password");
-        // With an effect the switch joins the order.
+
         let mut glow = Demo::default();
-        glow.update(Msg::SetBackground(BackgroundKind::Glow));
-        let order = FocusOrder::from_tree(&build_view(&glow));
-        assert_eq!(order.ids().count(), 17 + 1);
+        glow.apply(Msg::SetBackground(BackgroundKind::Glow));
+        let stops = tab_stops(&mut TestApp::new(glow));
+        assert_eq!(
+            stops.len(),
+            inicio.len() + 1,
+            "with an effect «Animado» joins"
+        );
+        assert_eq!(stops[4], "Animado");
+    }
+
+    /// Tab stops from the start of the window until they wrap around:
+    /// each one's `test_id`, or its name without one.
+    fn tab_stops(app: &mut TestApp<Demo>) -> Vec<String> {
+        let mut stops: Vec<String> = Vec::new();
+        for _ in 0..60 {
+            app.press(Key::Tab, Modifiers::NONE);
+            let focused = app.session().focused().expect("Tab focuses something");
+            let screen = app.screen();
+            let found = screen.by_id(focused).unwrap();
+            let stop = found
+                .test_id()
+                .map(str::to_owned)
+                .or_else(|| found.name())
+                .unwrap_or_default();
+            if stops.first() == Some(&stop) {
+                return stops;
+            }
+            stops.push(stop);
+        }
+        panic!("Tab does not wrap around: {stops:?}");
     }
 
     /// The background panel sets the effect and its motion; the app hands
@@ -1399,20 +2209,20 @@ mod tests {
         let mut demo = Demo::default();
         assert_eq!(demo.background(), BackgroundEffect::NONE);
         assert!(!demo.background().is_visible());
-        demo.update(Msg::SetBackground(BackgroundKind::Aurora));
+        demo.apply(Msg::SetBackground(BackgroundKind::Aurora));
         assert_eq!(demo.background().kind, BackgroundKind::Aurora);
         assert!(!demo.background().is_animated());
-        demo.update(Msg::ToggleBackgroundMotion);
+        demo.apply(Msg::ToggleBackgroundMotion);
         assert!(demo.background().is_animated());
-        demo.update(Msg::SetBackground(BackgroundKind::None));
+        demo.apply(Msg::SetBackground(BackgroundKind::None));
         assert!(
             !demo.background().is_animated(),
             "no effect, nothing to animate"
         );
-        demo.update(Msg::ToggleBackgroundMotion);
+        demo.apply(Msg::ToggleBackgroundMotion);
         assert_eq!(demo.background_motion, BackgroundMotion::Static);
         // The selected option is pressed; clicking another sends its kind.
-        demo.update(Msg::SetBackground(BackgroundKind::Mesh));
+        demo.apply(Msg::SetBackground(BackgroundKind::Mesh));
         let tree = build_view(&demo);
         let mut options = Vec::new();
         tree.walk(&mut |element| {
@@ -1459,7 +2269,7 @@ mod tests {
     fn demo_uses_only_supported_classes_and_fills_the_window() {
         let mut styles = StyleCache::default();
         let mut demo = Demo::default();
-        demo.update(Msg::NameChanged("Ana".to_owned()));
+        demo.apply(Msg::NameChanged("Ana".to_owned()));
         let layout = layout(
             &demo,
             Size {
@@ -1475,8 +2285,8 @@ mod tests {
         let content = screen.get_by_test_id("contenido").node();
         let scroll = content.scroll.expect("content scrolls");
         assert!(scroll.max > 0.0, "the small window overflows");
-        let header = screen.get(By::role(Role::Header)).node();
-        assert_eq!(header.bounds.y, 0.0, "header stays fixed");
+        let header = screen.get(By::role(Role::Toolbar)).node();
+        assert_eq!(header.bounds.y, 0.0, "the toolbar stays fixed");
         assert_eq!(content.clip, None);
     }
 
@@ -1491,7 +2301,7 @@ mod tests {
         const WIDTHS: [f32; 4] = [1024.0, 800.0, 600.0, 420.0];
         let theme = Theme::kai(Density::Comfortable);
         let mut demo = Demo::default();
-        demo.update(Msg::NameChanged("Ana".to_owned()));
+        demo.apply(Msg::NameChanged("Ana".to_owned()));
         let mut text = TextStore::new(FontSystem::new());
         let mut styles = StyleCache::default();
 
@@ -1581,30 +2391,70 @@ mod tests {
             Some("form.correo.input")
         );
         assert_eq!(
-            screen.get_by_test_id("header.sumar").name().as_deref(),
+            screen.get_by_test_id("barra.sumar").name().as_deref(),
             Some("Sumar clic")
         );
         assert_eq!(
             screen
-                .get(By::role(Role::SidebarItem).name("Campos"))
-                .test_id(),
-            Some("nav.1")
+                .get_by_test_id("barra.buscar.input")
+                .name()
+                .as_deref(),
+            Some("Filtrar clientes")
         );
+        // Sidebar rows are parts of `nav`, by position.
+        for (index, seccion) in Seccion::ALL.into_iter().enumerate() {
+            let row = screen.get(sidebar_row(&seccion.item().label));
+            assert_eq!(row.test_id(), Some(format!("nav.{index}").as_str()));
+        }
 
-        let tree = build_view(&Demo::at(Seccion::Campos));
-        assert_eq!(tree.validate_ids(), Vec::<String>::new());
-        let layout = layout_of(&tree);
+        // Every section: unique ids, and its controls reachable by id.
+        for seccion in Seccion::ALL {
+            let tree = build_view(&Demo::at(seccion));
+            assert_eq!(tree.validate_ids(), Vec::<String>::new(), "{seccion:?}");
+        }
+        let layout = layout_of(&build_view(&Demo::at(Seccion::Campos)));
         let screen = Screen::new(&layout);
         assert_eq!(
             screen.get_by_label("Contraseña").test_id(),
             Some("form.password.input")
         );
+        let form = screen.within(screen.get_by_test_id("form.password"));
         assert_eq!(
-            screen
-                .get(By::role(Role::Button).name("Mostrar contraseña"))
+            form.get(By::role(Role::Button).name("Mostrar contraseña"))
                 .test_id(),
             Some("form.password.toggle")
         );
+        assert_eq!(
+            screen.get_by_label("PIN").test_id(),
+            Some("campos.pin.input")
+        );
+        assert_eq!(
+            screen.get_by_test_id("campos.notas.input").role(),
+            Role::TextArea
+        );
+
+        let layout = layout_of(&build_view(&Demo::at(Seccion::Seleccion)));
+        let screen = Screen::new(&layout);
+        assert_eq!(
+            screen.get_by_test_id("seleccion.todos").role(),
+            Role::Checkbox
+        );
+        assert_eq!(
+            screen.get_by_test_id("seleccion.pais").role(),
+            Role::PopUpButton
+        );
+        assert_eq!(
+            screen
+                .get_by_test_id("seleccion.alineacion.1")
+                .name()
+                .as_deref(),
+            Some("Centro")
+        );
+
+        let layout = layout_of(&build_view(&Demo::at(Seccion::Tabla)));
+        let screen = Screen::new(&layout);
+        assert_eq!(screen.get_by_test_id("tabla.clientes").role(), Role::Table);
+        assert_eq!(screen.get_by_test_id("tabla.lista").role(), Role::List);
     }
 
     #[test]
@@ -1678,50 +2528,519 @@ mod tests {
         assert!(!segments.contains(&focused), "Tab leaves the group");
     }
 
+    fn sidebar_row(name: &str) -> By {
+        By::role(Role::SidebarItem).name(name)
+    }
+
+    /// Something only section `seccion` shows.
+    fn landmark(seccion: Seccion) -> &'static str {
+        match seccion {
+            Seccion::Inicio => "contador",
+            Seccion::Campos => "form.password",
+            Seccion::Botones => "botones.secondary",
+            Seccion::Seleccion => "seleccion",
+            Seccion::Contenedores => "contenedores.card",
+            Seccion::Badges => "badges",
+            Seccion::Tabla => "tabla.clientes",
+            Seccion::Dialogos => "dialogos",
+        }
+    }
+
     #[test]
     fn the_sidebar_shows_one_section_at_a_time() {
         let mut app = TestApp::new(Demo::default());
         app.screen().get(By::test_id("form.nombre"));
-        app.click(By::role(Role::SidebarItem).name("Campos"));
+        app.click(sidebar_row("Campos"));
         assert_eq!(app.messages(), [Msg::IrA(Seccion::Campos)]);
         app.screen().get(By::test_id("form.password"));
         assert!(app.screen().query(By::test_id("form.nombre")).is_none());
-        assert!(app.is_focused(By::test_id("nav.1")));
+        assert!(app.is_focused(sidebar_row("Campos")));
 
-        // ↓ and ↑ move the selection.
-        app.press(Key::ArrowDown, Modifiers::NONE);
-        assert_eq!(app.app().seccion, Seccion::Botones);
-        app.screen().get(By::test_id("botones.secondary"));
-        app.press(Key::ArrowDown, Modifiers::NONE);
-        app.press(Key::ArrowDown, Modifiers::NONE);
-        assert_eq!(app.app().seccion, Seccion::Badges);
-        app.press(Key::ArrowUp, Modifiers::NONE);
-        app.press(Key::ArrowUp, Modifiers::NONE);
-        app.press(Key::ArrowUp, Modifiers::NONE);
+        // ↓ walks every section in order, across the groups, and ↑ back.
+        for pair in Seccion::ALL[1..].windows(2) {
+            app.press(Key::ArrowDown, Modifiers::NONE);
+            assert_eq!(app.app().seccion, pair[1]);
+            app.screen().get(By::test_id(landmark(pair[1])));
+            assert!(
+                app.screen().query(By::test_id(landmark(pair[0]))).is_none(),
+                "{:?} left",
+                pair[0]
+            );
+        }
+        for _ in 1..Seccion::ALL.len() {
+            app.press(Key::ArrowUp, Modifiers::NONE);
+        }
         assert_eq!(app.app().seccion, Seccion::Inicio);
-        assert!(app.is_focused(By::test_id("nav.0")));
+        assert!(app.is_focused(sidebar_row("Inicio")));
+    }
+
+    /// Groups of the sidebar and their rows, in order.
+    #[test]
+    fn the_sidebar_groups_every_section() {
+        let app = TestApp::new(Demo::default());
+        let screen = app.screen();
+        let nav = screen.within(screen.get_by_test_id("nav"));
+        let titles: Vec<_> = nav
+            .all(By::role(Role::Heading))
+            .iter()
+            .filter_map(|heading| heading.name())
+            .collect();
+        assert_eq!(titles, ["Demo", "Componentes", "Datos", "Superposiciones"]);
+        let rows: Vec<_> = nav
+            .all(By::role(Role::SidebarItem))
+            .iter()
+            .filter_map(|row| row.name())
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                "Inicio",
+                "Campos",
+                "Botones",
+                "Selección",
+                "Contenedores",
+                "Badges y alertas",
+                "Tabla",
+                "Diálogos y avisos",
+            ]
+        );
+    }
+
+    /// Every public constructor of `components` shows up in the demo,
+    /// found by role, name or test id in some section (an overlay after
+    /// the click that opens it). Items that only feed a constructor (data,
+    /// class strings, timers) are listed apart; a new public item fails
+    /// here until it is in one list or the other.
+    #[test]
+    fn the_demo_shows_every_component() {
+        use std::collections::BTreeSet;
+        const SOURCES: [&str; 8] = [
+            include_str!("components.rs"),
+            include_str!("components/dialog.rs"),
+            include_str!("components/search.rs"),
+            include_str!("components/sidebar.rs"),
+            include_str!("components/table.rs"),
+            include_str!("components/text_area.rs"),
+            include_str!("components/toast.rs"),
+            include_str!("components/toolbar.rs"),
+        ];
+        const NOT_WIDGETS: [&str; 12] = [
+            "themed",
+            "appkit_button_classes",
+            "button_classes",
+            "badge_classes",
+            "toast_key",
+            "toast_timer",
+            "SidebarItem",
+            "SidebarGroup",
+            "Column",
+            "Toast",
+            "PaletteItem",
+            "MenuFrame",
+        ];
+        use Seccion::*;
+        let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
+            (&["toolbar"], Inicio, None, By::role(Role::Toolbar)),
+            (&["toolbar_item"], Inicio, None, By::test_id("barra.sumar")),
+            (&["toolbar_title"], Inicio, None, By::text("Kai UI Desktop")),
+            (
+                &["toolbar_spacer"],
+                Inicio,
+                None,
+                By::test_id("barra.espacio"),
+            ),
+            (
+                &["toolbar_separator"],
+                Inicio,
+                None,
+                By::test_id("barra.separador"),
+            ),
+            (
+                &["toolbar_search", "search_field", "SearchField"],
+                Inicio,
+                None,
+                By::role(Role::SearchInput).name("Filtrar clientes"),
+            ),
+            (
+                &["sidebar", "Sidebar"],
+                Inicio,
+                None,
+                By::role(Role::Sidebar).name("Secciones"),
+            ),
+            (&["segmented"], Inicio, None, By::test_id("fondo.efecto")),
+            (
+                &["switch_labeled"],
+                Inicio,
+                None,
+                By::role(Role::Switch).name("Notificaciones"),
+            ),
+            (
+                &["checkbox"],
+                Inicio,
+                None,
+                By::role(Role::Checkbox).name("Acepto los términos"),
+            ),
+            (&["select"], Inicio, None, By::test_id("form.rol")),
+            (&["stat"], Inicio, None, By::text("Envíos")),
+            (&["TextField"], Campos, None, By::test_id("form.password")),
+            (
+                &["text_area", "TextArea"],
+                Campos,
+                None,
+                By::role(Role::TextArea).name("Notas"),
+            ),
+            (&["button"], Botones, None, By::test_id("botones.secondary")),
+            (
+                &["button_sized"],
+                Botones,
+                None,
+                By::role(Role::Button).name("Grande"),
+            ),
+            (&["Button"], Botones, None, By::test_id("botones.bordered")),
+            (
+                &["icon_button"],
+                Botones,
+                None,
+                By::test_id("botones.icono"),
+            ),
+            (
+                &["icon_button_sized"],
+                Botones,
+                None,
+                By::role(Role::Button).name("Usuario"),
+            ),
+            (
+                &["switch"],
+                Seleccion,
+                None,
+                By::role(Role::Switch).name("Wi-Fi"),
+            ),
+            (
+                &["switch_with_options"],
+                Seleccion,
+                None,
+                By::test_id("seleccion.bluetooth"),
+            ),
+            (
+                &["checkbox_with_options"],
+                Seleccion,
+                None,
+                By::test_id("seleccion.todos"),
+            ),
+            (
+                &["select_with_options"],
+                Seleccion,
+                None,
+                By::test_id("seleccion.pais"),
+            ),
+            (
+                &["select_menu"],
+                Seleccion,
+                Some("seleccion.pais"),
+                By::role(Role::Menu),
+            ),
+            (
+                &["segmented_with_options"],
+                Seleccion,
+                None,
+                By::test_id("seleccion.alineacion"),
+            ),
+            (
+                &["card", "card_header", "card_content", "card_actions"],
+                Contenedores,
+                None,
+                By::test_id("contenedores.card"),
+            ),
+            (
+                &["group_box"],
+                Contenedores,
+                None,
+                By::test_id("contenedores.grupo"),
+            ),
+            (
+                &["heading"],
+                Contenedores,
+                None,
+                By::role(Role::Heading).name("Título de sección"),
+            ),
+            (
+                &["paragraph"],
+                Contenedores,
+                None,
+                By::role(Role::Paragraph),
+            ),
+            (
+                &["caption"],
+                Contenedores,
+                None,
+                By::text("Una leyenda, para notas y metadatos."),
+            ),
+            (&["badge"], Badges, None, By::text("Warning")),
+            (
+                &["alert"],
+                Badges,
+                None,
+                By::text("Revisa los campos requeridos"),
+            ),
+            (
+                &["Table"],
+                Tabla,
+                None,
+                By::role(Role::Table).name("Clientes"),
+            ),
+            (
+                &["virtual_list"],
+                Tabla,
+                None,
+                By::role(Role::List).name("Elementos"),
+            ),
+            (
+                &["Dialog", "dialog"],
+                Dialogos,
+                Some("dialogos.guardar"),
+                By::role(Role::Dialog).name("¿Guardar los cambios?"),
+            ),
+            (
+                &["toast_stack"],
+                Dialogos,
+                Some("avisos.info"),
+                By::test_id("kai.aviso.1"),
+            ),
+            (
+                &["command_palette"],
+                Dialogos,
+                Some("dialogos.paleta"),
+                By::test_id("kai.paleta"),
+            ),
+        ];
+        let mut covered = BTreeSet::new();
+        for (names, seccion, open, by) in shown {
+            let mut app = TestApp::new(Demo::at(seccion));
+            if let Some(id) = open {
+                app.click(By::test_id(id));
+            }
+            assert!(
+                !app.screen().all(by).is_empty(),
+                "{names:?} no aparece en {seccion:?}"
+            );
+            covered.extend(names.iter().copied());
+        }
+
+        let public: BTreeSet<&str> = SOURCES
+            .iter()
+            .flat_map(|source| source.lines())
+            .filter_map(|line| {
+                line.strip_prefix("pub fn ")
+                    .or_else(|| line.strip_prefix("pub struct "))
+            })
+            .filter_map(|rest| {
+                rest.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .next()
+            })
+            .collect();
+        let accounted: BTreeSet<&str> = covered.into_iter().chain(NOT_WIDGETS).collect();
+        assert_eq!(public, accounted);
+    }
+
+    #[test]
+    fn the_toolbar_search_filters_and_the_headers_sort_the_table() {
+        let mut app = TestApp::new(Demo::default());
+        let table = By::test_id("tabla.clientes");
+        let count = |app: &TestApp<Demo>| app.screen().get(table.clone()).node().row_count;
+        let cells = |app: &TestApp<Demo>, row: usize| -> Vec<String> {
+            let screen = app.screen();
+            screen
+                .within(screen.get_by_test_id(&format!("tabla.clientes.row.{row}")))
+                .all(By::role(Role::Cell))
+                .iter()
+                .filter_map(|cell| cell.name())
+                .collect()
+        };
+        // Return in the search goes to the table.
+        app.type_text(By::test_id("barra.buscar"), "temuco");
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(app.app().seccion, Seccion::Tabla);
+        let temuco = super::clientes("temuco", (0, super::SortDirection::Ascending)).len();
+        assert!(temuco > 0 && temuco < super::CLIENTES as usize);
+        assert_eq!(count(&app), Some(temuco));
+        assert_eq!(cells(&app, 0)[2], "Temuco");
+        assert!(
+            app.screen()
+                .get_by_test_id("tabla.total")
+                .name()
+                .unwrap()
+                .contains("de 10000 con «temuco»")
+        );
+
+        // A sortable header sorts, and again reverses.
+        let monto = || By::role(Role::ColumnHeader).name("Monto");
+        app.click(monto());
+        assert_eq!(app.app().sort, (4, super::SortDirection::Ascending));
+        let amount = |row: Vec<String>| -> u32 { row[4].trim_start_matches("$ ").parse().unwrap() };
+        assert!(amount(cells(&app, 0)) <= amount(cells(&app, 1)));
+        app.click(monto());
+        assert_eq!(app.app().sort, (4, super::SortDirection::Descending));
+        assert!(amount(cells(&app, 0)) >= amount(cells(&app, 1)));
+
+        // A click selects a client, which keeps its place through sorting.
+        app.click(By::test_id("tabla.clientes.row.1"));
+        let chosen = app.app().rows[1];
+        assert_eq!(app.app().cliente, Some(chosen));
+        app.click(monto());
+        assert_eq!(app.app().cliente, Some(chosen));
+        let name = super::cliente(chosen).nombre;
+        assert_eq!(
+            app.screen().get_by_test_id("tabla.seleccion").name(),
+            Some(format!("Seleccionado: {name}"))
+        );
+
+        // Clearing the search shows the ten thousand again.
+        app.click(By::test_id("barra.buscar.clear"));
+        assert_eq!(count(&app), Some(10_000));
+    }
+
+    #[test]
+    fn dialogs_trap_focus_and_confirming_shows_a_toast() {
+        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
+        let dialog = || By::role(Role::Dialog);
+        app.click(By::test_id("dialogos.guardar"));
+        assert_eq!(
+            app.screen().get(dialog()).name().as_deref(),
+            Some("¿Guardar los cambios?")
+        );
+        assert!(app.is_focused(By::test_id("dialogo.cancel")));
+        for _ in 0..3 {
+            app.press(Key::Tab, Modifiers::NONE);
+            let focused = app.session().focused().unwrap();
+            let screen = app.screen();
+            let inside = screen
+                .within(screen.get(dialog()))
+                .all(By::role(Role::Button));
+            assert!(inside.iter().any(|button| button.id() == focused));
+        }
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.screen().query(dialog()).is_none());
+        assert!(app.is_focused(By::test_id("dialogos.guardar")));
+        assert!(app.app().toasts.is_empty(), "cancel shows nothing");
+
+        app.click(By::test_id("dialogos.eliminar"));
+        let default = By::test_id("dialogo.default");
+        assert_eq!(
+            app.screen().get(default.clone()).name().as_deref(),
+            Some("Eliminar")
+        );
+        app.click(default);
+        assert!(app.screen().query(dialog()).is_none());
+        let screen = app.screen();
+        let toast = screen.get_by_test_id("kai.aviso.1");
+        assert_eq!(toast.role(), Role::Status);
+        screen.within(toast).get(By::text("Borrador eliminado"));
+    }
+
+    #[test]
+    fn toasts_close_on_their_own_or_with_their_button() {
+        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
+        app.click(By::test_id("avisos.exito"));
+        app.click(By::test_id("avisos.error"));
+        assert_eq!(
+            app.screen().get_by_test_id("kai.aviso.1").role(),
+            Role::Status
+        );
+        assert_eq!(
+            app.screen().get_by_test_id("kai.aviso.2").role(),
+            Role::Alert,
+            "errors are read at once"
+        );
+        app.screen().get_by_test_id("kai.aviso.2.action");
+        app.advance(crate::components::TOAST_DURATION);
+        assert!(app.app().toasts.is_empty());
+        assert!(app.screen().query(By::test_id("kai.aviso.1")).is_none());
+
+        assert_eq!(
+            app.call("avisos.mostrar", json!({"variante": "advertencia"})),
+            Ok(json!(null))
+        );
+        assert_eq!(
+            app.app().toasts[0].variant,
+            crate::components::AlertVariant::Warning
+        );
+        assert!(
+            app.call("avisos.mostrar", json!({"variante": "rojo"}))
+                .is_err()
+        );
+        app.click(By::test_id("kai.aviso.3.close"));
+        assert!(app.app().toasts.is_empty());
+        assert_eq!(app.session().next_deadline(), None, "its timer is gone too");
+    }
+
+    #[test]
+    fn the_palette_link_opens_the_palette() {
+        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
+        let link = By::test_id("dialogos.paleta");
+        assert_eq!(
+            app.screen().get(link.clone()).name().as_deref(),
+            Some("Abrir la paleta (⇧⌘P)")
+        );
+        app.click(link.clone());
+        app.screen().get_by_test_id("kai.paleta");
+        assert!(app.is_focused(By::test_id("kai.paleta.buscar")));
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.screen().query(By::test_id("kai.paleta")).is_none());
+        assert!(app.is_focused(link));
+    }
+
+    #[test]
+    fn the_all_checkbox_is_mixed_and_sets_every_permission() {
+        let mut app = TestApp::new(Demo::at(Seccion::Seleccion));
+        let todos = By::test_id("seleccion.todos");
+        let state = |app: &TestApp<Demo>, by: By| app.screen().get(by).node().control_state;
+        assert_eq!(state(&app, todos.clone()), Some(ControlState::Mixed));
+        app.click(todos.clone());
+        assert_eq!(app.app().permisos, [true; 3]);
+        assert_eq!(state(&app, todos.clone()), Some(ControlState::On));
+        app.click(todos.clone());
+        assert_eq!(app.app().permisos, [false; 3]);
+        app.click(By::test_id("seleccion.permiso.1"));
+        assert_eq!(state(&app, todos.clone()), Some(ControlState::Mixed));
+        assert!(!app.is_enabled(By::test_id("seleccion.administrar")));
+        assert!(!app.is_enabled(By::test_id("seleccion.bluetooth")));
+
+        app.click(By::test_id("seleccion.pais"));
+        app.click(By::role(Role::MenuItem).name("Perú"));
+        assert_eq!(app.app().pais, Some(2));
+        app.click(By::test_id("seleccion.alineacion.2"));
+        assert_eq!(app.app().alineacion, 2);
+        app.click(By::test_id("seleccion.wifi"));
+        assert!(!app.app().wifi);
     }
 
     #[test]
     fn scripts_and_agents_change_the_section_with_ui_ir_a() {
         let mut app = TestApp::new(Demo::default());
+        for seccion in Seccion::ALL.into_iter().rev() {
+            assert_eq!(
+                app.call("ui.ir_a", json!({"seccion": seccion.key()})),
+                Ok(json!(null))
+            );
+            assert_eq!(app.app().seccion, seccion);
+            app.screen().get(By::test_id(landmark(seccion)));
+        }
+        app.call("ui.ir_a", json!({"seccion": "botones"})).unwrap();
         assert_eq!(
-            app.call("ui.ir_a", json!({"seccion": "botones"})),
-            Ok(json!(null))
-        );
-        assert_eq!(app.app().seccion, Seccion::Botones);
-        assert_eq!(
-            app.screen().get(By::test_id("nav.2")).role(),
-            Role::SidebarItem
+            app.screen()
+                .get(sidebar_row("Botones"))
+                .node()
+                .control_state,
+            Some(ControlState::On)
         );
         assert!(app.call("ui.ir_a", json!({"seccion": "mapas"})).is_err());
         assert!(app.call("ui.ir_a", json!({})).is_err());
         assert_eq!(app.app().seccion, Seccion::Botones);
     }
 
-    /// ⌃⌘S, the sidebar's own button and `ui.alternar_sidebar` collapse it
-    /// to the rail and back; a window narrower than `sm` starts with it
-    /// collapsed, and resizing later leaves the person's choice alone.
+    /// ⌃⌘S, the toolbar button and `ui.alternar_sidebar` collapse it to
+    /// the rail and back; a window narrower than `sm` starts with it
+    /// collapsed.
     #[test]
     fn the_sidebar_collapses_to_a_rail_by_shortcut_button_or_command() {
         let mut app = TestApp::new(Demo::default());
@@ -1742,8 +3061,17 @@ mod tests {
             Role::SidebarItem,
             "rows keep their names in the rail"
         );
-        app.click(By::test_id("nav.alternar"));
+        let toggle = By::test_id("barra.sidebar");
+        assert_eq!(
+            app.screen().get(toggle.clone()).name().as_deref(),
+            Some("Mostrar barra lateral")
+        );
+        app.click(toggle.clone());
         assert!(width(&app) > 48.0);
+        assert_eq!(
+            app.screen().get(toggle).name().as_deref(),
+            Some("Ocultar barra lateral")
+        );
         assert_eq!(app.call("ui.alternar_sidebar", json!({})), Ok(json!(null)));
         assert!(app.app().sidebar_collapsed);
 
@@ -1777,10 +3105,20 @@ mod tests {
         }
         let scrolled = top(&app);
         assert!(scrolled < at_rest, "focusing «Limpiar» scrolls to it");
-        app.click(By::test_id("nav.1"));
+        app.click(sidebar_row("Campos"));
         assert_eq!(password(&app), campos);
-        app.click(By::test_id("nav.0"));
+        app.click(sidebar_row("Inicio"));
         assert_eq!(top(&app), at_rest);
+        // Also after scrolling a long section with the wheel.
+        app.click(sidebar_row("Tabla"));
+        let table = |app: &TestApp<Demo>| app.screen().get_by_test_id("tabla").bounds().y;
+        let fresh = table(&app);
+        // Over the caption, outside the table's own scroll.
+        app.scroll_wheel(By::test_id("tabla.total"), -200.0);
+        assert!(table(&app) < fresh);
+        app.click(sidebar_row("Badges y alertas"));
+        app.click(sidebar_row("Tabla"));
+        assert_eq!(table(&app), fresh);
     }
 
     #[test]
@@ -1838,6 +3176,7 @@ mod tests {
                 "form.ultimo_envio",
                 "ui.ir_a",
                 "ui.alternar_sidebar",
+                "avisos.mostrar",
                 "kai.paleta",
             ]
         );
@@ -1845,7 +3184,7 @@ mod tests {
             app.available::<Reiniciar>(),
             Availability::disabled("El contador ya está en cero")
         );
-        app.click(By::test_id("header.sumar"));
+        app.click(By::test_id("barra.sumar"));
         assert!(app.available::<Reiniciar>().is_enabled());
         assert!(!app.available::<Enviar>().is_enabled());
         app.type_text(By::test_id("form.nombre"), "Ana");
@@ -1949,7 +3288,7 @@ mod tests {
         );
         app.click(reset());
         assert_eq!(app.messages(), []);
-        app.click(By::test_id("header.sumar"));
+        app.click(By::test_id("barra.sumar"));
         assert!(app.is_enabled(reset()));
         assert_eq!(app.screen().get(reset()).node().description, None);
         app.click(reset());
@@ -2036,7 +3375,7 @@ mod tests {
         assert!(app.session().palette_open());
 
         app.press(Key::Escape, Modifiers::NONE);
-        app.click(By::test_id("header.sumar"));
+        app.click(By::test_id("barra.sumar"));
         app.press(Key::Char('p'), CMD_SHIFT);
         assert_eq!(app.value(search()), "", "a new palette starts empty");
         app.type_text(search(), "rein");
@@ -2186,7 +3525,7 @@ mod tests {
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("header.sumar"),
+                    Via::Button("barra.sumar"),
                     Via::Button("contador.incrementar"),
                     Via::Key(Key::Char('i'), CMD),
                     Via::Menu,
@@ -2356,6 +3695,7 @@ mod tests {
                 "form.ultimo_envio",
                 "ui.ir_a",
                 "ui.alternar_sidebar",
+                "avisos.mostrar",
             ]
         );
     }
@@ -2543,7 +3883,7 @@ mod tests {
                 .is_none()
         );
 
-        app.hover(By::test_id("header.sumar"));
+        app.hover(By::test_id("barra.sumar"));
         let screen = app.screen();
         let panel = screen.get(By::test_id("kai.inspector.panel"));
         let shown: Vec<String> = screen
@@ -2558,12 +3898,12 @@ mod tests {
             "the icon is under the pointer: {shown}"
         );
         assert!(
-            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [header.sumar]"),
+            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [barra.sumar]"),
             "{shown}"
         );
         let outline = screen.get(By::test_id("kai.inspector.outline")).bounds();
         let icon = screen
-            .within(screen.get(By::test_id("header.sumar")))
+            .within(screen.get(By::test_id("barra.sumar")))
             .get(By::role(Role::Image))
             .bounds();
         assert_eq!(
@@ -2577,7 +3917,7 @@ mod tests {
         );
         assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
 
-        app.click(By::test_id("header.sumar"));
+        app.click(By::test_id("barra.sumar"));
         assert_eq!(app.app().clicks, 1, "the inspector takes no clicks");
 
         app.press(Key::Char('p'), CMD_SHIFT);
@@ -2588,7 +3928,7 @@ mod tests {
 
         app.press(Key::Char('i'), CMD_OPTION);
         assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
-        assert!(app.dump().contains("[header.sumar]"));
+        assert!(app.dump().contains("[barra.sumar]"));
     }
 
     #[test]
@@ -3540,7 +4880,7 @@ mod tests {
             clicks: 3,
             ..Demo::default()
         };
-        typed.update(Msg::NameChanged("Ana".to_owned()));
+        typed.apply(Msg::NameChanged("Ana".to_owned()));
         let hovered_button = find(&typed, By::role(Role::Button).name("Incrementar"));
         let field = find(&typed, By::label("Nombre"));
         let tree = build_view(&typed);
@@ -3618,7 +4958,7 @@ mod tests {
             (Field::Code, "A-12"),
             (Field::Quantity, "3"),
         ] {
-            filled.update(Msg::Edit(field, value.to_owned()));
+            filled.apply(Msg::Edit(field, value.to_owned()));
         }
         let password = find(&filled, By::test_id("form.password.input"));
         let tree = build_view(&filled);
@@ -3634,6 +4974,56 @@ mod tests {
                 ..Interaction::default()
             },
             &scrolled_to(&out.theme, &filled, fields_view, title),
+        );
+
+        for (name, seccion) in [
+            ("demo-seleccion", Seccion::Seleccion),
+            ("demo-contenedores", Seccion::Contenedores),
+            ("demo-tabla", Seccion::Tabla),
+        ] {
+            let mut demo = Demo::at(seccion);
+            if seccion == Seccion::Tabla {
+                demo.apply(Msg::Sort(4, SortDirection::Descending));
+                demo.apply(Msg::SelectRow(1));
+            }
+            snapshot(out, name, &demo, wide, 2.0, &Interaction::default(), &none);
+        }
+
+        let mut dialog = Demo::at(Seccion::Dialogos);
+        dialog.apply(Msg::OpenDialog(Dialogo::Eliminar));
+        snapshot(
+            out,
+            "demo-dialogo",
+            &dialog,
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
+        );
+        let mut toasts = Demo::at(Seccion::Dialogos);
+        for variante in VarianteAviso::ALL {
+            toasts.apply(Msg::ShowToast(variante));
+        }
+        snapshot(
+            out,
+            "demo-avisos",
+            &toasts,
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
+        );
+
+        let mut rail = Demo::at(Seccion::Tabla);
+        rail.apply(Msg::ToggleSidebar);
+        snapshot(
+            out,
+            "demo-sidebar-colapsada",
+            &rail,
+            wide,
+            2.0,
+            &Interaction::default(),
+            &none,
         );
     }
 

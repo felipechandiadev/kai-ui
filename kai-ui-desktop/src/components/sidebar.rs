@@ -1,5 +1,5 @@
 //! Sidebar of sections (a source list), expanded or collapsed to a rail
-//! of icons (12 Paso 20.5).
+//! of icons (12 Paso 20.7).
 
 use super::themed;
 use crate::element::{Element, Role, div, icon, text};

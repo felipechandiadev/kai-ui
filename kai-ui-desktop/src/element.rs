@@ -707,6 +707,15 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Run command `id` on click as the menu bar does, without a message:
+    /// for commands the app has no [`Action`](crate::commands::Action)
+    /// for, such as the palette (`kai.paleta`). Availability, name and
+    /// default `test_id` follow the command as with [`Element::on_command`].
+    pub fn run_command(mut self, id: &'static str) -> Self {
+        self.command = Some(id);
+        self
+    }
+
     /// Message sent when Enter is pressed in an input.
     pub fn on_submit(mut self, msg: Msg) -> Self {
         self.handlers.on_submit = Some(msg);

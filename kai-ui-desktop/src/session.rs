@@ -1525,6 +1525,13 @@ impl<A: App> Session<A> {
                 .and_then(|handlers| handlers.on_click.clone())
         {
             self.send(msg);
+        } else if let Some(activation) = result.activated
+            && let Some(id) = self
+                .tree
+                .find(activation.widget)
+                .and_then(|element| element.command)
+        {
+            self.perform_command(id);
         }
         if let Some(Action::Command(id)) = result.action {
             self.perform_command(id);
