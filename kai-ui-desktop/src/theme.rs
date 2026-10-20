@@ -100,7 +100,7 @@ pub enum FieldLabels {
 }
 
 /// Light or dark appearance; classes can target one with `light:` and
-/// `dark:`. Increased contrast arrives with the runtime reader (Paso 16).
+/// `dark:`. Increased contrast is a [`SystemPrefs`] (`contrast-more:`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Appearance {
     #[default]
@@ -109,17 +109,22 @@ pub enum Appearance {
 }
 
 /// System accessibility and input preferences that change how controls
-/// behave. Static today; read from AppKit at runtime in Paso 16.
+/// behave. The runtime reads them from macOS at launch and whenever the
+/// window becomes active, over the app's theme; classes can target them
+/// with `motion-reduce:`, `contrast-more:` and `transparency-reduce:`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SystemPrefs {
     /// `NSApp.isFullKeyboardAccessEnabled` (System Settings › Keyboard ›
     /// Keyboard navigation): Tab reaches buttons and shows their focus ring.
+    /// Kai keeps it on, as on the web.
     pub full_keyboard_access: bool,
-    /// Paso 16.
+    /// Accessibility › Display › Increase contrast: control outlines turn
+    /// solid.
     pub increase_contrast: bool,
-    /// Paso 16.
+    /// Accessibility › Display › Reduce transparency.
     pub reduce_transparency: bool,
-    /// Paso 16.
+    /// Accessibility › Motion › Reduce motion: elements that move by the
+    /// clock and the animated background stay still.
     pub reduce_motion: bool,
 }
 

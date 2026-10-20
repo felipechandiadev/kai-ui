@@ -721,13 +721,14 @@ impl<A: App> WindowState<A> {
             .ok_or_else(|| "La ventana informó un factor de escala inválido".to_owned())?;
         let size = window.inner_size();
         let viewport = scale_factor.to_logical_size(size.width, size.height);
-        let session = Session::new(
+        let mut session = Session::new(
             app,
             theme,
             viewport,
             Measure::Real,
             Box::new(SystemClipboard),
         );
+        session.set_system_prefs(crate::platform::prefs::read());
         let unknown = session.unknown_classes();
         if !unknown.is_empty() {
             eprintln!("Clases no reconocidas: {}", unknown.join(" "));
@@ -1047,7 +1048,14 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 state.session.pointer_moved(Some(point));
             }
             WindowEvent::CursorLeft { .. } => state.session.pointer_moved(None),
-            WindowEvent::Focused(active) => state.session.set_window_active(active),
+            WindowEvent::Focused(active) => {
+                if active {
+                    state
+                        .session
+                        .set_system_prefs(crate::platform::prefs::read());
+                }
+                state.session.set_window_active(active);
+            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 state.modifiers = adapt_modifiers(modifiers.state());
                 state.session.set_modifiers(state.modifiers);

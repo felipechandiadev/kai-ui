@@ -51,7 +51,7 @@ use crate::runtime::{
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
-use crate::theme::Theme;
+use crate::theme::{SystemPrefs, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
 use crate::virtual_rows::{self, Viewport};
 use accesskit::{ActionRequest, TreeUpdate};
@@ -99,6 +99,9 @@ pub(crate) struct Outbox {
 pub(crate) struct Session<A: App> {
     app: A,
     theme: Theme,
+    /// The Mac's preferences, laid over every theme; `None` keeps the
+    /// theme's own.
+    system_prefs: Option<SystemPrefs>,
     title: String,
     tree: Element<A::Msg>,
     handlers: HashMap<WidgetId, Handlers<A::Msg>>,
@@ -495,6 +498,7 @@ impl<A: App> Session<A> {
         let tree = build_view_with(&app, &commands);
         let mut session = Self {
             theme,
+            system_prefs: None,
             title: app.title(),
             app,
             focus_order: FocusOrder::from_tree(&tree),
@@ -839,6 +843,36 @@ impl<A: App> Session<A> {
         &self.theme
     }
 
+    /// Take the Mac's accessibility preferences (reduce motion, increase
+    /// contrast, reduce transparency, keyboard navigation): they apply over
+    /// the app's theme from now on.
+    pub fn set_system_prefs(&mut self, prefs: SystemPrefs) {
+        if self.system_prefs == Some(prefs) {
+            return;
+        }
+        self.system_prefs = Some(prefs);
+        self.theme = self.with_system_prefs(self.theme);
+        self.rebuild();
+        self.relayout();
+        self.invalidate();
+    }
+
+    /// `theme` with the system's preferences. Kai keeps its focus ring on
+    /// buttons with or without keyboard navigation, as on the web.
+    fn with_system_prefs(&self, mut theme: Theme) -> Theme {
+        if let Some(system) = self.system_prefs {
+            theme.prefs = SystemPrefs {
+                full_keyboard_access: if theme.is_appkit() {
+                    system.full_keyboard_access
+                } else {
+                    theme.prefs.full_keyboard_access
+                },
+                ..system
+            };
+        }
+        theme
+    }
+
     pub fn tree(&self) -> &Element<A::Msg> {
         &self.tree
     }
@@ -1063,7 +1097,7 @@ impl<A: App> Session<A> {
         self.add_palette();
         self.add_confirmation();
         self.background = self.app.background();
-        if let Some(theme) = self.app.theme()
+        if let Some(theme) = self.app.theme().map(|theme| self.with_system_prefs(theme))
             && theme != self.theme
         {
             self.theme = theme;

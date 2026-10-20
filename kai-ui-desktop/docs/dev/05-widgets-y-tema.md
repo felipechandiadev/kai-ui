@@ -70,6 +70,7 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 - El espaciado usa la unidad del tema (`--space-4 / 4`), así que `p-4` es `--space-4` y escala con la densidad; los valores arbitrarios (`w-[180px]`) no escalan.
 - `text-lg` y `text-xl` usan los tamaños de título de página y sección del tema; `leading-*` siempre gana al interlineado implícito del tamaño, sin importar el orden.
 - Las propiedades de texto se heredan como en CSS (color, tamaño, interlineado, peso, `nowrap` y el trazo de los iconos).
+- Variantes del tema, que se evalúan al parsear: `kai:` `appkit:` `glass:` `mix-a/b/c:` `label-*:` `dark:` `light:` y las preferencias del Mac (`Theme.prefs`, `SystemPrefs`): `motion-reduce:` (reducir movimiento), `contrast-more:` (aumentar contraste) y `transparency-reduce:` (reducir transparencia). El runtime lee esas preferencias de macOS al arrancar y cada vez que la ventana se activa, y las superpone al tema de la app (`Session::set_system_prefs`; en pruebas, `TestApp::set_system_prefs`). Con `contrast-more:` los bordes de campos, botones push, checkbox, segmented y botones de icono con contorno pasan a un borde sólido (`border-foreground` en Kai, `border-secondary-label` en AppKit). `full_keyboard_access` también viene del sistema en AppKit; Kai lo mantiene encendido, como en la web.
 
 ## Componentes (`components.rs`)
 

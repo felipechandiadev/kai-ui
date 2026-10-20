@@ -236,6 +236,11 @@ enum ThemeVariant {
     Labels(FieldLabels),
     Dark,
     Light,
+    /// System preferences ([`Theme::prefs`]): `motion-reduce:`,
+    /// `contrast-more:`, `transparency-reduce:`.
+    ReduceMotion,
+    IncreaseContrast,
+    ReduceTransparency,
 }
 
 impl ThemeVariant {
@@ -252,6 +257,9 @@ impl ThemeVariant {
             "label-tab" => Self::Labels(FieldLabels::Tab),
             "dark" => Self::Dark,
             "light" => Self::Light,
+            "motion-reduce" => Self::ReduceMotion,
+            "contrast-more" => Self::IncreaseContrast,
+            "transparency-reduce" => Self::ReduceTransparency,
             _ => return None,
         })
     }
@@ -268,6 +276,9 @@ impl ThemeVariant {
             ),
             Self::Dark => theme.appearance == Appearance::Dark,
             Self::Light => theme.appearance == Appearance::Light,
+            Self::ReduceMotion => theme.prefs.reduce_motion,
+            Self::IncreaseContrast => theme.prefs.increase_contrast,
+            Self::ReduceTransparency => theme.prefs.reduce_transparency,
         }
     }
 }
@@ -1339,6 +1350,27 @@ mod tests {
         };
         let list = ClassList::parse("kai:hover:bg-error", &kai);
         assert_eq!(list.resolve(hovered).background, Some(kai.colors.error));
+    }
+
+    #[test]
+    fn system_preference_variants() {
+        let kai = Theme::kai(Density::Comfortable);
+        let classes = "bg-primary contrast-more:bg-error transparency-reduce:border-error \
+                       motion-reduce:text-error";
+        let plain = ClassList::parse(classes, &kai);
+        assert!(plain.unknown.is_empty(), "{:?}", plain.unknown);
+        let plain = plain.resolve(State::default());
+        assert_eq!(plain.background, Some(kai.colors.primary));
+        assert_eq!(plain.border_color, None);
+        assert_eq!(plain.text.color, None);
+        let mut prefs = kai;
+        prefs.prefs.increase_contrast = true;
+        prefs.prefs.reduce_transparency = true;
+        prefs.prefs.reduce_motion = true;
+        let style = ClassList::parse(classes, &prefs).resolve(State::default());
+        assert_eq!(style.background, Some(kai.colors.error));
+        assert_eq!(style.border_color, Some(kai.colors.error));
+        assert_eq!(style.text.color, Some(kai.colors.error));
     }
 
     #[test]

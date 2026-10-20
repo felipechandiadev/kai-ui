@@ -22,7 +22,7 @@ use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
 use crate::style::Cursor;
 use crate::text_field::ClipboardPort;
-use crate::theme::{Density, Theme};
+use crate::theme::{Density, SystemPrefs, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent};
 
 /// Pointer moves in a [`TestApp::drag`], one every [`DRAG_STEP`].
@@ -227,6 +227,13 @@ impl<A: App> TestApp<A> {
     #[cfg(test)]
     pub(crate) fn session(&self) -> &Session<A> {
         &self.session
+    }
+
+    /// Pretend the Mac changed its accessibility preferences, as the
+    /// runtime reads them when the window becomes active.
+    pub fn set_system_prefs(&mut self, prefs: SystemPrefs) {
+        self.session.set_system_prefs(prefs);
+        self.frame();
     }
 
     /// Let `by` pass on the test app's clock, which only moves here: the

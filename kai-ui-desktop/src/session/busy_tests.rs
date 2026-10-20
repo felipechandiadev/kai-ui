@@ -1,4 +1,5 @@
-//! Controls and commands stay busy while the tasks they started run.
+//! Controls and commands stay busy while the tasks they started run; the
+//! dots of [`DotProgress`] follow the Mac's preferences.
 
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -14,7 +15,7 @@ use crate::render::DrawOp;
 use crate::runtime::{App, Effects};
 use crate::style::Cursor;
 use crate::testing::{By, TestApp};
-use crate::theme::{Density, Theme};
+use crate::theme::{Appearance, Density, SystemPrefs, Theme};
 
 /// Closed until [`Gate::open`]: tasks that wait on it stay running.
 #[derive(Clone, Default)]
@@ -249,7 +250,7 @@ fn the_label_stays_for_assistive_tech_under_the_dots() {
 }
 
 /// Tops of the 10 pt dots of a [`DotProgress`] in the paint list.
-fn dot_tops(app: &TestApp<Dots>) -> Vec<f32> {
+fn dot_tops<A: App>(app: &TestApp<A>) -> Vec<f32> {
     app.draw_list()
         .ops
         .iter()
@@ -319,4 +320,62 @@ fn reduced_motion_keeps_the_dots_still_and_asks_for_no_frames() {
     assert!(!app.session().animating());
     app.advance(Duration::from_millis(262));
     assert_eq!(dot_tops(&app), still);
+}
+
+/// [`Dots`] in a theme of its own ([`App::theme`]).
+struct ThemedDots(Theme);
+
+impl App for ThemedDots {
+    type Msg = Msg;
+
+    fn title(&self) -> String {
+        "Puntos".into()
+    }
+
+    fn theme(&self) -> Option<Theme> {
+        Some(self.0)
+    }
+
+    fn update(&mut self, _: Msg) -> Effects<Msg> {
+        Effects::none()
+    }
+
+    fn view(&self) -> Element<Msg> {
+        Dots.view()
+    }
+}
+
+#[test]
+fn the_macs_preferences_apply_over_the_apps_theme() {
+    let mut app = TestApp::new(ThemedDots(Theme::kai(Density::Comfortable)));
+    assert!(app.session().animating());
+    app.set_system_prefs(SystemPrefs {
+        reduce_motion: true,
+        increase_contrast: true,
+        ..SystemPrefs::default()
+    });
+    let prefs = app.theme().prefs;
+    assert!(prefs.reduce_motion && prefs.increase_contrast);
+    assert!(prefs.full_keyboard_access, "Kai keeps its focus ring");
+    assert!(!app.session().animating());
+    let still = dot_tops(&app);
+    app.advance(Duration::from_millis(262));
+    assert_eq!(dot_tops(&app), still);
+
+    app.set_system_prefs(SystemPrefs::default());
+    assert!(app.session().animating(), "motion is back");
+}
+
+#[test]
+fn appkit_follows_the_macs_keyboard_navigation() {
+    let mut appkit = Theme::appkit_current(Appearance::Light);
+    appkit.prefs.full_keyboard_access = true;
+    let mut app = TestApp::new(ThemedDots(appkit));
+    app.set_system_prefs(SystemPrefs::default());
+    assert!(!app.theme().prefs.full_keyboard_access);
+    app.set_system_prefs(SystemPrefs {
+        full_keyboard_access: true,
+        ..SystemPrefs::default()
+    });
+    assert!(app.theme().prefs.full_keyboard_access);
 }

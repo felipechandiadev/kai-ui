@@ -127,7 +127,12 @@ const APPKIT_BUTTON_BASE: &str = "inline-flex items-center justify-center gap-1 
 /// `fill-pressed` (α .16).
 const APPKIT_PUSH: &str = "bg-control text-control-text border-[0.5px] border-separator \
      shadow-bezel dark:border-0 hover:bg-bezel-hover active:bg-control-pressed \
-     glass:bg-fill-2 glass:border-0 glass:shadow-none glass:active:bg-fill-pressed";
+     glass:bg-fill-2 glass:border-0 glass:shadow-none glass:active:bg-fill-pressed \
+     contrast-more:border contrast-more:border-secondary-label";
+/// Outline of a control under Increase Contrast (`contrast-more:`), Kai
+/// and AppKit: the faint border turns into a solid one.
+const KAI_CONTRAST_BORDER: &str = "contrast-more:border-foreground";
+const APPKIT_CONTRAST_BORDER: &str = "contrast-more:border contrast-more:border-secondary-label";
 /// Default (or accent) push button; plain push look in an inactive window.
 /// 26+: flat accent, no shadow. Hover: `accent-hover`, 15 % toward
 /// `.pressed` (darker in light, lighter in dark).
@@ -767,7 +772,7 @@ impl<Msg> TextField<Msg> {
                 FieldVariant::Normal if muted => ("border border-border/50", "bg-field-muted"),
                 FieldVariant::Normal => (
                     "border border-border hover:border-muted-foreground \
-                     focus-within:border-primary",
+                     contrast-more:border-foreground focus-within:border-primary",
                     "bg-background",
                 ),
                 FieldVariant::Contrast => (
@@ -898,7 +903,7 @@ impl<Msg> TextField<Msg> {
         // small Kai field; C takes Kai's padding, 1 pt border and radius.
         format!(
             "{shape} {surface} mix-b:px-2 mix-c:px-3 mix-c:rounded-md mix-c:border \
-             mix-c:border-tertiary-label"
+             mix-c:border-tertiary-label {APPKIT_CONTRAST_BORDER}"
         )
     }
 
@@ -1633,7 +1638,8 @@ pub fn icon_button_sized<Msg>(
         IconButtonVariant::Neutral => "text-foreground hover:bg-neutral active:bg-border",
         IconButtonVariant::Text => "text-primary hover:bg-primary/10 active:bg-primary/20",
         IconButtonVariant::Outlined => {
-            "border border-border text-foreground hover:bg-neutral active:bg-border"
+            "border border-border text-foreground hover:bg-neutral active:bg-border \
+             contrast-more:border-foreground"
         }
     };
     let mix = mix_icon_button(variant, size);
@@ -1850,9 +1856,11 @@ pub fn checkbox_with_options<Msg>(
         )
     } else {
         (
-            "bg-background border-border group-hover:border-primary",
+            "bg-background border-border contrast-more:border-foreground \
+             group-hover:border-primary",
             "bg-control border-[0.5px] border-separator shadow-bezel dark:border-0 \
-             group-hover:bg-bezel-hover",
+             group-hover:bg-bezel-hover contrast-more:border \
+             contrast-more:border-secondary-label",
         )
     };
     let appkit_dim = if disabled { "opacity-50" } else { "" };
@@ -2112,7 +2120,8 @@ pub fn segmented_with_options<Msg>(
          leading-5 font-medium whitespace-nowrap text-muted-foreground cursor-pointer \
          hover:text-foreground selected:border-choice selected:bg-choice/20 \
          selected:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 \
-         disabled:opacity-50 disabled:cursor-not-allowed",
+         contrast-more:focus-visible:ring-primary disabled:opacity-50 \
+         disabled:cursor-not-allowed",
         "flex items-center justify-center px-control border border-transparent rounded-[4px] \
          text-control whitespace-nowrap text-control-text cursor-default hover:bg-fill-3 \
          selected:border-choice selected:bg-choice/20 keyboard-focus:ring-focus \
@@ -2120,9 +2129,14 @@ pub fn segmented_with_options<Msg>(
     );
     div()
         .class(&themed(
-            "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-md bg-neutral border \
-             border-border",
-            "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-control bg-fill-2",
+            &format!(
+                "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-md bg-neutral border \
+                 border-border {KAI_CONTRAST_BORDER}"
+            ),
+            &format!(
+                "inline-flex items-stretch gap-0.5 h-control p-0.5 rounded-control bg-fill-2 \
+                 {APPKIT_CONTRAST_BORDER}"
+            ),
         ))
         .role(Role::RadioGroup)
         .focus_group()
