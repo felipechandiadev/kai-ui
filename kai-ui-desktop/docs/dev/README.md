@@ -57,8 +57,9 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
   - `KAI_DEVTOOLS=frames` imprime p50 y p95 de view, layout, paint y render cada 120 frames; `all` enciende los dos.
   - ⌘⌥I abre el inspector: contorno y datos (rol, id, nombre, `test_id`, bounds, clases) del elemento bajo el puntero, y el árbol completo en la consola.
   - En tests: `TestApp::message_sources()`, `hover()` y `dump()`.
+- **Widgets de selección (antes del Paso 14 de 13):** checkbox con estado mixto, segmented control (una sola parada de Tab, con flechas entre segmentos) y `Select`, cuya lista abre y maneja la `Session`. Están en la galería (sección Selection) y en la demo, con roles de AccessKit propios ([12](12-modelo-appkit.md), Paso 20).
 - **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 288 tests (281 normales y 7 `#[ignore]` de benchmark y capturas; con `--features mcp` son 285 normales) más 5 doctests (uno ignorado), Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Calidad:** 307 tests (300 normales y 7 `#[ignore]` de benchmark y capturas; con `--features mcp` son 304 normales) más 5 doctests (uno ignorado), Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, job de CI en macOS (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -68,6 +69,8 @@ kai-ui-desktop/
 │   ├── lib.rs             crate `kai`: API pública e internos #[doc(hidden)]
 │   ├── main.rs            lanzador de `cargo run` (llama a demo::run_from_env)
 │   ├── demo.rs            demo (SimpleApp: Model/Msg/update/view), sus tests y capturas
+│   ├── devtools.rs        KAI_DEVTOOLS (log de Msg con origen, tiempos por frame), inspector
+│   │                      ⌘⌥I y volcado del árbol; solo en debug, por stderr
 │   ├── gallery.rs         galería de controles por tamaño, tema, apariencia y ventana
 │   ├── runtime.rs         App v2 y SimpleApp; ventana: winit → Session, Outbox → ventana, render
 │   ├── session.rs         runtime sin ventana: árbol, layout, foco, inputs, eventos → mensajes

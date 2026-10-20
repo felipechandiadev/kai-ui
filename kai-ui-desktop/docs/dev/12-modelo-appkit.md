@@ -1951,6 +1951,12 @@ Cada control nuevo sigue la misma receta: **tipos** (en `components/appkit.rs` o
 
 Para 20.10, el orden recomendado es: (1) `metrics.rs` y A2b en Macs con 26 y 27 (sin eso no hay alturas fiables); (2) formas (cápsula, concéntrica); (3) ventana y sidebar; (4) glass imitado; (5) glass nativo, solo si (4) no basta.
 
+**Estado de 20.2 a 20.4** (sin oráculo todavía; se revisaron con las capturas de la galería, sección Selection):
+
+- **20.2 Checkbox** (`components::checkbox`): caja y título son un solo control, así que un clic en el título también lo alterna. La caja sale del token `check_size` (`size-check`: 10/12/14/16/16 en AppKit, 16/16/16/20/20 en Kai) y lleva los iconos nuevos `Check` o `Minus` para el estado mixto. AccessKit publica `CheckBox` con `Toggled::{True, False, Mixed}`. Falta el radio suelto. El grupo con flechas ya existe (ver 20.4) y el radio lo reutiliza.
+- **20.3 Pop-up button** (`components::select`): el botón tiene `Role::PopUpButton` y sus opciones viven en `Element::options`. La lista es una capa de la `Session` (`components::select_menu`, `test_id` `kai.menu` y `kai.menu.<i>`), agregada a la raíz después del inspector, así que la app no guarda si está abierta. Se abre con clic, Espacio, Retorno o ↑/↓, y se navega con flechas, Inicio y Fin. Retorno o Espacio eligen, y Esc, Tab o ⌘. cierran. Un clic fuera solo cierra y el foco vuelve al botón. El puntero mueve el resaltado. Se abre debajo del botón, o arriba si hay más espacio. AccessKit lo publica como `ComboBox` (AXPopUpButton) con `expanded` y valor, y la lista como `MenuListPopup` (AXMenu) con `MenuListOption` seleccionadas. Faltan la búsqueda por tipeo y una ventana hija para listas que excedan la ventana.
+- **20.4 Segmented control** (`components::segmented`): solo selección única, con `selected:` y sin separadores. Es un `RadioGroup` de `Radio` marcado con `Element::focus_group()`. `FocusOrder` lo trata como una sola parada de Tab (entra por el segmento en On), las flechas mueven el foco sin elegir (`Action::Move*` y `FocusOrder::group_step`, que se detiene en los extremos) y Espacio o Retorno eligen, como en AppKit. Falta la selección múltiple.
+
 ---
 ## Plan de migración de llamadas existentes
 
