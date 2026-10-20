@@ -14,7 +14,7 @@ use super::Session;
 use crate::commands::{
     AuditEntry, AuditLog, CommandError, CommandKind, Origin, Outcome, Safety, redact,
 };
-use crate::components::{ButtonVariant, button, dialog, themed};
+use crate::components::{ButtonVariant, Dialog, button, themed};
 use crate::devtools::MsgSource;
 use crate::element::{Element, Role, WidgetId, div, text};
 use crate::runtime::App;
@@ -421,7 +421,9 @@ fn agent_status<Msg>(status: &AgentStatus) -> Element<Msg> {
         .child(text(label))
 }
 
-fn confirmation_dialog<Msg>(
+/// The session answers its buttons itself ([`Session::decide`]), so the
+/// dialog sends no messages and is not an app [`Element::modal`].
+fn confirmation_dialog<Msg: Clone + 'static>(
     title: &str,
     description: &str,
     client: &str,
@@ -440,17 +442,22 @@ fn confirmation_dialog<Msg>(
     if let Some(summary) = summary(input) {
         body = body.child(line(format!("Datos: {summary}")));
     }
-    let actions = DECISIONS.iter().map(|&(decision, label, part)| {
-        let variant = if decision == Decision::Deny {
-            ButtonVariant::Primary
-        } else {
-            ButtonVariant::Outlined
-        };
-        let mut button = button(label, variant).test_id(format!("{CONFIRMATION}.{part}"));
-        button.command = Some(CONFIRMATION);
-        button
-    });
-    dialog(&format!("¿Permitir «{title}»?"), body, actions).test_id(CONFIRMATION)
+    let dialog = Dialog::new(format!("¿Permitir «{title}»?"))
+        .content(body)
+        .test_id(CONFIRMATION);
+    DECISIONS
+        .iter()
+        .fold(dialog, |dialog, &(decision, label, part)| {
+            let variant = if decision == Decision::Deny {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Outlined
+            };
+            let mut button = button(label, variant).test_id(format!("{CONFIRMATION}.{part}"));
+            button.command = Some(CONFIRMATION);
+            dialog.button(button)
+        })
+        .build()
 }
 
 /// `campo: valor, ...` of an object input, shortened; `None` without

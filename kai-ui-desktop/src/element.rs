@@ -357,6 +357,8 @@ pub struct Element<Msg> {
     pub focus_group: Option<FocusGroup>,
     /// Pop-up button list; see [`Element::options`].
     pub options: Option<Options>,
+    /// App-modal panel ([`Element::modal`]).
+    pub modal: bool,
     pub handlers: Handlers<Msg>,
     /// Command this control runs ([`Element::on_command`]); a control even
     /// without a message, as the palette's rows, which the session runs.
@@ -411,6 +413,7 @@ impl<Msg> Element<Msg> {
             claims_escape: false,
             focus_group: None,
             options: None,
+            modal: false,
             handlers: Handlers::default(),
             command: None,
         }
@@ -674,6 +677,37 @@ impl<Msg> Element<Msg> {
     pub fn on_action(mut self, handler: impl Fn(Action) -> Option<Msg> + 'static) -> Self {
         self.handlers.on_action = Some(Rc::new(handler));
         self
+    }
+
+    /// App-modal panel (a dialog): while it is in the tree only its
+    /// controls take focus and keys, the app's shortcuts are off and clicks
+    /// outside it do nothing. It gets the focus when it appears (its first
+    /// control), and the focus goes back where it was when it leaves.
+    /// Escape and ⌘. send `on_dismiss` unless a control inside takes them
+    /// first (a cancel button, a search field with text). The last modal in
+    /// document order wins.
+    pub fn modal(mut self, on_dismiss: Msg) -> Self
+    where
+        Msg: Clone + 'static,
+    {
+        self.modal = true;
+        let inner = self.handlers.on_action.take();
+        self.handlers.on_action = Some(Rc::new(move |action| {
+            inner
+                .as_ref()
+                .and_then(|handler| handler(action))
+                .or_else(|| (action == Action::CancelOperation).then(|| on_dismiss.clone()))
+        }));
+        self
+    }
+
+    /// The last [`Element::modal`] panel in document order.
+    pub fn last_modal(&self) -> Option<&Element<Msg>> {
+        self.children
+            .iter()
+            .rev()
+            .find_map(Element::last_modal)
+            .or_else(|| self.modal.then_some(self))
     }
 
     /// Give every element an id derived from its parent's id and its key or

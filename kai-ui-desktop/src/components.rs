@@ -8,10 +8,12 @@
 
 use std::rc::Rc;
 
+mod dialog;
 mod search;
 mod text_area;
 mod toolbar;
 
+pub use dialog::{Dialog, DialogWidth, dialog};
 pub use search::{SearchField, search_field};
 pub use text_area::{TextArea, text_area};
 pub use toolbar::{
@@ -1516,51 +1518,6 @@ pub fn command_palette<Msg>(
         )
 }
 
-/// Modal dialog: a backdrop over the whole window and a centered panel with
-/// [`Role::Dialog`], named after `title`, holding the title, `body` and a
-/// row of `actions` (right-aligned, in the given order). Who shows it keeps
-/// focus inside; the dialog itself sends no messages.
-/// Parts: `panel`, `title`, `body` and `actions`.
-pub fn dialog<Msg>(
-    title: &str,
-    body: Element<Msg>,
-    actions: impl IntoIterator<Item = Element<Msg>>,
-) -> Element<Msg> {
-    let style = |layout: &str, kai: &str, appkit: &str| format!("{layout} {}", themed(kai, appkit));
-    div()
-        .class(&style(
-            "absolute inset-0 z-50 flex justify-center items-start pt-24",
-            "bg-foreground/20",
-            "bg-label/10",
-        ))
-        .parts_root()
-        .child(
-            div()
-                .class(&style(
-                    "flex flex-col w-[480px] border overflow-hidden",
-                    "gap-4 p-6 rounded-lg border-border bg-background shadow-lg",
-                    "gap-3 p-5 rounded-[10px] border-separator bg-window shadow-lg",
-                ))
-                .role(Role::Dialog)
-                .label(title)
-                .part("panel")
-                .children([
-                    text(title)
-                        .class(&themed(
-                            "text-lg leading-[1.4] font-semibold text-foreground",
-                            "text-headline text-label",
-                        ))
-                        .role(Role::Heading)
-                        .part("title"),
-                    body.part("body"),
-                    div()
-                        .class("flex flex-wrap justify-end gap-2")
-                        .part("actions")
-                        .children(actions),
-                ]),
-        )
-}
-
 /// `.fs-icon-button` variants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconButtonVariant {
@@ -2369,7 +2326,10 @@ mod tests {
         assert_eq!(panel.test_id(), Some("confirmar.panel"));
         let part = |name: &str| tree.find_test_id(&format!("confirmar.{name}")).unwrap();
         assert_eq!(part("title").role, Some(Role::Heading));
-        assert_eq!(part("body").kind, Kind::Text("Se pierden los clics".into()));
+        assert_eq!(
+            part("body").children[0].kind,
+            Kind::Text("Se pierden los clics".into())
+        );
         assert_eq!(part("actions").children.len(), 2);
         screen
             .within(panel)

@@ -116,6 +116,25 @@ pub(crate) struct Session<A: App> {
     popup: Option<Popup>,
     /// Agent calls, their confirmation dialog and the audit log.
     agents: calls::Agents,
+    /// The app's open [`Element::modal`] panel.
+    modal: Option<AppModal>,
+    /// Focus to set once the frame's tree is laid out (a modal appeared or
+    /// left).
+    modal_focus: Option<ModalFocus>,
+}
+
+/// An [`Element::modal`] panel of the app while it is in the tree.
+struct AppModal {
+    panel: WidgetId,
+    /// Focus to give back when it leaves.
+    previous_focus: Option<WidgetId>,
+}
+
+enum ModalFocus {
+    /// The first control of the modal that appeared.
+    First,
+    /// Back where it was before the modal.
+    Restore(Option<WidgetId>),
 }
 
 /// The list of a pop-up button ([`Element::options`]) while it is open:
@@ -272,6 +291,8 @@ impl<A: App> Session<A> {
             palette: None,
             popup: None,
             agents: calls::Agents::default(),
+            modal: None,
+            modal_focus: None,
         };
         session.rebuild();
         session.relayout();
@@ -405,6 +426,7 @@ impl<A: App> Session<A> {
             self.commands = commands;
         }
         self.tree = build_view_with(&self.app, &self.commands);
+        self.track_modal();
         self.add_agent_status();
         self.add_inspector();
         self.add_popup();
@@ -417,19 +439,23 @@ impl<A: App> Session<A> {
             self.theme = theme;
             self.outbox.theme = Some(theme);
         }
-        // While the palette, the confirmation dialog or a pop-up list is
-        // open only it takes focus and keys. The palette's own shortcut
-        // closes it; the dialog takes no shortcuts.
+        // While the palette, the confirmation dialog, a pop-up list or an
+        // app modal is open only it takes focus and keys. The palette's own
+        // shortcut closes it; dialogs take no shortcuts.
         let confirming = self.confirmation_open();
+        let modal = self.modal.as_ref().map(|modal| modal.panel);
         let overlay = if self.palette.is_some() || confirming {
             self.tree.children.last()
         } else {
-            self.popup.as_ref().and_then(|popup| {
-                self.tree
-                    .children
-                    .iter()
-                    .find(|child| child.id == popup.root)
-            })
+            self.popup
+                .as_ref()
+                .and_then(|popup| {
+                    self.tree
+                        .children
+                        .iter()
+                        .find(|child| child.id == popup.root)
+                })
+                .or_else(|| modal.and_then(|panel| self.tree.find(panel)))
         };
         self.focus_order = FocusOrder::from_tree(overlay.unwrap_or(&self.tree));
         self.focus_order.set_commands(
@@ -438,7 +464,9 @@ impl<A: App> Session<A> {
                 .filter(|command| {
                     command.kind == CommandKind::Action && command.availability.is_enabled()
                 })
-                .filter(|command| !confirming && (overlay.is_none() || command.id == PALETTE))
+                .filter(|command| {
+                    !confirming && modal.is_none() && (overlay.is_none() || command.id == PALETTE)
+                })
                 .filter_map(|command| command.shortcut.map(|shortcut| (command.id, shortcut)))
                 .collect(),
         );
@@ -479,6 +507,36 @@ impl<A: App> Session<A> {
             self.outbox.title = Some(title.clone());
             self.title = title;
         }
+    }
+
+    /// Follow the app's [`Element::modal`] panel: remember the focus when
+    /// one appears and give it back when it leaves.
+    fn track_modal(&mut self) {
+        let panel = self.tree.last_modal().map(|panel| panel.id);
+        match (self.modal.as_mut(), panel) {
+            (None, Some(panel)) => {
+                self.modal = Some(AppModal {
+                    panel,
+                    previous_focus: self.focused(),
+                });
+                self.modal_focus = Some(ModalFocus::First);
+            }
+            (Some(modal), Some(panel)) if modal.panel != panel => {
+                modal.panel = panel;
+                self.modal_focus = Some(ModalFocus::First);
+            }
+            (Some(_), None) => {
+                let previous = self.modal.take().and_then(|modal| modal.previous_focus);
+                self.modal_focus = Some(ModalFocus::Restore(previous));
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether the app shows an [`Element::modal`] panel.
+    #[cfg(test)]
+    pub fn modal_open(&self) -> bool {
+        self.modal.is_some()
     }
 
     /// The real key/main state unless the app forces one.
@@ -561,7 +619,7 @@ impl<A: App> Session<A> {
     /// or closes the palette. Returns whether something ran: nothing does
     /// while the confirmation dialog is open.
     pub fn perform_command(&mut self, id: &str) -> bool {
-        if self.confirmation_open() {
+        if self.confirmation_open() || self.modal.is_some() {
             return false;
         }
         self.close_popup();
@@ -1210,6 +1268,14 @@ impl<A: App> Session<A> {
         {
             return;
         }
+        if pressed
+            && self.popup.is_none()
+            && self.palette.is_none()
+            && let Some(modal) = &self.modal
+            && !self.hover_path.contains(&modal.panel)
+        {
+            return;
+        }
         if pressed {
             let previous_focus = *self.ui.focused.get();
             self.apply_intent(Intent::PointerDown(target));
@@ -1256,6 +1322,15 @@ impl<A: App> Session<A> {
         self.dirty = false;
         let started = Instant::now();
         self.rebuild();
+        if let Some(focus) = self.modal_focus.take() {
+            self.relayout();
+            let target = match focus {
+                ModalFocus::First => self.focus_order.next(None, false),
+                ModalFocus::Restore(previous) => previous,
+            };
+            self.apply_intent(Intent::SetFocus(target));
+            self.rebuild();
+        }
         let built = Instant::now();
         self.relayout();
         if self.refresh_hover() {
