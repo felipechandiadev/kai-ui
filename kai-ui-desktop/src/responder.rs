@@ -76,6 +76,8 @@ pub struct FocusContext {
     /// The focus handles Return itself: a focused button (Kai web behavior)
     /// or a text field with `on_submit` (kept for compatibility).
     pub claims_return: bool,
+    /// The focus handles Escape itself ([`crate::element::Element::claims_escape`]).
+    pub claims_escape: bool,
 }
 
 /// Offers `pressed` to the key equivalents (`equivalents`: enabled controls
@@ -102,7 +104,9 @@ pub fn key_equivalent_route(
     } else {
         pressed
     };
-    if wanted == KeyEquivalent::RETURN && focus.claims_return {
+    if (wanted == KeyEquivalent::RETURN && focus.claims_return)
+        || (wanted == KeyEquivalent::ESCAPE && focus.claims_escape)
+    {
         return KeyRoute::PassThrough;
     }
     let is_named = matches!(wanted.key, Key::Enter | Key::Escape);
@@ -159,6 +163,7 @@ mod tests {
     const FIELD: FocusContext = FocusContext {
         is_text: true,
         claims_return: false,
+        claims_escape: false,
     };
 
     #[test]

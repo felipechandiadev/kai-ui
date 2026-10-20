@@ -35,6 +35,19 @@ const ICONS = [
   "text-cursor-input",
   "mouse-pointer-click",
   "tag",
+  "panel-left",
+  "chevron-up",
+  "arrow-up",
+  "arrow-down",
+  "bell",
+  "table",
+  "layout-grid",
+  "message-square",
+  "toggle-left",
+  "list",
+  "settings",
+  "pencil",
+  "layers",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

@@ -200,6 +200,28 @@ pub enum Role {
     /// Row of a [`Role::Sidebar`], named after its text: On when selected.
     SidebarItem,
     TextInput,
+    /// Text input that filters or searches (`NSSearchField`).
+    SearchInput,
+    /// Multi-line text input (`NSTextView`).
+    TextArea,
+    /// Row of buttons and fields at the top of a window or panel.
+    Toolbar,
+    /// Live region for urgent messages (errors), read at once.
+    Alert,
+    /// Rows of cells under column headers (`NSTableView`); its
+    /// [`Role::Row`] children carry the selection.
+    Table,
+    /// Row of a [`Role::Table`] or a [`Role::List`]: On when selected.
+    Row,
+    Cell,
+    /// Header of a table column; its sort order is its control state
+    /// (On ascending, Mixed descending).
+    ColumnHeader,
+    /// Plain list of items.
+    List,
+    ListItem,
+    /// Short description shown next to the element under the pointer.
+    Tooltip,
     Image,
     /// Modal panel over the window; its name is its title.
     Dialog,
@@ -317,6 +339,9 @@ pub struct Element<Msg> {
     /// `preventDefault` on `mousedown`: it activates but keeps the focus
     /// where it was).
     pub focus_on_press: bool,
+    /// While focused, Escape is its own (a search field with text clears
+    /// it) instead of the cancel button's.
+    pub claims_escape: bool,
     /// Its controls are one Tab stop; see [`Element::focus_group`] and
     /// [`Element::selecting_focus_group`].
     pub focus_group: Option<FocusGroup>,
@@ -372,6 +397,7 @@ impl<Msg> Element<Msg> {
             description: None,
             delegates_focus: false,
             focus_on_press: true,
+            claims_escape: false,
             focus_group: None,
             options: None,
             handlers: Handlers::default(),
@@ -513,6 +539,14 @@ impl<Msg> Element<Msg> {
 
     pub fn focus_on_press(mut self, focus_on_press: bool) -> Self {
         self.focus_on_press = focus_on_press;
+        self
+    }
+
+    /// While this control has the focus, Escape and ⌘. skip the cancel
+    /// button and travel the responder chain as `CancelOperation`, which
+    /// [`Element::on_action`] can take.
+    pub fn claims_escape(mut self, claims: bool) -> Self {
+        self.claims_escape = claims;
         self
     }
 
@@ -842,6 +876,8 @@ struct FocusEntry {
     focus_on_press: bool,
     /// Text field with `on_submit`: it keeps Return for itself.
     submits: bool,
+    /// [`Element::claims_escape`].
+    cancels: bool,
     /// Nearest [`Element::focus_group`] ancestor.
     group: Option<WidgetId>,
     /// Its group is a [`FocusGroup::Select`].
@@ -874,6 +910,7 @@ impl FocusOrder {
                 kind,
                 focus_on_press: element.focus_on_press,
                 submits: kind == FocusKind::TextField && element.handlers.on_submit.is_some(),
+                cancels: element.claims_escape,
                 group: group.map(|(id, _)| id),
                 selects: group.is_some_and(|(_, behavior)| behavior == FocusGroup::Select),
                 selected: element.is_pressed(),
@@ -955,6 +992,11 @@ impl FocusOrder {
     /// Whether `id` is a text field with `on_submit`.
     pub fn submits(&self, id: WidgetId) -> bool {
         self.entry(id).is_some_and(|entry| entry.submits)
+    }
+
+    /// Whether `id` keeps Escape ([`Element::claims_escape`]).
+    pub fn cancels(&self, id: WidgetId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.cancels)
     }
 
     pub fn ids(&self) -> impl Iterator<Item = WidgetId> + '_ {

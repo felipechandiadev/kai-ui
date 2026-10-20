@@ -320,6 +320,7 @@ fn key_commands(
             is_text: kind == Some(FocusKind::TextField),
             claims_return: kind == Some(FocusKind::Button)
                 || focused.is_some_and(|id| order.submits(id)),
+            claims_escape: focused.is_some_and(|id| order.cancels(id)),
         };
         match key_equivalent_route(order.equivalents(), order.commands(), pressed, focus) {
             KeyRoute::Activate(id) => {

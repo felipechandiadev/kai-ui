@@ -5,8 +5,8 @@
 
 use crate::components::{
     BezelStyle, Button, SidebarGroup, SidebarItem, SwitchDensity, TextField, card, card_actions,
-    card_content, card_header, checkbox_with_options, group_box, paragraph, segmented,
-    segmented_with_options, select, select_with_options, sidebar, switch_with_options,
+    card_content, card_header, checkbox_with_options, group_box, paragraph, search_field,
+    segmented, segmented_with_options, select, select_with_options, sidebar, switch_with_options,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, text};
 use crate::icons::Icon;
@@ -135,12 +135,13 @@ const BUTTON_ROWS: [&str; 7] = [
 ];
 
 /// Rows of the Fields section.
-const FIELD_ROWS: [&str; 5] = [
+const FIELD_ROWS: [&str; 6] = [
     "Placeholder",
     "Con valor",
     "Read-only",
     "Disabled",
     "Password",
+    "Search",
 ];
 
 /// Rows of the Toggles section.
@@ -340,6 +341,11 @@ impl Gallery {
     }
 
     fn field_cell(&self, row: &str, size: ControlSize) -> Element<Msg> {
+        if row == "Search" {
+            return search_field(self.text.clone(), Msg::Edit)
+                .control_size(size)
+                .build();
+        }
         let field = match row {
             "Placeholder" => TextField::new("Campo", "")
                 .placeholder("Placeholder")
@@ -744,9 +750,9 @@ mod tests {
         let gallery = Gallery::default();
         let sizes = ControlSize::ALL.len();
         let disabled_buttons = 1;
-        // Placeholder, value, read-only and password fields, plus the
-        // password toggle.
-        let field_controls = 5;
+        // Placeholder, value, read-only and password fields, the password
+        // toggle, and the search field with its clear button.
+        let field_controls = 7;
         let enabled_switches = 2;
         // Three checkboxes, the three segments of one control and two
         // selects.

@@ -26,6 +26,19 @@ pub enum Icon {
     TextCursorInput,
     MousePointerClick,
     Tag,
+    PanelLeft,
+    ChevronUp,
+    ArrowUp,
+    ArrowDown,
+    Bell,
+    Table,
+    LayoutGrid,
+    MessageSquare,
+    ToggleLeft,
+    List,
+    Settings,
+    Pencil,
+    Layers,
 }
 
 impl Icon {
@@ -52,6 +65,19 @@ impl Icon {
         Icon::TextCursorInput,
         Icon::MousePointerClick,
         Icon::Tag,
+        Icon::PanelLeft,
+        Icon::ChevronUp,
+        Icon::ArrowUp,
+        Icon::ArrowDown,
+        Icon::Bell,
+        Icon::Table,
+        Icon::LayoutGrid,
+        Icon::MessageSquare,
+        Icon::ToggleLeft,
+        Icon::List,
+        Icon::Settings,
+        Icon::Pencil,
+        Icon::Layers,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -79,6 +105,19 @@ impl Icon {
             Icon::TextCursorInput => "text-cursor-input",
             Icon::MousePointerClick => "mouse-pointer-click",
             Icon::Tag => "tag",
+            Icon::PanelLeft => "panel-left",
+            Icon::ChevronUp => "chevron-up",
+            Icon::ArrowUp => "arrow-up",
+            Icon::ArrowDown => "arrow-down",
+            Icon::Bell => "bell",
+            Icon::Table => "table",
+            Icon::LayoutGrid => "layout-grid",
+            Icon::MessageSquare => "message-square",
+            Icon::ToggleLeft => "toggle-left",
+            Icon::List => "list",
+            Icon::Settings => "settings",
+            Icon::Pencil => "pencil",
+            Icon::Layers => "layers",
         }
     }
 
@@ -111,6 +150,19 @@ impl Icon {
             Icon::TextCursorInput => include_str!("../../assets/icons/text-cursor-input.svg"),
             Icon::MousePointerClick => include_str!("../../assets/icons/mouse-pointer-click.svg"),
             Icon::Tag => include_str!("../../assets/icons/tag.svg"),
+            Icon::PanelLeft => include_str!("../../assets/icons/panel-left.svg"),
+            Icon::ChevronUp => include_str!("../../assets/icons/chevron-up.svg"),
+            Icon::ArrowUp => include_str!("../../assets/icons/arrow-up.svg"),
+            Icon::ArrowDown => include_str!("../../assets/icons/arrow-down.svg"),
+            Icon::Bell => include_str!("../../assets/icons/bell.svg"),
+            Icon::Table => include_str!("../../assets/icons/table.svg"),
+            Icon::LayoutGrid => include_str!("../../assets/icons/layout-grid.svg"),
+            Icon::MessageSquare => include_str!("../../assets/icons/message-square.svg"),
+            Icon::ToggleLeft => include_str!("../../assets/icons/toggle-left.svg"),
+            Icon::List => include_str!("../../assets/icons/list.svg"),
+            Icon::Settings => include_str!("../../assets/icons/settings.svg"),
+            Icon::Pencil => include_str!("../../assets/icons/pencil.svg"),
+            Icon::Layers => include_str!("../../assets/icons/layers.svg"),
         }
     }
 }

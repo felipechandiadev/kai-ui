@@ -8,6 +8,10 @@
 
 use std::rc::Rc;
 
+mod search;
+
+pub use search::{SearchField, search_field};
+
 use crate::commands::Action;
 use crate::element::{
     ControlSize, ControlState, Element, KeyEquivalent, Role, div, icon, input, text,

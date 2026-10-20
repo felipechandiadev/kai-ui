@@ -97,6 +97,12 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
                     | KaiRole::PopUpButton
                     | KaiRole::MenuItem
                     | KaiRole::SidebarItem
+                    | KaiRole::Row
+                    | KaiRole::Cell
+                    | KaiRole::ColumnHeader
+                    | KaiRole::ListItem
+                    | KaiRole::Tooltip
+                    | KaiRole::Alert
             )
             .then(|| {
                 let mut parts = Vec::new();
@@ -135,6 +141,17 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Sidebar => Role::Tree,
         KaiRole::SidebarItem => Role::TreeItem,
         KaiRole::TextInput => Role::TextInput,
+        KaiRole::SearchInput => Role::SearchInput,
+        KaiRole::TextArea => Role::MultilineTextInput,
+        KaiRole::Toolbar => Role::Toolbar,
+        KaiRole::Alert => Role::Alert,
+        KaiRole::Table => Role::Table,
+        KaiRole::Row => Role::Row,
+        KaiRole::Cell => Role::Cell,
+        KaiRole::ColumnHeader => Role::ColumnHeader,
+        KaiRole::List => Role::List,
+        KaiRole::ListItem => Role::ListItem,
+        KaiRole::Tooltip => Role::Tooltip,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
     }
@@ -175,6 +192,8 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::MenuListOption
             | Role::TreeItem
             | Role::TextInput
+            | Role::SearchInput
+            | Role::MultilineTextInput
             | Role::PasswordInput
     );
     if !matches!(source.content, Content::Text(_))
@@ -210,8 +229,11 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     if source.required {
         node.set_required();
     }
-    if role == Role::Dialog {
-        node.set_modal();
+    match role {
+        Role::Dialog => node.set_modal(),
+        Role::Status => node.set_live(accesskit::Live::Polite),
+        Role::Alert => node.set_live(accesskit::Live::Assertive),
+        _ => {}
     }
     if let Some(expanded) = source.expanded {
         node.set_expanded(expanded);
@@ -219,7 +241,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
         text_content(layout, index, &mut parts);
         node.set_value(parts.join(" "));
     }
-    if matches!(role, Role::MenuListOption | Role::TreeItem) {
+    if matches!(role, Role::MenuListOption | Role::TreeItem | Role::Row) {
         node.set_selected(source.control_state == Some(ControlState::On));
     }
     if let Some(description) = &source.description {
