@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
 use crate::commands::{
@@ -489,8 +489,19 @@ fn background_from_env(
 /// Options of the form's role select.
 const ROLES: [&str; 3] = ["Diseño", "Desarrollo", "Producto"];
 
+/// What the demo keeps across `kai dev` restarts. Every field is optional,
+/// so a state saved by an older build still restores what it can.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct EstadoDev {
+    seccion: Option<Seccion>,
+    sidebar_collapsed: Option<bool>,
+    /// Code of the selected sector in Mapa.
+    area: Option<String>,
+}
+
 /// Sections of the sidebar, in its order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Seccion {
     /// Fondo de ventana, contador, formulario y estadísticas.
@@ -1132,6 +1143,33 @@ impl App for Demo {
         (!self.sized).then_some(Msg::InitialWidth {
             narrow: size.width < 640.0,
         })
+    }
+
+    fn dev_state(&self) -> Option<serde_json::Value> {
+        serde_json::to_value(EstadoDev {
+            seccion: Some(self.seccion),
+            sidebar_collapsed: Some(self.sidebar_collapsed),
+            area: self.area.clone(),
+        })
+        .ok()
+    }
+
+    fn restore_dev_state(&mut self, state: serde_json::Value) {
+        let Ok(estado) = serde_json::from_value::<EstadoDev>(state) else {
+            return;
+        };
+        if let Some(seccion) = estado.seccion {
+            self.seccion = seccion;
+        }
+        if let Some(collapsed) = estado.sidebar_collapsed {
+            self.sidebar_collapsed = collapsed;
+            // The first window size must not undo the restored sidebar.
+            self.sized = true;
+        }
+        if let Some(code) = estado.area {
+            self.seleccionar(&code);
+            self.animar_vista = false;
+        }
     }
 
     fn title(&self) -> String {
@@ -4076,6 +4114,31 @@ mod tests {
             .viewport(1024.0, 700.0)
             .build();
         assert!(!wide.app().sidebar_collapsed);
+    }
+
+    /// `kai dev` restarts keep the section, the sidebar and the selected
+    /// sector, even over a window width that would collapse the sidebar.
+    #[test]
+    fn dev_restarts_keep_section_sidebar_and_sector() {
+        let mut before = Demo::at(Seccion::Mapa);
+        before.seleccionar("AOP26000002");
+        let state = before.dev_state().unwrap();
+
+        let mut after = Demo::default();
+        after.restore_dev_state(state);
+        let app = TestApp::builder(after).viewport(560.0, 700.0).build();
+        assert_eq!(app.app().seccion, Seccion::Mapa);
+        assert!(!app.app().sidebar_collapsed);
+        assert_eq!(app.app().area.as_deref(), Some("AOP26000002"));
+        assert!(app.screen().query(By::test_id("mapa")).is_some());
+
+        let mut older = Demo::default();
+        older.restore_dev_state(json!({ "seccion": "tabla", "otra_cosa": 1 }));
+        assert_eq!(older.seccion, Seccion::Tabla);
+        assert!(!older.sized, "nothing said about the sidebar");
+        let mut broken = Demo::default();
+        broken.restore_dev_state(json!({ "seccion": "no_existe" }));
+        assert_eq!(broken, Demo::default());
     }
 
     /// The content is keyed by section, so a section never inherits the

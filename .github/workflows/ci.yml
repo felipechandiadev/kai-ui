@@ -50,6 +50,24 @@ jobs:
       # An app outside the crate that only uses the public API.
       - run: cargo check --locked --manifest-path fixtures/external-app/Cargo.toml --target-dir target
 
+  # `kai dev` and the rest of the CLI (13, Paso 18).
+  kai-cli:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: kai-cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kai-cli
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
   desktop-msrv:
     runs-on: macos-latest
     defaults:

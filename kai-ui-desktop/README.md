@@ -30,7 +30,7 @@ Las imágenes (`image(src)` con ruta, URL, bytes o RGBA) se decodifican fuera de
 
 El renderer también dibuja geometría: mallas teseladas con `lyon` (rellenos y trazos de ancho constante en pantalla) con una transformación afín por dibujo, y todos los pipelines usan MSAA 4×. Sobre eso está `kai::maps`: el elemento `map` con marcadores, pan con inercia, zoom anclado (rueda, pellizco, doble clic, teclado y botones) y atribución siempre visible. Dibuja un mapa base vectorial leído sin red de un extracto PMTiles de Protomaps (`assets/maps/parral.pmtiles`, Parral a z0–15), con estilo claro y oscuro desde los tokens y nombres de calles y localidades sin choques. Encima van capas de polígonos GeoJSON (`MapLayer::polygon`) con relleno, borde y nombre, que se resaltan bajo el puntero y entregan su id al hacer clic, y `fit_bounds` encuadra una caja. `polygon_editor` edita un polígono existente. La app guarda el borrador (`PolygonDraft`) en su modelo, y el editor permite arrastrar vértices, agregar uno con el punto medio de un borde y borrarlo con Supr. Las flechas mueven el vértice enfocado, Cmd+Z deshace, los bordes que se cruzan se marcan en rojo y el área se calcula en hectáreas.
 
-La demo (`cargo run`) muestra todos los componentes: una toolbar en lugar del header y una sidebar con las secciones Inicio, Campos, Botones, Selección, Contenedores, Badges y alertas, Multimedia, Tabla (con un avatar junto a cada nombre), Diálogos y avisos, y Mapa (Parral con los 5 sectores de partida de DSP, una lista que los selecciona y encuadra, y «Editar sector» con Terminar y Cancelar). Un test de cobertura falla si un constructor público de `components` o de `maps` no aparece en ella. La demo también expone los comandos `ui.ir_a`, `ui.alternar_sidebar` (Ctrl+Cmd+S), `avisos.mostrar`, `multimedia.cargar_url`, `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria` a scripts y agentes (`mcp-schema.json`). El último rechaza como error una geometría inválida: menos de 3 vértices, coordenadas fuera de rango o bordes que se cruzan. Hay 474 tests de la biblioteca (478 con `--features mcp`) y 4 doctests, y la baseline de capturas (`scripts/snapshot-baseline.sh`) tiene 20 imágenes: una por sección más la sidebar plegada, el diálogo, los avisos, Multimedia con un archivo arrastrado, el mapa con sectores, con uno seleccionado y con uno en edición, y las primitivas de imagen y de geometría.
+La demo (`cargo run`) muestra todos los componentes: una toolbar en lugar del header y una sidebar con las secciones Inicio, Campos, Botones, Selección, Contenedores, Badges y alertas, Multimedia, Tabla (con un avatar junto a cada nombre), Diálogos y avisos, y Mapa (Parral con los 5 sectores de partida de DSP, una lista que los selecciona y encuadra, y «Editar sector» con Terminar y Cancelar). Un test de cobertura falla si un constructor público de `components` o de `maps` no aparece en ella. La demo también expone los comandos `ui.ir_a`, `ui.alternar_sidebar` (Ctrl+Cmd+S), `avisos.mostrar`, `multimedia.cargar_url`, `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria` a scripts y agentes (`mcp-schema.json`). El último rechaza como error una geometría inválida: menos de 3 vértices, coordenadas fuera de rango o bordes que se cruzan. Hay 478 tests de la biblioteca (482 con `--features mcp`) y 4 doctests, y la baseline de capturas (`scripts/snapshot-baseline.sh`) tiene 20 imágenes: una por sección más la sidebar plegada, el diálogo, los avisos, Multimedia con un archivo arrastrado, el mapa con sectores, con uno seleccionado y con uno en edición, y las primitivas de imagen y de geometría.
 
 Escritura normal, acentos, foco con Tab, portapapeles, IME japonés y cambio de pantalla se validaron manualmente en un Apple M4 con escala `2.00x` antes de la migración a la arquitectura Elm. Desde entonces, las capturas offscreen y los tests automáticos cubren el aspecto visual y el comportamiento.
 
@@ -44,6 +44,25 @@ Desde la raíz del repositorio:
 ```sh
 cargo run --manifest-path kai-ui-desktop/Cargo.toml
 ```
+
+### Recompilar y reiniciar con `kai dev`
+
+`kai dev` recompila la app al guardar un archivo y la reinicia con su estado: la ventana queda en el mismo lugar y del mismo tamaño, y la app conserva lo que devuelva `App::dev_state` (en la demo, la sección, la barra lateral y el sector elegido). Si la compilación falla, los errores salen en la terminal y la versión anterior sigue abierta. Instalación, desde la carpeta que contiene `kai-ui`:
+
+```sh
+cargo install --path kai-ui/kai-cli
+```
+
+Uso, en la carpeta de la app (aquí, `kai-ui-desktop`):
+
+```sh
+kai dev                      # la app del paquete actual
+kai dev --bin demo           # si el paquete tiene varios binarios
+kai dev --watch ../temas     # una carpeta más que observar
+kai dev -- --argumento       # argumentos para la app
+```
+
+Observa `src/`, `assets/`, `build.rs` y `Cargo.toml` del paquete y de sus dependencias por ruta, Kai incluido. Ctrl+C termina todo. Solo funciona con compilaciones debug. Ver [13](docs/dev/13-hoja-de-ruta-plataforma.md), Paso 18.
 
 Validaciones:
 

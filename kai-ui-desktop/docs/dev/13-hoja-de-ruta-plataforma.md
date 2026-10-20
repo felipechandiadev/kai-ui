@@ -916,6 +916,30 @@ Reglas de la pista C:
 | `kai mcp list [--json]` / `kai mcp diff <ref>` | Lo que vería un cliente; diferencias de esquema contra un commit, marcando rupturas. |
 
 - **Hecho cuando**: `kai new demo && cd demo && kai test && kai dev` funciona en un Mac limpio con Rust instalado.
+- **Estado: empezado («kai dev mínimo»).** `kai-ui/kai-cli/` es un crate aparte con el binario `kai`, que se instala con `cargo install --path kai-ui/kai-cli`. Por ahora solo trae `kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]`.
+  - **Dependencias:** solo `serde` y `serde_json`, sin `clap` ni `notify`. Los argumentos se leen a mano. El observador compara fechas de modificación cada 300 ms y espera 200 ms de calma antes de compilar.
+  - **Qué observa:** sale de `cargo metadata`. Por cada paquete sin `source` (el proyecto y sus dependencias por ruta, Kai incluido) mira `src/`, `assets/`, `build.rs` y `Cargo.toml`. Salta las entradas ocultas y las carpetas `target`.
+  - **Ciclo:** `cargo build --message-format=json-render-diagnostics`; la ruta del binario sale de los mensajes `compiler-artifact` y los errores salen en la terminal como siempre.
+    - Si la compilación falla, la versión anterior sigue abierta («error de compilación; sigue la versión anterior»).
+    - Si compila, `kai dev` escribe `guardar-y-salir` en el stdin de la app. Si no sale en 3 s, la cierra a la fuerza. Luego abre la nueva («reiniciado en 2,3 s»).
+    - Si la persona cierra la ventana, sigue observando y la vuelve a abrir con el próximo cambio. Ctrl+C termina todo.
+  - **Estado entre reinicios:** en `<target>/kai-dev/estado.json`, que se borra al empezar cada sesión. Lo maneja `src/dev_state.rs`, solo en debug y con `KAI_DEV_STATE`.
+    - Guarda la posición y el tamaño lógicos de la ventana (en macOS, la esquina del contenido, que es la que toma `with_position`), si tenía el foco, y lo que devuelva la app.
+    - Al abrir, si la ventana no tenía el foco, la app no se activa, así que el editor no lo pierde. macOS no dibuja una ventana tapada: se pinta cuando la persona cambia a ella.
+    - `--mcp` no escucha stdin para esto, porque stdin es del protocolo.
+  - **Hooks opcionales de `App` (y `SimpleApp`)**: `restore_dev_state` se llama antes de `init`. La demo guarda la sección, la barra lateral y el sector elegido en Mapa; al restaurar la barra pone `sized = true`, para que el primer ancho no la cambie.
+    ```rust
+    /// Lo que `kai dev` conserva entre reinicios (solo en debug).
+    fn dev_state(&self) -> Option<serde_json::Value> { None }
+    /// Se llama antes de `init` con lo que guardó `dev_state`.
+    fn restore_dev_state(&mut self, _state: serde_json::Value) {}
+    ```
+  - **CI:** job `kai-cli` en macOS con fmt, clippy y tests.
+  - **Falta:**
+    - `kai new`, `kai test`, `kai doctor`, `kai commands` y `kai mcp`.
+    - Observar `kai.toml` (Paso 17).
+    - Recargar tema y assets sin reiniciar.
+    - El parcheo en vivo queda fuera de alcance.
 
 #### Paso 19 — Desacoplar de `kai-ui-web`
 

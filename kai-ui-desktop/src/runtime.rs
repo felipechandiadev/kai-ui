@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
+    dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
     event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{CursorIcon, Window, WindowId},
@@ -38,6 +38,7 @@ use winit::{
 
 use crate::background::{BackgroundClock, BackgroundEffect, BackgroundLayer, FRAME_INTERVAL};
 use crate::commands::{Availability, CommandRegistry, CommandState};
+use crate::dev_state::{self, DevState, WindowFrame};
 use crate::devtools::{FrameStats, FrameTimes};
 use crate::element::{Element, Kind, WidgetId};
 use crate::geometry::{PhysicalPoint, Point, ScaleFactor, Size};
@@ -270,6 +271,18 @@ pub trait App: 'static {
         None
     }
 
+    /// What `kai dev` keeps when it restarts the app after a rebuild
+    /// (debug builds only), such as the section on screen. Default: none,
+    /// only the window's frame is kept.
+    fn dev_state(&self) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Called before [`App::init`] with what [`App::dev_state`] returned
+    /// in the previous run. The value may come from an older build: ignore
+    /// what does not fit.
+    fn restore_dev_state(&mut self, _state: serde_json::Value) {}
+
     /// Declare the app's commands, once at startup (see [`crate::commands`]).
     fn commands(_registry: &mut CommandRegistry<Self>)
     where
@@ -305,6 +318,14 @@ pub trait SimpleApp: 'static {
     fn resized(&self, _size: Size) -> Option<Self::Msg> {
         None
     }
+
+    /// See [`App::dev_state`].
+    fn dev_state(&self) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// See [`App::restore_dev_state`].
+    fn restore_dev_state(&mut self, _state: serde_json::Value) {}
 
     /// See [`App::commands`].
     fn commands(_registry: &mut CommandRegistry<Self>)
@@ -346,6 +367,14 @@ impl<T: SimpleApp> App for T {
         SimpleApp::resized(self, size)
     }
 
+    fn dev_state(&self) -> Option<serde_json::Value> {
+        SimpleApp::dev_state(self)
+    }
+
+    fn restore_dev_state(&mut self, state: serde_json::Value) {
+        SimpleApp::restore_dev_state(self, state);
+    }
+
     fn commands(registry: &mut CommandRegistry<Self>) {
         <T as SimpleApp>::commands(registry);
     }
@@ -362,9 +391,26 @@ pub fn background_running(
     background.is_animated() && !reduce_motion && !occluded && activity == WindowActivity::ACTIVE
 }
 
-/// Open a window and run `app` until it is closed.
+/// Open a window and run `app` until it is closed. Started by `kai dev`
+/// (debug builds with `KAI_DEV_STATE`), it also listens on stdin for the
+/// request to save its state and quit before a restart.
 pub fn run<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> {
-    run_with(app, theme, |_| {})
+    run_with(app, theme, |proxy| {
+        if dev_state::path().is_some() {
+            listen_for_save_and_quit(proxy.clone());
+        }
+    })
+}
+
+fn listen_for_save_and_quit(proxy: EventLoopProxy<UserEvent>) {
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines() {
+            let Ok(line) = line else { break };
+            if line.trim() == dev_state::SAVE_AND_QUIT {
+                let _ = proxy.send_event(UserEvent::DevQuit);
+            }
+        }
+    });
 }
 
 /// Like [`run`], and also serve the exposed commands over MCP on stdin and
@@ -385,7 +431,17 @@ fn run_with<A: App>(
     theme: Theme,
     start: impl FnOnce(&EventLoopProxy<UserEvent>),
 ) -> Result<(), Box<dyn Error>> {
-    let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
+    let dev_state = dev_state::path();
+    let saved = dev_state.as_deref().and_then(dev_state::read);
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut builder = EventLoop::<UserEvent>::with_user_event();
+    // A restart after saving a file should not take focus from the editor.
+    #[cfg(target_os = "macos")]
+    if saved.as_ref().is_some_and(|saved| !saved.focused) {
+        use winit::platform::macos::EventLoopBuilderExtMacOS;
+        builder.with_activate_ignoring_other_apps(false);
+    }
+    let event_loop = builder.build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     let proxy = event_loop.create_proxy();
     #[cfg(target_os = "macos")]
@@ -401,6 +457,8 @@ fn run_with<A: App>(
         theme,
         state: None,
         proxy,
+        dev_state,
+        saved,
         #[cfg(feature = "mcp")]
         pending: Vec::new(),
     };
@@ -570,6 +628,8 @@ enum UserEvent {
     Menu(String),
     /// An [`Effects::perform`] task finished.
     Task,
+    /// `kai dev` is about to restart the app: save the state and quit.
+    DevQuit,
     /// News from the MCP server: a client connected, called or cancelled a
     /// tool, or went away.
     #[cfg(feature = "mcp")]
@@ -587,6 +647,10 @@ struct Runner<A: App> {
     theme: Theme,
     state: Option<WindowState<A>>,
     proxy: EventLoopProxy<UserEvent>,
+    /// The `kai dev` state file of this run, and what the previous run
+    /// left in it (taken when the window opens).
+    dev_state: Option<PathBuf>,
+    saved: Option<DevState>,
     /// MCP events that arrived before the window existed.
     #[cfg(feature = "mcp")]
     pending: Vec<crate::mcp::Event>,
@@ -617,6 +681,34 @@ struct WindowState<A: App> {
 }
 
 impl<A: App> WindowState<A> {
+    /// What `kai dev` keeps for the next run: where the window is and its
+    /// size in logical points, its focus and the app's own part.
+    fn dev_state(&self) -> DevState {
+        let scale = self.window.scale_factor();
+        // Where `with_position` places the window: the top-left of its
+        // content on macOS, of its frame elsewhere.
+        let position = if cfg!(target_os = "macos") {
+            self.window.inner_position()
+        } else {
+            self.window.outer_position()
+        };
+        let window = position.ok().map(|position| {
+            let position = position.to_logical::<f64>(scale);
+            let size = self.window.inner_size().to_logical::<f64>(scale);
+            WindowFrame {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+            }
+        });
+        DevState {
+            window,
+            focused: self.window.has_focus(),
+            app: self.session.app().dev_state(),
+        }
+    }
+
     fn new(
         window: Arc<Window>,
         accessibility: accesskit_winit::Adapter,
@@ -856,12 +948,16 @@ fn window_theme(theme: &Theme) -> Option<winit::window::Theme> {
 
 impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(app) = self.app.take() else {
+        let Some(mut app) = self.app.take() else {
             return;
         };
+        let saved = self.saved.take();
+        if let Some(state) = saved.as_ref().and_then(|saved| saved.app.clone()) {
+            app.restore_dev_state(state);
+        }
         let minimum = self.theme.minimum_viewport();
         // AccessKit requires the adapter to exist before the window is shown.
-        let attrs = Window::default_attributes()
+        let mut attrs = Window::default_attributes()
             .with_title(app.title())
             .with_visible(false)
             .with_inner_size(LogicalSize::new(1024.0, 720.0))
@@ -870,6 +966,14 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 f64::from(minimum.height),
             ))
             .with_theme(window_theme(&self.theme));
+        if let Some(saved) = &saved {
+            if let Some(frame) = saved.window {
+                attrs = attrs
+                    .with_position(LogicalPosition::new(frame.x, frame.y))
+                    .with_inner_size(LogicalSize::new(frame.width, frame.height));
+            }
+            attrs = attrs.with_active(saved.focused);
+        }
         let window = match event_loop.create_window(attrs) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -1017,8 +1121,15 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             }
             event => event,
         };
-        #[cfg(not(feature = "mcp"))]
-        let _ = event_loop;
+        if matches!(event, UserEvent::DevQuit) {
+            if let (Some(state), Some(path)) = (&self.state, &self.dev_state)
+                && let Err(error) = dev_state::write(path, &state.dev_state())
+            {
+                eprintln!("No se pudo guardar el estado para kai dev: {error}");
+            }
+            event_loop.exit();
+            return;
+        }
         let Some(state) = self.state.as_mut() else {
             return;
         };
@@ -1033,6 +1144,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             UserEvent::Task => {
                 state.session.run_tasks();
             }
+            UserEvent::DevQuit => return,
             #[cfg(feature = "mcp")]
             UserEvent::Mcp(event) => state.mcp(event),
         }
@@ -1113,6 +1225,14 @@ mod tests {
         assert_eq!(App::title(&counter), "1");
         assert_eq!(App::theme(&counter), None);
         assert_eq!(App::window_override(&counter), None);
+    }
+
+    #[test]
+    fn apps_keep_nothing_across_dev_restarts_by_default() {
+        let mut counter = Counter { count: 3 };
+        assert_eq!(App::dev_state(&counter), None);
+        App::restore_dev_state(&mut counter, serde_json::json!({ "count": 9 }));
+        assert_eq!(counter.count, 3);
     }
 
     #[test]
