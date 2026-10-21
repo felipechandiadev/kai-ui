@@ -25,7 +25,7 @@ pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
-pub use search::{SearchField, search_field};
+pub use search::{SearchField, SearchVariant, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{
     Column, ColumnWidth, Date, Pin, Sheet, SortDirection, Table, TableView, Value, ViewChange,

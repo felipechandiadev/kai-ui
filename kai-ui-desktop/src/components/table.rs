@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 pub use view::{Date, Sheet, TableView, Value, ViewChange};
 
-use super::{search_field, themed};
+use super::{SearchVariant, search_field, themed};
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::icons::Icon;
 use crate::responder::Action;
@@ -691,7 +691,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
                     .class(&format!(
                         "flex items-center {} {}",
                         column.width_class(),
-                        themed("px-1.5", "px-1")
+                        themed("px-1.5", "px-1 py-[3px]")
                     ))
                     .role(Role::Cell),
                 sticky.as_deref(),
@@ -707,6 +707,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
                 search_field(value, move |text| on_view(ViewChange::Filter(index, text)))
                     .placeholder("Filtrar")
                     .label(format!("Filtrar {}", column.title))
+                    .variant(SearchVariant::Inline)
                     .control_size(ControlSize::Small);
             if let Some(id) = &self.test_id {
                 field = field.test_id(format!("{id}.filter.{index}"));
@@ -716,8 +717,9 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
         Some(
             div()
                 .class(&themed(
-                    "flex items-stretch h-10 shrink-0 border-b border-border",
-                    "flex items-stretch h-[28px] shrink-0 border-b border-separator",
+                    "flex items-stretch h-9 shrink-0 border-b border-border",
+                    // Mixed styles give fields the Kai height: the row grows.
+                    "flex items-stretch min-h-[28px] shrink-0 border-b border-separator",
                 ))
                 .role(Role::Row)
                 .label("Filtros")
@@ -1153,6 +1155,26 @@ mod tests {
 
     fn rows_built(app: &TestApp<Files>) -> usize {
         app.screen().all(By::role(Role::Row)).len() - 1
+    }
+
+    #[test]
+    fn the_filter_fields_are_small_and_fit_their_row_in_every_theme() {
+        use crate::theme::{AppKitGeneration, Appearance, Density, MixStyle, Theme};
+        let appkit = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
+        for (theme, field) in [
+            (Theme::kai(Density::Comfortable), 28.0),
+            (appkit, 22.0),
+            (appkit.with_mix(MixStyle::C), 32.0),
+        ] {
+            let mut files = Files::default();
+            files.view.apply(ViewChange::Filtering(true));
+            let app = TestApp::builder(files).theme(theme).build();
+            let row = bounds(&app, "tabla.filters");
+            let name = bounds(&app, "tabla.filter.0");
+            assert_eq!(name.height, field);
+            assert!(name.y >= row.y && name.y + name.height <= row.y + row.height);
+            assert!(row.height - name.height <= 8.0, "a snug row: {row:?}");
+        }
     }
 
     #[test]
@@ -1731,7 +1753,8 @@ mod tests {
     }
 
     /// `cargo test table_capture -- --ignored` writes
-    /// `target/snapshots/table-<theme>.png` (needs a GPU).
+    /// `target/snapshots/table-<theme>.png` and, with the filters open and
+    /// one typed, `table-<theme>-filtros.png` (needs a GPU).
     #[test]
     #[ignore]
     fn table_capture() {
@@ -1746,11 +1769,22 @@ mod tests {
             ),
         ];
         for (name, theme) in themes {
-            let mut app = TestApp::builder(Files::default()).theme(theme).build();
-            app.click(By::role(Role::ColumnHeader).name("Tamaño"));
-            app.click(By::test_id("tabla.row.2"));
-            let image = app.capture(By::test_id("tabla")).unwrap();
-            crate::snapshot::write_png(&dir.join(format!("table-{name}.png")), &image).unwrap();
+            for filtering in [false, true] {
+                let mut files = Files::default();
+                files.view.apply(ViewChange::Filtering(filtering));
+                let mut app = TestApp::builder(files).theme(theme).build();
+                app.click(By::role(Role::ColumnHeader).name("Tamaño"));
+                app.click(By::test_id("tabla.row.2"));
+                let suffix = if filtering {
+                    app.type_text(By::test_id("tabla.filter.0"), "archivo-1");
+                    "-filtros"
+                } else {
+                    ""
+                };
+                let image = app.capture(By::test_id("tabla")).unwrap();
+                let path = dir.join(format!("table-{name}{suffix}.png"));
+                crate::snapshot::write_png(&path, &image).unwrap();
+            }
         }
     }
 

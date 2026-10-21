@@ -17,13 +17,13 @@ use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
     CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, DotProgress, DotSize, FieldBezel,
     FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot,
-    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table, TableView, Tabs,
-    TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized, caption, card,
-    card_actions, card_content, card_header, checkbox, checkbox_with_options, color_field,
-    column_menu, dot_progress, group_box, heading, icon_button, icon_button_sized, paragraph,
-    search_field, segmented, segmented_with_options, select, select_with_options, stat, switch,
-    switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar,
-    toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    MediaVariant, SearchVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table,
+    TableView, Tabs, TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized,
+    caption, card, card_actions, card_content, card_header, checkbox, checkbox_with_options,
+    color_field, column_menu, dot_progress, group_box, heading, icon_button, icon_button_sized,
+    paragraph, search_field, segmented, segmented_with_options, select, select_with_options, stat,
+    switch, switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer,
+    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
     validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
@@ -2059,6 +2059,7 @@ impl Demo {
                                 .read_only(true)
                                 .build(),
                             search_field(&self.lookup, edit(Field::Lookup))
+                                .variant(SearchVariant::Field)
                                 .placeholder("Buscar en la ayuda")
                                 .label("Buscar en la ayuda")
                                 .test_id("campos.busqueda")

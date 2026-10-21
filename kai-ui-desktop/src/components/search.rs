@@ -7,6 +7,21 @@ use crate::element::{ControlSize, Element, Role, div, icon, input};
 use crate::icons::Icon;
 use crate::responder::Action;
 
+/// Where a [`SearchField`] goes, which decides its look.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SearchVariant {
+    /// A toolbar or a global search: a bordered capsule
+    /// (`.roundedBezel` in AppKit).
+    #[default]
+    Toolbar,
+    /// In a form, next to text fields: their shape and border
+    /// (`.squareBezel` in AppKit).
+    Field,
+    /// Inside a table cell or a dense list: no minimum width, a faint
+    /// fill, and in Kai a border only under the pointer or with focus.
+    Inline,
+}
+
 /// Text input with a magnifier and, while it holds text, a button that
 /// clears it. Escape clears it too; on an empty field Escape goes on up
 /// the responder chain (a dialog's cancel, for instance). Every edit,
@@ -19,9 +34,55 @@ pub struct SearchField<Msg> {
     label: String,
     on_input: Rc<dyn Fn(String) -> Msg>,
     on_submit: Option<Msg>,
+    variant: SearchVariant,
     size: Option<ControlSize>,
     disabled: bool,
     test_id: Option<String>,
+}
+
+/// Kai measures by control size: the box, the input's text, the
+/// magnifier, the clear button and its icon.
+struct KaiMetrics {
+    field: &'static str,
+    text: &'static str,
+    icon: &'static str,
+    clear: &'static str,
+    clear_icon: &'static str,
+}
+
+impl KaiMetrics {
+    fn of(size: ControlSize) -> Self {
+        match size {
+            ControlSize::Mini => Self {
+                field: "h-6 px-2 gap-1",
+                text: "text-xs leading-4",
+                icon: "size-3",
+                clear: "size-4 -mr-1",
+                clear_icon: "size-3",
+            },
+            ControlSize::Small => Self {
+                field: "h-7 px-2.5 gap-1.5",
+                text: "text-xs leading-4",
+                icon: "size-3.5",
+                clear: "size-5 -mr-1",
+                clear_icon: "size-3.5",
+            },
+            ControlSize::Regular => Self {
+                field: "h-9 px-3 gap-2",
+                text: "text-sm leading-5",
+                icon: "size-4",
+                clear: "size-6 -mr-1.5",
+                clear_icon: "size-4",
+            },
+            ControlSize::Large | ControlSize::ExtraLarge => Self {
+                field: "h-11 px-4 gap-2",
+                text: "text-base leading-6",
+                icon: "size-[18px]",
+                clear: "size-7 -mr-2",
+                clear_icon: "size-[18px]",
+            },
+        }
+    }
 }
 
 /// A [`SearchField`] showing `value`, sending each edit to `on_input`.
@@ -35,6 +96,7 @@ pub fn search_field<Msg>(
         label: "Buscar".to_owned(),
         on_input: Rc::new(on_input),
         on_submit: None,
+        variant: SearchVariant::Toolbar,
         size: None,
         disabled: false,
         test_id: None,
@@ -59,6 +121,13 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
         self
     }
 
+    pub fn variant(mut self, variant: SearchVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    /// Its size. In AppKit it also reaches the field from an ancestor's
+    /// size; in Kai only the one given here counts.
     pub fn control_size(mut self, size: ControlSize) -> Self {
         self.size = Some(size);
         self
@@ -81,10 +150,14 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
             let clear = clear.clone();
             move |action| (action == Action::CancelOperation && !empty).then(|| clear.clone())
         };
+        let kai = KaiMetrics::of(self.size.unwrap_or_default());
         let mut field = input(self.value.clone(), self.placeholder.clone())
             .class(&themed(
-                "w-full self-stretch bg-transparent text-sm leading-5 text-foreground \
-                 placeholder-muted-foreground cursor-text",
+                &format!(
+                    "w-full self-stretch bg-transparent {} text-foreground \
+                     placeholder-muted-foreground cursor-text",
+                    kai.text
+                ),
                 "w-full self-stretch bg-transparent text-control text-label \
                  placeholder-placeholder cursor-text",
             ))
@@ -100,7 +173,7 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
         let mut children = vec![
             icon(Icon::Search)
                 .class(&themed(
-                    "size-4 shrink-0 text-muted-foreground",
+                    &format!("{} shrink-0 text-muted-foreground", kai.icon),
                     "size-[13px] shrink-0 text-secondary-label",
                 ))
                 .part("icon"),
@@ -112,9 +185,12 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
             children.push(
                 div()
                     .class(&themed(
-                        "inline-flex size-6 shrink-0 -mr-1.5 items-center justify-center \
-                         rounded-full text-muted-foreground cursor-pointer hover:bg-primary/10 \
-                         hover:text-foreground",
+                        &format!(
+                            "inline-flex {} shrink-0 items-center justify-center rounded-full \
+                             text-muted-foreground cursor-pointer hover:bg-primary/10 \
+                             hover:text-foreground",
+                            kai.clear
+                        ),
                         "inline-flex size-[16px] shrink-0 items-center justify-center \
                          rounded-full text-tertiary-label cursor-default hover:text-secondary-label",
                     ))
@@ -123,7 +199,7 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
                     .focus_on_press(false)
                     .on_click(clear)
                     .part("clear")
-                    .child(icon(Icon::CircleX).class("size-4")),
+                    .child(icon(Icon::CircleX).class(&themed(kai.clear_icon, "size-4"))),
             );
         }
         let cursor = if self.disabled {
@@ -131,18 +207,33 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
         } else {
             "cursor-text"
         };
+        let (kai_look, appkit_look) = match self.variant {
+            SearchVariant::Toolbar => (
+                "min-w-[160px] rounded-full border border-border bg-background \
+                 hover:border-muted-foreground focus-within:border-primary",
+                "min-w-[140px] h-field px-1.5 rounded-full bg-field",
+            ),
+            SearchVariant::Field => (
+                "min-w-0 rounded-md border border-border bg-background \
+                 hover:border-muted-foreground focus-within:border-primary",
+                "min-w-0 h-field-square px-1 rounded-field-square bg-field",
+            ),
+            SearchVariant::Inline => (
+                "min-w-0 rounded-md border border-transparent bg-muted/40 \
+                 hover:border-border focus-within:border-primary focus-within:bg-background",
+                "min-w-0 h-field-square px-1 rounded-field-square bg-field",
+            ),
+        };
         let mut root = div()
             .class(&themed(
                 &format!(
-                    "group flex items-center gap-2 w-full min-w-[160px] h-9 px-3 rounded-full \
-                     border border-border bg-background hover:border-muted-foreground \
-                     focus-within:border-primary {cursor}"
+                    "group flex items-center w-full {} {kai_look} {cursor}",
+                    kai.field
                 ),
                 &format!(
-                    "group flex items-center gap-1 w-full min-w-[140px] h-field px-1.5 \
-                     rounded-full border-[0.5px] border-separator bg-field \
-                     focus-within:ring-focus window-inactive:ring-0 mix-c:border \
-                     mix-c:border-tertiary-label {cursor}"
+                    "group flex items-center gap-1 w-full {appkit_look} border-[0.5px] \
+                     border-separator focus-within:ring-focus window-inactive:ring-0 \
+                     mix-c:border mix-c:border-tertiary-label {cursor}"
                 ),
             ))
             .delegates_focus()
@@ -158,11 +249,12 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
 
 #[cfg(test)]
 mod tests {
-    use super::search_field;
+    use super::{SearchVariant, search_field};
     use crate::components::{ButtonVariant, button};
-    use crate::element::{Element, Role, div};
+    use crate::element::{ControlSize, Element, Role, div};
     use crate::runtime::SimpleApp;
     use crate::testing::{By, TestApp};
+    use crate::theme::{AppKitGeneration, Appearance, Theme};
     use crate::ui_engine::{Key, Modifiers};
 
     #[derive(Default)]
@@ -226,5 +318,78 @@ mod tests {
         assert_eq!(app.app().cancelled, 0, "Escape cleared the field");
         app.press(Key::Escape, Modifiers::NONE);
         assert_eq!(app.app().cancelled, 1, "empty: the cancel button");
+    }
+
+    /// One field per variant and size; the last two in 60-point boxes.
+    struct Variants;
+
+    impl SimpleApp for Variants {
+        type Msg = String;
+        fn title(&self) -> String {
+            "Variantes".into()
+        }
+        fn update(&mut self, _: String) {}
+        fn view(&self) -> Element<String> {
+            let field = |id: &str, variant, size: Option<ControlSize>| {
+                let mut field = search_field("", |text| text).variant(variant).test_id(id);
+                if let Some(size) = size {
+                    field = field.control_size(size);
+                }
+                field.build()
+            };
+            let narrow = |child| div().class("flex w-[60px]").child(child);
+            div()
+                .class("flex flex-col items-start gap-2 p-4")
+                .children([
+                    field("toolbar", SearchVariant::Toolbar, None),
+                    field("mini", SearchVariant::Toolbar, Some(ControlSize::Mini)),
+                    field("small", SearchVariant::Toolbar, Some(ControlSize::Small)),
+                    field("large", SearchVariant::Toolbar, Some(ControlSize::Large)),
+                    field("field", SearchVariant::Field, Some(ControlSize::Small)),
+                    narrow(field(
+                        "inline",
+                        SearchVariant::Inline,
+                        Some(ControlSize::Small),
+                    )),
+                    narrow(field("toolbar.narrow", SearchVariant::Toolbar, None)),
+                ])
+        }
+    }
+
+    fn size(app: &TestApp<Variants>, id: &str) -> (f32, f32) {
+        let bounds = app.screen().get(By::test_id(id)).bounds();
+        (bounds.width, bounds.height)
+    }
+
+    #[test]
+    fn kai_sizes_shrink_the_field_and_inline_fits_a_narrow_cell() {
+        let app = TestApp::new(Variants);
+        let height = |id| size(&app, id).1;
+        assert_eq!(height("toolbar"), 36.0);
+        assert_eq!(height("mini"), 24.0);
+        assert_eq!(height("small"), 28.0);
+        assert_eq!(height("large"), 44.0);
+        assert_eq!(height("field"), 28.0);
+        assert_eq!(size(&app, "inline"), (60.0, 28.0), "no minimum width");
+        assert_eq!(size(&app, "toolbar.narrow").0, 160.0);
+        let text = |id: &str| {
+            let input = app.screen().get(By::test_id(format!("{id}.input")));
+            input.node().text.font_size
+        };
+        assert!(text("small") < text("toolbar"), "smaller text");
+    }
+
+    #[test]
+    fn appkit_sizes_come_from_the_bezel_heights() {
+        let theme = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
+        let field = theme.controls.field_height;
+        let square = theme.controls.field_square_height;
+        let app = TestApp::builder(Variants).theme(theme).build();
+        let height = |id| size(&app, id).1;
+        let small = ControlSize::Small as usize;
+        assert_eq!(height("toolbar"), field[ControlSize::Regular as usize]);
+        assert_eq!(height("small"), field[small]);
+        assert_eq!(height("field"), square[small]);
+        assert_eq!(size(&app, "inline"), (60.0, square[small]));
     }
 }
