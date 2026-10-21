@@ -167,6 +167,11 @@
                 "type": "string"
               },
               {
+                "const": "graficos",
+                "description": "Gráficos de barras y sparkline.",
+                "type": "string"
+              },
+              {
                 "const": "dialogos",
                 "description": "Diálogos, avisos (toasts) y la paleta de comandos.",
                 "type": "string"

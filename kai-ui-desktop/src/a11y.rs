@@ -82,6 +82,7 @@ pub fn effective_role(node: &LayoutNode) -> KaiRole {
         _ if node.control => KaiRole::Button,
         Content::Text(_) => KaiRole::Label,
         Content::Map(_) => KaiRole::Group,
+        Content::Chart(_) => KaiRole::Image,
         Content::Box => KaiRole::Generic,
     })
 }
@@ -96,7 +97,9 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
             Some(node.label.clone().unwrap_or_else(|| placeholder.clone()))
         }
         Content::Text(text) => Some(node.label.clone().unwrap_or_else(|| text.clone())),
-        Content::Icon(_) | Content::Image(_) | Content::Map(_) => node.label.clone(),
+        Content::Icon(_) | Content::Image(_) | Content::Map(_) | Content::Chart(_) => {
+            node.label.clone()
+        }
         Content::Box => node.label.clone().or_else(|| {
             matches!(
                 effective_role(node),
@@ -247,7 +250,11 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 node.set_read_only();
             }
         }
-        Content::Icon(_) | Content::Image(_) | Content::Box | Content::Map(_) => {}
+        Content::Icon(_)
+        | Content::Image(_)
+        | Content::Box
+        | Content::Map(_)
+        | Content::Chart(_) => {}
     }
     if let Some(test_id) = &source.test_id {
         node.set_author_id(test_id.as_str());

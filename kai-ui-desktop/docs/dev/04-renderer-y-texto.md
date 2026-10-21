@@ -72,7 +72,7 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 - `Mesh` es una malla inmutable con un id único (la clave de sus buffers en GPU) y sus límites. `Mesh::fill(rings, pixel)` tesela anillos cerrados con `lyon` (par-impar: los interiores son huecos); `Mesh::stroke(lines, closed, StrokeStyle, pixel)` deja los vértices sobre el trazado con la normal de extrusión, y el shader los desplaza `normal × width / 2` después de la transformación. Así un trazo conserva su ancho en píxeles a cualquier zoom, y la misma malla sirve para el borde de una calle y su relleno. `MeshBuilder` junta varios rellenos y trazos en una malla; `pixel` (unidades de malla por píxel al zoom esperado) fija la tolerancia del teselado.
 - `Affine2` lleva la malla de sus coordenadas propias (0..4096 en una tesela, relativas a un origen en una capa del mapa) a puntos lógicos; mover o hacer zoom solo cambia la transformación, sin volver a teselar ni a subir buffers.
 - Backend: una llamada indexada por dibujo. Los buffers de vértices e índices se guardan por id de malla y se liberan cuando la malla ya no existe o lleva 600 frames sin dibujarse. La transformación, el ancho y el color de cada dibujo van en un uniforme con offset dinámico, y su clip es el scissor.
-- Lo usan los mapas ([10](10-mapas.md)): teselas vectoriales, estilo del mapa base y capas de polígonos de la app.
+- Lo usan los mapas ([10](10-mapas.md)): teselas vectoriales, estilo del mapa base y capas de polígonos de la app. Los gráficos nativos (`chart`, barras y sparkline) pintan con los mismos `Quad` y `GeometryDraw`.
 
 ### Fondos de ventana (`background.rs` y `background.wgsl`)
 

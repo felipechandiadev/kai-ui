@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
+use crate::charts::ChartSpec;
 use crate::element::{
     ControlSize, ControlState, Element, KeyEquivalent, Kind, Motion, Role, Rows, WidgetId,
 };
@@ -159,6 +160,8 @@ pub enum Content {
     Image(Option<LoadedImage>),
     /// A map with its camera's view.
     Map(Box<MapSpec>),
+    /// A chart painted from its spec.
+    Chart(Box<ChartSpec>),
 }
 
 /// Where a scrolling element is: vertical `offset` within `0..=max`, and
@@ -404,6 +407,7 @@ impl Builder<'_> {
             }
             Kind::Image { loaded, .. } => Content::Image(loaded.clone()),
             Kind::Map(spec) => Content::Map(spec.clone()),
+            Kind::Chart(spec) => Content::Chart(spec.clone()),
         };
         let index = self.nodes.len();
         let node = LayoutNode {
@@ -500,7 +504,7 @@ impl Builder<'_> {
         }
 
         let handle = match element.kind {
-            Kind::Div | Kind::Map(_) => {
+            Kind::Div | Kind::Map(_) | Kind::Chart(_) => {
                 let mut children = Vec::with_capacity(element.children.len());
                 for child in &element.children {
                     children.push(self.build(child, Some(index), child_inherited)?);
@@ -999,7 +1003,11 @@ fn place(
     });
     if !node.hidden {
         match &node.content {
-            Content::Box | Content::Icon(_) | Content::Image(_) | Content::Map(_) => {}
+            Content::Box
+            | Content::Icon(_)
+            | Content::Image(_)
+            | Content::Map(_)
+            | Content::Chart(_) => {}
             Content::Text(content) => {
                 // Re-wrap at the final width so the buffer is ready to draw.
                 if !node.text.nowrap {

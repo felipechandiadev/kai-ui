@@ -47,6 +47,7 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 - [x] Radios, bordes, sombras, anillos de foco y opacidad, gracias al renderer SDF ([04](04-renderer-y-texto.md)).
 - [x] Después de L6 (Paso 14 de [13](13-hoja-de-ruta-plataforma.md)): checkbox, segmented, `Select`, sidebar, toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, `Avatar`, `MediaSlot`, `ColorField` y `Tabs` (equivalente a `NSTabView`). Su detalle está en [12](12-modelo-appkit.md) (Paso 20) y en el Paso 14 de 13, junto con el lenguaje de color de la selección (token `choice`).
 - [x] `DotProgress` (puntos en ola) y botón ocupado automático mientras corre la tarea que lanzó (abajo).
+- [x] `chart(ChartKind::Bar | Sparkline)`: barras y sparkline pintados con `Quad` y `Mesh` como el mapa; el clic en una barra envía `on_select(índice)`.
 - [ ] AutoComplete y formateadores del TextField.
 - [ ] Transiciones y animaciones: parcial. Hay animación calculada al pintar (`Motion::Wave`, la usa `DotProgress`); faltan transiciones de propiedades (color, opacidad, tamaño) y keyframes generales.
 
@@ -108,6 +109,30 @@ dot_progress()                                   // 3 puntos Md, «Cargando»
 - La animación es un `Motion` que se calcula al pintar ([04](04-renderer-y-texto.md)): layout y hit-test no cambian. Con `reduce_motion` los puntos quedan quietos y la ventana no pide frames.
 - Accesibilidad: `Role::ProgressIndicator` (indeterminado) con nombre «Cargando» o el de `label(..)`. `decorative()` lo deja sin rol ni nombre, como dentro del botón.
 - Partes: `<id>.dot.<i>`.
+
+### Chart
+
+```rust
+chart(ChartKind::Bar)
+    .categories(["Ene", "Feb", "Mar"])
+    .series("Clics", &[4.0, 12.0, 7.0])
+    .selected(self.mes)
+    .on_select(Msg::Mes)
+    .class("h-48 w-full")
+    .label("Clics por mes");
+
+chart(ChartKind::Sparkline)
+    .series("Tendencia", &[2.0, 5.0, 4.0, 8.0])
+    .class("h-8 w-24")
+    .label("Tendencia");
+```
+
+- Widget nativo (`Kind::Chart`), el mismo patrón que el mapa: la spec vive en el árbol y `charts::paint` dibuja en la caja ya medida. Barras: un `Quad` por categoría (varias series, lado a lado). Sparkline: polilínea `Mesh` con relleno al 20 % bajo la línea. Sin plotters, WebView ni egui.
+- Colores por serie: tokens `primary`, `success`, `warning`, `error`. La barra seleccionada usa `choice`. El tamaño es solo por clases (`h-48`, `flex-1`).
+- Barras: etiquetas de categoría bajo el plot (hijos de texto); sin eje Y en este corte. Sparkline: sin texto. Vacío, ceros o un solo punto no paniquean.
+- Clic en una barra (el hueco de la categoría, no solo el rectángulo) envía `on_select(índice)`. El sparkline no es clicable.
+- Accesibilidad: `Role::Image` con el `label` y una descripción `"Ene 4, Feb 12"`. Partes: `<id>.labels`.
+- Fuera de este corte: línea/área con ejes, donut, tooltips flotantes, zoom, series apiladas.
 
 ### TextField
 
@@ -250,6 +275,7 @@ Un componente con `.test_id("x")` nombra solo sus partes internas, así un test 
 | `switch_labeled` | `x.track` (la pista, `Role::Switch`) y `x.label`. Un `switch(..)` sin label es la pista. |
 | `Tabs` | `x.tab.<i>` (cada pestaña, `Role::Tab`) y `x.panel` (el panel de la elegida, `Role::TabPanel`). |
 | `button`, `icon_button`, `badge` | Solo `x`. |
+| `chart` | `x` es el plot (`Role::Image`); `x.labels` son los nombres bajo las barras. |
 
 ```rust
 card().test_id("form").children([card_header("Formulario", None), card_content()]);

@@ -15,16 +15,16 @@ use crate::commands::{
 };
 use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
-    CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, DotProgress, DotSize, FieldBezel,
-    FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot,
-    MediaVariant, SearchVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table,
-    TableView, Tabs, TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized,
-    caption, card, card_actions, card_content, card_header, checkbox, checkbox_with_options,
-    color_field, column_menu, dot_progress, group_box, heading, icon_button, icon_button_sized,
-    paragraph, search_field, segmented, segmented_with_options, select, select_with_options, stat,
-    switch, switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer,
-    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
-    validate_image_file, virtual_list,
+    CHOICE_ACTIVE, CHOICE_HOVER, ChartKind, Column, Dialog, DialogWidth, DotProgress, DotSize,
+    FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout,
+    MediaSlot, MediaVariant, SearchVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity,
+    Table, TableView, Tabs, TextField, Toast, ViewChange, alert, avatar, badge, button,
+    button_sized, caption, card, card_actions, card_content, card_header, chart, checkbox,
+    checkbox_with_options, color_field, column_menu, dot_progress, group_box, heading, icon_button,
+    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
+    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
+    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
+    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
@@ -123,6 +123,8 @@ struct Demo {
     /// run.
     espera: Option<&'static str>,
     sincronizando: u32,
+    /// Gráficos: the selected bar (month index).
+    mes: Option<usize>,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -184,6 +186,7 @@ impl Default for Demo {
             edicion: None,
             espera: None,
             sincronizando: 0,
+            mes: None,
         }
     }
 }
@@ -197,6 +200,12 @@ const PARRAL_PMTILES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/p
 const DSP_AREAS: &str = include_str!("../assets/maps/dsp-areas.geojson");
 /// Margin around a selected sector, as a fraction of its size per side.
 const MARGEN_SECTOR: f64 = 0.2;
+/// Demo chart: six months of clicks and a longer trend.
+const MESES: [&str; 6] = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+const CLICS_MES: [f32; 6] = [4.0, 12.0, 7.0, 15.0, 9.0, 11.0];
+const TENDENCIA: [f32; 12] = [
+    2.0, 5.0, 4.0, 8.0, 6.0, 9.0, 7.0, 12.0, 10.0, 14.0, 11.0, 16.0,
+];
 
 /// An area of operation of DSP.
 #[derive(Clone, Debug, PartialEq)]
@@ -585,12 +594,14 @@ enum Seccion {
     Tabla,
     /// Mapa interactivo de Parral.
     Mapa,
+    /// Gráficos de barras y sparkline.
+    Graficos,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
     Dialogos,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 10] = [
+    const ALL: [Seccion; 11] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
@@ -600,6 +611,7 @@ impl Seccion {
         Self::Multimedia,
         Self::Tabla,
         Self::Mapa,
+        Self::Graficos,
         Self::Dialogos,
     ];
 
@@ -618,6 +630,7 @@ impl Seccion {
             Self::Multimedia => "multimedia",
             Self::Tabla => "tabla",
             Self::Mapa => "mapa",
+            Self::Graficos => "graficos",
             Self::Dialogos => "dialogos",
         }
     }
@@ -634,6 +647,7 @@ impl Seccion {
             Self::Multimedia => ("Multimedia", Icon::Image),
             Self::Tabla => ("Tabla", Icon::Table),
             Self::Mapa => ("Mapa", Icon::Map),
+            Self::Graficos => ("Gráficos", Icon::LayoutDashboard),
             Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
         };
         SidebarItem::new(label).icon(glyph)
@@ -726,6 +740,8 @@ enum Msg {
     /// Moves the map to show all of the box.
     Encuadrar(LatLonBounds),
     ToggleAreas,
+    /// The selected bar of the chart, by month index.
+    Mes(usize),
     /// What the color field of the selected sector holds.
     ColorSector(String),
     /// Starts editing the outline of the sector with this code.
@@ -1513,6 +1529,7 @@ impl App for Demo {
             }
             Msg::Encuadrar(bounds) => self.encuadrar(bounds),
             Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
+            Msg::Mes(index) => self.mes = Some(index),
             Msg::ColorSector(color) => {
                 let code = self.area.clone();
                 if let Some(sector) = self
@@ -1806,6 +1823,7 @@ impl App for Demo {
             Seccion::Multimedia => vec![self.avatars(), self.image_fields()],
             Seccion::Tabla => vec![self.client_table(), self.simple_list()],
             Seccion::Mapa => vec![self.mapa()],
+            Seccion::Graficos => self.graficos(),
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
 
@@ -1857,7 +1875,14 @@ impl Demo {
                 ]
                 .map(Seccion::item),
             ),
-            SidebarGroup::titled("Datos", [Seccion::Tabla.item(), Seccion::Mapa.item()]),
+            SidebarGroup::titled(
+                "Datos",
+                [
+                    Seccion::Tabla.item(),
+                    Seccion::Mapa.item(),
+                    Seccion::Graficos.item(),
+                ],
+            ),
             SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
         ];
         Sidebar::new(&groups, self.seccion.index(), |index| {
@@ -2702,6 +2727,49 @@ impl Demo {
                 ]),
             ),
         ])
+    }
+
+    /// Gráficos: a bar chart of monthly clicks and a sparkline of the trend.
+    fn graficos(&self) -> Vec<Element<Msg>> {
+        let elegido = self.mes.map(|index| {
+            format!(
+                "Seleccionado: {} ({})",
+                MESES[index], CLICS_MES[index] as i32
+            )
+        });
+        vec![
+            card()
+                .class("w-full max-w-3xl")
+                .test_id("graficos.barras")
+                .children([
+                    card_header("Barras", Some("Clics por mes; elige una barra")),
+                    card_content().children([
+                        chart(ChartKind::Bar)
+                            .categories(MESES)
+                            .series("Clics", &CLICS_MES)
+                            .selected(self.mes)
+                            .on_select(Msg::Mes)
+                            .label("Clics por mes")
+                            .test_id("graficos.barras.plot")
+                            .class("h-48 w-full"),
+                        caption(elegido.as_deref().unwrap_or("Elige una barra")),
+                    ]),
+                ]),
+            card()
+                .class("w-full max-w-3xl")
+                .test_id("graficos.sparkline")
+                .children([
+                    card_header("Sparkline", Some("Tendencia compacta, sin ejes")),
+                    card_content().class("flex items-center gap-4").children([
+                        stat("Tendencia", "16", Some("último mes")),
+                        chart(ChartKind::Sparkline)
+                            .series("Tendencia", &TENDENCIA)
+                            .label("Tendencia")
+                            .test_id("graficos.sparkline.plot")
+                            .class("h-8 flex-1"),
+                    ]),
+                ]),
+        ]
     }
 
     /// Diálogos y avisos: open a dialog, show toasts, open the palette.
@@ -3789,6 +3857,7 @@ mod tests {
             Seccion::Multimedia => "multimedia.campos",
             Seccion::Tabla => "tabla.clientes",
             Seccion::Mapa => "mapa.vista",
+            Seccion::Graficos => "graficos.barras",
             Seccion::Dialogos => "dialogos",
         }
     }
@@ -3850,9 +3919,38 @@ mod tests {
                 "Multimedia",
                 "Tabla",
                 "Mapa",
+                "Gráficos",
                 "Diálogos y avisos",
             ]
         );
+    }
+
+    #[test]
+    fn clicking_a_bar_selects_its_category() {
+        let mut app = TestApp::new(Demo::at(Seccion::Graficos));
+        let plot = app.screen().get(By::test_id("graficos.barras.plot"));
+        assert_eq!(plot.name().as_deref(), Some("Clics por mes"));
+        assert_eq!(
+            plot.node().description.as_deref(),
+            Some("Ene 4, Feb 12, Mar 7, Abr 15, May 9, Jun 11")
+        );
+        let width = plot.bounds().width;
+        let height = plot.bounds().height;
+        app.click_at(
+            By::test_id("graficos.barras.plot"),
+            width * 0.08,
+            height * 0.5,
+        );
+        assert_eq!(app.messages(), [Msg::Mes(0)]);
+        assert_eq!(app.app().mes, Some(0));
+        app.screen().get(By::text("Seleccionado: Ene (4)"));
+        app.click_at(
+            By::test_id("graficos.barras.plot"),
+            width * 0.92,
+            height * 0.5,
+        );
+        assert_eq!(app.app().mes, Some(5));
+        app.screen().get(By::text("Seleccionado: Jun (11)"));
     }
 
     #[test]
@@ -3925,7 +4023,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 16] = [
+        const SOURCES: [&str; 17] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
@@ -3939,11 +4037,14 @@ mod tests {
             include_str!("components/text_area.rs"),
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
+            include_str!("charts/mod.rs"),
             include_str!("maps/mod.rs"),
             include_str!("maps/layers.rs"),
             include_str!("maps/editor.rs"),
         ];
-        const NOT_WIDGETS: [&str; 22] = [
+        const NOT_WIDGETS: [&str; 24] = [
+            "ChartSpec",
+            "ChartSeries",
             "MapSpec",
             "Marker",
             "FitRequest",
@@ -4177,6 +4278,12 @@ mod tests {
                 Mapa,
                 Some("mapa.sector.AOP26000002"),
                 By::role(Role::Group).name("Color del sector"),
+            ),
+            (
+                &["chart"],
+                Graficos,
+                None,
+                By::role(Role::Image).name("Clics por mes"),
             ),
             (
                 &["Dialog", "dialog"],
@@ -7236,6 +7343,7 @@ mod tests {
             ("demo-tabla", Seccion::Tabla),
             ("demo-mapa", Seccion::Mapa),
             ("demo-mapa-areas", Seccion::Mapa),
+            ("demo-graficos", Seccion::Graficos),
         ] {
             let mut demo = Demo::at(seccion);
             if seccion == Seccion::Tabla {

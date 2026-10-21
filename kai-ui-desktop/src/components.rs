@@ -20,6 +20,7 @@ mod text_area;
 mod toast;
 mod toolbar;
 
+pub use crate::charts::{ChartKind, ChartSpec, chart};
 pub use crate::render::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};

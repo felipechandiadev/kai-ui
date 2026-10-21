@@ -195,6 +195,9 @@ pub(crate) struct Session<A: App> {
     /// Where the pointer went down on a map: released close by, it is a
     /// click on the layer under it.
     map_press: Option<(WidgetId, Point)>,
+    /// Where the pointer went down on a bar chart: released close by, it
+    /// selects the category under it.
+    chart_press: Option<(WidgetId, Point)>,
     /// The clickable map layer under the pointer.
     map_hover: Option<(WidgetId, String)>,
     /// The polygon editor vertex the pointer is dragging.
@@ -597,6 +600,7 @@ impl<A: App> Session<A> {
             maps: HashMap::new(),
             map_drag: None,
             map_press: None,
+            chart_press: None,
             map_hover: None,
             vertex_drag: None,
             tiles: TileStore::default(),
@@ -2538,6 +2542,63 @@ impl<A: App> Session<A> {
         Some((id, layer.id.clone()))
     }
 
+    /// The innermost chart under the pointer.
+    fn chart_at_pointer(&self) -> Option<WidgetId> {
+        self.hover_path.iter().rev().copied().find(|id| {
+            matches!(
+                self.layout.node(*id).map(|node| &node.content),
+                Some(Content::Chart(_))
+            )
+        })
+    }
+
+    /// A press on a bar chart that has `on_select`.
+    fn press_chart(&mut self) {
+        let Some(id) = self.chart_at_pointer() else {
+            return;
+        };
+        if self
+            .handler(id)
+            .is_none_or(|handlers| handlers.on_select.is_none())
+        {
+            return;
+        }
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        self.chart_press = Some((id, cursor));
+    }
+
+    /// A release near where the pointer went down on a bar chart selects
+    /// the category under it.
+    fn click_chart(&mut self) {
+        let Some((id, pressed)) = self.chart_press.take() else {
+            return;
+        };
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        if (cursor.x - pressed.x).hypot(cursor.y - pressed.y) > MAP_CLICK_SLOP {
+            return;
+        }
+        let Some(node) = self.layout.node(id) else {
+            return;
+        };
+        let Content::Chart(spec) = &node.content else {
+            return;
+        };
+        let Some(index) = crate::charts::hit(node.padding_box, spec, cursor) else {
+            return;
+        };
+        if let Some(handler) = self
+            .handler(id)
+            .and_then(|handlers| handlers.on_select.clone())
+        {
+            let source = self.source.clone().unwrap_or(MsgSource::Pointer);
+            self.with_source(source, |session| session.send(handler(index)));
+        }
+    }
+
     /// A release near where the pointer went down on a map clicks the
     /// layer under it.
     fn click_map_area(&mut self) {
@@ -2952,6 +3013,7 @@ impl<A: App> Session<A> {
             self.apply_intent(Intent::PointerDown(target));
             self.press_map(target, clicks);
             self.press_vertex(target);
+            self.press_chart();
             let selected_on_focus = target
                 .is_some_and(|id| previous_focus != Some(id) && selects_on_focus(&self.tree, id));
             self.dragging = target.filter(|_| self.is_text_field(target) && !selected_on_focus);
@@ -2967,6 +3029,7 @@ impl<A: App> Session<A> {
             self.dragging = None;
             self.vertex_drag = None;
             self.click_map_area();
+            self.click_chart();
             self.release_map();
         }
         self.invalidate();

@@ -8,6 +8,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Gráficos nativos:** `chart(ChartKind::Bar)` y `Sparkline`, pintados con `Quad` y `Mesh` como el mapa. Las barras usan tokens del tema (`primary`, `success`, `warning`, `error`; la seleccionada, `choice`); un clic envía `on_select(índice)`. Sparkline: polilínea con relleno al 20 %. Tamaño por clases (`h-48`, `flex-1`). Sección **Gráficos** en la demo.
+
 - **Librería `kai`:** la demo y la galería como ejemplos sobre la API pública; `fixtures/external-app` compilada en CI.
 - **Modelo y tema AppKit** (Pasos 0–15 y 17 de la guía 12): `ThemeKind` Kai/AppKit, claro y oscuro, generaciones Aqua11, Glass26 y Glass27, `ControlProps`, cadena de responders, variantes `appkit:`, `dark:`, `window-inactive:`, `selected:`, mezcla en gamma y galería de controles.
 - **Arquitectura y pruebas:** `App` v2 con `init` y `update -> Effects`; `Session` sin ventana; `kai::testing` con consultas por rol, nombre y `test_id`, y `TestApp` (clic, texto, teclas, log de `Msg`, capturas por elemento); sub-ids por convención en los componentes.

@@ -2,7 +2,7 @@
 //!
 //! Every frame the app rebuilds the whole tree from its model, as in Elm. An
 //! element is a box (`div`), a text run (`text`), an icon (`icon`), an
-//! image (`image`) or an input (`input`); its look is a Tailwind-like class string (`tw`), and its
+//! image (`image`), a map, a chart or an input (`input`); its look is a Tailwind-like class string (`tw`), and its
 //! behavior is a set of messages ([`Handlers`]) the runtime sends to the
 //! app's `update`.
 //!
@@ -17,6 +17,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::charts::ChartSpec;
 use crate::geo::MapView;
 use crate::icons::Icon;
 use crate::maps::editor::PolygonEdit;
@@ -293,6 +294,10 @@ pub enum Kind {
     /// Interactive map ([`crate::maps::map`]): focusable, dragged and
     /// zoomed by the session; its children are markers and its controls.
     Map(Box<MapSpec>),
+    /// Native chart ([`crate::charts::chart`]): bars or a sparkline painted
+    /// from [`ChartSpec`]; a bar chart's [`Element::on_select`] gets the
+    /// category index.
+    Chart(Box<ChartSpec>),
 }
 
 /// Visible lines of a multiline input: it grows with its text from `min`
@@ -310,7 +315,8 @@ pub struct Handlers<Msg> {
     /// Standard actions this element handles when they travel the
     /// responder chain (`None` = handles none).
     pub on_action: Option<Rc<dyn Fn(Action) -> Option<Msg>>>,
-    /// Pop-up button: the option picked from its list, by index.
+    /// Pop-up button: the option picked from its list, by index. Bar
+    /// chart: the category clicked.
     pub on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
     /// Drop zone: the files dropped on it ([`Element::on_drop_files`]).
     pub on_drop_files: Option<Rc<dyn Fn(Vec<PathBuf>) -> Msg>>,
@@ -1064,11 +1070,15 @@ impl<Msg> Element<Msg> {
     /// `on_select` picks from a list activating this element opens.
     fn picks(&self) -> bool {
         self.handlers.on_select.is_some()
-            && !self.options.as_ref().is_some_and(|options| options.context)
+            && self
+                .options
+                .as_ref()
+                .is_some_and(|options| !options.context)
     }
 
     /// Message for the option picked from the list of
-    /// [`Element::options`], by index.
+    /// [`Element::options`], or the category of a bar [`crate::charts::chart`],
+    /// by index.
     pub fn on_select(mut self, handler: impl Fn(usize) -> Msg + 'static) -> Self {
         self.handlers.on_select = Some(Rc::new(handler));
         self
@@ -1329,6 +1339,7 @@ impl<Msg> Element<Msg> {
         match self.kind {
             Kind::Input { .. } => Some(FocusKind::TextField),
             Kind::Map(_) => Some(FocusKind::Button),
+            Kind::Chart(_) => None,
             _ if self.handlers.on_click.is_some()
                 || self.picks()
                 || self.command.is_some()
@@ -1353,6 +1364,7 @@ impl<Msg> Element<Msg> {
     /// targets and expose semantic roles.
     pub fn is_control(&self) -> bool {
         matches!(self.kind, Kind::Input { .. } | Kind::Map(_))
+            || matches!(self.kind, Kind::Chart(_)) && self.handlers.on_select.is_some()
             || self.handlers.on_click.is_some()
             || self.picks()
             || self.command.is_some()
