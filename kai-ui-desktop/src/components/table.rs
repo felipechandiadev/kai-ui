@@ -16,6 +16,11 @@ use crate::responder::Action;
 
 /// Width of the column of expand buttons ([`Table::expandable`]).
 const TOGGLE_WIDTH: &str = "w-8 shrink-0";
+const TOGGLE_POINTS: f32 = 32.0;
+
+/// Narrowest a [`ColumnWidth::Flex`] column gets without
+/// [`Column::min_width`].
+const FLEX_MIN_WIDTH: f32 = 80.0;
 
 /// Scrolling list of `count` rows of `row_height` points, built by
 /// `render_row(index)` as they scroll into view. Rows without a role are
@@ -77,6 +82,7 @@ type RenderFn<T, Msg> = Rc<dyn Fn(&T) -> Element<Msg>>;
 pub struct Column<T, Msg> {
     pub title: String,
     pub width: ColumnWidth,
+    min_width: Option<f32>,
     value: Option<ValueFn<T>>,
     format: Option<FormatFn>,
     render: Option<RenderFn<T, Msg>>,
@@ -92,6 +98,7 @@ impl<T, Msg> Clone for Column<T, Msg> {
         Self {
             title: self.title.clone(),
             width: self.width,
+            min_width: self.min_width,
             value: self.value.clone(),
             format: self.format.clone(),
             render: self.render.clone(),
@@ -114,6 +121,7 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
         Self {
             title: title.into(),
             width: ColumnWidth::Flex(1.0),
+            min_width: None,
             value: Some(Rc::new(value)),
             format: None,
             render: None,
@@ -151,6 +159,7 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
         Self {
             title: "Acciones".into(),
             width: ColumnWidth::Fixed(80.0),
+            min_width: None,
             value: None,
             format: None,
             render: Some(Rc::new(render)),
@@ -169,6 +178,13 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
 
     pub fn flex(mut self, share: f32) -> Self {
         self.width = ColumnWidth::Flex(share);
+        self
+    }
+
+    /// Narrowest a flex column gets (80 points by default): when the
+    /// columns do not fit, the table scrolls across instead.
+    pub fn min_width(mut self, points: f32) -> Self {
+        self.min_width = Some(points.max(0.0));
         self
     }
 
@@ -256,10 +272,20 @@ impl<T, Msg> Column<T, Msg> {
         Some((value, shown))
     }
 
+    /// The narrowest it gets, in points.
+    fn min_points(&self) -> f32 {
+        match self.width {
+            ColumnWidth::Fixed(points) => points,
+            ColumnWidth::Flex(_) => self.min_width.unwrap_or(FLEX_MIN_WIDTH),
+        }
+    }
+
     fn width_class(&self) -> String {
         match self.width {
             ColumnWidth::Fixed(points) => format!("w-[{points}px] shrink-0"),
-            ColumnWidth::Flex(share) => format!("flex-1 grow-[{share}] min-w-0"),
+            ColumnWidth::Flex(share) => {
+                format!("flex-1 grow-[{share}] min-w-[{}px]", self.min_points())
+            }
         }
     }
 }
@@ -285,9 +311,14 @@ impl<T, Msg> Column<T, Msg> {
 ///
 /// With [`Table::expandable`], rows open a panel below them.
 ///
-/// Parts: `header`, `column.<i>`, `filters`, `filter.<i>`, `body`,
-/// `row.<r>`, `row.<r>.toggle` and `detail.<r>` (`i` is the column's
-/// index, `r` the row's place on screen).
+/// Columns keep their width ([`Column::fixed`]) or minimum width
+/// ([`Column::min_width`]): when they do not fit, the header and the rows
+/// scroll across together (trackpad, Shift+wheel, or the focus moving to
+/// a cell out of view).
+///
+/// Parts: `scroller`, `header`, `column.<i>`, `filters`, `filter.<i>`,
+/// `body`, `row.<r>`, `row.<r>.toggle` and `detail.<r>` (`i` is the
+/// column's index, `r` the row's place on screen).
 pub struct Table<T, Msg> {
     data: Rc<[T]>,
     columns: Rc<[Column<T, Msg>]>,
@@ -379,6 +410,16 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
     pub fn build(self) -> Element<Msg> {
         let row_height = self.row_height.unwrap_or(32.0);
         let visible = self.visible();
+        let toggle = if self.expand.is_some() {
+            TOGGLE_POINTS
+        } else {
+            0.0
+        };
+        let min_width = toggle
+            + visible
+                .iter()
+                .map(|&index| self.columns[index].min_points())
+                .sum::<f32>();
         let mut header = div()
             .class(&themed(
                 "flex items-stretch h-9 shrink-0 border-b border-border bg-muted/40",
@@ -446,9 +487,20 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .role(Role::Table)
             .row_count(count)
             .parts_root()
-            .child(header)
-            .children(filters)
-            .child(body);
+            .child(
+                div()
+                    .class("flex flex-col flex-1 min-h-0 overflow-x-auto")
+                    .part("scroller")
+                    .child(
+                        div()
+                            .class(&format!(
+                                "flex flex-col flex-1 min-h-0 min-w-[{min_width}px]"
+                            ))
+                            .child(header)
+                            .children(filters)
+                            .child(body),
+                    ),
+            );
         if let Some(label) = self.label {
             root = root.label(label);
         }
@@ -790,12 +842,21 @@ mod tests {
         selected: Option<usize>,
         opened: Option<usize>,
         expandable: bool,
+        /// The table is 260 points wide: its columns need more.
+        narrow: bool,
     }
 
     impl Files {
         fn expandable() -> Self {
             Self {
                 expandable: true,
+                ..Self::default()
+            }
+        }
+
+        fn narrow() -> Self {
+            Self {
+                narrow: true,
                 ..Self::default()
             }
         }
@@ -813,6 +874,7 @@ mod tests {
     fn columns() -> Vec<Column<File, Msg>> {
         vec![
             Column::text("Nombre", |file: &File| file.name.clone())
+                .min_width(200.0)
                 .sortable()
                 .filterable(),
             Column::number("Tamaño", |file: &File| file.size as f64)
@@ -862,6 +924,7 @@ mod tests {
                 selected: None,
                 opened: None,
                 expandable: false,
+                narrow: false,
             }
         }
     }
@@ -901,9 +964,11 @@ mod tests {
                     DETAIL,
                 );
             }
-            div()
-                .class("flex flex-col w-full h-full p-4")
-                .children([text("Archivos"), table.build().class("h-[400px]")])
+            let width = if self.narrow { "w-[260px]" } else { "" };
+            div().class("flex flex-col w-full h-full p-4").children([
+                text("Archivos"),
+                table.build().class(&format!("h-[400px] {width}")),
+            ])
         }
     }
 
@@ -1349,6 +1414,88 @@ mod tests {
         assert_eq!(toggle.role(), accesskit::Role::Button);
         assert_eq!(toggle.label(), Some("Contraer"));
         assert_eq!(node("tabla.row.0.toggle").label(), Some("Expandir"));
+    }
+
+    fn scroller(app: &TestApp<Files>) -> crate::layout::ScrollState {
+        app.screen()
+            .get(By::test_id("tabla.scroller"))
+            .node()
+            .scroll
+            .unwrap()
+    }
+
+    #[test]
+    fn a_narrow_table_scrolls_its_header_and_rows_across_together() {
+        let mut app = TestApp::new(Files::narrow());
+        let over = By::test_id("tabla.scroller");
+        let max = scroller(&app).max_x;
+        assert!((230.0..=240.0).contains(&max), "496 points in 258: {max}");
+        let header = bounds(&app, "tabla.column.1").x;
+        let button = bounds(&app, "abrir.archivo-0.txt").x;
+        let row = bounds(&app, "tabla.row.0").y;
+
+        app.scroll_wheel_xy(over.clone(), -60.0, 0.0);
+        assert_eq!(scroller(&app).offset_x, 60.0);
+        assert_eq!(bounds(&app, "tabla.column.1").x, header - 60.0);
+        assert_eq!(bounds(&app, "abrir.archivo-0.txt").x, button - 60.0);
+        assert_eq!(bounds(&app, "tabla.row.0").y, row, "only across");
+
+        app.scroll_wheel_xy(over.clone(), -10_000.0, 0.0);
+        assert_eq!(scroller(&app).offset_x, max, "clamped at the end");
+        let view = bounds(&app, "tabla.scroller");
+        let last = bounds(&app, "tabla.column.3");
+        assert!((last.x + last.width - (view.x + view.width)).abs() < 0.5);
+
+        app.hold_modifiers(Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        });
+        app.scroll_wheel_xy(over.clone(), 0.0, 10_000.0);
+        app.hold_modifiers(Modifiers::NONE);
+        assert_eq!(scroller(&app).offset_x, 0.0, "Shift turns the wheel across");
+        assert_eq!(bounds(&app, "tabla.row.0").y, row);
+
+        app.scroll_wheel(over, -320.0);
+        assert_eq!(scroller(&app).offset_x, 0.0);
+        let body = app.screen().get(By::test_id("tabla.body")).node().scroll;
+        assert_eq!(body.map(|scroll| scroll.offset), Some(320.0));
+    }
+
+    #[test]
+    fn focus_and_clicks_reach_cells_scrolled_out_of_view() {
+        let mut files = Files::narrow();
+        files.view.apply(ViewChange::Filtering(true));
+        let mut app = TestApp::new(files);
+        let view = bounds(&app, "tabla.scroller");
+        let inside = |rect: crate::geometry::Rect| {
+            rect.x >= view.x - 0.5 && rect.x + rect.width / 2.0 <= view.x + view.width
+        };
+        assert!(!inside(bounds(&app, "abrir.archivo-2.txt")));
+        app.click(By::test_id("abrir.archivo-2.txt"));
+        assert_eq!(app.app().opened, Some(app.app().data[2].size));
+        assert!(
+            inside(bounds(&app, "abrir.archivo-2.txt")),
+            "scrolled to it"
+        );
+        let offset = scroller(&app).offset_x;
+        assert!(offset > 0.0);
+
+        app.click(By::test_id("tabla.row.3"));
+        assert_eq!(app.app().selected, Some(3));
+        assert_eq!(
+            scroller(&app).offset_x,
+            offset,
+            "a wide row keeps the scroll"
+        );
+
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::role(Role::ColumnHeader).name("Nombre")));
+        assert_eq!(scroller(&app).offset_x, 0.0, "the focus brings it back");
+        app.press(Key::Tab, Modifiers::NONE);
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("tabla.filter.1")));
+        assert!(scroller(&app).offset_x > 0.0);
+        assert!(inside(bounds(&app, "tabla.filter.1")));
     }
 
     /// `cargo test table_capture -- --ignored` writes

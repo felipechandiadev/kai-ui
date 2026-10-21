@@ -342,6 +342,18 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     if let Some(bounds) = source.visible_bounds() {
         node.set_bounds(access_rect(bounds));
     }
+    if let Some(scroll) = source.scroll {
+        if scroll.max > 0.0 {
+            node.set_scroll_y(f64::from(scroll.offset));
+            node.set_scroll_y_min(0.0);
+            node.set_scroll_y_max(f64::from(scroll.max));
+        }
+        if scroll.max_x > 0.0 {
+            node.set_scroll_x(f64::from(scroll.offset_x));
+            node.set_scroll_x_min(0.0);
+            node.set_scroll_x_max(f64::from(scroll.max_x));
+        }
+    }
     let children: Vec<usize> = if leaf {
         Vec::new()
     } else {
@@ -834,7 +846,13 @@ mod tests {
         );
 
         let mut offsets = ScrollOffsets::new();
-        offsets.insert(sample::root(), 10_000.0);
+        offsets.insert(
+            sample::root(),
+            crate::geometry::Point {
+                x: 0.0,
+                y: 10_000.0,
+            },
+        );
         let scrolled = layout(&tree, small, &offsets);
         let update = a11y_tree(&snapshot(&scrolled, Some(sample::field())));
         assert_eq!(update.focus, node_id(sample::field()));
@@ -842,6 +860,42 @@ mod tests {
         let field = scrolled.bounds(sample::field()).unwrap();
         assert_eq!(bounds.y0, f64::from(field.y));
         assert!(bounds.y1 <= 200.0);
+        let root = node(&update, node_id(sample::root()));
+        let scroll = scrolled.root().unwrap().scroll.unwrap();
+        assert_eq!(root.scroll_y(), Some(f64::from(scroll.max)));
+        assert_eq!(root.scroll_y_max(), Some(f64::from(scroll.max)));
+        assert_eq!(root.scroll_x_max(), None, "it does not scroll across");
+    }
+
+    #[test]
+    fn bounds_follow_a_horizontal_scroll() {
+        use crate::element::div;
+        let mut tree: Element<Msg> = div().class("p-0").child(
+            div()
+                .class("flex w-[200px] h-10 overflow-x-auto")
+                .children((0..10).map(|_| div().class("w-20 h-10 shrink-0").label("Celda"))),
+        );
+        tree.assign_ids();
+        let strip = tree.children[0].id;
+        let cell = tree.children[0].children[3].id;
+        let mut offsets = ScrollOffsets::new();
+        offsets.insert(strip, crate::geometry::Point { x: 200.0, y: 0.0 });
+        let scrolled = layout(&tree, WINDOW, &offsets);
+        let update = a11y_tree(&snapshot(&scrolled, None));
+        let bounds = node(&update, node_id(cell)).bounds().unwrap();
+        assert_eq!((bounds.x0, bounds.x1), (40.0, 120.0));
+        let edge = node(&update, node_id(tree.children[0].children[2].id))
+            .bounds()
+            .unwrap();
+        assert_eq!((edge.x0, edge.x1), (0.0, 40.0), "cut at the strip's start");
+        assert!(
+            node(&update, node_id(tree.children[0].children[0].id))
+                .bounds()
+                .is_none()
+        );
+        let strip = node(&update, node_id(strip));
+        assert_eq!(strip.scroll_x(), Some(200.0));
+        assert_eq!(strip.scroll_x_max(), Some(600.0));
     }
 
     #[test]

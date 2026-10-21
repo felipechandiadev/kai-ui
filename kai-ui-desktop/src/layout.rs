@@ -5,8 +5,9 @@
 //! element's classes are resolved to a [`Style`] for its interaction state
 //! (hover, focus, active, disabled, group) and translated to Taffy, so
 //! block, flex and grid behave as in CSS. Elements with `overflow-hidden` or
-//! `overflow-auto` clip their descendants to their padding box; `overflow-auto`
-//! elements also scroll vertically with their own offset ([`ScrollOffsets`]).
+//! `overflow-auto` clip their descendants to their padding box;
+//! `overflow-y-auto` and `overflow-x-auto` elements (`overflow-auto` is both)
+//! also scroll along that axis with their own offset ([`ScrollOffsets`]).
 //!
 //! Every call lays the whole tree out from scratch; there is no cache or
 //! incremental invalidation besides the parsed-class cache ([`StyleCache`]).
@@ -90,8 +91,15 @@ pub struct Interaction {
     pub file_drag: bool,
 }
 
-/// Vertical scroll offset of each `overflow-auto` element.
-pub type ScrollOffsets = HashMap<WidgetId, f32>;
+/// Scroll offset of each scrolling element, horizontal (`x`) and vertical.
+pub type ScrollOffsets = HashMap<WidgetId, Point>;
+
+/// A scroll direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+}
 
 /// Parsed class strings, reused across frames. Empties itself when called
 /// with a theme different from the one it parsed with.
@@ -153,10 +161,39 @@ pub enum Content {
     Map(Box<MapSpec>),
 }
 
+/// Where a scrolling element is: vertical `offset` within `0..=max`, and
+/// horizontal `offset_x` within `0..=max_x` (both 0 on an axis it does not
+/// scroll).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ScrollState {
     pub offset: f32,
     pub max: f32,
+    pub offset_x: f32,
+    pub max_x: f32,
+}
+
+impl ScrollState {
+    pub fn offset_on(&self, axis: Axis) -> f32 {
+        match axis {
+            Axis::X => self.offset_x,
+            Axis::Y => self.offset,
+        }
+    }
+
+    pub fn max_on(&self, axis: Axis) -> f32 {
+        match axis {
+            Axis::X => self.max_x,
+            Axis::Y => self.max,
+        }
+    }
+
+    /// The offsets, as kept in [`ScrollOffsets`].
+    pub fn offsets(&self) -> Point {
+        Point {
+            x: self.offset_x,
+            y: self.offset,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -795,52 +832,79 @@ impl Layout {
     }
 
     /// Adjust the offsets of the scroll containers around `id`, innermost
-    /// first, so its border box plus `margin` becomes visible. Returns
-    /// whether any offset changed.
+    /// first, so its border box plus `margin` becomes visible, across and
+    /// down. Returns whether any offset changed.
     pub fn reveal(&self, id: WidgetId, margin: f32, offsets: &mut ScrollOffsets) -> bool {
         let Some(node) = self.node(id) else {
             return false;
         };
-        let mut top = node.bounds.y - margin;
-        let mut bottom = node.bounds.y + node.bounds.height + margin;
+        let mut x = (
+            node.bounds.x - margin,
+            node.bounds.x + node.bounds.width + margin,
+        );
+        let mut y = (
+            node.bounds.y - margin,
+            node.bounds.y + node.bounds.height + margin,
+        );
         let mut changed = false;
         for ancestor in self.ancestors(id) {
             let Some(scroll) = ancestor.scroll else {
                 continue;
             };
             let view = ancestor.padding_box;
-            let delta = if top < view.y {
-                top - view.y
-            } else if bottom > view.y + view.height {
-                (bottom - (view.y + view.height)).min(top - view.y)
-            } else {
-                0.0
+            let next = Point {
+                x: reveal_span(&mut x, (view.x, view.width), scroll.offset_x, scroll.max_x),
+                y: reveal_span(&mut y, (view.y, view.height), scroll.offset, scroll.max),
             };
-            let next = (scroll.offset + delta).clamp(0.0, scroll.max);
-            if next != scroll.offset {
+            if next != scroll.offsets() {
                 offsets.insert(ancestor.id, next);
                 changed = true;
             }
-            let moved = next - scroll.offset;
-            top = (top - moved).max(view.y);
-            bottom = (bottom - moved).min(view.y + view.height);
         }
         changed
     }
 
     /// Innermost scroll container on `path` (root first) that can move by
-    /// `delta` (positive = toward the end of the content).
-    pub fn scroll_target(&self, path: &[WidgetId], delta: f32) -> Option<(WidgetId, ScrollState)> {
+    /// `delta` along `axis` (positive = toward the end of the content).
+    pub fn scroll_target(
+        &self,
+        path: &[WidgetId],
+        axis: Axis,
+        delta: f32,
+    ) -> Option<(WidgetId, ScrollState)> {
         path.iter().rev().find_map(|id| {
             let scroll = self.node(*id)?.scroll?;
+            let offset = scroll.offset_on(axis);
             let can_move = if delta > 0.0 {
-                scroll.offset < scroll.max
+                offset < scroll.max_on(axis)
             } else {
-                scroll.offset > 0.0
+                offset > 0.0
             };
             can_move.then_some((*id, scroll))
         })
     }
+}
+
+/// The offset along one axis that shows `span` (start, end) in a view
+/// (start, length) scrolled by `offset` within `0..=max`, moving it the
+/// least (a span that covers the view stays: a wide table row keeps the
+/// horizontal scroll); `span` becomes its visible part afterwards, for the
+/// next container out.
+fn reveal_span(span: &mut (f32, f32), view: (f32, f32), offset: f32, max: f32) -> f32 {
+    let (start, end) = *span;
+    let (view_start, view_length) = view;
+    let view_end = view_start + view_length;
+    let delta = if start < view_start && end < view_end {
+        start - view_start
+    } else if end > view_end && start > view_start {
+        (end - view_end).min(start - view_start)
+    } else {
+        0.0
+    };
+    let next = (offset + delta).clamp(0.0, max);
+    let moved = next - offset;
+    *span = ((start - moved).max(view_start), (end - moved).min(view_end));
+    next
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -870,15 +934,27 @@ fn place(
     node.padding_box = padding_box;
     node.content_box = content_box;
     node.clip = clip;
-    node.scroll = (node.style.overflow == Overflow::Auto).then(|| {
-        let max = layout.scroll_height();
+    let (scrolls_x, scrolls_y) = (
+        node.style.overflow_x == Overflow::Auto,
+        node.style.overflow_y == Overflow::Auto,
+    );
+    node.scroll = (scrolls_x || scrolls_y).then(|| {
+        let saved = offsets.get(&node.id).copied().unwrap_or_default();
+        let max = if scrolls_y {
+            layout.scroll_height()
+        } else {
+            0.0
+        };
+        let max_x = if scrolls_x {
+            layout.scroll_width()
+        } else {
+            0.0
+        };
         ScrollState {
-            offset: offsets
-                .get(&node.id)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, max),
+            offset: saved.y.clamp(0.0, max),
             max,
+            offset_x: saved.x.clamp(0.0, max_x),
+            max_x,
         }
     });
     if !node.hidden {
@@ -924,15 +1000,20 @@ fn place(
             }
         }
     }
-    let child_clip = if node.style.overflow == Overflow::Visible {
+    let child_clip = if node.style.overflow_x == Overflow::Visible
+        && node.style.overflow_y == Overflow::Visible
+    {
         clip
     } else {
         clip_to(clip, padding_box)
     };
-    let scroll_offset = node.scroll.map_or(0.0, |scroll| scroll.offset);
+    let scrolled = node
+        .scroll
+        .map(|scroll| scroll.offsets())
+        .unwrap_or_default();
     let origin = Point {
-        x: bounds.x,
-        y: bounds.y - scroll_offset,
+        x: bounds.x - scrolled.x,
+        y: bounds.y - scrolled.y,
     };
     let children = node.children.clone();
     for child in children {
@@ -1054,7 +1135,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::testing::FixedMeasure;
-    use super::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use super::{Axis, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, text};
     use crate::geometry::{Point, Rect, Size};
@@ -1364,8 +1445,19 @@ mod tests {
         assert!(field.visible_bounds().is_none());
 
         let mut offsets = ScrollOffsets::new();
-        offsets.insert(sample::root(), 10_000.0);
+        offsets.insert(
+            sample::root(),
+            Point {
+                x: 500.0,
+                y: 10_000.0,
+            },
+        );
         let scrolled = layout_with(&sample, short, &Interaction::default(), &offsets);
+        assert_eq!(
+            scrolled.root().unwrap().scroll.unwrap().offset_x,
+            0.0,
+            "overflow-y-auto does not scroll across"
+        );
         let root = scrolled.root().unwrap();
         assert_eq!(root.scroll.unwrap().offset, scroll.max, "offset is clamped");
         let moved = scrolled.bounds(sample::field()).unwrap();
@@ -1466,11 +1558,107 @@ mod tests {
         assert!(field.y + field.height + 4.0 <= root.padding_box.y + root.padding_box.height + 0.5);
         assert!(!revealed.reveal(sample::field(), 4.0, &mut offsets));
 
-        let target = revealed.scroll_target(&[sample::root(), sample::field()], -10.0);
+        let target = revealed.scroll_target(&[sample::root(), sample::field()], Axis::Y, -10.0);
         assert_eq!(target.map(|(id, _)| id), Some(sample::root()));
         assert!(
-            layout.scroll_target(&[sample::root()], -10.0).is_none(),
+            layout
+                .scroll_target(&[sample::root()], Axis::Y, -10.0)
+                .is_none(),
             "already at the top"
         );
+        assert!(
+            revealed
+                .scroll_target(&[sample::root()], Axis::X, 10.0)
+                .is_none(),
+            "nothing to scroll across"
+        );
+    }
+
+    /// A 200-point-wide `overflow-x-auto` strip of ten 80-point cells.
+    fn strip() -> Element<Msg> {
+        tree(
+            div().class("p-0").child(
+                div()
+                    .class("flex w-[200px] h-10 overflow-x-auto")
+                    .children((0..10).map(|_| div().class("w-20 h-10 shrink-0"))),
+            ),
+        )
+    }
+
+    #[test]
+    fn overflow_x_auto_scrolls_across_clamps_and_clips() {
+        let root = strip();
+        let strip = root.children[0].id;
+        let cells: Vec<WidgetId> = root.children[0].children.iter().map(|c| c.id).collect();
+        let layout = layout(&root, WINDOW);
+        let scroll = layout.node(strip).unwrap().scroll.unwrap();
+        assert_eq!((scroll.max_x, scroll.max), (600.0, 0.0));
+        assert_eq!(
+            layout
+                .node(cells[2])
+                .unwrap()
+                .visible_bounds()
+                .unwrap()
+                .width,
+            40.0,
+            "cut at the strip's edge"
+        );
+        assert!(layout.node(cells[3]).unwrap().visible_bounds().is_none());
+
+        let mut offsets = ScrollOffsets::new();
+        offsets.insert(strip, Point { x: 170.0, y: 50.0 });
+        let scrolled = layout_with(&root, WINDOW, &Interaction::default(), &offsets);
+        let scroll = scrolled.node(strip).unwrap().scroll.unwrap();
+        assert_eq!((scroll.offset_x, scroll.offset), (170.0, 0.0));
+        assert_eq!(scrolled.bounds(cells[3]).unwrap().x, 240.0 - 170.0);
+        let point = Point { x: 75.0, y: 20.0 };
+        assert_eq!(scrolled.hit_path(point).last(), Some(&cells[3]));
+
+        offsets.insert(
+            strip,
+            Point {
+                x: 10_000.0,
+                y: 0.0,
+            },
+        );
+        let end = layout_with(&root, WINDOW, &Interaction::default(), &offsets);
+        assert_eq!(end.node(strip).unwrap().scroll.unwrap().offset_x, 600.0);
+        assert_eq!(
+            end.bounds(cells[9]).unwrap().x,
+            120.0,
+            "the last cell ends at 200"
+        );
+
+        assert_eq!(
+            layout
+                .scroll_target(&[root.id, strip], Axis::X, 10.0)
+                .map(|(id, _)| id),
+            Some(strip)
+        );
+        assert!(
+            layout
+                .scroll_target(&[root.id, strip], Axis::X, -10.0)
+                .is_none()
+        );
+        assert!(
+            layout
+                .scroll_target(&[root.id, strip], Axis::Y, 10.0)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reveal_scrolls_across_to_show_a_node() {
+        let root = strip();
+        let strip = root.children[0].id;
+        let last = root.children[0].children[9].id;
+        let layout = layout(&root, WINDOW);
+        let mut offsets = ScrollOffsets::new();
+        assert!(layout.reveal(last, 0.0, &mut offsets));
+        assert_eq!(offsets[&strip], Point { x: 600.0, y: 0.0 });
+        let first = root.children[0].children[0].id;
+        let revealed = layout_with(&root, WINDOW, &Interaction::default(), &offsets);
+        assert!(revealed.reveal(first, 0.0, &mut offsets));
+        assert_eq!(offsets[&strip], Point { x: 0.0, y: 0.0 });
     }
 }

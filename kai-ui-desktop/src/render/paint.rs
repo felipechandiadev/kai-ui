@@ -419,28 +419,48 @@ impl Painter<'_> {
         self.set_clip(node.clip);
     }
 
+    /// Thumbs of the scrollers of `node`: at its right edge when it scrolls
+    /// down, at its bottom edge when it scrolls across.
     fn scrollbar(&mut self, node: &LayoutNode) {
-        let Some(scroll) = node.scroll.filter(|scroll| scroll.max > 0.0) else {
+        let Some(scroll) = node
+            .scroll
+            .filter(|scroll| scroll.max > 0.0 || scroll.max_x > 0.0)
+        else {
             return;
         };
         self.set_clip(node.clip);
         let view = node.padding_box;
-        let track_height = (view.height - SCROLLBAR_INSET * 2.0).max(0.0);
-        let content_height = view.height + scroll.max;
-        let thumb_height = (track_height * view.height / content_height)
-            .max(SCROLL_THUMB_MIN)
-            .min(track_height);
-        let travel = (track_height - thumb_height).max(0.0);
-        let progress = (scroll.offset / scroll.max).clamp(0.0, 1.0);
+        if scroll.max > 0.0 {
+            let (start, length) = thumb(view.height, scroll.offset, scroll.max);
+            self.thumb(
+                node,
+                Rect {
+                    x: view.x + view.width - SCROLLBAR_WIDTH - SCROLLBAR_INSET,
+                    y: view.y + start,
+                    width: SCROLLBAR_WIDTH,
+                    height: length,
+                },
+            );
+        }
+        if scroll.max_x > 0.0 {
+            let (start, length) = thumb(view.width, scroll.offset_x, scroll.max_x);
+            self.thumb(
+                node,
+                Rect {
+                    x: view.x + start,
+                    y: view.y + view.height - SCROLLBAR_WIDTH - SCROLLBAR_INSET,
+                    width: length,
+                    height: SCROLLBAR_WIDTH,
+                },
+            );
+        }
+    }
+
+    fn thumb(&mut self, node: &LayoutNode, rect: Rect) {
         self.list.quad(Quad {
             radius: SCROLLBAR_WIDTH / 2.0,
             ..Quad::fill(
-                Rect {
-                    x: view.x + view.width - SCROLLBAR_WIDTH - SCROLLBAR_INSET,
-                    y: view.y + SCROLLBAR_INSET + travel * progress,
-                    width: SCROLLBAR_WIDTH,
-                    height: thumb_height,
-                },
+                rect,
                 // Kai's own overlay scroller; AppKit draws its scroller
                 // natively (Paso 20), so it has no semantic token yet.
                 faded(
@@ -450,6 +470,18 @@ impl Painter<'_> {
             )
         });
     }
+}
+
+/// Start (from the view's edge) and length of a scroller thumb for a view
+/// `view` points long scrolled by `offset` within `0..=max`.
+fn thumb(view: f32, offset: f32, max: f32) -> (f32, f32) {
+    let track = (view - SCROLLBAR_INSET * 2.0).max(0.0);
+    let length = (track * view / (view + max))
+        .max(SCROLL_THUMB_MIN)
+        .min(track);
+    let travel = (track - length).max(0.0);
+    let progress = (offset / max).clamp(0.0, 1.0);
+    (SCROLLBAR_INSET + travel * progress, length)
 }
 
 #[cfg(test)]
@@ -920,5 +952,21 @@ mod tests {
             })
         );
         assert_eq!(texts[0].origin, Point { x: 0.0, y: 0.0 });
+    }
+
+    #[test]
+    fn content_wider_than_its_box_draws_a_bottom_scroller() {
+        let mut root: Element<Msg> = div().class("p-0").child(
+            div()
+                .class("flex w-[200px] h-10 overflow-x-auto")
+                .child(div().class("w-[800px] h-10 shrink-0")),
+        );
+        root.assign_ids();
+        let list = draw(&root, WINDOW, &Interaction::default(), &[]);
+        let thumb = quads(&list).into_iter().last().unwrap();
+        assert_eq!(thumb.rect.height, 4.0);
+        assert_eq!(thumb.rect.y, 40.0 - 4.0 - 2.0);
+        assert_eq!(thumb.rect.x, 2.0);
+        assert_eq!(thumb.rect.width, 196.0 * 200.0 / 800.0, "a quarter");
     }
 }

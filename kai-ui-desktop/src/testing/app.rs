@@ -635,7 +635,8 @@ impl<A: App> TestApp<A> {
 
     /// Move the pointer over the element and scroll by `(dx, dy)` points as
     /// a trackpad does (positive moves the content right and down): it pans
-    /// a map, elsewhere only `dy` scrolls.
+    /// a map, elsewhere it scrolls across and down (with Shift held,
+    /// [`Self::hold_modifiers`], a vertical `dy` scrolls across).
     #[track_caller]
     pub fn scroll_wheel_xy(&mut self, over: By, dx: f32, dy: f32) {
         self.hover(over);

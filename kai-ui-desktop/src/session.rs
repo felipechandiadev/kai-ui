@@ -36,7 +36,7 @@ use crate::geo::{Camera, LatLon, MapView, TileId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
 use crate::layout::{
-    Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure,
+    Axis, Content, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache, TextMeasure,
     WindowActivity, text_style,
 };
 use crate::maps::camera::CameraState;
@@ -1285,7 +1285,7 @@ impl<A: App> Session<A> {
         let layout = &self.layout;
         let scroll = &self.scroll;
         self.row_windows = virtual_rows::materialize(&mut self.tree, &|id| Viewport {
-            offset: scroll.get(&id).copied().unwrap_or(0.0),
+            offset: scroll.get(&id).map_or(0.0, |offset| offset.y),
             height: layout.node(id).map(|node| node.padding_box.height),
             pinned: pin.filter(|(list, _)| *list == id).map(|(_, index)| index),
         });
@@ -1339,7 +1339,13 @@ impl<A: App> Session<A> {
         if next == scroll.offset {
             return false;
         }
-        self.scroll.insert(list, next);
+        self.scroll.insert(
+            list,
+            Point {
+                y: next,
+                ..scroll.offsets()
+            },
+        );
         self.invalidate();
         true
     }
@@ -2753,7 +2759,9 @@ impl<A: App> Session<A> {
     /// A wheel or trackpad scroll of `delta` points (positive moves the
     /// content right and down). Over a map, pixel deltas pan it and wheel
     /// notches (`lines`) or ⌘ zoom it a level per notch around the
-    /// pointer; elsewhere it scrolls ([`Self::scroll_by`]).
+    /// pointer; elsewhere it scrolls down ([`Self::scroll_by`]) and across
+    /// ([`Self::scroll_by_x`]). With Shift, a wheel that only turns
+    /// vertically scrolls across, as in AppKit.
     pub fn wheel(&mut self, delta: Point, lines: bool) {
         if let Some((id, local)) = self.map_at_pointer() {
             let now = self.now();
@@ -2770,7 +2778,17 @@ impl<A: App> Session<A> {
             self.invalidate();
             return;
         }
-        self.scroll_by(delta.y);
+        let delta = if self.modifiers.shift && delta.x == 0.0 {
+            Point { x: delta.y, y: 0.0 }
+        } else {
+            delta
+        };
+        if delta.y != 0.0 {
+            self.scroll_by(delta.y);
+        }
+        if delta.x != 0.0 {
+            self.scroll_by_x(delta.x);
+        }
     }
 
     /// A trackpad pinch over a map: scale by `1 + delta` around the
@@ -2795,12 +2813,28 @@ impl<A: App> Session<A> {
     /// Scroll the innermost scroll container under the pointer by `delta_y`
     /// logical points (positive scrolls content up, like a wheel down).
     pub fn scroll_by(&mut self, delta_y: f32) {
-        let Some((id, scroll)) = self.layout.scroll_target(&self.hover_path, -delta_y) else {
+        self.scroll_along(Axis::Y, delta_y);
+    }
+
+    /// Scroll the innermost horizontal scroll container under the pointer
+    /// by `delta_x` logical points (positive moves the content right).
+    pub fn scroll_by_x(&mut self, delta_x: f32) {
+        self.scroll_along(Axis::X, delta_x);
+    }
+
+    fn scroll_along(&mut self, axis: Axis, delta: f32) {
+        let Some((id, scroll)) = self.layout.scroll_target(&self.hover_path, axis, -delta) else {
             return;
         };
-        let next = (scroll.offset - delta_y).clamp(0.0, scroll.max);
-        if next != scroll.offset {
-            self.scroll.insert(id, next);
+        let offset = scroll.offset_on(axis);
+        let next = (offset - delta).clamp(0.0, scroll.max_on(axis));
+        if next != offset {
+            let mut offsets = scroll.offsets();
+            match axis {
+                Axis::X => offsets.x = next,
+                Axis::Y => offsets.y = next,
+            }
+            self.scroll.insert(id, offsets);
             self.invalidate();
         }
     }
@@ -3019,7 +3053,7 @@ impl<A: App> Session<A> {
             .iter()
             .filter_map(|n| n.scroll.map(|s| (n.id, s)))
         {
-            self.scroll.insert(id, scroll.offset);
+            self.scroll.insert(id, scroll.offsets());
         }
         self.scroll.retain(|id, _| {
             self.layout

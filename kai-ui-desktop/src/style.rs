@@ -94,7 +94,7 @@ pub enum Justify {
     Evenly,
 }
 
-/// `overflow` on both axes. `Auto` scrolls vertically.
+/// `overflow` on one axis. `Auto` scrolls along it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Overflow {
     #[default]
@@ -185,7 +185,8 @@ pub struct Style {
     pub max_height: Length,
     /// Width ÷ height (`aspect-video`), used when one side is not set.
     pub aspect_ratio: Option<f32>,
-    pub overflow: Overflow,
+    pub overflow_x: Overflow,
+    pub overflow_y: Overflow,
     pub position: Position,
     pub inset: Edges<Length>,
     pub z_index: i32,
@@ -233,7 +234,8 @@ impl Default for Style {
             max_width: Length::Auto,
             max_height: Length::Auto,
             aspect_ratio: None,
-            overflow: Overflow::Visible,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
             position: Position::Relative,
             inset: Edges::all(Length::Auto),
             z_index: 0,
@@ -390,14 +392,14 @@ impl Style {
                 .unwrap_or(taffy::JustifyContent::NORMAL),
             ..taffy::Style::default()
         };
-        let overflow = match self.overflow {
+        let overflow = |overflow| match overflow {
             Overflow::Visible => taffy::Overflow::Visible,
             Overflow::Hidden => taffy::Overflow::Hidden,
             Overflow::Auto => taffy::Overflow::Scroll,
         };
         style.overflow = taffy::Point {
-            x: overflow,
-            y: overflow,
+            x: overflow(self.overflow_x),
+            y: overflow(self.overflow_y),
         };
         style.scrollbar_width = 0.0;
         if self.display == Display::Grid && self.grid_columns > 0 {
@@ -473,7 +475,8 @@ mod tests {
             display: Display::Flex,
             padding: Edges::all(8.0),
             border_width: Edges::all(1.0),
-            overflow: Overflow::Auto,
+            overflow_x: Overflow::Hidden,
+            overflow_y: Overflow::Auto,
             inline: true,
             ..Style::default()
         };

@@ -328,7 +328,8 @@ enum Decl {
     MinHeight(Length),
     MaxWidth(Length),
     MaxHeight(Length),
-    Overflow(Overflow),
+    /// Overflow on the x and y axes; `None` leaves that axis.
+    Overflow(Option<Overflow>, Option<Overflow>),
     Position(Position),
     Z(i32),
     GridColumns(u16),
@@ -429,6 +430,13 @@ impl ClassList {
                 }
             }
         }
+        // As in CSS, an axis left visible clips when the other does not
+        // (`overflow-y-auto` clips x without scrolling it).
+        if style.overflow_x == Overflow::Visible && style.overflow_y != Overflow::Visible {
+            style.overflow_x = Overflow::Hidden;
+        } else if style.overflow_y == Overflow::Visible && style.overflow_x != Overflow::Visible {
+            style.overflow_y = Overflow::Hidden;
+        }
         style
     }
 
@@ -495,7 +503,14 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::MinHeight(value) => style.min_height = value,
         Decl::MaxWidth(value) => style.max_width = value,
         Decl::MaxHeight(value) => style.max_height = value,
-        Decl::Overflow(overflow) => style.overflow = overflow,
+        Decl::Overflow(x, y) => {
+            if let Some(x) = x {
+                style.overflow_x = x;
+            }
+            if let Some(y) = y {
+                style.overflow_y = y;
+            }
+        }
         Decl::Position(position) => style.position = position,
         Decl::Z(z) => style.z_index = z,
         Decl::GridColumns(columns) => style.grid_columns = columns,
@@ -555,7 +570,8 @@ impl Parser<'_> {
             return Some(decls);
         }
         if class == "truncate" {
-            return Some(vec![Decl::NoWrap(true), Decl::Overflow(Overflow::Hidden)]);
+            let hidden = Some(Overflow::Hidden);
+            return Some(vec![Decl::NoWrap(true), Decl::Overflow(hidden, hidden)]);
         }
         let (negative, class) = match class.strip_prefix('-') {
             Some(rest) => (true, rest),
@@ -689,11 +705,19 @@ impl Parser<'_> {
             "justify-evenly" => Decl::Justify(Justify::Evenly),
             "relative" => Decl::Position(Position::Relative),
             "absolute" => Decl::Position(Position::Absolute),
-            "overflow-visible" => Decl::Overflow(Overflow::Visible),
-            "overflow-hidden" | "overflow-clip" => Decl::Overflow(Overflow::Hidden),
-            "overflow-auto" | "overflow-y-auto" | "overflow-scroll" | "overflow-y-scroll" => {
-                Decl::Overflow(Overflow::Auto)
+            "overflow-visible" => Decl::Overflow(Some(Overflow::Visible), Some(Overflow::Visible)),
+            "overflow-hidden" | "overflow-clip" => {
+                Decl::Overflow(Some(Overflow::Hidden), Some(Overflow::Hidden))
             }
+            "overflow-auto" | "overflow-scroll" => {
+                Decl::Overflow(Some(Overflow::Auto), Some(Overflow::Auto))
+            }
+            "overflow-x-visible" => Decl::Overflow(Some(Overflow::Visible), None),
+            "overflow-x-hidden" | "overflow-x-clip" => Decl::Overflow(Some(Overflow::Hidden), None),
+            "overflow-x-auto" | "overflow-x-scroll" => Decl::Overflow(Some(Overflow::Auto), None),
+            "overflow-y-visible" => Decl::Overflow(None, Some(Overflow::Visible)),
+            "overflow-y-hidden" | "overflow-y-clip" => Decl::Overflow(None, Some(Overflow::Hidden)),
+            "overflow-y-auto" | "overflow-y-scroll" => Decl::Overflow(None, Some(Overflow::Auto)),
             "border" => Decl::BorderWidth(Sides::All, 1.0),
             "border-x" => Decl::BorderWidth(Sides::X, 1.0),
             "border-y" => Decl::BorderWidth(Sides::Y, 1.0),
@@ -1434,7 +1458,23 @@ mod tests {
         assert_eq!(style.max_width, Length::Px(42.0 * 16.0));
         assert_eq!(style.min_height, Length::Px(180.0));
         assert_eq!(style.height, Length::Percent(0.5));
-        assert_eq!(style.overflow, Overflow::Auto);
+        assert_eq!(style.overflow_y, Overflow::Auto);
+        assert_eq!(style.overflow_x, Overflow::Hidden, "clipped, not scrolled");
+        let both = parse("overflow-x-auto overflow-y-auto").resolve(State::default());
+        assert_eq!(
+            (both.overflow_x, both.overflow_y),
+            (Overflow::Auto, Overflow::Auto)
+        );
+        let x = parse("overflow-x-auto").resolve(State::default());
+        assert_eq!(
+            (x.overflow_x, x.overflow_y),
+            (Overflow::Auto, Overflow::Hidden)
+        );
+        let auto = parse("overflow-auto").resolve(State::default());
+        assert_eq!(
+            (auto.overflow_x, auto.overflow_y),
+            (Overflow::Auto, Overflow::Auto)
+        );
         assert_eq!(style.position, Position::Absolute);
         assert_eq!(style.inset, Edges::all(Length::Px(0.0)));
         assert_eq!(style.z_index, 20);

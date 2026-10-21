@@ -398,6 +398,7 @@ fn columnas() -> Vec<Column<Cliente, Msg>> {
                 ])
             })
             .flex(2.0)
+            .min_width(160.0)
             .sortable()
             .filterable(),
         Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned())
@@ -6465,7 +6466,13 @@ mod tests {
         let content = Screen::new(&layout).get_by_test_id("contenido").id();
         let card = card_header_of(demo, title);
         let top = layout.bounds(card).unwrap().y - layout.bounds(content).unwrap().y;
-        ScrollOffsets::from([(content, (top - 40.0).max(0.0))])
+        ScrollOffsets::from([(
+            content,
+            crate::geometry::Point {
+                x: 0.0,
+                y: (top - 40.0).max(0.0),
+            },
+        )])
     }
 
     /// Where a set of captures goes and with which theme.
