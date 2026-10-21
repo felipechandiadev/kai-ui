@@ -1947,9 +1947,10 @@ pub fn select<Msg>(
 
 /// Select, a pop-up button (`NSPopUpButton`): shows the chosen option, or
 /// `placeholder` without one, and opens the list of `options` on click,
-/// Space, Return or an arrow key. The session shows and drives the list
-/// ([`select_menu`]); picking sends `on_select(index)`. Name it with
-/// `.label(..)` when a separate title describes it. Parts: `value`.
+/// Space, Return or an arrow key. Same width as a [`TextField`] (`w-full`,
+/// 180 pt minimum). The session shows and drives the list ([`select_menu`]);
+/// picking sends `on_select(index)`. Name it with `.label(..)` when a
+/// separate title describes it. Parts: `value`.
 pub fn select_with_options<Msg>(
     options: &[&str],
     selected: Option<usize>,
@@ -1998,12 +1999,12 @@ pub fn select_with_options<Msg>(
     div()
         .class(&themed(
             &format!(
-                "inline-flex items-center gap-2 h-control px-3 min-w-40 rounded-md border \
+                "flex items-center gap-2 h-control px-3 w-full min-w-[180px] rounded-md border \
                  border-border bg-background text-sm leading-5 focus-visible:ring-2 \
                  focus-visible:ring-primary/40 {interaction}"
             ),
             &format!(
-                "inline-flex items-center gap-1.5 h-control pl-2 pr-1.5 min-w-24 \
+                "flex items-center gap-1.5 h-control pl-2 pr-1.5 w-full min-w-[180px] \
                  rounded-control text-control bg-control border-[0.5px] border-separator \
                  shadow-bezel dark:border-0 glass:bg-fill-2 glass:border-0 glass:shadow-none \
                  cursor-default keyboard-focus:ring-focus window-inactive:ring-0 {appkit_hover}"
@@ -2551,6 +2552,21 @@ mod tests {
             })
             .collect();
         assert_eq!(glyphs, vec![Icon::ChevronDown], "one chevron, both themes");
+    }
+
+    #[test]
+    fn the_select_is_as_wide_as_a_text_field() {
+        let tree = assigned(div().class("flex flex-col w-[360px]").children([
+            TextField::new("Nombre", "Ana").test_id("campo").build(),
+            select(&["Admin"], Some(0), "Elegir", |_| Msg::Toggle).test_id("rol"),
+        ]));
+        for theme in [theme(), appkit(), appkit_dark()] {
+            let layout = laid_out(&theme, &tree, &Interaction::default());
+            let field = layout.bounds(part(&tree, "campo").id).unwrap().width;
+            let select = layout.bounds(part(&tree, "rol").id).unwrap().width;
+            assert_eq!(field, select, "{:?}", theme.kind);
+            assert!(field >= 180.0, "{:?}: {field}", theme.kind);
+        }
     }
 
     #[test]

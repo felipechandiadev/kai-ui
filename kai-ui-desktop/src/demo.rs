@@ -1641,16 +1641,9 @@ impl App for Demo {
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
                             .build(),
-                    ]),
-                div()
-                    .class("flex flex-wrap items-center justify-between gap-4")
-                    .children([
-                        div().class("flex items-center gap-2").children([
-                            text("Rol").class("text-sm font-medium text-foreground"),
-                            select(&ROLES, self.role, "Elegir rol", Msg::SetRole)
-                                .label("Rol")
-                                .test_id("form.rol"),
-                        ]),
+                        select(&ROLES, self.role, "Elegir rol", Msg::SetRole)
+                            .label("Rol")
+                            .test_id("form.rol"),
                         checkbox(
                             "Acepto los términos",
                             if self.terms {
@@ -2153,15 +2146,22 @@ impl Demo {
                     div()
                         .class("flex flex-col items-start gap-2")
                         .children(checks),
-                    div().class("flex flex-wrap items-center gap-3").children([
-                        label("País"),
-                        select_with_options(&PAISES, self.pais, "Elegir país", Msg::SetPais, false)
+                    div()
+                        .class("grid grid-cols-1 sm:grid-cols-2 gap-4")
+                        .children([
+                            select_with_options(
+                                &PAISES,
+                                self.pais,
+                                "Elegir país",
+                                Msg::SetPais,
+                                false,
+                            )
                             .label("País")
                             .test_id("seleccion.pais"),
-                        select_with_options(&PAISES, None, "Sin región", Msg::SetPais, true)
-                            .label("Región")
-                            .test_id("seleccion.region"),
-                    ]),
+                            select_with_options(&PAISES, None, "Sin región", Msg::SetPais, true)
+                                .label("Región")
+                                .test_id("seleccion.region"),
+                        ]),
                     div().class("flex flex-wrap items-center gap-3").children([
                         label("Alineación"),
                         segmented_with_options(
