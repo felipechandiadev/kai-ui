@@ -106,6 +106,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
                     | KaiRole::Radio
                     | KaiRole::PopUpButton
                     | KaiRole::MenuItem
+                    | KaiRole::MenuItemCheckBox
                     | KaiRole::SidebarItem
                     | KaiRole::Tab
                     | KaiRole::Row
@@ -147,6 +148,7 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::PopUpButton => Role::ComboBox,
         KaiRole::Menu => Role::MenuListPopup,
         KaiRole::MenuItem => Role::MenuListOption,
+        KaiRole::MenuItemCheckBox => Role::MenuItemCheckBox,
         // `accesskit_macos`: `Tree` is `AXOutline` and `TreeItem` an
         // `AXRow` (`AXOutlineRow`), as Finder's sidebar.
         KaiRole::Sidebar => Role::Tree,
@@ -209,6 +211,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::RadioButton
             | Role::ComboBox
             | Role::MenuListOption
+            | Role::MenuItemCheckBox
             | Role::TreeItem
             | Role::Tab
             | Role::TextInput
@@ -316,6 +319,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                         | Role::Switch
                         | Role::CheckBox
                         | Role::RadioButton
+                        | Role::MenuItemCheckBox
                 )
             {
                 node.set_toggled(match state {
@@ -328,6 +332,9 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 node.set_keyboard_shortcut(shortcut.label());
             }
         }
+    }
+    if source.context_menu {
+        node.add_action(Action::ShowContextMenu);
     }
     if let Some(bounds) = source.visible_bounds() {
         node.set_bounds(access_rect(bounds));

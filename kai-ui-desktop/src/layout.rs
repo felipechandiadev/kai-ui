@@ -184,6 +184,8 @@ pub struct LayoutNode {
     pub control: bool,
     /// Pop-up button: whether its list is open (see [`Element::options`]).
     pub expanded: Option<bool>,
+    /// See [`Element::context_menu`].
+    pub context_menu: bool,
     /// See [`Element::row_count`].
     pub row_count: Option<usize>,
     /// See [`Element::row_index`].
@@ -387,7 +389,12 @@ impl Builder<'_> {
                 .then(|| element.first_input())
                 .flatten(),
             control: element.is_control(),
-            expanded: element.options.as_ref().map(|options| options.open),
+            expanded: element
+                .options
+                .as_ref()
+                .filter(|options| !options.context)
+                .map(|options| options.open),
+            context_menu: element.has_context_menu(),
             row_count: element.row_count,
             row_index: element.row_index,
             opacity: inherited.opacity * style.opacity,

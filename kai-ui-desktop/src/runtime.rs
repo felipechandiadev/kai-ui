@@ -1087,6 +1087,11 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 };
                 state.session.pointer_clicks(pressed, clicks);
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => state.session.secondary_click(),
             WindowEvent::HoveredFile(_) => state.session.hover_files(),
             WindowEvent::HoveredFileCancelled => state.session.cancel_file_drag(),
             WindowEvent::DroppedFile(path) => state.dropped.push(path),

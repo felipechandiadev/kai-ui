@@ -276,6 +276,8 @@ impl<T, Msg> Column<T, Msg> {
 /// [`ViewChange::Filter`] on every edit: the app may wait for a pause in
 /// the typing before it refreshes (`Effects::after(..).keyed(..)`).
 ///
+/// A right click (or Ctrl+click) on the header opens the [`column_menu`].
+///
 /// Parts: `header`, `column.<i>`, `filters`, `filter.<i>`, `body` and
 /// `row.<i>` (`i` is the column's index, and the row's place on screen).
 pub struct Table<T, Msg> {
@@ -351,7 +353,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
     pub fn build(self) -> Element<Msg> {
         let row_height = self.row_height.unwrap_or(32.0);
         let visible = self.visible();
-        let header = div()
+        let mut header = div()
             .class(&themed(
                 "flex items-stretch h-9 shrink-0 border-b border-border bg-muted/40",
                 "flex items-stretch h-[24px] shrink-0 border-b border-separator bg-window",
@@ -360,6 +362,13 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .focus_group()
             .part("header")
             .children(visible.iter().map(|&index| self.header_cell(index)));
+        if let Some(on_view) = &self.on_view {
+            let on_view = Rc::clone(on_view);
+            header = column_menu(header, &self.columns, &self.view, move |change| {
+                on_view(change)
+            })
+            .context_menu();
+        }
         let filters = self.filter_row(&visible);
         let rows = Rc::clone(self.view.rows());
         let count = rows.len();
@@ -502,6 +511,42 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
     }
 }
 
+/// Make `target` open the menu of the [`Column::hideable`] columns: a
+/// check item each, checked while it is shown, that sends
+/// [`ViewChange::Hide`] and leaves the menu open. The last column shown
+/// cannot be unchecked. The header of a [`Table`] with `on_view` opens the
+/// same menu with a right click; give it to a «Columnas» button too.
+pub fn column_menu<T: 'static, Msg: 'static>(
+    target: Element<Msg>,
+    columns: &[Column<T, Msg>],
+    view: &TableView,
+    on_view: impl Fn(ViewChange) -> Msg + 'static,
+) -> Element<Msg> {
+    let hideable: Rc<[usize]> = (0..columns.len())
+        .filter(|index| columns[*index].is_hideable())
+        .collect();
+    if hideable.is_empty() {
+        return target;
+    }
+    let items = hideable
+        .iter()
+        .map(|&index| columns[index].title.clone())
+        .collect();
+    let shown: Rc<[bool]> = hideable
+        .iter()
+        .map(|index| !view.hidden.contains(index))
+        .collect();
+    let disabled = hideable
+        .iter()
+        .zip(shown.iter())
+        .map(|(&index, &shown)| shown && !view.can_hide(index))
+        .collect();
+    target
+        .check_options(items, shown.to_vec())
+        .disabled_options(disabled)
+        .on_select(move |pick| on_view(ViewChange::Hide(hideable[pick], shown[pick])))
+}
+
 /// What builds the rows of a [`Table`] as they scroll into view.
 struct BodyRows<T, Msg> {
     data: Rc<[T]>,
@@ -618,7 +663,8 @@ mod tests {
                 .format(|size| format!("{size} KB"))
                 .fixed(120.0)
                 .sortable()
-                .filterable(),
+                .filterable()
+                .hideable(),
             Column::text("Tipo", |file: &File| {
                 if file.size.is_multiple_of(2) {
                     "Par"
@@ -627,6 +673,7 @@ mod tests {
                 }
                 .to_owned()
             })
+            .hideable()
             .render(|file: &File| {
                 let (label, variant) = if file.size.is_multiple_of(2) {
                     ("par", BadgeVariant::Info)
@@ -899,6 +946,98 @@ mod tests {
             .collect();
         assert_eq!(headers, ["Nombre", "Tipo", "Acciones"]);
         assert!(app.screen().query(By::test_id("tabla.column.1")).is_none());
+    }
+
+    fn headers(app: &TestApp<Files>) -> Vec<String> {
+        app.screen()
+            .all(By::role(Role::ColumnHeader))
+            .iter()
+            .filter_map(|header| header.name())
+            .collect()
+    }
+
+    fn menu_items(app: &TestApp<Files>) -> Vec<(String, Option<ControlState>)> {
+        app.screen()
+            .all(By::role(Role::MenuItemCheckBox))
+            .iter()
+            .map(|item| (item.name().unwrap(), item.node().control_state))
+            .collect()
+    }
+
+    #[test]
+    fn a_right_click_on_the_header_hides_and_shows_columns() {
+        let mut app = TestApp::new(Files::default());
+        app.right_click(By::role(Role::ColumnHeader).name("Tamaño"));
+        assert_eq!(
+            menu_items(&app),
+            [
+                ("Tamaño".to_owned(), Some(ControlState::On)),
+                ("Tipo".to_owned(), Some(ControlState::On)),
+            ],
+            "only the hideable columns"
+        );
+
+        app.click(By::test_id("kai.menu.0"));
+        assert_eq!(headers(&app), ["Nombre", "Tipo", "Acciones"]);
+        assert_eq!(
+            menu_items(&app)[0],
+            ("Tamaño".to_owned(), Some(ControlState::Off)),
+            "the menu stays open, unchecked"
+        );
+
+        // Keys: ↓ and Space hide Tipo, ↑ and Return show Tamaño again.
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        app.press(Key::Space, Modifiers::NONE);
+        assert_eq!(headers(&app), ["Nombre", "Acciones"]);
+        app.press(Key::ArrowUp, Modifiers::NONE);
+        app.press(Key::Enter, Modifiers::NONE);
+        assert_eq!(headers(&app), ["Nombre", "Tamaño", "Acciones"]);
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.screen().query(By::test_id("kai.menu")).is_none());
+        assert_eq!(app.app().view.sort, None, "the right click did not sort");
+    }
+
+    #[test]
+    fn ctrl_click_and_assistive_technology_open_the_column_menu() {
+        let mut app = TestApp::new(Files::default());
+        app.hold_modifiers(Modifiers {
+            control: true,
+            ..Modifiers::NONE
+        });
+        app.click(By::role(Role::ColumnHeader).name("Nombre"));
+        app.hold_modifiers(Modifiers::NONE);
+        assert_eq!(menu_items(&app).len(), 2);
+        assert_eq!(app.app().view.sort, None, "Ctrl+click does not sort");
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.screen().query(By::test_id("kai.menu")).is_none());
+
+        let header = app.screen().get_by_test_id("tabla.header").id();
+        let update = app.session().a11y_tree(1.0);
+        let node = update
+            .nodes
+            .iter()
+            .find(|(id, _)| *id == crate::a11y::node_id(header))
+            .map(|(_, node)| node)
+            .unwrap();
+        assert!(node.supports_action(accesskit::Action::ShowContextMenu));
+        assert!(
+            !node.supports_action(accesskit::Action::Click),
+            "not a control"
+        );
+        app.accessibility_action(&accesskit::ActionRequest {
+            action: accesskit::Action::ShowContextMenu,
+            target_tree: accesskit::TreeId::ROOT,
+            target_node: crate::a11y::node_id(header),
+            data: None,
+        });
+        assert_eq!(menu_items(&app).len(), 2);
+        let update = app.session().a11y_tree(1.0);
+        let checked = update
+            .nodes
+            .iter()
+            .find(|(_, node)| node.role() == accesskit::Role::MenuItemCheckBox)
+            .and_then(|(_, node)| node.toggled());
+        assert_eq!(checked, Some(accesskit::Toggled::True));
     }
 
     /// `cargo test table_capture -- --ignored` writes

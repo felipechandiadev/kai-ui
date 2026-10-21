@@ -28,7 +28,8 @@ pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{
-    Column, ColumnWidth, Date, SortDirection, Table, TableView, Value, ViewChange, virtual_list,
+    Column, ColumnWidth, Date, SortDirection, Table, TableView, Value, ViewChange, column_menu,
+    virtual_list,
 };
 pub use tabs::Tabs;
 pub use text_area::{TextArea, text_area};
@@ -39,7 +40,7 @@ pub use toolbar::{
 
 use crate::commands::Action;
 use crate::element::{
-    ControlSize, ControlState, Element, KeyEquivalent, Role, div, icon, input, text,
+    ControlSize, ControlState, Element, KeyEquivalent, Options, Role, div, icon, input, text,
 };
 use crate::icons::Icon;
 use crate::runtime::App;
@@ -2038,15 +2039,15 @@ pub struct MenuFrame {
 /// (a click on it closes the list) and the panel `kai.menu` at `frame`,
 /// with one row per item (`kai.menu.<index>`), `selected` in the choice
 /// look ([`CHOICE_ACTIVE`], no check mark) and `highlighted` with a
-/// neutral fill (the session moves it with the keys and the pointer). Behavior lives in the session that shows it; the elements
+/// neutral fill (the session moves it with the keys and the pointer).
+/// With [`Options::checks`] the rows are check items with a check mark
+/// instead. Behavior lives in the session that shows it; the elements
 /// send no messages.
-pub fn select_menu<Msg>(
-    items: &[String],
-    selected: Option<usize>,
-    highlighted: usize,
-    frame: MenuFrame,
-) -> Element<Msg> {
-    let rows = items.iter().enumerate().map(|(index, item)| {
+pub fn select_menu<Msg>(options: &Options, highlighted: usize, frame: MenuFrame) -> Element<Msg> {
+    let selected = options.selected;
+    let rows = options.items.iter().enumerate().map(|(index, item)| {
+        let checked = options.checked.get(index).copied();
+        let disabled = options.is_disabled(index);
         let (kai_mark, appkit_mark) = if selected == Some(index) {
             (
                 format!("{CHOICE_ACTIVE} font-medium"),
@@ -2074,13 +2075,26 @@ pub fn select_menu<Msg>(
                      whitespace-nowrap text-label cursor-default {appkit_mark}"
                 ),
             ))
-            .role(Role::MenuItem)
             .key(index.to_string())
             .test_id(format!("kai.menu.{index}"))
             .label(item.clone())
-            .pressed(selected == Some(index))
-            .focus_on_press(false)
-            .child(text(item.clone()));
+            .focus_on_press(false);
+        row = match checked {
+            Some(checked) => row
+                .class("gap-1.5")
+                .role(Role::MenuItemCheckBox)
+                .pressed(checked)
+                .child(icon(Icon::Check).class(if checked {
+                    "size-3.5 shrink-0"
+                } else {
+                    "size-3.5 shrink-0 opacity-0"
+                })),
+            None => row.role(Role::MenuItem).pressed(selected == Some(index)),
+        };
+        if disabled {
+            row = row.class("opacity-50").disabled(true);
+        }
+        row = row.child(text(item.clone()));
         row.command = Some(MENU);
         row
     });
@@ -2178,7 +2192,9 @@ mod tests {
         icon_button_sized, segmented, segmented_with_options, select, select_menu,
         select_with_options, sidebar, stat, switch_labeled, switch_with_options,
     };
-    use crate::element::{ControlSize, ControlState, Element, FocusOrder, Kind, Role, div, text};
+    use crate::element::{
+        ControlSize, ControlState, Element, FocusOrder, Kind, Options, Role, div, text,
+    };
     use crate::geometry::{Rect, Size};
     use crate::icons::Icon;
     use crate::layout::testing::FixedMeasure;
@@ -2443,8 +2459,26 @@ mod tests {
             }
         }
         assert_tree_known(&select_menu::<Msg>(
-            &["Día".to_owned(), "Mes".to_owned()],
-            Some(0),
+            &Options {
+                items: vec!["Día".to_owned(), "Mes".to_owned()],
+                selected: Some(0),
+                ..Options::default()
+            },
+            1,
+            MenuFrame {
+                x: 10.0,
+                y: 20.0,
+                min_width: 120.0,
+                max_height: 300.0,
+            },
+        ));
+        assert_tree_known(&select_menu::<Msg>(
+            &Options {
+                items: vec!["Día".to_owned(), "Mes".to_owned()],
+                checked: vec![true, false],
+                disabled: vec![true],
+                ..Options::default()
+            },
             1,
             MenuFrame {
                 x: 10.0,
@@ -2485,14 +2519,18 @@ mod tests {
 
     #[test]
     fn the_select_list_marks_its_choice_without_a_check() {
-        let items = ["Manzana".to_owned(), "Pera".to_owned(), "Uva".to_owned()];
+        let options = Options {
+            items: vec!["Manzana".to_owned(), "Pera".to_owned(), "Uva".to_owned()],
+            selected: Some(1),
+            ..Options::default()
+        };
         let frame = MenuFrame {
             x: 0.0,
             y: 0.0,
             min_width: 120.0,
             max_height: 300.0,
         };
-        let menu = select_menu::<Msg>(&items, Some(1), 2, frame);
+        let menu = select_menu::<Msg>(&options, 2, frame);
         let rows = &menu.children[0].children;
         let mut icons = 0;
         menu.walk(&mut |element| icons += usize::from(matches!(element.kind, Kind::Icon(_))));

@@ -89,6 +89,9 @@ pub struct TableView {
     pub hidden: BTreeSet<usize>,
     pub expanded: BTreeSet<usize>,
     rows: Rc<[usize]>,
+    /// Columns that may be hidden, and how many have a value.
+    hideable: BTreeSet<usize>,
+    value_columns: usize,
 }
 
 impl TableView {
@@ -127,7 +130,8 @@ impl TableView {
         self.filters.values().any(|text| !text.trim().is_empty())
     }
 
-    /// Apply `change`; call [`Self::refresh`] after it.
+    /// Apply `change`; call [`Self::refresh`] after it. Hiding a column
+    /// [`Self::can_hide`] refuses does nothing.
     pub fn apply(&mut self, change: ViewChange) {
         match change {
             ViewChange::Sort(column, direction) => self.sort = Some((column, direction)),
@@ -145,7 +149,9 @@ impl TableView {
                 }
             }
             ViewChange::Hide(column, true) => {
-                self.hidden.insert(column);
+                if self.can_hide(column) {
+                    self.hidden.insert(column);
+                }
             }
             ViewChange::Hide(column, false) => {
                 self.hidden.remove(&column);
@@ -209,6 +215,24 @@ impl TableView {
             rows = order.into_iter().map(|i| rows[i]).collect();
         }
         self.rows = rows.into();
+        self.hideable = (0..columns.len())
+            .filter(|index| columns[*index].is_hideable())
+            .collect();
+        self.value_columns = columns.iter().filter(|column| column.has_value()).count();
+    }
+
+    /// Whether column `index` can be hidden now: it is
+    /// [`Column::hideable`], shown, and not the last column with a value
+    /// left (as of the last [`Self::refresh`]).
+    pub fn can_hide(&self, index: usize) -> bool {
+        let hidden = self
+            .hidden
+            .iter()
+            .filter(|column| self.hideable.contains(column))
+            .count();
+        self.hideable.contains(&index)
+            && !self.hidden.contains(&index)
+            && self.value_columns.saturating_sub(hidden) > 1
     }
 }
 
@@ -405,7 +429,9 @@ mod tests {
     fn columnas() -> Vec<Column<Cliente, ()>> {
         vec![
             Column::text("Nombre", |c: &Cliente| c.nombre.to_owned()),
-            Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned()).filterable(),
+            Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned())
+                .filterable()
+                .hideable(),
             Column::text("Plan", |c: &Cliente| c.plan.to_owned())
                 .render(|c: &Cliente| text(format!("[{}]", c.plan)))
                 .filterable(),
@@ -446,6 +472,32 @@ mod tests {
         view.refresh(&DATOS, &columns);
         assert!(view.filters.is_empty());
         assert_eq!(view.len(), 3, "only the search is left");
+    }
+
+    #[test]
+    fn only_hideable_columns_hide_and_one_is_always_left() {
+        let columns: Vec<Column<Cliente, ()>> = vec![
+            Column::text("Nombre", |c: &Cliente| c.nombre.to_owned()).hideable(),
+            Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned()).hideable(),
+            Column::text("Plan", |c: &Cliente| c.plan.to_owned()),
+            Column::actions(|_: &Cliente| -> Element<()> { text("Ver") }).hideable(),
+        ];
+        let mut view = TableView::new(&DATOS, &columns);
+        view.apply(ViewChange::Hide(2, true));
+        view.apply(ViewChange::Hide(3, true));
+        assert!(view.hidden.is_empty(), "neither Plan nor the actions");
+        view.apply(ViewChange::Hide(0, true));
+        view.apply(ViewChange::Hide(1, true));
+        assert_eq!(view.hidden, [0, 1].into(), "Plan is still shown");
+
+        let two: Vec<Column<Cliente, ()>> = columns.into_iter().take(2).collect();
+        let mut view = TableView::new(&DATOS, &two);
+        view.apply(ViewChange::Hide(0, true));
+        assert!(!view.can_hide(1));
+        view.apply(ViewChange::Hide(1, true));
+        assert_eq!(view.hidden, [0].into(), "the last column stays");
+        view.apply(ViewChange::Hide(0, false));
+        assert!(view.can_hide(1));
     }
 
     #[test]

@@ -20,11 +20,11 @@ use crate::components::{
     MediaVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table, TableView, Tabs,
     TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized, caption, card,
     card_actions, card_content, card_header, checkbox, checkbox_with_options, color_field,
-    dot_progress, group_box, heading, icon_button, icon_button_sized, paragraph, search_field,
-    segmented, segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
-    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
-    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
-    virtual_list,
+    column_menu, dot_progress, group_box, heading, icon_button, icon_button_sized, paragraph,
+    search_field, segmented, segmented_with_options, select, select_with_options, stat, switch,
+    switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar,
+    toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
@@ -2208,6 +2208,19 @@ impl Demo {
         .pressed(filtrando)
         .on_click(Msg::Tabla(ViewChange::Filtering(!filtrando)))
         .test_id("tabla.filtrar");
+        let columnas_boton = column_menu(
+            icon_button_sized(
+                Icon::Columns3,
+                "Columnas",
+                IconButtonVariant::Outlined,
+                IconButtonSize::Sm,
+            )
+            .tooltip("Mostrar u ocultar columnas")
+            .test_id("tabla.columnas"),
+            &columnas(),
+            &self.tabla,
+            Msg::Tabla,
+        );
         card().class("w-full max-w-3xl").test_id("tabla").children([
             card_header(
                 "Clientes",
@@ -2218,9 +2231,11 @@ impl Demo {
                     .class("flex items-center justify-between gap-3")
                     .children([
                         caption(shown).role(Role::Status).test_id("tabla.total"),
-                        div()
-                            .class("flex items-center gap-3")
-                            .children([caption(summary).test_id("tabla.seleccion"), filtrar]),
+                        div().class("flex items-center gap-3").children([
+                            caption(summary).test_id("tabla.seleccion"),
+                            filtrar,
+                            columnas_boton,
+                        ]),
                     ]),
                 Table::new(Rc::clone(&self.clientes), columnas(), &self.tabla)
                     .on_view(Msg::Tabla)
@@ -4041,6 +4056,12 @@ mod tests {
                 By::role(Role::List).name("Elementos"),
             ),
             (
+                &["column_menu"],
+                Tabla,
+                None,
+                By::role(Role::Button).name("Columnas"),
+            ),
+            (
                 &["map"],
                 Mapa,
                 None,
@@ -4274,6 +4295,38 @@ mod tests {
         // Clearing the search shows the ten thousand again.
         app.click(By::test_id("barra.buscar.clear"));
         assert_eq!(count(&app), Some(10_000));
+    }
+
+    #[test]
+    fn the_columns_button_hides_a_column_and_the_search_still_looks_in_it() {
+        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
+        let table = By::test_id("tabla.clientes");
+        app.click(By::role(Role::Button).name("Columnas"));
+        let items: Vec<_> = app
+            .screen()
+            .all(By::role(Role::MenuItemCheckBox))
+            .iter()
+            .filter_map(|item| item.name())
+            .collect();
+        assert_eq!(items, ["Ciudad", "Plan", "Monto"], "N.º and Nombre stay");
+        app.click(By::role(Role::MenuItemCheckBox).name("Ciudad"));
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(app.is_focused(By::role(Role::Button).name("Columnas")));
+        let screen = app.screen();
+        let headers: Vec<_> = screen
+            .within(screen.get(table.clone()))
+            .all(By::role(Role::ColumnHeader))
+            .iter()
+            .filter_map(|header| header.name())
+            .collect();
+        assert_eq!(headers, ["N.º", "Nombre", "Plan", "Monto", "Acciones"]);
+
+        app.type_text(By::test_id("barra.buscar"), "temuco");
+        let count = app.screen().get(table).node().row_count.unwrap();
+        assert!(
+            count > 0 && count < 10_000,
+            "Temuco is in the hidden column"
+        );
     }
 
     #[test]

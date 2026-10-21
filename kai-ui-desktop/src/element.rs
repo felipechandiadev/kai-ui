@@ -215,6 +215,9 @@ pub enum Role {
     Menu,
     /// Option of a [`Role::Menu`]: On when it is the current choice.
     MenuItem,
+    /// Item of a [`Role::Menu`] with a check mark (`NSMenuItem.state`):
+    /// On when checked.
+    MenuItemCheckBox,
     /// Source list of sections (`NSOutlineView` in a sidebar); its
     /// [`Role::SidebarItem`] rows carry the selection.
     Sidebar,
@@ -391,8 +394,26 @@ pub struct Options {
     pub items: Vec<String>,
     /// The current choice, checked in the list.
     pub selected: Option<usize>,
+    /// A check mark per item ([`Element::check_options`]); empty for a
+    /// list of choices.
+    pub checked: Vec<bool>,
+    /// Items that cannot be picked now, by index; missing ones can.
+    pub disabled: Vec<bool>,
+    /// Opened by a secondary click instead ([`Element::context_menu`]).
+    pub context: bool,
     /// The list is open; the session sets it while it shows the list.
     pub open: bool,
+}
+
+impl Options {
+    /// A list of check items, which stays open while people pick.
+    pub fn checks(&self) -> bool {
+        !self.checked.is_empty()
+    }
+
+    pub fn is_disabled(&self, index: usize) -> bool {
+        self.disabled.get(index).copied().unwrap_or(false)
+    }
 }
 
 /// How long the pointer rests on an element before its
@@ -908,9 +929,54 @@ impl<Msg> Element<Msg> {
         self.options = Some(Options {
             items,
             selected,
-            open: false,
+            ..Options::default()
         });
         self
+    }
+
+    /// [`Element::options`] whose items are switches with a check mark
+    /// (`NSMenuItem.state`, role [`Role::MenuItemCheckBox`]): picking one
+    /// sends [`Element::on_select`] and the list stays open, so people
+    /// can switch several.
+    pub fn check_options(mut self, items: Vec<String>, checked: Vec<bool>) -> Self {
+        self.options = Some(Options {
+            items,
+            checked,
+            ..Options::default()
+        });
+        self
+    }
+
+    /// Items of [`Element::options`] that cannot be picked now (dimmed).
+    pub fn disabled_options(mut self, disabled: Vec<bool>) -> Self {
+        if let Some(options) = &mut self.options {
+            options.disabled = disabled;
+        }
+        self
+    }
+
+    /// Open the list of [`Element::options`] with a secondary click (right
+    /// click or Ctrl+click) on this element or inside it, at the pointer,
+    /// or with the «show menu» action of assistive technology, instead of
+    /// by activating it: a context menu. The element takes no focus for it.
+    pub fn context_menu(mut self) -> Self {
+        if let Some(options) = &mut self.options {
+            options.context = true;
+        }
+        self
+    }
+
+    /// Whether a secondary click on this element opens its list.
+    pub fn has_context_menu(&self) -> bool {
+        !self.disabled
+            && self.handlers.on_select.is_some()
+            && self.options.as_ref().is_some_and(|options| options.context)
+    }
+
+    /// `on_select` picks from a list activating this element opens.
+    fn picks(&self) -> bool {
+        self.handlers.on_select.is_some()
+            && !self.options.as_ref().is_some_and(|options| options.context)
     }
 
     /// Message for the option picked from the list of
@@ -1159,7 +1225,7 @@ impl<Msg> Element<Msg> {
             Kind::Input { .. } => Some(FocusKind::TextField),
             Kind::Map(_) => Some(FocusKind::Button),
             _ if self.handlers.on_click.is_some()
-                || self.handlers.on_select.is_some()
+                || self.picks()
                 || self.command.is_some()
                 || self.map_control.is_some()
                 || self.map_vertex.is_some() =>
@@ -1183,7 +1249,7 @@ impl<Msg> Element<Msg> {
     pub fn is_control(&self) -> bool {
         matches!(self.kind, Kind::Input { .. } | Kind::Map(_))
             || self.handlers.on_click.is_some()
-            || self.handlers.on_select.is_some()
+            || self.picks()
             || self.command.is_some()
             || self.map_control.is_some()
             || self.map_vertex.is_some()

@@ -209,8 +209,11 @@ pub(crate) struct Session<A: App> {
     /// last layout: its tiles, labels or fitted view were picked for the
     /// old one.
     maps_resized: bool,
-    /// Modifier keys held now (⇧ double click and ⌘ wheel on maps).
+    /// Modifier keys held now (⇧ double click and ⌘ wheel on maps,
+    /// Ctrl+click).
     modifiers: Modifiers,
+    /// A Ctrl+click opened a context menu: its release does nothing else.
+    context_press: bool,
 }
 
 /// A vertex of a map's polygon editor under the pointer's drag.
@@ -391,6 +394,11 @@ enum ModalFocus {
 /// the palette. The button gets the focus back when it closes.
 struct Popup {
     owner: WidgetId,
+    /// Where a context menu opened; a pop-up list goes under its button.
+    at: Option<Point>,
+    /// Focus to give back on close: the button, or for a context menu
+    /// whatever had it.
+    return_focus: Option<WidgetId>,
     /// Row the keys act on, an index into `rows`.
     highlighted: usize,
     root: WidgetId,
@@ -595,6 +603,7 @@ impl<A: App> Session<A> {
             labels_fading: false,
             maps_resized: false,
             modifiers: Modifiers::NONE,
+            context_press: false,
         };
         session.apply_effects(effects);
         session.notify_resized();
@@ -1625,9 +1634,49 @@ impl<A: App> Session<A> {
     fn opens_popup(&self, id: WidgetId) -> bool {
         self.handler(id)
             .is_some_and(|handlers| handlers.on_select.is_some() && handlers.on_click.is_none())
+            && !self.tree.find(id).is_some_and(Element::has_context_menu)
+    }
+
+    /// Secondary button (right click) pressed at the pointer: the
+    /// [`Element::context_menu`] of the innermost element under it that
+    /// has one opens there.
+    pub fn secondary_click(&mut self) {
+        self.with_source(MsgSource::Pointer, |session| {
+            session.open_context_menu_at_pointer();
+        });
+    }
+
+    /// Open the context menu under the pointer; whether there was one.
+    fn open_context_menu_at_pointer(&mut self) -> bool {
+        self.dismiss_tooltip();
+        let Some(point) = self.cursor else {
+            return false;
+        };
+        let blocked = self.confirmation_open()
+            || self.palette.is_some()
+            || self
+                .modal
+                .as_ref()
+                .is_some_and(|modal| !self.hover_path.contains(&modal.panel));
+        let owner = self
+            .hover_path
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| self.tree.find(*id).is_some_and(Element::has_context_menu));
+        let Some(owner) = owner.filter(|_| !blocked) else {
+            return false;
+        };
+        self.close_popup();
+        self.open_popup_at(owner, Some(point));
+        true
     }
 
     fn open_popup(&mut self, owner: WidgetId) {
+        self.open_popup_at(owner, None);
+    }
+
+    fn open_popup_at(&mut self, owner: WidgetId, at: Option<Point>) {
         let Some(options) = self
             .tree
             .find(owner)
@@ -1636,8 +1685,15 @@ impl<A: App> Session<A> {
         else {
             return;
         };
+        let return_focus = if options.context {
+            *self.ui.focused.get()
+        } else {
+            Some(owner)
+        };
         self.popup = Some(Popup {
             owner,
+            at,
+            return_focus,
             highlighted: options.selected.unwrap_or(0),
             root: WidgetId(0),
             panel: WidgetId(0),
@@ -1657,21 +1713,42 @@ impl<A: App> Session<A> {
         };
         self.rebuild();
         self.relayout();
-        self.apply_intent(Intent::SetFocus(Some(popup.owner)));
+        self.apply_intent(Intent::SetFocus(popup.return_focus));
         self.invalidate();
     }
 
-    /// Close the list and send the button's `on_select(index)`.
+    /// Close the list and send the button's `on_select(index)`; a list of
+    /// check items stays open. Disabled items do nothing.
     fn choose_from_popup(&mut self, index: usize) {
         let Some(owner) = self.popup.as_ref().map(|popup| popup.owner) else {
             return;
         };
+        let Some(options) = self
+            .tree
+            .find(owner)
+            .and_then(|element| element.options.as_ref())
+        else {
+            return;
+        };
+        if options.is_disabled(index) {
+            return;
+        }
+        let checks = options.checks();
         let on_select = self
             .handler(owner)
             .and_then(|handlers| handlers.on_select.clone());
-        self.close_popup();
+        if checks {
+            if let Some(popup) = &mut self.popup {
+                popup.highlighted = index;
+            }
+        } else {
+            self.close_popup();
+        }
         if let Some(on_select) = on_select {
             self.send(on_select(index));
+        }
+        if checks {
+            self.focus_popup_row();
         }
     }
 
@@ -1706,13 +1783,19 @@ impl<A: App> Session<A> {
             return;
         };
         options.open = true;
-        let items = options.items.clone();
-        let selected = options.selected;
-        popup.highlighted = popup.highlighted.min(items.len() - 1);
-        let frame = menu_frame(anchor.bounds, items.len(), self.viewport);
+        let options = options.clone();
+        let count = options.items.len();
+        popup.highlighted = popup.highlighted.min(count - 1);
+        let anchor = popup.at.map_or(anchor.bounds, |at| Rect {
+            x: at.x,
+            y: at.y,
+            width: 0.0,
+            height: 0.0,
+        });
+        let frame = menu_frame(anchor, count, self.viewport);
         self.tree
             .children
-            .push(select_menu(&items, selected, popup.highlighted, frame));
+            .push(select_menu(&options, popup.highlighted, frame));
         self.tree.assign_ids();
         popup.root = self
             .tree
@@ -1725,7 +1808,7 @@ impl<A: App> Session<A> {
                 .map_or(WidgetId(0), |element| element.id)
         };
         popup.panel = find(MENU);
-        popup.rows = (0..items.len())
+        popup.rows = (0..count)
             .map(|index| find(&format!("{MENU}.{index}")))
             .collect();
     }
@@ -1977,6 +2060,15 @@ impl<A: App> Session<A> {
     }
 
     pub fn accessibility_action(&mut self, request: &ActionRequest) {
+        if request.action == accesskit::Action::ShowContextMenu {
+            if let Some(id) = a11y::widget_id(request.target_node)
+                .filter(|id| self.tree.find(*id).is_some_and(Element::has_context_menu))
+            {
+                self.close_popup();
+                self.open_popup(id);
+            }
+            return;
+        }
         self.with_source(MsgSource::A11y, |session| {
             for intent in a11y::intents_for_action(request, &session.focus_order) {
                 session.apply_intent(intent);
@@ -2761,6 +2853,17 @@ impl<A: App> Session<A> {
     fn press_pointer(&mut self, pressed: bool, clicks: u32) {
         if pressed {
             self.dismiss_tooltip();
+        }
+        if !pressed && std::mem::take(&mut self.context_press) {
+            return;
+        }
+        if pressed
+            && self.modifiers.control
+            && !self.modifiers.command
+            && self.open_context_menu_at_pointer()
+        {
+            self.context_press = true;
+            return;
         }
         let target = pointer_target(&self.layout, &self.hover_path);
         if pressed

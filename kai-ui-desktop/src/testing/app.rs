@@ -770,6 +770,18 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// Secondary click (right click) at the element's center: opens the
+    /// [`Element::context_menu`] of the element or of its nearest ancestor
+    /// with one.
+    ///
+    /// [`Element::context_menu`]: crate::element::Element::context_menu
+    #[track_caller]
+    pub fn right_click(&mut self, by: By) {
+        self.hover(by);
+        self.session.secondary_click();
+        self.frame();
+    }
+
     /// The laid-out tree as text, one node per line (role, id, name,
     /// `test_id`, bounds, classes): what the inspector prints.
     pub fn dump(&self) -> String {
