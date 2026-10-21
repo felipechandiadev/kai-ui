@@ -158,7 +158,7 @@ pub fn candidates(tiles: &TileFrame, zoom: f64) -> Vec<Candidate> {
     out
 }
 
-/// Boxes already taken, bucketed in [`CELL`]-point cells.
+/// Boxes already taken, bucketed in `CELL`-point cells.
 pub struct Grid {
     bounds: Rect,
     columns: usize,

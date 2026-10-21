@@ -664,7 +664,7 @@ impl<A: App> TestApp<A> {
     }
 
     /// Press at the element's center, move the pointer by `(dx, dy)` points
-    /// in [`DRAG_STEPS`] steps of [`DRAG_STEP`] and release at once: a
+    /// in `DRAG_STEPS` steps of `DRAG_STEP` and release at once: a
     /// flick, after which a map glides on ([`Self::advance`] lets it).
     #[track_caller]
     pub fn drag(&mut self, by: By, dx: f32, dy: f32) {

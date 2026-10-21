@@ -70,8 +70,8 @@ El orden detallado, los contratos y los criterios de aceptación están en los d
 - **Campo de color:** `components::color_field` (builder `ColorField`): hex con muestra y paleta de sugeridos como `RadioGroup` ([13](13-hoja-de-ruta-plataforma.md), Paso 14).
 - **Lenguaje de color de la selección:** todo lo que es una elección activa (fila de sidebar, opción del select, segmento, ítem de toolbar presionado, fila de tabla, muestra de color) usa el `secondary` de Kai (cyan) como vidrio teñido: token `choice` y las clases `CHOICE_ACTIVE` y `CHOICE_HOVER`. El azul (acento) queda para acción, encendido y foco ([13](13-hoja-de-ruta-plataforma.md), Paso 14).
 - **`kai dev` (Paso 18 de 13, empezado):** el crate `kai-cli` (al lado de este) instala el binario `kai`. `kai dev` recompila al guardar y reinicia la app conservando la ventana y lo que devuelva `App::dev_state`; si la compilación falla, la versión anterior sigue abierta. Es lo único de la CLI que existe por ahora.
-- **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)).
-- **Calidad:** 500 tests normales y 14 `#[ignore]` de benchmarks y capturas (con `--features mcp` son 504 normales), más 4 doctests (3 ignorados) y 8 tests de `kai-cli`. Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, jobs de CI en macOS para la librería y `kai-cli` (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
+- **Accesibilidad:** AccessKit integrado, con el árbol derivado del layout y roles semánticos por elemento ([08](08-accesibilidad.md)). Las preferencias del Mac (reducir movimiento, aumentar contraste, reducir transparencia, acceso completo por teclado) se leen en vivo y las clases las usan con `motion-reduce:`, `contrast-more:` y `transparency-reduce:`. La paleta publica la fila elegida como `active_descendant`, los avisos se pausan con el puntero o el foco (los de error no se cierran solos), los campos deshacen con ⌘Z, el `Select` busca por tipeo y `Tabs` equivale a `NSTabView` ([13](13-hoja-de-ruta-plataforma.md), Paso 14).
+- **Calidad:** 514 tests normales y 14 `#[ignore]` de benchmarks y capturas (con `--features mcp` son 518 normales), más 4 doctests (3 ignorados) y 8 tests de `kai-cli`. Clippy `-D warnings` (sin features, con `snapshots` y con `mcp`), `cargo doc -D warnings`, jobs de CI en macOS para la librería y `kai-cli` (más un job de MSRV 1.89). Las capturas de la demo se comparan con `scripts/snapshot-baseline.sh --check` ([06](06-calidad-y-distribucion.md)). MCP/IA sigue siendo un adaptador opcional de aplicación con validación y autorización previas.
 
 ## Mapa de módulos
 
@@ -92,13 +92,14 @@ kai-ui-desktop/
 │   │                      AppKit; constantes del vidrio de elección (CHOICE_ACTIVE, CHOICE_HOVER)
 │   ├── components/        color (ColorField), dialog, media (Avatar, MediaSlot), progress
 │   │                      (DotProgress), search, sidebar, table (Table, virtual_list),
-│   │                      text_area, toast, toolbar
+│   │                      tabs (Tabs), text_area, toast, toolbar
 │   ├── effects.rs         pool de tareas de Effects::perform y bandeja de resultados
 │   ├── media.rs           imágenes: ImageSource, carga (archivo, bytes, URL con `net`), ImageStore
 │   ├── maps/              map, cámara, capas de polígonos, editor de polígonos, PMTiles, MVT,
 │   │                      estilo del mapa base y etiquetas
 │   ├── geo.rs             coordenadas geográficas y proyección Web Mercator
-│   ├── platform/          piezas nativas fuera de winit: panel de archivos (NSOpenPanel)
+│   ├── platform/          piezas nativas fuera de winit: panel de archivos (NSOpenPanel) y
+│   │                      preferencias de accesibilidad del Mac (prefs)
 │   ├── dev_state.rs       lo que `kai dev` conserva entre reinicios (solo en debug)
 │   ├── virtual_rows.rs    filas visibles de las listas virtualizadas
 │   ├── responder.rs       acciones, cadena de responders, equivalentes y atajos de comandos

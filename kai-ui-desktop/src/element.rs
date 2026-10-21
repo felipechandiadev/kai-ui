@@ -277,7 +277,7 @@ pub enum Kind {
         /// Several wrapped lines ([`Element::multiline`]).
         rows: Option<Rows>,
     },
-    /// Raster image ([`image`]): sized by its classes, or by its natural
+    /// Raster image ([`fn@image`]): sized by its classes, or by its natural
     /// size and aspect ratio; fitted by `object-*`.
     Image {
         source: ImageSource,

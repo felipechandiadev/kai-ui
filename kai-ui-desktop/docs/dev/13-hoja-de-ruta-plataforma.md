@@ -56,13 +56,14 @@
 - **Widgets del backlog** ✅: checkbox, segmented, `Select`, sidebar con riel, toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`. Todos en la demo, con un test de cobertura.
 - **Lenguaje de color de la selección** ✅: toda elección activa usa el `secondary` (cyan) como vidrio teñido (token `choice`). El azul (acento) queda para acción, encendido y foco. Detalle en el Paso 14.
 - **`DotProgress` y botón ocupado** ✅: el botón (o el comando) que lanzó un `Effects::perform` queda ocupado hasta que la tarea entrega su `Msg`. Muestra tres puntos en ola sobre el texto, conserva color y ancho, y no recibe clics. Detalle en el Paso 14.
+- **Accesibilidad y usabilidad** ✅: preferencias de macOS leídas en vivo (`motion-reduce:`, `contrast-more:`, `transparency-reduce:`), `active_descendant` en la paleta, avisos que se pausan con el puntero o el foco (los de error persisten), deshacer y rehacer en campos de texto, búsqueda por tipeo en el `Select` y el componente `Tabs`. Todo con tests automáticos; falta verlo con VoiceOver. Detalle en el Paso 14.
 - **P14 DSP desktop** 🟡: login con llavero, shell con menú y la sección Áreas (mapa de Parral con las áreas del core, lista y color por área). Faltan editar áreas desde el escritorio, el flujo operativo y las notificaciones.
 - **P14b primitivas** 🟡: imágenes y geometría hechas; falta el clip redondeado de contenedores.
 - **P15 efectos** 🟡: pool de tareas, `keyed`/`cancel`, `after`, panel de archivos y archivos arrastrados. Faltan futures, suscripciones (websockets para notificaciones) y comandos MCP async. **Fallo conocido:** el panel de archivos es modal dentro del manejador de eventos y la app aborta si se cierra con el panel abierto (ver el Paso 15).
 - **P15b–P15d mapas** 🟡: mapa vectorial con áreas, edición de polígonos existentes y comandos `mapa.*`. Faltan los modos Punto y Línea, dibujar desde cero y `incidencias.set_ubicacion`.
 - **P16 persistencia** ⬜.
 
-**Cifras:** 500 tests de la librería (504 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 8 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
+**Cifras:** 514 tests de la librería (518 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 8 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
 
 ### 1.2 Lo que falta para cada hito, con costo estimado
 
@@ -825,6 +826,13 @@ Reglas de la pista C:
   - `DotProgress` (`components::DotProgress`, `dot_progress`): puntos en ola como `DotProgress` `wave` de la web, en tamaños Sm, Md y Lg y en el color del texto. Usa la primera animación calculada al pintar (`Motion`, ver [04](04-renderer-y-texto.md)), que respeta `reduce_motion`. Rol `ProgressIndicator`.
   - **Botón ocupado automático**: la sesión recuerda qué lanzó cada tarea de `Effects::perform` (un control o un comando) y lo marca `busy` hasta que la tarea, y las que su `Msg` encadene, terminan. El botón conserva su color y su ancho, toma el cursor de espera, oculta el texto bajo los puntos y no recibe clics. Un comando ocupado queda «En curso» en el menú, la paleta y para agentes. Se desactiva con `busy_feedback(false)`, y `Button::loading(true)` lo fuerza. Detalle en [03](03-eventos-y-estado.md) y [05](05-widgets-y-tema.md).
     - **Demo:** la card «Acciones con espera» de Botones tiene un botón por variante (1,5 s), «Guardar y recargar» con dos tareas encadenadas, uno con `busy_feedback(false)`, el comando `botones.simular_espera` (menú Botones) con su botón, un botón con `loading(true)` y los tres tamaños de `DotProgress`. La captura es `demo-botones-cargando`.
+  - **Accesibilidad y usabilidad** (sin prueba manual; cada punto con tests de `TestApp` o de AccessKit):
+    - **Preferencias del Mac:** `platform::prefs::read` lee de `NSWorkspace` reducir movimiento, aumentar contraste y reducir transparencia, y de `NSApplication` el acceso completo por teclado. El runtime las aplica al arrancar y al activar la ventana (`Session::set_system_prefs`), superpuestas al tema de la app. Las clases las usan con `motion-reduce:`, `contrast-more:` y `transparency-reduce:` ([05](05-widgets-y-tema.md)).
+    - **Paleta:** la fila elegida es el `active_descendant` de la búsqueda, así VoiceOver la lee mientras el foco sigue en el campo ([08](08-accesibilidad.md)).
+    - **Avisos:** un temporizador con clave (`keyed`) se pospone mientras el elemento con ese `test_id` tiene el puntero o el foco, y retoma `HELD_TIMER_RESUME` (2 s) después de soltarlo. Los avisos de error no se cierran solos ([03](03-eventos-y-estado.md)).
+    - **Campos de texto:** ⌘Z y ⇧⌘Z deshacen y rehacen por palabra (hasta 100 pasos); `set_text` desde la app borra el historial.
+    - **`Select`:** búsqueda por tipeo en la lista abierta (ver 20.3 en [12](12-modelo-appkit.md)).
+    - **`Tabs`:** equivalente a `NSTabView`, con ← y → que eligen y Tab que entra al panel. En la demo está en Contenedores ([12](12-modelo-appkit.md), después de 20.8).
   - Pendientes para después: los de mapa de los Pasos 15b–15c.
 - **Lenguaje de color de la selección** ✅: todo lo que es una elección activa usa el `secondary` de Kai (cyan) como vidrio teñido, en Kai, Aqua11 y Glass, claro y oscuro.
   - **Token:** `choice` en `Theme::color`, el mismo `#00deef` que `mix-secondary` (`#00c4d4` en AppKit oscuro).
@@ -1229,6 +1237,7 @@ Reglas de la pista C:
 - [x] Backlog de widgets del P14: toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`, cada uno con ids y tests y en la demo.
 - [x] Lenguaje de color de la selección: token `choice`, `CHOICE_ACTIVE` y `CHOICE_HOVER` en sidebar, select (sin check y con `ChevronDown`), paleta, segmented, toolbar, tabla, `ColorField` y `MediaSlot`.
 - [x] `DotProgress` (animación al pintar con `Motion`) y botón ocupado automático por tarea de `Effects::perform`, con comandos «En curso», `busy:`/`group-busy:` y `busy` en AccessKit. Falta verlo a mano en la ventana y con VoiceOver.
+- [x] Accesibilidad y usabilidad: preferencias del Mac en vivo, `active_descendant` en la paleta, avisos que se pausan (errores persistentes), deshacer y rehacer en campos, búsqueda por tipeo en el `Select` y `Tabs`. Falta revisarlo con VoiceOver y con las preferencias cambiadas a mano.
 - [ ] P14 DSP desktop (login, áreas, flujo operativo, notificaciones). Empezado: login con llavero, shell y Áreas de solo lectura con color por área.
 - [ ] P14b Primitivas de renderer: imágenes, geometría, transformaciones, clip redondeado (mapas M0). Hecho salvo el clip redondeado.
 - [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`. Parcial: pool de tareas, `keyed`/`cancel`, `after`, panel de archivos, archivos arrastrados y `run_until_idle`. Faltan futures, suscripciones, MCP async y arreglar el aborto del panel de archivos.

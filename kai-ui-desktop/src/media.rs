@@ -300,7 +300,7 @@ struct Entry {
 /// The images of the views so far, by source: wanted, loading, decoded or
 /// failed. [`ImageStore::resolve`] fills the decoded ones into a tree; the
 /// session starts the loads ([`ImageStore::take_wanted`]) and stores the
-/// results ([`ImageStore::finish`]). Beyond [`STORE_CAPACITY`] entries,
+/// results ([`ImageStore::finish`]). Beyond `STORE_CAPACITY` entries,
 /// the ones out of the views longest are dropped (and load again if they
 /// come back).
 pub struct ImageStore {
