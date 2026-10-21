@@ -69,6 +69,7 @@ pub enum Icon {
     FilePen,
     Funnel,
     FunnelX,
+    ChevronRight,
 }
 
 impl Icon {
@@ -138,6 +139,7 @@ impl Icon {
         Icon::FilePen,
         Icon::Funnel,
         Icon::FunnelX,
+        Icon::ChevronRight,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -208,6 +210,7 @@ impl Icon {
             Icon::FilePen => "file-pen",
             Icon::Funnel => "funnel",
             Icon::FunnelX => "funnel-x",
+            Icon::ChevronRight => "chevron-right",
         }
     }
 
@@ -283,6 +286,7 @@ impl Icon {
             Icon::FilePen => include_str!("../../assets/icons/file-pen.svg"),
             Icon::Funnel => include_str!("../../assets/icons/funnel.svg"),
             Icon::FunnelX => include_str!("../../assets/icons/funnel-x.svg"),
+            Icon::ChevronRight => include_str!("../../assets/icons/chevron-right.svg"),
         }
     }
 }

@@ -29,7 +29,7 @@ use crate::components::{MENU, MenuFrame, PaletteItem, command_palette, select_me
 use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
 use crate::effects::{self, Inbox};
 use crate::element::{
-    Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
+    Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, VirtualRows, WidgetId, div,
 };
 use crate::fold::fold;
 use crate::geo::{Camera, LatLon, MapView, TileId};
@@ -1168,10 +1168,7 @@ impl<A: App> Session<A> {
             self.outbox.commands = Some(commands.clone());
             self.commands = commands;
         }
-        let pin = self
-            .row_pin
-            .take()
-            .or_else(|| self.focused_row().map(|(list, index, ..)| (list, index)));
+        let pin = self.row_pin.take().or_else(|| self.focused_row());
         self.tree = build_view_with(&self.app, &self.commands);
         self.build_rows(pin);
         self.mark_busy_widgets();
@@ -1270,11 +1267,16 @@ impl<A: App> Session<A> {
         }
     }
 
-    /// The virtual list around the focus, the index of the focused row,
-    /// the row count and the row height.
-    fn focused_row(&self) -> Option<(WidgetId, usize, usize, f32)> {
+    /// The virtual list around the focus and the index of the focused row.
+    fn focused_row(&self) -> Option<(WidgetId, usize)> {
         let path = self.tree.path_to(self.focused()?)?;
         virtual_rows::row_on_path(&self.tree, &path)
+    }
+
+    fn virtual_rows(&self, list: WidgetId) -> Option<&VirtualRows<A::Msg>> {
+        self.tree
+            .find(list)
+            .and_then(|list| list.virtual_rows.as_ref())
     }
 
     /// Build the rows of every virtual list for its scroll offset and last
@@ -1296,12 +1298,7 @@ impl<A: App> Session<A> {
     /// rebuild did not build (first layout, resize, clamped offset).
     fn rows_stale(&self) -> bool {
         self.row_windows.iter().any(|(id, built)| {
-            let (Some(node), Some(rows)) = (
-                self.layout.node(*id),
-                self.tree
-                    .find(*id)
-                    .and_then(|list| list.virtual_rows.as_ref()),
-            ) else {
+            let (Some(node), Some(rows)) = (self.layout.node(*id), self.virtual_rows(*id)) else {
                 return false;
             };
             let viewport = Viewport {
@@ -1309,20 +1306,19 @@ impl<A: App> Session<A> {
                 height: Some(node.padding_box.height),
                 pinned: None,
             };
-            virtual_rows::visible_range(rows.count, rows.row_height, viewport) != *built
+            virtual_rows::visible_range(rows.heights(), viewport) != *built
         })
     }
 
-    /// Scroll virtual list `list` so its row `index` is in view, by index
-    /// times row height (the row needs not be built). Returns whether the
-    /// offset changed.
+    /// Scroll virtual list `list` so its row `index` is in view, from the
+    /// row heights (the row needs not be built): with its extra height
+    /// when that fits, else its top. Returns whether the offset changed.
     pub fn reveal_row(&mut self, list: WidgetId, index: usize) -> bool {
-        let Some(height) = self
-            .tree
-            .find(list)
-            .and_then(|list| list.virtual_rows.as_ref())
-            .map(|rows| rows.row_height)
-        else {
+        let Some((top, bottom)) = self.virtual_rows(list).map(|rows| {
+            let heights = rows.heights();
+            let top = heights.top(index);
+            (top, top + heights.height(index))
+        }) else {
             return false;
         };
         let Some(node) = self.layout.node(list) else {
@@ -1332,12 +1328,10 @@ impl<A: App> Session<A> {
             return false;
         };
         let view = node.padding_box.height;
-        let top = index as f32 * height;
-        let bottom = top + height;
         let next = if top < scroll.offset {
             top
         } else if bottom > scroll.offset + view {
-            bottom - view
+            (bottom - view).min(top)
         } else {
             scroll.offset
         };
@@ -1358,27 +1352,43 @@ impl<A: App> Session<A> {
         let Intent::Text(TextIntent::KeyDown { key, modifiers, .. }) = intent else {
             return false;
         };
-        if *modifiers != Modifiers::NONE
-            || self
-                .focused()
-                .is_none_or(|id| self.focus_order.kind(id) != Some(FocusKind::Button))
+        let Some(focus) = self.focused() else {
+            return false;
+        };
+        if *modifiers != Modifiers::NONE || self.focus_order.kind(focus) != Some(FocusKind::Button)
         {
             return false;
         }
-        let Some((list, index, count, height)) = self.focused_row() else {
+        let Some(path) = self.tree.path_to(focus) else {
             return false;
         };
-        let page = self.layout.node(list).map_or(1, |node| {
-            ((node.padding_box.height / height).floor() as usize).max(1)
-        });
-        let last = count.saturating_sub(1);
+        if virtual_rows::in_own_tab_stops(&self.tree, &path) {
+            return false;
+        }
+        let Some((list, index)) = virtual_rows::row_on_path(&self.tree, &path) else {
+            return false;
+        };
+        let Some(rows) = self.virtual_rows(list) else {
+            return false;
+        };
+        let heights = rows.heights();
+        let view = self
+            .layout
+            .node(list)
+            .map_or(heights.row, |node| node.padding_box.height);
+        let last = rows.count.saturating_sub(1);
         let target = match key {
             Key::ArrowUp => index.saturating_sub(1),
             Key::ArrowDown => (index + 1).min(last),
             Key::Home => 0,
             Key::End => last,
-            Key::PageUp => index.saturating_sub(page),
-            Key::PageDown => (index + page).min(last),
+            Key::PageUp => heights
+                .index_at(heights.top(index) - view)
+                .min(index.saturating_sub(1)),
+            Key::PageDown => heights
+                .index_at(heights.top(index) + view)
+                .max(index + 1)
+                .min(last),
             _ => return false,
         };
         if target == index {

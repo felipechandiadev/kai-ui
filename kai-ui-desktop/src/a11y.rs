@@ -134,6 +134,7 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::Main => Role::Main,
         KaiRole::Header => Role::Banner,
         KaiRole::Group => Role::Group,
+        KaiRole::Region => Role::Region,
         KaiRole::Heading => Role::Heading,
         KaiRole::Paragraph => Role::Paragraph,
         KaiRole::Label => Role::Label,
@@ -268,9 +269,11 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     }
     if let Some(expanded) = source.expanded {
         node.set_expanded(expanded);
-        let mut parts = Vec::new();
-        text_content(layout, index, &mut parts);
-        node.set_value(parts.join(" "));
+        if role == Role::ComboBox {
+            let mut parts = Vec::new();
+            text_content(layout, index, &mut parts);
+            node.set_value(parts.join(" "));
+        }
     }
     if matches!(
         role,

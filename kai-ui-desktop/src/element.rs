@@ -192,6 +192,9 @@ pub enum Role {
     Main,
     Header,
     Group,
+    /// A named part people can jump to (the panel of an expanded table
+    /// row).
+    Region,
     Heading,
     Paragraph,
     Label,
@@ -376,6 +379,19 @@ pub struct VirtualRows<Msg> {
     pub render: Rc<dyn Fn(usize) -> Element<Msg>>,
     /// Row that is always built (the selected one), so Tab enters there.
     pub selected: Option<usize>,
+    /// Extra height below some rows, by index (each once, in order):
+    /// see [`Element::row_extras`].
+    pub extras: Vec<(usize, f32)>,
+}
+
+impl<Msg> VirtualRows<Msg> {
+    pub fn heights(&self) -> Heights<'_> {
+        Heights {
+            count: self.count,
+            row: self.row_height,
+            extras: &self.extras,
+        }
+    }
 }
 
 impl<Msg> fmt::Debug for VirtualRows<Msg> {
@@ -384,7 +400,58 @@ impl<Msg> fmt::Debug for VirtualRows<Msg> {
             .field("count", &self.count)
             .field("row_height", &self.row_height)
             .field("selected", &self.selected)
+            .field("extras", &self.extras)
             .finish_non_exhaustive()
+    }
+}
+
+/// Where the rows of a virtual list sit: `count` rows of `row` points,
+/// some with extra height below (an expanded row's panel).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Heights<'a> {
+    pub count: usize,
+    pub row: f32,
+    /// `(index, points)`, by index, each index once.
+    pub extras: &'a [(usize, f32)],
+}
+
+impl Heights<'_> {
+    /// From the top of the list to the top of row `index`.
+    pub fn top(&self, index: usize) -> f32 {
+        let above: f32 = self
+            .extras
+            .iter()
+            .take_while(|(row, _)| *row < index)
+            .map(|(_, extra)| extra)
+            .sum();
+        index as f32 * self.row + above
+    }
+
+    /// Height of row `index`, its extra included.
+    pub fn height(&self, index: usize) -> f32 {
+        let extra = self
+            .extras
+            .binary_search_by_key(&index, |(row, _)| *row)
+            .map_or(0.0, |found| self.extras[found].1);
+        self.row + extra
+    }
+
+    /// The row at `offset` from the top of the list; `count` or more past
+    /// its end.
+    pub fn index_at(&self, offset: f32) -> usize {
+        let offset = offset.max(0.0);
+        let mut above = 0.0;
+        for &(index, extra) in self.extras {
+            let top = index as f32 * self.row + above;
+            if offset < top {
+                break;
+            }
+            if offset < top + self.row + extra {
+                return index;
+            }
+            above += extra;
+        }
+        ((offset - above) / self.row).floor() as usize
     }
 }
 
@@ -523,6 +590,10 @@ pub struct Element<Msg> {
     /// Its controls are one Tab stop; see [`Element::focus_group`] and
     /// [`Element::selecting_focus_group`].
     pub focus_group: Option<FocusGroup>,
+    /// Its controls are Tab stops of their own ([`Element::own_tab_stops`]).
+    pub own_tab_stops: bool,
+    /// Open or closed disclosure ([`Element::expanded`]).
+    pub expanded: Option<bool>,
     /// Pop-up button list; see [`Element::options`].
     pub options: Option<Options>,
     /// App-modal panel ([`Element::modal`]).
@@ -620,6 +691,8 @@ impl<Msg> Element<Msg> {
             focus_on_press: true,
             claims_escape: false,
             focus_group: None,
+            own_tab_stops: false,
+            expanded: None,
             options: None,
             modal: false,
             virtual_rows: None,
@@ -835,6 +908,21 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Make the controls inside Tab stops of their own, also inside a
+    /// [`Element::focus_group`]; in a row of [`Element::virtual_rows`]
+    /// they keep the arrow keys (the panel of an expanded table row).
+    pub fn own_tab_stops(mut self) -> Self {
+        self.own_tab_stops = true;
+        self
+    }
+
+    /// An open (`true`) or closed disclosure, for assistive technology:
+    /// an expandable table row.
+    pub fn expanded(mut self, expanded: bool) -> Self {
+        self.expanded = Some(expanded);
+        self
+    }
+
     /// A [`Element::focus_group`] laid out in a row whose ← and → also
     /// activate the member they reach, as the tabs of `NSTabView`.
     pub fn tabs_focus_group(mut self) -> Self {
@@ -1047,8 +1135,25 @@ impl<Msg> Element<Msg> {
             row_height: row_height.max(1.0),
             render,
             selected: selected.filter(|index| *index < count),
+            extras: Vec::new(),
         });
         self.row_count = Some(count);
+        self
+    }
+
+    /// Extra height below rows of [`Element::virtual_rows`], as
+    /// `(index, points)`: the panel of an expanded row. The row built at
+    /// `index` is that much taller; scrolling and the keys account for it.
+    pub fn row_extras(mut self, extras: impl IntoIterator<Item = (usize, f32)>) -> Self {
+        if let Some(rows) = &mut self.virtual_rows {
+            let mut extras: Vec<(usize, f32)> = extras
+                .into_iter()
+                .filter(|(index, extra)| *index < rows.count && *extra > 0.0)
+                .collect();
+            extras.sort_by_key(|(index, _)| *index);
+            extras.dedup_by_key(|(index, _)| *index);
+            rows.extras = extras;
+        }
         self
     }
 
@@ -1375,10 +1480,14 @@ impl FocusOrder {
         {
             self.equivalents.push((element.id, equivalent));
         }
-        let group = element
-            .focus_group
-            .map(|behavior| (element.id, behavior))
-            .or(group);
+        let group = if element.own_tab_stops {
+            None
+        } else {
+            element
+                .focus_group
+                .map(|behavior| (element.id, behavior))
+                .or(group)
+        };
         for child in &element.children {
             self.collect(child, group);
         }

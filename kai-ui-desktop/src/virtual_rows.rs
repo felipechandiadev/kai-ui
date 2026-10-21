@@ -1,10 +1,12 @@
 //! Building the rows of [`Element::virtual_rows`] lists: only the ones in
 //! view plus [`OVERSCAN`] on each side, between spacers as tall as the
-//! rows left out, so the list scrolls as if every row were there.
+//! rows left out, so the list scrolls as if every row were there. Rows
+//! may be taller than the rest ([`Element::row_extras`]): positions come
+//! from [`Heights`].
 
 use std::ops::Range;
 
-use crate::element::{Element, VirtualRows, WidgetId};
+use crate::element::{Element, Heights, VirtualRows, WidgetId};
 
 /// Rows built beyond each edge of the visible ones.
 pub const OVERSCAN: usize = 6;
@@ -25,14 +27,15 @@ pub struct Viewport {
     pub pinned: Option<usize>,
 }
 
-/// Rows of a list of `count` rows of `row_height` to build for `viewport`.
-pub fn visible_range(count: usize, row_height: f32, viewport: Viewport) -> Range<usize> {
-    let first = (viewport.offset.max(0.0) / row_height).floor() as usize;
-    let visible = viewport.height.map_or(INITIAL_ROWS, |height| {
-        (height / row_height).ceil() as usize + 1
+/// Rows of a list laid out as `heights` to build for `viewport`.
+pub fn visible_range(heights: Heights<'_>, viewport: Viewport) -> Range<usize> {
+    let count = heights.count;
+    let first = heights.index_at(viewport.offset);
+    let last = viewport.height.map_or(first + INITIAL_ROWS, |height| {
+        heights.index_at(viewport.offset + height) + 1
     });
     let start = first.saturating_sub(OVERSCAN).min(count);
-    let end = (first + visible + OVERSCAN).min(count);
+    let end = (last + OVERSCAN).min(count);
     start..end
 }
 
@@ -56,7 +59,7 @@ fn visit<Msg>(
 ) {
     if let Some(rows) = &element.virtual_rows {
         let viewport = viewport(element.id);
-        let range = visible_range(rows.count, rows.row_height, viewport);
+        let range = visible_range(rows.heights(), viewport);
         element.children = children(rows, range.clone(), viewport.pinned);
         built.push((element.id, range));
         return;
@@ -78,10 +81,13 @@ fn children<Msg>(
         }
     }
     indices.sort_unstable();
-    let height = rows.row_height;
+    let heights = rows.heights();
     let spacer = |from: usize, to: usize| {
         crate::element::div()
-            .class(&format!("shrink-0 h-[{}px]", (to - from) as f32 * height))
+            .class(&format!(
+                "shrink-0 h-[{}px]",
+                heights.top(to) - heights.top(from)
+            ))
             .key(format!("kai.hueco.{from}"))
     };
     let mut children = Vec::with_capacity(indices.len() + 2);
@@ -92,7 +98,7 @@ fn children<Msg>(
         }
         children.push(
             (rows.render)(index)
-                .class(&format!("shrink-0 h-[{height}px]"))
+                .class(&format!("shrink-0 h-[{}px]", heights.height(index)))
                 .key(index.to_string())
                 .row_index(index),
         );
@@ -106,27 +112,42 @@ fn children<Msg>(
 
 /// The virtual list on `path` (root first) and the index of its row on
 /// that path: where a focused element sits.
-pub fn row_on_path<Msg>(
-    tree: &Element<Msg>,
-    path: &[WidgetId],
-) -> Option<(WidgetId, usize, usize, f32)> {
+pub fn row_on_path<Msg>(tree: &Element<Msg>, path: &[WidgetId]) -> Option<(WidgetId, usize)> {
     let mut found = None;
     let mut element = tree;
     for (depth, id) in path.iter().enumerate() {
         if depth > 0 {
             element = element.children.iter().find(|child| child.id == *id)?;
         }
-        if let Some(rows) = &element.virtual_rows {
+        if element.virtual_rows.is_some() {
             let row = path
                 .get(depth + 1)
                 .and_then(|row| element.children.iter().find(|child| child.id == *row))
                 .and_then(|row| row.row_index);
             if let Some(index) = row {
-                found = Some((element.id, index, rows.count, rows.row_height));
+                found = Some((element.id, index));
             }
         }
     }
     found
+}
+
+/// Whether an element on `path` (root first) has
+/// [`Element::own_tab_stops`]: the focus at its end keeps its keys.
+pub fn in_own_tab_stops<Msg>(tree: &Element<Msg>, path: &[WidgetId]) -> bool {
+    let mut element = tree;
+    for (depth, id) in path.iter().enumerate() {
+        if depth > 0 {
+            match element.children.iter().find(|child| child.id == *id) {
+                Some(child) => element = child,
+                None => return false,
+            }
+        }
+        if element.own_tab_stops {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -134,17 +155,29 @@ mod tests {
     use std::rc::Rc;
 
     use super::{INITIAL_ROWS, OVERSCAN, Viewport, materialize, visible_range};
-    use crate::element::{Element, Kind, div, text};
+    use crate::element::{Element, Heights, Kind, div, text};
 
     fn list(count: usize) -> Element<()> {
-        let mut tree = div().child(div().class("h-[100px] overflow-y-auto").virtual_rows(
-            count,
-            20.0,
-            None,
-            Rc::new(|index| text(format!("{index}"))),
-        ));
+        list_with(count, [])
+    }
+
+    fn list_with(count: usize, extras: impl IntoIterator<Item = (usize, f32)>) -> Element<()> {
+        let mut tree = div().child(
+            div()
+                .class("h-[100px] overflow-y-auto")
+                .virtual_rows(count, 20.0, None, Rc::new(|index| text(format!("{index}"))))
+                .row_extras(extras),
+        );
         tree.assign_ids();
         tree
+    }
+
+    fn uniform(count: usize) -> Heights<'static> {
+        Heights {
+            count,
+            row: 20.0,
+            extras: &[],
+        }
     }
 
     fn row_indices(list: &Element<()>) -> Vec<usize> {
@@ -154,10 +187,18 @@ mod tests {
             .collect()
     }
 
+    fn spacers(list: &Element<()>) -> Vec<&str> {
+        list.children
+            .iter()
+            .filter(|child| child.row_index.is_none())
+            .map(|child| child.class.as_str())
+            .collect()
+    }
+
     #[test]
     fn only_the_rows_in_view_and_a_margin_are_built() {
         assert_eq!(
-            visible_range(10_000, 20.0, Viewport::default()),
+            visible_range(uniform(10_000), Viewport::default()),
             0..INITIAL_ROWS + OVERSCAN
         );
         let viewport = Viewport {
@@ -166,10 +207,10 @@ mod tests {
             pinned: None,
         };
         assert_eq!(
-            visible_range(10_000, 20.0, viewport),
+            visible_range(uniform(10_000), viewport),
             100 - OVERSCAN..100 + 6 + OVERSCAN
         );
-        assert_eq!(visible_range(3, 20.0, viewport), 3..3);
+        assert_eq!(visible_range(uniform(3), viewport), 3..3);
     }
 
     #[test]
@@ -186,14 +227,8 @@ mod tests {
         let rows = row_indices(list);
         assert_eq!(rows[0], 3);
         assert_eq!(rows[1..], (94..112).collect::<Vec<_>>());
-        let classes: Vec<&str> = list
-            .children
-            .iter()
-            .filter(|child| child.row_index.is_none())
-            .map(|child| child.class.as_str())
-            .collect();
         assert_eq!(
-            classes,
+            spacers(list),
             [
                 "shrink-0 h-[60px]",
                 "shrink-0 h-[1800px]",
@@ -206,6 +241,76 @@ mod tests {
             .find(|child| child.row_index == Some(100));
         assert_eq!(row.unwrap().kind, Kind::Text("100".into()));
         assert_eq!(list.row_count, Some(1_000));
+    }
+
+    #[test]
+    fn taller_rows_move_the_ones_below() {
+        let extras = [(10, 200.0), (50, 100.0)];
+        let heights = Heights {
+            count: 1_000,
+            row: 20.0,
+            extras: &extras,
+        };
+        assert_eq!(heights.top(10), 200.0);
+        assert_eq!(heights.top(11), 420.0, "row 10 and its 200 points");
+        assert_eq!(heights.top(51), 20.0 * 51.0 + 300.0);
+        assert_eq!(heights.height(10), 220.0);
+        assert_eq!(heights.height(11), 20.0);
+        assert_eq!(heights.index_at(199.0), 9);
+        assert_eq!(heights.index_at(200.0), 10);
+        assert_eq!(heights.index_at(419.0), 10, "inside the panel of row 10");
+        assert_eq!(heights.index_at(420.0), 11);
+        assert_eq!(heights.index_at(heights.top(100)), 100);
+        assert_eq!(heights.index_at(heights.top(100) - 0.5), 99);
+
+        // A viewport inside row 10's panel builds from row 10 on, and
+        // fewer rows below it.
+        let viewport = Viewport {
+            offset: 300.0,
+            height: Some(100.0),
+            pinned: None,
+        };
+        assert_eq!(
+            visible_range(heights, viewport),
+            10 - OVERSCAN..10 + 1 + OVERSCAN
+        );
+    }
+
+    #[test]
+    fn spacers_and_rows_count_the_extra_heights() {
+        let mut tree = list_with(1_000, [(2, 200.0), (500, 80.0), (5_000, 50.0)]);
+        let built = materialize(&mut tree, &|_| Viewport {
+            offset: 20.0 * 100.0 + 200.0,
+            height: Some(100.0),
+            pinned: None,
+        });
+        tree.assign_ids();
+        let list = &tree.children[0];
+        assert_eq!(built, vec![(list.id, 94..112)]);
+        assert_eq!(
+            spacers(list),
+            ["shrink-0 h-[2080px]", "shrink-0 h-[17840px]"],
+            "row 2's panel above, row 500's below; the extra past the end is dropped"
+        );
+        assert_eq!(list.virtual_rows.as_ref().unwrap().extras.len(), 2);
+
+        let mut tree = list_with(1_000, [(2, 200.0), (4, 40.0)]);
+        materialize(&mut tree, &|_| Viewport::default());
+        tree.assign_ids();
+        let classes: Vec<&str> = tree.children[0].children[..5]
+            .iter()
+            .map(|row| row.class.as_str())
+            .collect();
+        assert_eq!(
+            classes,
+            [
+                "shrink-0 h-[20px]",
+                "shrink-0 h-[20px]",
+                "shrink-0 h-[220px]",
+                "shrink-0 h-[20px]",
+                "shrink-0 h-[60px]"
+            ]
+        );
     }
 
     #[test]

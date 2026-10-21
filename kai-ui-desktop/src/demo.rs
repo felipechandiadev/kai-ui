@@ -431,6 +431,22 @@ fn columnas() -> Vec<Column<Cliente, Msg>> {
     ]
 }
 
+/// Panel of an expanded client row: what the row leaves out, and a button.
+fn detalle_cliente(c: &Cliente) -> Element<Msg> {
+    div()
+        .class("flex items-center justify-between gap-3 h-full")
+        .children([
+            div().class("flex flex-col gap-0.5 min-w-0").children([
+                text(format!("Cliente N.º {} de {}", c.numero, c.ciudad))
+                    .class("text-sm font-medium truncate"),
+                caption(format!("Plan {} · $ {} al mes", c.plan, c.monto)),
+            ]),
+            button_sized("Ver ficha", ButtonVariant::Outlined, ButtonSize::Sm)
+                .on_click(Msg::VerCliente(c.numero as usize - 1))
+                .test_id(format!("tabla.ficha.{}", c.numero)),
+        ])
+}
+
 /// Badge color of a client plan.
 fn plan_badge(plan: &str) -> BadgeVariant {
     match plan {
@@ -2314,6 +2330,7 @@ impl Demo {
                     .on_view(Msg::Tabla)
                     .selected(self.cliente)
                     .on_select(Msg::SelectRow)
+                    .expandable(detalle_cliente, 64.0)
                     .label("Clientes")
                     .test_id("tabla.clientes")
                     .build()
@@ -4304,7 +4321,10 @@ mod tests {
             .iter()
             .filter_map(|cell| cell.name())
             .collect();
-        assert_eq!(names[1], nombre, "the avatar stays out of the cell's name");
+        assert_eq!(
+            names[2], nombre,
+            "after the chevron and N.º; the avatar stays out of the cell's name"
+        );
     }
 
     #[test]
@@ -4335,7 +4355,7 @@ mod tests {
             .count();
         assert!(temuco > 0 && temuco < super::CLIENTES as usize);
         assert_eq!(count(&app), Some(temuco));
-        assert_eq!(cells(&app, 0)[2], "Temuco");
+        assert_eq!(cells(&app, 0)[3], "Temuco");
         assert!(
             app.screen()
                 .get_by_test_id("tabla.total")
@@ -4348,7 +4368,7 @@ mod tests {
         let monto = || By::role(Role::ColumnHeader).name("Monto");
         app.click(monto());
         assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Ascending)));
-        let amount = |row: Vec<String>| -> u32 { row[4].trim_start_matches("$ ").parse().unwrap() };
+        let amount = |row: Vec<String>| -> u32 { row[5].trim_start_matches("$ ").parse().unwrap() };
         assert!(amount(cells(&app, 0)) <= amount(cells(&app, 1)));
         app.click(monto());
         assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Descending)));
@@ -4424,13 +4444,47 @@ mod tests {
             .iter()
             .filter_map(|header| header.name())
             .collect();
-        assert_eq!(headers, ["N.º", "Nombre", "Plan", "Monto", "Acciones"]);
+        assert_eq!(
+            headers,
+            ["Detalle", "N.º", "Nombre", "Plan", "Monto", "Acciones"]
+        );
 
         app.type_text(By::test_id("barra.buscar"), "temuco");
         let count = app.screen().get(table).node().row_count.unwrap();
         assert!(
             count > 0 && count < 10_000,
             "Temuco is in the hidden column"
+        );
+    }
+
+    #[test]
+    fn a_client_row_opens_its_detail_and_the_export_leaves_it_out() {
+        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
+        app.click(By::test_id("tabla.clientes.row.0"));
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        let cliente = super::cliente(1);
+        let detail = app.screen().get(By::role(Role::Region));
+        assert!(
+            detail
+                .name()
+                .unwrap()
+                .starts_with(&format!("1 {}", cliente.nombre))
+        );
+        let text = By::text(format!("Cliente N.º 1 de {}", cliente.ciudad));
+        assert_eq!(app.screen().all(text.clone()).len(), 1);
+
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("tabla.ficha.1")));
+        app.press(Key::Space, Modifiers::NONE);
+        assert_eq!(app.screen().all(text).len(), 2, "and the toast");
+        let sheet = app
+            .app()
+            .tabla
+            .export(&app.app().clientes, &super::columnas());
+        assert_eq!(
+            sheet.columns,
+            ["N.º", "Nombre", "Ciudad", "Plan", "Monto"],
+            "no chevron, panel or actions"
         );
     }
 

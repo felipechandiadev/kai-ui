@@ -82,6 +82,8 @@ const ICONS = [
   // Table: filters.
   "funnel",
   "funnel-x",
+  // Table: expandable rows.
+  "chevron-right",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

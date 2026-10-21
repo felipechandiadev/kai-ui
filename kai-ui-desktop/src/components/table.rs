@@ -4,6 +4,7 @@
 
 mod view;
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 pub use view::{Date, Sheet, TableView, Value, ViewChange};
@@ -11,6 +12,10 @@ pub use view::{Date, Sheet, TableView, Value, ViewChange};
 use super::{search_field, themed};
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::icons::Icon;
+use crate::responder::Action;
+
+/// Width of the column of expand buttons ([`Table::expandable`]).
+const TOGGLE_WIDTH: &str = "w-8 shrink-0";
 
 /// Scrolling list of `count` rows of `row_height` points, built by
 /// `render_row(index)` as they scroll into view. Rows without a role are
@@ -278,8 +283,11 @@ impl<T, Msg> Column<T, Msg> {
 ///
 /// A right click (or Ctrl+click) on the header opens the [`column_menu`].
 ///
-/// Parts: `header`, `column.<i>`, `filters`, `filter.<i>`, `body` and
-/// `row.<i>` (`i` is the column's index, and the row's place on screen).
+/// With [`Table::expandable`], rows open a panel below them.
+///
+/// Parts: `header`, `column.<i>`, `filters`, `filter.<i>`, `body`,
+/// `row.<r>`, `row.<r>.toggle` and `detail.<r>` (`i` is the column's
+/// index, `r` the row's place on screen).
 pub struct Table<T, Msg> {
     data: Rc<[T]>,
     columns: Rc<[Column<T, Msg>]>,
@@ -288,6 +296,7 @@ pub struct Table<T, Msg> {
     on_view: Option<Rc<dyn Fn(ViewChange) -> Msg>>,
     selected: Option<usize>,
     on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
+    expand: Option<(RenderFn<T, Msg>, f32)>,
     label: Option<String>,
     test_id: Option<String>,
 }
@@ -302,6 +311,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             on_view: None,
             selected: None,
             on_select: None,
+            expand: None,
             label: None,
             test_id: None,
         }
@@ -328,6 +338,22 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
     /// Called with the index in the data of the row people choose.
     pub fn on_select(mut self, handler: impl Fn(usize) -> Msg + 'static) -> Self {
         self.on_select = Some(Rc::new(handler));
+        self
+    }
+
+    /// Rows open a panel `height` points tall below them, built by
+    /// `detail(row)`: a chevron at the start of each row opens and closes
+    /// it, and so do → and ← on a focused row, sending
+    /// [`ViewChange::Expand`]; [`TableView::expanded`] says which are open
+    /// (several at once). The row reads as expanded or collapsed; the panel
+    /// is a [`Role::Region`] named after the row's values, and its controls
+    /// are Tab stops. Panels are not exported.
+    pub fn expandable(
+        mut self,
+        detail: impl Fn(&T) -> Element<Msg> + 'static,
+        height: f32,
+    ) -> Self {
+        self.expand = Some((Rc::new(detail), height.max(0.0)));
         self
     }
 
@@ -361,6 +387,12 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .role(Role::Row)
             .focus_group()
             .part("header")
+            .children(self.expand.is_some().then(|| {
+                div()
+                    .class(TOGGLE_WIDTH)
+                    .role(Role::ColumnHeader)
+                    .label("Detalle")
+            }))
             .children(visible.iter().map(|&index| self.header_cell(index)));
         if let Some(on_view) = &self.on_view {
             let on_view = Rc::clone(on_view);
@@ -373,19 +405,33 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
         let rows = Rc::clone(self.view.rows());
         let count = rows.len();
         let selected = self.selected.and_then(|row| self.view.position(row));
+        let extras: Vec<(usize, f32)> = match &self.expand {
+            Some((_, height)) if !self.view.expanded.is_empty() => rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| self.view.expanded.contains(row))
+                .map(|(position, _)| (position, *height))
+                .collect(),
+            _ => Vec::new(),
+        };
         let body_rows = BodyRows {
             data: Rc::clone(&self.data),
             columns: Rc::clone(&self.columns),
             visible,
             rows,
+            row_height,
             selected: self.selected,
             on_select: self.on_select.clone(),
+            expand: self.expand.clone(),
+            expanded: Rc::new(self.view.expanded.clone()),
+            on_view: self.on_view.clone(),
         };
         let render: Rc<dyn Fn(usize) -> Element<Msg>> = Rc::new(move |index| body_rows.row(index));
         let mut body = div()
             .class("flex flex-col flex-1 min-h-0 overflow-y-auto")
             .part("body")
-            .virtual_rows(count, row_height, selected, render);
+            .virtual_rows(count, row_height, selected, render)
+            .row_extras(extras);
         body.row_count = None;
         if self.on_select.is_some() {
             body = body.selecting_focus_group();
@@ -506,6 +552,11 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
                 .role(Role::Row)
                 .label("Filtros")
                 .part("filters")
+                .children(
+                    self.expand
+                        .is_some()
+                        .then(|| div().class(TOGGLE_WIDTH).role(Role::Cell)),
+                )
                 .children(cells),
         )
     }
@@ -554,17 +605,93 @@ struct BodyRows<T, Msg> {
     visible: Rc<[usize]>,
     /// Indices into `data`, in display order.
     rows: Rc<[usize]>,
+    row_height: f32,
     /// Selected row, by its index in `data`.
     selected: Option<usize>,
     on_select: Option<Rc<dyn Fn(usize) -> Msg>>,
+    expand: Option<(RenderFn<T, Msg>, f32)>,
+    /// Expanded rows, by index in `data`.
+    expanded: Rc<BTreeSet<usize>>,
+    on_view: Option<Rc<dyn Fn(ViewChange) -> Msg>>,
 }
 
-impl<T, Msg: Clone> BodyRows<T, Msg> {
-    /// The row shown at `index`.
+impl<T: 'static, Msg: Clone + 'static> BodyRows<T, Msg> {
+    /// The row shown at `index`. In an expandable table it is wrapped
+    /// (open or not, so its id stays) with the panel below when open.
     fn row(&self, index: usize) -> Element<Msg> {
         let Some(&data_index) = self.rows.get(index) else {
             return div().role(Role::Row);
         };
+        let open = self
+            .expand
+            .is_some()
+            .then(|| self.expanded.contains(&data_index));
+        let row = self.cells(index, data_index, open);
+        let Some((detail, height)) = &self.expand else {
+            return row;
+        };
+        let wrapper = div()
+            .class("flex flex-col")
+            .child(row.class(&format!("shrink-0 h-[{}px]", self.row_height)));
+        if open != Some(true) {
+            return wrapper;
+        }
+        let item = &self.data[data_index];
+        let name: Vec<String> = self
+            .visible
+            .iter()
+            .filter_map(|&column| self.columns[column].cell_text(item))
+            .map(|(_, shown)| shown)
+            .collect();
+        let panel = div()
+            .class(&format!(
+                "flex flex-col shrink-0 h-[{height}px] overflow-hidden {}",
+                themed(
+                    "px-3 py-2 border-b border-border/50 bg-muted/30",
+                    "px-1.5 py-1 bg-label/4",
+                )
+            ))
+            .role(Role::Region)
+            .label(name.join(" "))
+            .part(format!("detail.{index}"))
+            .own_tab_stops()
+            .child(detail(item));
+        wrapper.child(panel)
+    }
+
+    /// The chevron that opens or closes the row at `index`.
+    fn toggle(&self, index: usize, data_index: usize, open: bool) -> Element<Msg> {
+        let chevron = icon(if open {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        })
+        .class("size-4");
+        let mut button = div()
+            .class(&format!(
+                "flex items-center justify-center size-6 rounded-md {}",
+                themed(
+                    "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    "text-secondary-label",
+                )
+            ))
+            .child(chevron);
+        if let Some(on_view) = &self.on_view {
+            button = button
+                .label(if open { "Contraer" } else { "Expandir" })
+                .part(format!("row.{index}.toggle"))
+                .focus_on_press(false)
+                .on_click(on_view(ViewChange::Expand(data_index, !open)));
+        }
+        div()
+            .class(&format!("flex items-center justify-center {TOGGLE_WIDTH}"))
+            .role(Role::Cell)
+            .child(button)
+    }
+
+    /// The [`Role::Row`] of cells shown at `index`; `open` says whether it
+    /// is expanded, when the table is expandable.
+    fn cells(&self, index: usize, data_index: usize, open: Option<bool>) -> Element<Msg> {
         let item = &self.data[data_index];
         let is_selected = self.selected == Some(data_index);
         // Rows touch: the choice tint without its border, which would draw
@@ -611,6 +738,7 @@ impl<T, Msg: Clone> BodyRows<T, Msg> {
             ))
             .role(Role::Row)
             .part(format!("row.{index}"))
+            .children(open.map(|open| self.toggle(index, data_index, open)))
             .children(cells);
         if let Some(on_select) = &self.on_select {
             row = row
@@ -618,12 +746,28 @@ impl<T, Msg: Clone> BodyRows<T, Msg> {
                 .pressed(is_selected)
                 .on_click(on_select(data_index));
         }
+        if let Some(open) = open {
+            row = row.expanded(open).row_index(index);
+            if let Some(on_view) = &self.on_view {
+                let on_view = Rc::clone(on_view);
+                row = row.on_action(move |action| match action {
+                    Action::MoveRight if !open => {
+                        Some(on_view(ViewChange::Expand(data_index, true)))
+                    }
+                    Action::MoveLeft if open => {
+                        Some(on_view(ViewChange::Expand(data_index, false)))
+                    }
+                    _ => None,
+                });
+            }
+        }
         row
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::rc::Rc;
 
     use super::{Column, SortDirection, Table, TableView, ViewChange, virtual_list};
@@ -645,7 +789,19 @@ mod tests {
         view: TableView,
         selected: Option<usize>,
         opened: Option<usize>,
+        expandable: bool,
     }
+
+    impl Files {
+        fn expandable() -> Self {
+            Self {
+                expandable: true,
+                ..Self::default()
+            }
+        }
+    }
+
+    const DETAIL: f32 = 120.0;
 
     #[derive(Clone, Debug, PartialEq)]
     enum Msg {
@@ -705,6 +861,7 @@ mod tests {
                 view,
                 selected: None,
                 opened: None,
+                expandable: false,
             }
         }
     }
@@ -725,12 +882,25 @@ mod tests {
             }
         }
         fn view(&self) -> Element<Msg> {
-            let table = Table::new(Rc::clone(&self.data), columns(), &self.view)
+            let mut table = Table::new(Rc::clone(&self.data), columns(), &self.view)
                 .selected(self.selected)
                 .on_select(Msg::Select)
                 .on_view(Msg::View)
                 .label("Archivos")
                 .test_id("tabla");
+            if self.expandable {
+                table = table.expandable(
+                    |file: &File| {
+                        div().class("flex items-center gap-2").children([
+                            text(format!("Detalle de {}", file.name)),
+                            button("Abrir", ButtonVariant::Text)
+                                .on_click(Msg::Open(file.size))
+                                .test_id(format!("detalle.{}", file.name)),
+                        ])
+                    },
+                    DETAIL,
+                );
+            }
             div()
                 .class("flex flex-col w-full h-full p-4")
                 .children([text("Archivos"), table.build().class("h-[400px]")])
@@ -1038,6 +1208,147 @@ mod tests {
             .find(|(_, node)| node.role() == accesskit::Role::MenuItemCheckBox)
             .and_then(|(_, node)| node.toggled());
         assert_eq!(checked, Some(accesskit::Toggled::True));
+    }
+
+    fn bounds(app: &TestApp<Files>, test_id: &str) -> crate::geometry::Rect {
+        app.screen().get(By::test_id(test_id)).bounds()
+    }
+
+    /// Name of the panel of data row `index`: its values.
+    fn detail_name(app: &TestApp<Files>, index: usize) -> String {
+        let file = &app.app().data[index];
+        let kind = if file.size.is_multiple_of(2) {
+            "Par"
+        } else {
+            "Impar"
+        };
+        format!("{} {} KB {kind}", file.name, file.size)
+    }
+
+    #[test]
+    fn chevrons_open_several_panels_below_their_rows() {
+        let mut app = TestApp::new(Files::expandable());
+        app.screen()
+            .get(By::role(Role::ColumnHeader).name("Detalle"));
+        app.click(By::test_id("tabla.row.2.toggle"));
+        app.click(By::test_id("tabla.row.5.toggle"));
+        assert_eq!(app.app().view.expanded, BTreeSet::from([2, 5]));
+        assert_eq!(app.app().selected, None, "the chevron does not select");
+
+        let regions: Vec<_> = app
+            .screen()
+            .all(By::role(Role::Region))
+            .iter()
+            .filter_map(|region| region.name())
+            .collect();
+        assert_eq!(regions, [detail_name(&app, 2), detail_name(&app, 5)]);
+        let (row, panel) = (bounds(&app, "tabla.row.2"), bounds(&app, "tabla.detail.2"));
+        assert!(
+            (panel.y - (row.y + row.height)).abs() < 0.5,
+            "under its row"
+        );
+        assert!((panel.height - DETAIL).abs() < 0.5);
+        assert!((bounds(&app, "tabla.row.3").y - (panel.y + DETAIL)).abs() < 0.5);
+        let gap = bounds(&app, "tabla.row.6").y - bounds(&app, "tabla.row.5").y;
+        assert!((gap - (row.height + DETAIL)).abs() < 0.5, "{gap}");
+
+        app.click(By::test_id("detalle.archivo-2.txt"));
+        assert_eq!(app.app().opened, Some(app.app().data[2].size));
+        app.click(By::test_id("tabla.row.2.toggle"));
+        assert_eq!(app.app().view.expanded, BTreeSet::from([5]));
+        assert_eq!(app.screen().all(By::role(Role::Region)).len(), 1);
+        assert!(app.screen().query(By::test_id("tabla.detail.2")).is_none());
+    }
+
+    #[test]
+    fn arrows_open_and_close_the_focused_row_and_tab_enters_its_panel() {
+        let mut app = TestApp::new(Files::expandable());
+        app.click(By::test_id("tabla.row.1"));
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        assert_eq!(app.app().view.expanded, BTreeSet::from([1]));
+        assert!(
+            app.is_focused(By::test_id("tabla.row.1")),
+            "the row keeps the focus"
+        );
+        app.press(Key::ArrowRight, Modifiers::NONE);
+        assert_eq!(app.app().view.expanded, BTreeSet::from([1]));
+
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("detalle.archivo-1.txt")));
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        assert_eq!(app.app().selected, Some(1), "the panel keeps its arrows");
+        assert!(app.is_focused(By::test_id("detalle.archivo-1.txt")));
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Tab, shift);
+        assert!(app.is_focused(By::test_id("tabla.row.1")));
+
+        app.press(Key::ArrowLeft, Modifiers::NONE);
+        assert!(app.app().view.expanded.is_empty());
+        app.press(Key::ArrowDown, Modifiers::NONE);
+        assert_eq!(app.app().selected, Some(2));
+        assert!(app.is_focused(By::test_id("tabla.row.2")));
+    }
+
+    #[test]
+    fn the_keys_reveal_rows_below_open_panels() {
+        let mut files = Files::expandable();
+        files.view.expanded = (0..5).collect();
+        let mut app = TestApp::new(files);
+        let body = bounds(&app, "tabla.body");
+        let in_view = |row: crate::geometry::Rect| {
+            row.y >= body.y - 0.5 && row.y + row.height <= body.y + body.height + 0.5
+        };
+        app.click(By::test_id("tabla.row.0"));
+        app.press(Key::PageDown, Modifiers::NONE);
+        let page = app.app().selected.unwrap();
+        assert!(
+            (1..4).contains(&page),
+            "the panels make a page shorter: {page}"
+        );
+        assert!(in_view(bounds(&app, &format!("tabla.row.{page}"))));
+
+        app.press(Key::End, Modifiers::NONE);
+        assert_eq!(app.app().selected, Some(ROWS - 1));
+        assert!(in_view(bounds(&app, "tabla.row.9999")));
+        app.press(Key::Home, Modifiers::NONE);
+        assert!(in_view(bounds(&app, "tabla.row.0")));
+
+        app.reveal_row(By::test_id("tabla.body"), 20);
+        let row = bounds(&app, "tabla.row.20");
+        assert!(
+            (row.y + row.height - (body.y + body.height)).abs() < 0.5,
+            "row 20 at the bottom, five panels above it"
+        );
+        assert!(rows_built(&app) < 40);
+    }
+
+    #[test]
+    fn assistive_technology_reads_expanded_rows_and_their_panels() {
+        let mut files = Files::expandable();
+        files.view.expanded.insert(1);
+        let app = TestApp::new(files);
+        let tree = app.session().a11y_tree(1.0);
+        let node = |test_id: &str| {
+            let id = crate::a11y::node_id(app.screen().get(By::test_id(test_id)).id());
+            tree.nodes
+                .iter()
+                .find(|(node, _)| *node == id)
+                .map(|(_, node)| node.clone())
+                .unwrap()
+        };
+        assert_eq!(node("tabla.row.1").is_expanded(), Some(true));
+        assert_eq!(node("tabla.row.0").is_expanded(), Some(false));
+        assert_eq!(node("tabla.row.1").row_index(), Some(1));
+        let panel = node("tabla.detail.1");
+        assert_eq!(panel.role(), accesskit::Role::Region);
+        assert_eq!(panel.label(), Some(detail_name(&app, 1).as_str()));
+        let toggle = node("tabla.row.1.toggle");
+        assert_eq!(toggle.role(), accesskit::Role::Button);
+        assert_eq!(toggle.label(), Some("Contraer"));
+        assert_eq!(node("tabla.row.0.toggle").label(), Some("Expandir"));
     }
 
     /// `cargo test table_capture -- --ignored` writes
