@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
-use crate::element::{FocusKind, FocusOrder, KeyEquivalent, WidgetId};
+use crate::element::{FocusGroup, FocusKind, FocusOrder, KeyEquivalent, WidgetId};
 use crate::geometry::Point;
 use crate::responder::{Action, FocusContext, KeyRoute, key_equivalent_route};
 use crate::signal::Signal;
@@ -343,12 +343,15 @@ fn key_commands(
     match (focused, kind) {
         (Some(focused), Some(FocusKind::Button)) => {
             let selects = order.selects(focused);
+            let behavior = order.group_behavior(focused);
+            let vertical = behavior != Some(FocusGroup::Tabs);
+            let horizontal = behavior != Some(FocusGroup::Select);
             if modifiers == Modifiers::NONE
                 && let Some(backwards) = match key {
-                    Key::ArrowUp => Some(true),
-                    Key::ArrowDown => Some(false),
-                    Key::ArrowLeft if !selects => Some(true),
-                    Key::ArrowRight if !selects => Some(false),
+                    Key::ArrowUp if vertical => Some(true),
+                    Key::ArrowDown if vertical => Some(false),
+                    Key::ArrowLeft if horizontal => Some(true),
+                    Key::ArrowRight if horizontal => Some(false),
                     _ => None,
                 }
                 && let Some(next) = order.group_step(focused, backwards)

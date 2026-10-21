@@ -17,7 +17,7 @@ use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
     CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, DotProgress, DotSize, FieldBezel,
     FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot,
-    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table,
+    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table, Tabs,
     TextField, Toast, alert, avatar, badge, button, button_sized, caption, card, card_actions,
     card_content, card_header, checkbox, checkbox_with_options, color_field, dot_progress,
     group_box, heading, icon_button, icon_button_sized, paragraph, search_field, segmented,
@@ -86,6 +86,8 @@ struct Demo {
     pais: Option<usize>,
     /// Index into [`ALINEACIONES`].
     alineacion: usize,
+    /// Contenedores: the selected tab.
+    pestana: usize,
     /// Tabla: the toolbar search, the sort and the selected client.
     query: String,
     sort: (usize, SortDirection),
@@ -156,6 +158,7 @@ impl Default for Demo {
             permisos: [true, false, true],
             pais: Some(0),
             alineacion: 0,
+            pestana: 0,
             query: String::new(),
             sort: (0, SortDirection::Ascending),
             rows: clientes("", (0, SortDirection::Ascending)),
@@ -652,6 +655,7 @@ enum Msg {
     TogglePermiso(Option<usize>),
     SetPais(usize),
     SetAlineacion(usize),
+    SetPestana(usize),
     /// The toolbar search, which filters the table.
     Query(String),
     Sort(usize, SortDirection),
@@ -1367,6 +1371,7 @@ impl App for Demo {
             }
             Msg::SetPais(index) => self.pais = Some(index),
             Msg::SetAlineacion(index) => self.alineacion = index,
+            Msg::SetPestana(index) => self.pestana = index,
             Msg::Query(query) => {
                 self.query = query;
                 self.rows = clientes(&self.query, self.sort);
@@ -2056,7 +2061,8 @@ impl Demo {
             ])
     }
 
-    /// Contenedores: a full card, group boxes, statistics and text styles.
+    /// Contenedores: a full card, group boxes, tabs, statistics and text
+    /// styles.
     fn containers(&self) -> Vec<Element<Msg>> {
         vec![
             card()
@@ -2097,6 +2103,28 @@ impl Demo {
                     )
                     .test_id("contenedores.sin_titulo"),
                 ]),
+            Tabs::new(self.pestana, Msg::SetPestana)
+                .tab(
+                    "General",
+                    paragraph("Las pestañas muestran un panel a la vez; ← y → cambian de pestaña."),
+                )
+                .tab(
+                    "Cuenta",
+                    switch_labeled(
+                        "Sincronizar",
+                        self.wifi,
+                        Msg::ToggleWifi,
+                        false,
+                        SwitchDensity::Default,
+                    ),
+                )
+                .tab(
+                    "Avanzado",
+                    caption("Tab entra al panel y Mayúsculas+Tab vuelve a la pestaña."),
+                )
+                .build()
+                .class("w-full max-w-3xl")
+                .test_id("contenedores.pestanas"),
             div()
                 .class("grid grid-cols-3 gap-4 w-full max-w-3xl")
                 .test_id("contenedores.stats")
@@ -3746,7 +3774,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 14] = [
+        const SOURCES: [&str; 15] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
@@ -3755,6 +3783,7 @@ mod tests {
             include_str!("components/search.rs"),
             include_str!("components/sidebar.rs"),
             include_str!("components/table.rs"),
+            include_str!("components/tabs.rs"),
             include_str!("components/text_area.rs"),
             include_str!("components/toast.rs"),
             include_str!("components/toolbar.rs"),
@@ -3926,6 +3955,7 @@ mod tests {
                 None,
                 By::text("Una leyenda, para notas y metadatos."),
             ),
+            (&["Tabs"], Contenedores, None, By::role(Role::TabList)),
             (&["badge"], Badges, None, By::text("Warning")),
             (
                 &["Avatar"],

@@ -24,6 +24,7 @@ El MSRV del crate sigue siendo 1.89 (lo impone `cosmic-text` 0.19).
   - Los iconos sin `label` son decorativos (`aria-hidden`) y se omiten del árbol; con `label` se publican como `Image` con ese nombre. El botón de ojo del password se llama "Mostrar contraseña" u "Ocultar contraseña" según el estado.
   - Los controles deshabilitados se publican con `disabled` y sin acciones. Los nodos con `display: none` se omiten.
   - `A11ySnapshot::active_descendant` (input, fila) publica la fila que resaltan las flechas como `active_descendant` del input enfocado. La usa la paleta de comandos: el foco se queda en la búsqueda para seguir escribiendo, y VoiceOver lee la fila elegida (`Row` con `selected`) como foco efectivo.
+  - Pestañas (`components::Tabs`): `Role::TabList` → `TabList` (AXTabGroup), `Role::Tab` → `Tab`, una hoja con el nombre de su texto y `selected` según `pressed`, y `Role::TabPanel` → `TabPanel` con el nombre de su pestaña. La fila es un grupo de foco `FocusGroup::Tabs`: ← y → mueven y eligen, ↑ y ↓ no.
   - `intents_for_action(&ActionRequest, &FocusOrder) -> Vec<Intent>` traduce acciones de asistencia a intents de Kai solo para elementos habilitados y focusables: `Focus` → `SetFocus`, `Click` → `Intent::Activate`, `ReplaceSelectedText` en un input → foco + `InsertText`.
 - `Intent::Activate(id)` en `ui_engine.rs` enfoca el elemento y, si es un botón, lo activa con `ActivationSource::Accessibility`; el runtime lo convierte en su mensaje `on_click`.
 - `runtime.rs`:

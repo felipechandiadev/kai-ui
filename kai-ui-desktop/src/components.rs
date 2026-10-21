@@ -15,6 +15,7 @@ mod progress;
 mod search;
 mod sidebar;
 mod table;
+mod tabs;
 mod text_area;
 mod toast;
 mod toolbar;
@@ -27,6 +28,7 @@ pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
+pub use tabs::Tabs;
 pub use text_area::{TextArea, text_area};
 pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};
 pub use toolbar::{

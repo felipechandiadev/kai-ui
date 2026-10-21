@@ -107,6 +107,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
                     | KaiRole::PopUpButton
                     | KaiRole::MenuItem
                     | KaiRole::SidebarItem
+                    | KaiRole::Tab
                     | KaiRole::Row
                     | KaiRole::Cell
                     | KaiRole::ColumnHeader
@@ -150,6 +151,9 @@ fn role_of(node: &LayoutNode) -> Role {
         // `AXRow` (`AXOutlineRow`), as Finder's sidebar.
         KaiRole::Sidebar => Role::Tree,
         KaiRole::SidebarItem => Role::TreeItem,
+        KaiRole::TabList => Role::TabList,
+        KaiRole::Tab => Role::Tab,
+        KaiRole::TabPanel => Role::TabPanel,
         KaiRole::TextInput => Role::TextInput,
         KaiRole::SearchInput => Role::SearchInput,
         KaiRole::TextArea => Role::MultilineTextInput,
@@ -206,6 +210,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::ComboBox
             | Role::MenuListOption
             | Role::TreeItem
+            | Role::Tab
             | Role::TextInput
             | Role::SearchInput
             | Role::MultilineTextInput
@@ -264,7 +269,10 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
         text_content(layout, index, &mut parts);
         node.set_value(parts.join(" "));
     }
-    if matches!(role, Role::MenuListOption | Role::TreeItem | Role::Row) {
+    if matches!(
+        role,
+        Role::MenuListOption | Role::TreeItem | Role::Row | Role::Tab
+    ) {
         node.set_selected(source.control_state == Some(ControlState::On));
     }
     if let Some(count) = source.row_count {
