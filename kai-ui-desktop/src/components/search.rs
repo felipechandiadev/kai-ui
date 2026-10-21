@@ -14,8 +14,8 @@ pub enum SearchVariant {
     /// (`.roundedBezel` in AppKit).
     #[default]
     Toolbar,
-    /// In a form, next to text fields: their shape and border
-    /// (`.squareBezel` in AppKit).
+    /// In a form, next to text fields: a capsule with their border
+    /// (`.roundedBezel` in AppKit).
     Field,
     /// Inside a table cell or a dense list: no minimum width, a faint
     /// fill, and in Kai a border only under the pointer or with focus.
@@ -214,14 +214,14 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
                 "min-w-[140px] h-field px-1.5 rounded-full bg-field",
             ),
             SearchVariant::Field => (
-                "min-w-0 rounded-md border border-border bg-background \
+                "min-w-0 rounded-full border border-border bg-background \
                  hover:border-muted-foreground focus-within:border-primary",
-                "min-w-0 h-field-square px-1 rounded-field-square bg-field",
+                "min-w-0 h-field px-1.5 rounded-full bg-field",
             ),
             SearchVariant::Inline => (
-                "min-w-0 rounded-md border border-transparent bg-muted/40 \
+                "min-w-0 rounded-full border border-transparent bg-muted/40 \
                  hover:border-border focus-within:border-primary focus-within:bg-background",
-                "min-w-0 h-field-square px-1 rounded-field-square bg-field",
+                "min-w-0 h-field px-1.5 rounded-full bg-field",
             ),
         };
         let mut root = div()
@@ -377,19 +377,25 @@ mod tests {
             input.node().text.font_size
         };
         assert!(text("small") < text("toolbar"), "smaller text");
+        for id in ["toolbar", "field", "inline"] {
+            let node = app.screen().get(By::test_id(id)).node();
+            assert!(
+                node.style.radius >= node.bounds.height / 2.0,
+                "{id} is a capsule"
+            );
+        }
     }
 
     #[test]
     fn appkit_sizes_come_from_the_bezel_heights() {
         let theme = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
         let field = theme.controls.field_height;
-        let square = theme.controls.field_square_height;
         let app = TestApp::builder(Variants).theme(theme).build();
         let height = |id| size(&app, id).1;
         let small = ControlSize::Small as usize;
         assert_eq!(height("toolbar"), field[ControlSize::Regular as usize]);
         assert_eq!(height("small"), field[small]);
-        assert_eq!(height("field"), square[small]);
-        assert_eq!(size(&app, "inline"), (60.0, square[small]));
+        assert_eq!(height("field"), field[small]);
+        assert_eq!(size(&app, "inline"), (60.0, field[small]));
     }
 }

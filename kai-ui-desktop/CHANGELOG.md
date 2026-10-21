@@ -28,7 +28,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Changed
 
-- **Search field con variantes y tamaños:** `SearchVariant::{Toolbar, Field, Inline}` (cápsula de toolbar, campo de formulario y celda densa sin ancho mínimo), y `control_size` achica también el campo en Kai (caja, texto, lupa y botón de borrar; Small mide 28 pt). Los filtros de la tabla usan `Inline` y `Small`: la fila baja de 40 a 36 pt en Kai, y en AppKit crece con el campo cuando el estilo mezclado le da la altura de Kai.
+- **Search field con variantes y tamaños:** `SearchVariant::{Toolbar, Field, Inline}` (cápsula de toolbar, campo de formulario y celda densa sin ancho mínimo; las tres son cápsula `rounded-full`), y `control_size` achica también el campo en Kai (caja, texto, lupa y botón de borrar; Small mide 28 pt). Los filtros de la tabla usan `Inline` y `Small`: la fila baja de 40 a 36 pt en Kai, y en AppKit crece con el campo cuando el estilo mezclado le da la altura de Kai.
 - **`Table` cambia de API:** `Table::new(datos, columnas, &vista)` con `on_view(ViewChange)` reemplaza a `Table::new(columnas, total, cell)`, `sort`/`on_sort` y `leading`; `selected` y `on_select` usan el índice del registro. `Column::new(..).numeric()` pasa a `Column::number(..)`.
 - `Layout::reveal` mueve lo mínimo en los dos ejes: una fila más ancha que la vista conserva el scroll horizontal.
 - Los avisos de error ya no se cierran solos, y un aviso no se cierra mientras tiene el puntero o el foco encima (`toast_timer(&toast, close)`).
