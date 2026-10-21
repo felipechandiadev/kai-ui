@@ -108,6 +108,11 @@ pub enum Position {
     #[default]
     Relative,
     Absolute,
+    /// In flow, but `left-*` / `right-*` keep it that far from the edge of
+    /// the nearest element that scrolls across, within its parent
+    /// (horizontal `position: sticky`); it draws and takes clicks above
+    /// its siblings.
+    Sticky,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -322,14 +327,19 @@ impl Style {
                 Display::None => taffy::Display::None,
             },
             position: match self.position {
-                Position::Relative => taffy::Position::Relative,
+                Position::Relative | Position::Sticky => taffy::Position::Relative,
                 Position::Absolute => taffy::Position::Absolute,
             },
-            inset: Rect {
-                left: lpa(self.inset.left),
-                right: lpa(self.inset.right),
-                top: lpa(self.inset.top),
-                bottom: lpa(self.inset.bottom),
+            // The layout moves sticky elements after Taffy places them.
+            inset: if self.position == Position::Sticky {
+                Rect::auto()
+            } else {
+                Rect {
+                    left: lpa(self.inset.left),
+                    right: lpa(self.inset.right),
+                    top: lpa(self.inset.top),
+                    bottom: lpa(self.inset.bottom),
+                }
             },
             size: Size {
                 width: dimension(self.width),

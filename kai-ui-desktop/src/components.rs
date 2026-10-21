@@ -28,7 +28,7 @@ pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{
-    Column, ColumnWidth, Date, Sheet, SortDirection, Table, TableView, Value, ViewChange,
+    Column, ColumnWidth, Date, Pin, Sheet, SortDirection, Table, TableView, Value, ViewChange,
     column_menu, virtual_list,
 };
 pub use tabs::Tabs;

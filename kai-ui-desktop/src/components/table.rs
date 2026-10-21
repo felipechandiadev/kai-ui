@@ -62,6 +62,15 @@ impl SortDirection {
     }
 }
 
+/// Where a pinned [`Column`] stays while the table scrolls across.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pin {
+    /// At the left, after the other pinned ones.
+    Start,
+    /// At the right, before the other pinned ones.
+    End,
+}
+
 /// How wide a [`Column`] is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ColumnWidth {
@@ -83,6 +92,7 @@ pub struct Column<T, Msg> {
     pub title: String,
     pub width: ColumnWidth,
     min_width: Option<f32>,
+    pin: Option<Pin>,
     value: Option<ValueFn<T>>,
     format: Option<FormatFn>,
     render: Option<RenderFn<T, Msg>>,
@@ -99,6 +109,7 @@ impl<T, Msg> Clone for Column<T, Msg> {
             title: self.title.clone(),
             width: self.width,
             min_width: self.min_width,
+            pin: self.pin,
             value: self.value.clone(),
             format: self.format.clone(),
             render: self.render.clone(),
@@ -122,6 +133,7 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
             title: title.into(),
             width: ColumnWidth::Flex(1.0),
             min_width: None,
+            pin: None,
             value: Some(Rc::new(value)),
             format: None,
             render: None,
@@ -153,13 +165,15 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
     }
 
     /// Buttons for each row, without a value: never sorted, filtered,
-    /// searched, hidden or exported. Its header is empty; assistive
+    /// searched, hidden or exported, and pinned to the end
+    /// ([`Self::unpin`] lets it scroll). Its header is empty; assistive
     /// technology names it «Acciones».
     pub fn actions(render: impl Fn(&T) -> Element<Msg> + 'static) -> Self {
         Self {
             title: "Acciones".into(),
             width: ColumnWidth::Fixed(80.0),
             min_width: None,
+            pin: Some(Pin::End),
             value: None,
             format: None,
             render: Some(Rc::new(render)),
@@ -185,6 +199,21 @@ impl<T: 'static, Msg: 'static> Column<T, Msg> {
     /// columns do not fit, the table scrolls across instead.
     pub fn min_width(mut self, points: f32) -> Self {
         self.min_width = Some(points.max(0.0));
+        self
+    }
+
+    /// Keep it at the start or the end while the table scrolls across;
+    /// the table shows it there, header and rows. A pinned flex column
+    /// is as wide as its [`Self::min_width`].
+    pub fn pin(mut self, pin: Pin) -> Self {
+        self.pin = Some(pin);
+        self
+    }
+
+    /// Let it scroll with the rest (undoes [`Self::pin`]; actions are
+    /// pinned to the end otherwise).
+    pub fn unpin(mut self) -> Self {
+        self.pin = None;
         self
     }
 
@@ -280,9 +309,16 @@ impl<T, Msg> Column<T, Msg> {
         }
     }
 
+    pub fn pinned(&self) -> Option<Pin> {
+        self.pin
+    }
+
     fn width_class(&self) -> String {
         match self.width {
             ColumnWidth::Fixed(points) => format!("w-[{points}px] shrink-0"),
+            ColumnWidth::Flex(_) if self.pin.is_some() => {
+                format!("w-[{}px] shrink-0", self.min_points())
+            }
             ColumnWidth::Flex(share) => {
                 format!("flex-1 grow-[{share}] min-w-[{}px]", self.min_points())
             }
@@ -314,7 +350,9 @@ impl<T, Msg> Column<T, Msg> {
 /// Columns keep their width ([`Column::fixed`]) or minimum width
 /// ([`Column::min_width`]): when they do not fit, the header and the rows
 /// scroll across together (trackpad, Shift+wheel, or the focus moving to
-/// a cell out of view).
+/// a cell out of view). Pinned columns ([`Column::pin`]; actions at the
+/// end unless [`Column::unpin`]) and the chevrons stay in place over the
+/// rest.
 ///
 /// Parts: `scroller`, `header`, `column.<i>`, `filters`, `filter.<i>`,
 /// `body`, `row.<r>`, `row.<r>.toggle` and `detail.<r>` (`i` is the
@@ -399,11 +437,61 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
         self
     }
 
-    /// Indices of the columns shown: all but the hidden ones.
+    /// Indices of the columns shown, all but the hidden ones: those pinned
+    /// to the start first and those pinned to the end last.
     fn visible(&self) -> Rc<[usize]> {
-        (0..self.columns.len())
+        let shown: Vec<usize> = (0..self.columns.len())
             .filter(|index| self.columns[*index].is_actions() || !self.view.hidden.contains(index))
+            .collect();
+        let pinned = |pin: Option<Pin>| {
+            shown
+                .iter()
+                .copied()
+                .filter(move |index| self.columns[*index].pin == pin)
+        };
+        pinned(Some(Pin::Start))
+            .chain(pinned(None))
+            .chain(pinned(Some(Pin::End)))
             .collect()
+    }
+
+    /// The sticky classes of the chevron column and of each column of
+    /// `visible`: pinned ones keep their place, the chevron at the very
+    /// start; the innermost pinned column on each side draws the edge.
+    fn sticky(&self, visible: &[usize]) -> (Option<String>, Rc<[Option<String>]>) {
+        let mut sticky = vec![None; visible.len()];
+        let toggle = self
+            .expand
+            .is_some()
+            .then(|| "sticky left-[0px]".to_owned());
+        let mut left = if toggle.is_some() { TOGGLE_POINTS } else { 0.0 };
+        let starts: Vec<usize> = (0..visible.len())
+            .filter(|at| self.columns[visible[*at]].pin == Some(Pin::Start))
+            .collect();
+        for (n, &at) in starts.iter().enumerate() {
+            let edge = if n + 1 == starts.len() {
+                themed("border-r border-border", "border-r border-separator")
+            } else {
+                String::new()
+            };
+            sticky[at] = Some(format!("sticky left-[{left}px] {edge}"));
+            left += self.columns[visible[at]].min_points();
+        }
+        let ends: Vec<usize> = (0..visible.len())
+            .rev()
+            .filter(|at| self.columns[visible[*at]].pin == Some(Pin::End))
+            .collect();
+        let mut right = 0.0;
+        for (n, &at) in ends.iter().enumerate() {
+            let edge = if n + 1 == ends.len() {
+                themed("border-l border-border", "border-l border-separator")
+            } else {
+                String::new()
+            };
+            sticky[at] = Some(format!("sticky right-[{right}px] {edge}"));
+            right += self.columns[visible[at]].min_points();
+        }
+        (toggle, sticky.into())
     }
 
     /// The table; give it a height with `.class(..)`.
@@ -420,6 +508,11 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
                 .iter()
                 .map(|&index| self.columns[index].min_points())
                 .sum::<f32>();
+        let (toggle_sticky, sticky) = self.sticky(&visible);
+        let (header_base, header_tint) = (
+            themed("bg-background", "bg-window"),
+            themed("bg-muted/40", ""),
+        );
         let mut header = div()
             .class(&themed(
                 "flex items-stretch h-9 shrink-0 border-b border-border bg-muted/40",
@@ -429,12 +522,24 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .focus_group()
             .part("header")
             .children(self.expand.is_some().then(|| {
-                div()
-                    .class(TOGGLE_WIDTH)
-                    .role(Role::ColumnHeader)
-                    .label("Detalle")
+                pinned(
+                    div()
+                        .class(TOGGLE_WIDTH)
+                        .role(Role::ColumnHeader)
+                        .label("Detalle"),
+                    toggle_sticky.as_deref(),
+                    &header_base,
+                    &header_tint,
+                )
             }))
-            .children(visible.iter().map(|&index| self.header_cell(index)));
+            .children(visible.iter().zip(sticky.iter()).map(|(&index, sticky)| {
+                pinned(
+                    self.header_cell(index),
+                    sticky.as_deref(),
+                    &header_base,
+                    &header_tint,
+                )
+            }));
         if let Some(on_view) = &self.on_view {
             let on_view = Rc::clone(on_view);
             header = column_menu(header, &self.columns, &self.view, move |change| {
@@ -442,7 +547,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             })
             .context_menu();
         }
-        let filters = self.filter_row(&visible);
+        let filters = self.filter_row(&visible, toggle_sticky.as_deref(), &sticky);
         let rows = Rc::clone(self.view.rows());
         let count = rows.len();
         let selected = self.selected.and_then(|row| self.view.position(row));
@@ -459,6 +564,8 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             data: Rc::clone(&self.data),
             columns: Rc::clone(&self.columns),
             visible,
+            sticky,
+            toggle_sticky,
             rows,
             row_height,
             selected: self.selected,
@@ -566,20 +673,31 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
 
     /// While [`TableView::filtering`], a row of search fields under the
     /// header, one per filterable column; each is its own Tab stop.
-    fn filter_row(&self, visible: &[usize]) -> Option<Element<Msg>> {
+    fn filter_row(
+        &self,
+        visible: &[usize],
+        toggle_sticky: Option<&str>,
+        sticky: &[Option<String>],
+    ) -> Option<Element<Msg>> {
         if !self.view.filtering {
             return None;
         }
         let on_view = self.on_view.as_ref()?;
-        let cells = visible.iter().map(|&index| {
+        let base = themed("bg-background", "bg-control-background");
+        let cells = visible.iter().zip(sticky).map(|(&index, sticky)| {
             let column = &self.columns[index];
-            let cell = div()
-                .class(&format!(
-                    "flex items-center {} {}",
-                    column.width_class(),
-                    themed("px-1.5", "px-1")
-                ))
-                .role(Role::Cell);
+            let cell = pinned(
+                div()
+                    .class(&format!(
+                        "flex items-center {} {}",
+                        column.width_class(),
+                        themed("px-1.5", "px-1")
+                    ))
+                    .role(Role::Cell),
+                sticky.as_deref(),
+                &base,
+                "",
+            );
             if !column.filterable {
                 return cell;
             }
@@ -598,17 +716,20 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
         Some(
             div()
                 .class(&themed(
-                    "flex items-center h-10 shrink-0 border-b border-border",
-                    "flex items-center h-[28px] shrink-0 border-b border-separator",
+                    "flex items-stretch h-10 shrink-0 border-b border-border",
+                    "flex items-stretch h-[28px] shrink-0 border-b border-separator",
                 ))
                 .role(Role::Row)
                 .label("Filtros")
                 .part("filters")
-                .children(
-                    self.expand
-                        .is_some()
-                        .then(|| div().class(TOGGLE_WIDTH).role(Role::Cell)),
-                )
+                .children(self.expand.is_some().then(|| {
+                    pinned(
+                        div().class(TOGGLE_WIDTH).role(Role::Cell),
+                        toggle_sticky,
+                        &base,
+                        "",
+                    )
+                }))
                 .children(cells),
         )
     }
@@ -650,11 +771,32 @@ pub fn column_menu<T: 'static, Msg: 'static>(
         .on_select(move |pick| on_view(ViewChange::Hide(hideable[pick], shown[pick])))
 }
 
+/// `cell` with the `sticky` classes of a pinned column, if any: opaque
+/// `base` with `tint` (the look of its row) over it, so the cells
+/// scrolling under it do not show through.
+fn pinned<Msg>(cell: Element<Msg>, sticky: Option<&str>, base: &str, tint: &str) -> Element<Msg> {
+    let Some(sticky) = sticky else {
+        return cell;
+    };
+    let mut cell = cell.class(&format!("{sticky} {base}"));
+    if !tint.is_empty() {
+        cell.children.insert(
+            0,
+            div().class(&format!("absolute inset-0 pointer-events-none {tint}")),
+        );
+    }
+    cell
+}
+
 /// What builds the rows of a [`Table`] as they scroll into view.
 struct BodyRows<T, Msg> {
     data: Rc<[T]>,
     columns: Rc<[Column<T, Msg>]>,
     visible: Rc<[usize]>,
+    /// The sticky classes of each column of `visible`, if pinned.
+    sticky: Rc<[Option<String>]>,
+    /// Those of the chevron column.
+    toggle_sticky: Option<String>,
     /// Indices into `data`, in display order.
     rows: Rc<[usize]>,
     row_height: f32,
@@ -761,24 +903,50 @@ impl<T: 'static, Msg: Clone + 'static> BodyRows<T, Msg> {
         } else {
             themed("text-foreground hover:bg-choice/10", "text-label")
         };
-        let cells = self.visible.iter().map(|&column_index| {
-            let column = &self.columns[column_index];
-            let justify = if column.numeric { "justify-end" } else { "" };
-            let cell = div()
-                .class(&format!(
-                    "flex items-center gap-2 {} {justify} {}",
-                    column.width_class(),
-                    themed("px-3", "px-1.5")
-                ))
-                .role(Role::Cell);
-            let shown = column.cell_text(item).map(|(_, shown)| shown);
-            match (&column.render, shown) {
-                (Some(render), Some(shown)) => cell.label(shown).child(render(item)),
-                (Some(render), None) => cell.child(render(item)),
-                (None, Some(shown)) => cell.child(text(shown).class("truncate")),
-                (None, None) => cell,
-            }
+        // Pinned cells are opaque, with the row's tint over them.
+        let base = themed("bg-background", "bg-control-background");
+        let tint = if is_selected {
+            themed("bg-choice/20 group-hover:bg-choice/25", "bg-choice/20")
+        } else if index % 2 == 1 {
+            themed("group-hover:bg-choice/10", "bg-label/4")
+        } else {
+            themed("group-hover:bg-choice/10", "")
+        };
+        let toggle = open.map(|open| {
+            pinned(
+                self.toggle(index, data_index, open),
+                self.toggle_sticky.as_deref(),
+                &base,
+                &tint,
+            )
         });
+        let cells = self
+            .visible
+            .iter()
+            .zip(self.sticky.iter())
+            .map(|(&column_index, sticky)| {
+                let column = &self.columns[column_index];
+                let justify = if column.numeric { "justify-end" } else { "" };
+                let cell = pinned(
+                    div()
+                        .class(&format!(
+                            "flex items-center gap-2 {} {justify} {}",
+                            column.width_class(),
+                            themed("px-3", "px-1.5")
+                        ))
+                        .role(Role::Cell),
+                    sticky.as_deref(),
+                    &base,
+                    &tint,
+                );
+                let shown = column.cell_text(item).map(|(_, shown)| shown);
+                match (&column.render, shown) {
+                    (Some(render), Some(shown)) => cell.label(shown).child(render(item)),
+                    (Some(render), None) => cell.child(render(item)),
+                    (None, Some(shown)) => cell.child(text(shown).class("truncate")),
+                    (None, None) => cell,
+                }
+            });
         let mut row = div()
             .class(&format!(
                 "flex items-stretch {} {look}",
@@ -790,8 +958,11 @@ impl<T: 'static, Msg: Clone + 'static> BodyRows<T, Msg> {
             ))
             .role(Role::Row)
             .part(format!("row.{index}"))
-            .children(open.map(|open| self.toggle(index, data_index, open)))
+            .children(toggle)
             .children(cells);
+        if self.toggle_sticky.is_some() || self.sticky.iter().any(Option::is_some) {
+            row = row.class("group");
+        }
         if let Some(on_select) = &self.on_select {
             row = row
                 .class(&themed("cursor-pointer", "cursor-default"))
@@ -822,7 +993,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::rc::Rc;
 
-    use super::{Column, SortDirection, Table, TableView, ViewChange, virtual_list};
+    use super::{Column, Pin, SortDirection, Table, TableView, ViewChange, virtual_list};
     use crate::components::{BadgeVariant, ButtonVariant, badge, button};
     use crate::element::{ControlState, Element, Role, div, text};
     use crate::runtime::SimpleApp;
@@ -844,6 +1015,8 @@ mod tests {
         expandable: bool,
         /// The table is 260 points wide: its columns need more.
         narrow: bool,
+        /// «Tamaño» is pinned to the start.
+        pin_size: bool,
     }
 
     impl Files {
@@ -925,6 +1098,7 @@ mod tests {
                 opened: None,
                 expandable: false,
                 narrow: false,
+                pin_size: false,
             }
         }
     }
@@ -945,7 +1119,12 @@ mod tests {
             }
         }
         fn view(&self) -> Element<Msg> {
-            let mut table = Table::new(Rc::clone(&self.data), columns(), &self.view)
+            let mut columns = columns();
+            if self.pin_size {
+                let size = columns.remove(1);
+                columns.insert(1, size.pin(Pin::Start));
+            }
+            let mut table = Table::new(Rc::clone(&self.data), columns, &self.view)
                 .selected(self.selected)
                 .on_select(Msg::Select)
                 .on_view(Msg::View)
@@ -1437,8 +1616,19 @@ mod tests {
         app.scroll_wheel_xy(over.clone(), -60.0, 0.0);
         assert_eq!(scroller(&app).offset_x, 60.0);
         assert_eq!(bounds(&app, "tabla.column.1").x, header - 60.0);
-        assert_eq!(bounds(&app, "abrir.archivo-0.txt").x, button - 60.0);
+        assert_eq!(
+            bounds(&app, "abrir.archivo-0.txt").x,
+            button,
+            "actions are pinned to the end"
+        );
         assert_eq!(bounds(&app, "tabla.row.0").y, row, "only across");
+        app.click(By::test_id("abrir.archivo-0.txt"));
+        assert_eq!(
+            app.app().opened,
+            Some(app.app().data[0].size),
+            "over the size cell scrolled under it"
+        );
+        assert_eq!(scroller(&app).offset_x, 60.0, "already in view");
 
         app.scroll_wheel_xy(over.clone(), -10_000.0, 0.0);
         assert_eq!(scroller(&app).offset_x, max, "clamped at the end");
@@ -1462,26 +1652,66 @@ mod tests {
     }
 
     #[test]
+    fn a_column_pinned_to_the_start_stays_after_the_chevrons() {
+        let mut app = TestApp::new(Files {
+            pin_size: true,
+            expandable: true,
+            ..Files::narrow()
+        });
+        assert_eq!(
+            headers(&app),
+            ["Detalle", "Tamaño", "Nombre", "Tipo", "Acciones"]
+        );
+        let view = bounds(&app, "tabla.scroller");
+        let size = bounds(&app, "tabla.column.1").x;
+        assert_eq!(size, view.x + 32.0);
+        let cell = bounds(&app, "tabla.row.0").x;
+        let toggle = bounds(&app, "tabla.row.0.toggle").x;
+        let name = bounds(&app, "tabla.column.0").x;
+
+        app.scroll_wheel_xy(By::test_id("tabla.scroller"), -100.0, 0.0);
+        assert_eq!(scroller(&app).offset_x, 100.0);
+        assert_eq!(
+            bounds(&app, "tabla.column.0").x,
+            name - 100.0,
+            "the rest moves"
+        );
+        assert_eq!(bounds(&app, "tabla.row.0").x, cell - 100.0);
+        assert_eq!(bounds(&app, "tabla.column.1").x, size);
+        assert_eq!(bounds(&app, "tabla.row.0.toggle").x, toggle);
+        let rows = app.screen().all(By::role(Role::Row));
+        let size_cell = app.screen().within(rows[1]).all(By::role(Role::Cell))[1];
+        assert_eq!(size_cell.bounds().x, size, "its cells too");
+
+        app.click(By::test_id("tabla.row.0.toggle"));
+        assert!(app.app().view.expanded.contains(&0));
+        assert_eq!(scroller(&app).offset_x, 100.0, "already in view");
+    }
+
+    #[test]
     fn focus_and_clicks_reach_cells_scrolled_out_of_view() {
         let mut files = Files::narrow();
         files.view.apply(ViewChange::Filtering(true));
         let mut app = TestApp::new(files);
         let view = bounds(&app, "tabla.scroller");
+        let actions = bounds(&app, "tabla.column.3");
+        // Its start and center clear of the pinned actions column.
         let inside = |rect: crate::geometry::Rect| {
-            rect.x >= view.x - 0.5 && rect.x + rect.width / 2.0 <= view.x + view.width
+            rect.x >= view.x - 0.5 && rect.x + rect.width / 2.0 <= actions.x
         };
-        assert!(!inside(bounds(&app, "abrir.archivo-2.txt")));
-        app.click(By::test_id("abrir.archivo-2.txt"));
-        assert_eq!(app.app().opened, Some(app.app().data[2].size));
-        assert!(
-            inside(bounds(&app, "abrir.archivo-2.txt")),
-            "scrolled to it"
+        assert!(!inside(bounds(&app, "tabla.column.1")));
+        app.click(By::test_id("tabla.column.1"));
+        assert_eq!(
+            app.app().view.sort,
+            Some((1, SortDirection::Ascending)),
+            "the click reached it"
         );
+        assert!(inside(bounds(&app, "tabla.column.1")), "scrolled to it");
         let offset = scroller(&app).offset_x;
         assert!(offset > 0.0);
 
         app.click(By::test_id("tabla.row.3"));
-        assert_eq!(app.app().selected, Some(3));
+        assert_eq!(app.app().selected, Some(app.app().view.rows()[3]));
         assert_eq!(
             scroller(&app).offset_x,
             offset,
@@ -1489,9 +1719,11 @@ mod tests {
         );
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::role(Role::ColumnHeader).name("Nombre")));
-        assert_eq!(scroller(&app).offset_x, 0.0, "the focus brings it back");
+        assert!(app.is_focused(By::role(Role::ColumnHeader).name("Tamaño")));
+        assert_eq!(scroller(&app).offset_x, offset);
         app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("tabla.filter.0")));
+        assert!(scroller(&app).offset_x < offset, "the focus brings it back");
         app.press(Key::Tab, Modifiers::NONE);
         assert!(app.is_focused(By::test_id("tabla.filter.1")));
         assert!(scroller(&app).offset_x > 0.0);

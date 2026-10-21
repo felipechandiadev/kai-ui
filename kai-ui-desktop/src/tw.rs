@@ -705,6 +705,7 @@ impl Parser<'_> {
             "justify-evenly" => Decl::Justify(Justify::Evenly),
             "relative" => Decl::Position(Position::Relative),
             "absolute" => Decl::Position(Position::Absolute),
+            "sticky" => Decl::Position(Position::Sticky),
             "overflow-visible" => Decl::Overflow(Some(Overflow::Visible), Some(Overflow::Visible)),
             "overflow-hidden" | "overflow-clip" => {
                 Decl::Overflow(Some(Overflow::Hidden), Some(Overflow::Hidden))

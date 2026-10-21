@@ -26,7 +26,7 @@ use crate::maps::{MapSpec, Marker};
 use crate::media::LoadedImage;
 use crate::render::TextId;
 use crate::render::text::TextStyle;
-use crate::style::{ComputedText, Display, Length, Overflow, Style};
+use crate::style::{ComputedText, Display, Length, Overflow, Position, Style};
 use crate::theme::Theme;
 use crate::tw::{ClassList, State};
 
@@ -733,6 +733,7 @@ impl Layout {
             text,
         );
         place_markers(&mut nodes);
+        place_sticky(&mut nodes);
 
         let mut paint_order = Vec::with_capacity(nodes.len());
         push_paint_order(&nodes, 0, &mut paint_order);
@@ -833,7 +834,9 @@ impl Layout {
 
     /// Adjust the offsets of the scroll containers around `id`, innermost
     /// first, so its border box plus `margin` becomes visible, across and
-    /// down. Returns whether any offset changed.
+    /// down. Across, `sticky` siblings of it or of its ancestors (the
+    /// pinned cells of its row) cover the edges they stick to, so it
+    /// shows clear of them. Returns whether any offset changed.
     pub fn reveal(&self, id: WidgetId, margin: f32, offsets: &mut ScrollOffsets) -> bool {
         let Some(node) = self.node(id) else {
             return false;
@@ -847,15 +850,52 @@ impl Layout {
             node.bounds.y + node.bounds.height + margin,
         );
         let mut changed = false;
+        let mut covered = (0.0_f32, 0.0_f32);
+        let mut pinned = node.style.position == Position::Sticky;
+        let mut inner = node;
         for ancestor in self.ancestors(id) {
+            for &sibling in &ancestor.children {
+                let sibling = &self.nodes[sibling];
+                if sibling.id == inner.id
+                    || sibling.hidden
+                    || sibling.style.position != Position::Sticky
+                {
+                    continue;
+                }
+                match (sibling.style.inset.left, sibling.style.inset.right) {
+                    (Length::Px(left), _) => {
+                        covered.0 = covered.0.max(left + sibling.bounds.width);
+                    }
+                    (Length::Auto, Length::Px(right)) => {
+                        covered.1 = covered.1.max(right + sibling.bounds.width);
+                    }
+                    _ => {}
+                }
+            }
+            inner = ancestor;
             let Some(scroll) = ancestor.scroll else {
+                pinned |= ancestor.style.position == Position::Sticky;
                 continue;
             };
             let view = ancestor.padding_box;
+            let across = if ancestor.style.overflow_x == Overflow::Auto {
+                let (start, end) = covered;
+                covered = (0.0, 0.0);
+                (view.x + start, (view.width - start - end).max(0.0))
+            } else {
+                (view.x, view.width)
+            };
             let next = Point {
-                x: reveal_span(&mut x, (view.x, view.width), scroll.offset_x, scroll.max_x),
+                // A pinned node does not move across with the scroll.
+                x: if pinned && ancestor.style.overflow_x == Overflow::Auto {
+                    pinned = false;
+                    scroll.offset_x
+                } else {
+                    reveal_span(&mut x, across, scroll.offset_x, scroll.max_x)
+                },
                 y: reveal_span(&mut y, (view.y, view.height), scroll.offset, scroll.max),
             };
+            pinned |= ancestor.style.position == Position::Sticky;
             if next != scroll.offsets() {
                 offsets.insert(ancestor.id, next);
                 changed = true;
@@ -1062,6 +1102,53 @@ fn place_markers(nodes: &mut [LayoutNode]) {
     }
 }
 
+/// Move every `sticky` node with `left-*` or `right-*` across, so it stays
+/// that far inside the padding box of its nearest ancestor that scrolls
+/// across (`overflow-x-auto`), without leaving its parent. Unlike CSS, an
+/// ancestor that only scrolls down in between (a table body) does not
+/// stop it.
+fn place_sticky(nodes: &mut [LayoutNode]) {
+    for index in 0..nodes.len() {
+        let node = &nodes[index];
+        if node.style.position != Position::Sticky || node.hidden {
+            continue;
+        }
+        let Some(parent) = node.parent else {
+            continue;
+        };
+        let mut at = Some(parent);
+        let scroller = loop {
+            let Some(ancestor) = at else {
+                break None;
+            };
+            if nodes[ancestor].style.overflow_x == Overflow::Auto {
+                break Some(ancestor);
+            }
+            at = nodes[ancestor].parent;
+        };
+        let Some(scroller) = scroller else {
+            continue;
+        };
+        let view = nodes[scroller].padding_box;
+        let within = nodes[parent].padding_box;
+        let bounds = node.bounds;
+        let end = bounds.x + bounds.width;
+        let dx = match (node.style.inset.left, node.style.inset.right) {
+            (Length::Px(left), _) if bounds.x < view.x + left => {
+                (view.x + left - bounds.x).min((within.x + within.width - end).max(0.0))
+            }
+            (Length::Auto, Length::Px(right)) if end > view.x + view.width - right => {
+                -(end - (view.x + view.width - right)).min((bounds.x - within.x).max(0.0))
+            }
+            _ => 0.0,
+        };
+        if dx != 0.0 {
+            let clip = node.clip;
+            shift_subtree(nodes, index, Point { x: dx, y: 0.0 }, clip);
+        }
+    }
+}
+
 /// Translate a node and its descendants by `delta`; clips made inside the
 /// subtree (different from `outer`) move with it.
 fn shift_subtree(nodes: &mut [LayoutNode], index: usize, delta: Point, outer: Option<Rect>) {
@@ -1085,7 +1172,11 @@ fn push_paint_order(nodes: &[LayoutNode], index: usize, order: &mut Vec<usize>) 
     }
     order.push(index);
     let mut children = node.children.clone();
-    children.sort_by_key(|child| nodes[*child].style.z_index);
+    // Sticky nodes stay over the siblings that scroll under them.
+    children.sort_by_key(|child| {
+        let style = &nodes[*child].style;
+        (style.z_index, style.position == Position::Sticky)
+    });
     for child in children {
         push_paint_order(nodes, child, order);
     }
@@ -1645,6 +1736,60 @@ mod tests {
                 .scroll_target(&[root.id, strip], Axis::Y, 10.0)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn sticky_cells_keep_their_place_while_the_rest_scrolls_across() {
+        let root =
+            tree(
+                div().class("p-0").child(
+                    div()
+                        .class("flex w-[200px] h-10 overflow-x-auto")
+                        .children((0..10).map(|index| {
+                            let pin = match index {
+                                0 => "sticky left-0",
+                                9 => "sticky right-0",
+                                _ => "",
+                            };
+                            div().class(&format!("w-20 h-10 shrink-0 {pin}"))
+                        })),
+                ),
+            );
+        let strip = root.children[0].id;
+        let cells: Vec<WidgetId> = root.children[0].children.iter().map(|c| c.id).collect();
+        let at = |offset: f32| {
+            let offsets = ScrollOffsets::from([(strip, Point { x: offset, y: 0.0 })]);
+            layout_with(&root, WINDOW, &Interaction::default(), &offsets)
+        };
+        let x = |layout: &Layout, cell: usize| layout.bounds(cells[cell]).unwrap().x;
+
+        let start = at(0.0);
+        assert_eq!((x(&start, 0), x(&start, 1)), (0.0, 80.0));
+        assert_eq!(x(&start, 9), 120.0, "the last one waits at the right edge");
+
+        let scrolled = at(170.0);
+        assert_eq!(x(&scrolled, 0), 0.0);
+        assert_eq!(x(&scrolled, 2), 160.0 - 170.0, "the rest moves");
+        assert_eq!(x(&scrolled, 9), 120.0);
+        let path = scrolled.hit_path(Point { x: 10.0, y: 20.0 });
+        assert_eq!(path.last(), Some(&cells[0]), "over the cell under it");
+        let order: Vec<WidgetId> = scrolled
+            .paint_order()
+            .iter()
+            .map(|index| scrolled.get(*index).id)
+            .collect();
+        assert_eq!(&order[order.len() - 2..], &[cells[0], cells[9]]);
+        let mut offsets = ScrollOffsets::new();
+        assert!(scrolled.reveal(cells[1], 0.0, &mut offsets));
+        assert_eq!(offsets[&strip].x, 0.0, "out from under the left one");
+        let mut offsets = ScrollOffsets::new();
+        assert!(start.reveal(cells[8], 0.0, &mut offsets));
+        let revealed = at(offsets[&strip].x);
+        assert_eq!(x(&revealed, 8), 80.0, "clear of the left one");
+
+        let end = at(600.0);
+        assert_eq!(x(&end, 9), 120.0, "in place at the end");
+        assert_eq!(x(&end, 0), 0.0);
     }
 
     #[test]
