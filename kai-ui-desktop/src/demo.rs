@@ -4733,6 +4733,25 @@ mod tests {
     }
 
     #[test]
+    fn command_z_undoes_typing_in_a_field_and_the_app_hears_it() {
+        let mut app = TestApp::new(Demo::default());
+        let name = By::test_id("form.nombre");
+        app.type_text(name.clone(), "Ana María");
+        let command = Modifiers {
+            command: true,
+            ..Modifiers::NONE
+        };
+        app.press(Key::Char('z'), command);
+        assert_eq!(app.app().name, "Ana ", "word by word");
+        assert_eq!(app.value(name.clone()), "Ana ");
+        app.press(Key::Char('z'), command);
+        assert_eq!(app.app().name, "");
+        app.press(Key::Char('z'), CMD_SHIFT);
+        app.press(Key::Char('z'), CMD_SHIFT);
+        assert_eq!(app.app().name, "Ana María");
+    }
+
+    #[test]
     fn assistive_tech_reads_the_selected_row_while_focus_stays_in_search() {
         let mut app = TestApp::new(Demo::default());
         app.press(Key::Char('p'), CMD_SHIFT);

@@ -144,5 +144,5 @@ La guía de [craft-libs](07-integracion-craft-libs.md) distingue los crates de u
 
 - Widgets nativos de AppKit o SwiftUI para el dibujo de controles.
 - Android, iOS, Windows y Linux.
-- Un bus global de señales, componentes con estado local oculto, caché incremental sin mediciones y undo/redo (deshacer llega en el Paso 25 de [13](13-hoja-de-ruta-plataforma.md)). Los efectos async ya no están fuera: existen desde el Paso 15.
+- Un bus global de señales, componentes con estado local oculto, caché incremental sin mediciones y undo/redo de la app (deshacer comandos llega en el Paso 25 de [13](13-hoja-de-ruta-plataforma.md); los campos de texto ya deshacen su edición con ⌘Z). Los efectos async ya no están fuera: existen desde el Paso 15.
 - Integraciones de aplicación como PDF, impresión, CMS, ajustes persistentes o agentes de IA dentro del renderer.

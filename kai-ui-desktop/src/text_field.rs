@@ -105,6 +105,60 @@ pub struct TextFieldState {
     read_only: bool,
     /// Avoid reshaping a cloned editor multiple times per frame.
     display_cache: Option<DisplayState>,
+    /// Text before each edit, oldest first ([`TextIntent::Undo`]).
+    undo: Vec<Snapshot>,
+    /// Edits taken back, the last one on top ([`TextIntent::Redo`]).
+    redo: Vec<Snapshot>,
+    /// The run of edits the next one may join as a single undo step.
+    group: Option<EditGroup>,
+}
+
+/// Steps [`TextFieldState`] keeps to undo.
+const UNDO_LIMIT: usize = 100;
+
+/// The text, caret and selection of a field at one moment.
+#[derive(Clone, Debug, PartialEq)]
+struct Snapshot {
+    text: String,
+    cursor: Cursor,
+    selection: Selection,
+}
+
+/// A run of edits undone as one step, as in `NSTextView`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditGroup {
+    /// Typing; a word typed after a space starts a new step.
+    Typing { after_space: bool },
+    /// Backspace or Delete, one after another.
+    Deleting,
+}
+
+/// What an intent does to the text, for the undo steps.
+enum EditKind {
+    Typing {
+        starts_word: bool,
+        ends_space: bool,
+    },
+    Deleting,
+    /// Pasting, cutting, a line break: a step of its own.
+    Other,
+}
+
+impl EditKind {
+    fn of(intent: &TextIntent) -> Self {
+        let typing = |text: &str| Self::Typing {
+            starts_word: text.chars().next().is_some_and(char::is_alphanumeric),
+            ends_space: text.chars().last().is_some_and(char::is_whitespace),
+        };
+        match intent {
+            TextIntent::InsertText(text) | TextIntent::Ime(ImeIntent::Commit(text)) => typing(text),
+            TextIntent::KeyDown {
+                key: Key::Backspace | Key::Delete,
+                ..
+            } => Self::Deleting,
+            _ => Self::Other,
+        }
+    }
 }
 
 struct DisplayState {
@@ -140,6 +194,9 @@ impl TextFieldState {
             masked: false,
             read_only: false,
             display_cache: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            group: None,
         }
     }
 
@@ -217,7 +274,10 @@ impl TextFieldState {
         self.after_edit(font_system);
     }
 
-    /// Apply an editing intent already gated by text-field focus.
+    /// Apply an editing intent already gated by text-field focus. Edits
+    /// that change the text can be undone: a run of typing (word by word)
+    /// or of deleting is one step. A masked or read-only field keeps no
+    /// history.
     pub fn apply(
         &mut self,
         intent: TextIntent,
@@ -225,6 +285,103 @@ impl TextFieldState {
         clipboard: &mut dyn ClipboardPort,
     ) -> TextFieldEffect {
         match intent {
+            TextIntent::Undo => return self.step_back(true, font_system),
+            TextIntent::Redo => return self.step_back(false, font_system),
+            _ => {}
+        }
+        let kind = EditKind::of(&intent);
+        let before = self.snapshot();
+        let effect = self.edit(intent, font_system, clipboard);
+        self.record(before, kind);
+        effect
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            text: self.text(),
+            cursor: self.editor.cursor(),
+            selection: self.editor.selection(),
+        }
+    }
+
+    /// Keep `before` as an undo step unless the edit joins the open group.
+    fn record(&mut self, before: Snapshot, kind: EditKind) {
+        if before.text == self.text() {
+            self.group = None;
+            return;
+        }
+        if self.masked || self.read_only {
+            return;
+        }
+        let (joins, group) = match (self.group, kind) {
+            (
+                Some(EditGroup::Typing { after_space }),
+                EditKind::Typing {
+                    starts_word,
+                    ends_space,
+                },
+            ) => (
+                !(after_space && starts_word),
+                Some(EditGroup::Typing {
+                    after_space: ends_space,
+                }),
+            ),
+            (_, EditKind::Typing { ends_space, .. }) => (
+                false,
+                Some(EditGroup::Typing {
+                    after_space: ends_space,
+                }),
+            ),
+            (group, EditKind::Deleting) => (
+                group == Some(EditGroup::Deleting),
+                Some(EditGroup::Deleting),
+            ),
+            (_, EditKind::Other) => (false, None),
+        };
+        if !joins {
+            self.undo.push(before);
+            if self.undo.len() > UNDO_LIMIT {
+                self.undo.remove(0);
+            }
+        }
+        self.redo.clear();
+        self.group = group;
+    }
+
+    /// Undo (`back`) or redo one step. Returns `changed` when there was one.
+    fn step_back(&mut self, back: bool, font_system: &mut FontSystem) -> TextFieldEffect {
+        if self.masked || self.read_only {
+            return TextFieldEffect::default();
+        }
+        let current = self.snapshot();
+        let (from, to) = if back {
+            (&mut self.undo, &mut self.redo)
+        } else {
+            (&mut self.redo, &mut self.undo)
+        };
+        let Some(snapshot) = from.pop() else {
+            return TextFieldEffect::default();
+        };
+        to.push(current);
+        self.preedit = None;
+        self.editor.with_buffer_mut(|buffer| {
+            buffer.set_text(&snapshot.text, &ui_font_attrs(), Shaping::Advanced, None);
+        });
+        self.editor.set_cursor(snapshot.cursor);
+        self.editor.set_selection(snapshot.selection);
+        self.group = None;
+        self.after_edit(font_system);
+        TextFieldEffect::changed()
+    }
+
+    fn edit(
+        &mut self,
+        intent: TextIntent,
+        font_system: &mut FontSystem,
+        clipboard: &mut dyn ClipboardPort,
+    ) -> TextFieldEffect {
+        match intent {
+            TextIntent::Undo | TextIntent::Redo => TextFieldEffect::default(),
             TextIntent::KeyDown { key, modifiers, .. } => {
                 self.key_down(key, modifiers, font_system)
             }
@@ -414,13 +571,17 @@ impl TextFieldState {
 
     /// Replace the committed text with `text` (the controlled value from the
     /// app) when it differs, dropping the selection and placing the caret at
-    /// the end. Returns whether the text changed.
+    /// the end. A value the person did not type also drops the undo
+    /// history. Returns whether the text changed.
     pub fn set_text(&mut self, font_system: &mut FontSystem, text: &str) -> bool {
         let text = self.normalize(text);
         let current = self.text();
         if text == current {
             return false;
         }
+        self.undo.clear();
+        self.redo.clear();
+        self.group = None;
         let caret = self.offset(self.editor.cursor()).min(current.len());
         self.editor.with_buffer_mut(|buffer| {
             buffer.set_text(&text, &ui_font_attrs(), Shaping::Advanced, None);
@@ -514,6 +675,7 @@ impl TextFieldState {
 
     /// Place the caret at a point relative to the text origin.
     pub fn click(&mut self, font_system: &mut FontSystem, local: Point) {
+        self.group = None;
         let at = self.in_buffer(local);
         if self.masked {
             if let Some(cursor) = self.masked_hit(font_system, at) {
@@ -905,6 +1067,111 @@ mod tests {
         field.set_metrics(&mut fonts, Metrics::new(14.0, 20.0));
         let caret = field.view(&mut fonts).decorations.caret.unwrap();
         assert_eq!(caret.height, 20.0);
+    }
+
+    /// Type `text` one character at a time, as the keyboard does.
+    fn type_chars(
+        field: &mut TextFieldState,
+        fonts: &mut FontSystem,
+        clipboard: &mut MockClipboard,
+        text: &str,
+    ) {
+        for c in text.chars() {
+            field.apply(TextIntent::InsertText(c.to_string()), fonts, clipboard);
+        }
+    }
+
+    #[test]
+    fn undo_takes_back_typing_word_by_word_and_redo_brings_it_again() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut fonts, 300.0);
+        type_chars(&mut field, &mut fonts, &mut clipboard, "hola mundo");
+        let undo =
+            |field: &mut TextFieldState, fonts: &mut FontSystem, clipboard: &mut MockClipboard| {
+                field.apply(TextIntent::Undo, fonts, clipboard).changed
+            };
+
+        assert!(undo(&mut field, &mut fonts, &mut clipboard));
+        assert_eq!(field.text(), "hola ");
+        assert!(undo(&mut field, &mut fonts, &mut clipboard));
+        assert_eq!(field.text(), "");
+        assert!(
+            !undo(&mut field, &mut fonts, &mut clipboard),
+            "nothing left"
+        );
+
+        field.apply(TextIntent::Redo, &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "hola ");
+        field.apply(TextIntent::Redo, &mut fonts, &mut clipboard);
+        assert_eq!(field.text(), "hola mundo");
+        assert_eq!(field.editor().cursor().index, "hola mundo".len());
+        assert!(
+            !field
+                .apply(TextIntent::Redo, &mut fonts, &mut clipboard)
+                .changed
+        );
+
+        field.apply(TextIntent::Undo, &mut fonts, &mut clipboard);
+        type_chars(&mut field, &mut fonts, &mut clipboard, "kai");
+        assert!(
+            !field
+                .apply(TextIntent::Redo, &mut fonts, &mut clipboard)
+                .changed,
+            "a new edit drops what was undone"
+        );
+        assert_eq!(field.text(), "hola kai");
+    }
+
+    #[test]
+    fn deleting_pasting_and_moving_make_their_own_steps() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut fonts, 300.0);
+        type_chars(&mut field, &mut fonts, &mut clipboard, "abcd");
+        for _ in 0..2 {
+            field.apply(key(Key::Backspace, false), &mut fonts, &mut clipboard);
+        }
+        clipboard.contents = Some("XY".into());
+        field.apply(TextIntent::Paste, &mut fonts, &mut clipboard);
+        field.apply(key(Key::ArrowLeft, false), &mut fonts, &mut clipboard);
+        type_chars(&mut field, &mut fonts, &mut clipboard, "z");
+        assert_eq!(field.text(), "abXzY");
+
+        let mut steps = Vec::new();
+        while field
+            .apply(TextIntent::Undo, &mut fonts, &mut clipboard)
+            .changed
+        {
+            steps.push(field.text());
+        }
+        assert_eq!(steps, ["abXY", "ab", "abcd", ""]);
+    }
+
+    #[test]
+    fn a_value_from_the_app_or_a_masked_field_keeps_no_history() {
+        let mut fonts = FontSystem::new();
+        let mut clipboard = MockClipboard::default();
+        let mut field = field(&mut fonts, 300.0);
+        type_chars(&mut field, &mut fonts, &mut clipboard, "hola");
+        assert!(!field.set_text(&mut fonts, "hola"), "the app echoes it");
+        assert!(field.set_text(&mut fonts, "otro"));
+        assert!(
+            !field
+                .apply(TextIntent::Undo, &mut fonts, &mut clipboard)
+                .changed
+        );
+        assert_eq!(field.text(), "otro");
+
+        let mut password = super::TextFieldState::new(&mut fonts, Metrics::new(15.0, 22.0));
+        password.set_masked(&mut fonts, true);
+        type_chars(&mut password, &mut fonts, &mut clipboard, "secreto");
+        assert!(
+            !password
+                .apply(TextIntent::Undo, &mut fonts, &mut clipboard)
+                .changed
+        );
+        assert_eq!(password.text(), "secreto");
     }
 
     #[test]

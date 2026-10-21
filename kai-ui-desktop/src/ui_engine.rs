@@ -123,6 +123,10 @@ pub enum TextIntent {
     Copy,
     Cut,
     Paste,
+    /// ⌘Z: back to the text before the last edit (a run of typing is one).
+    Undo,
+    /// ⇧⌘Z: the edit [`TextIntent::Undo`] took back.
+    Redo,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -374,19 +378,12 @@ fn key_commands(
         }
         (Some(field), Some(FocusKind::TextField)) => {
             let mut commands = text_key_commands(field, key, modifiers, repeat);
-            if !repeat {
-                let unconsumed = match standard_action(key, modifiers) {
-                    // The field has no undo stack yet.
-                    Some(action @ (Action::Undo | Action::Redo)) => Some(action),
-                    _ if pressed == KeyEquivalent::RETURN
-                        && !order.submits(field)
-                        && !order.multiline(field) =>
-                    {
-                        Some(Action::InsertNewline)
-                    }
-                    _ => None,
-                };
-                commands.extend(unconsumed.map(UiCommand::Perform));
+            if !repeat
+                && pressed == KeyEquivalent::RETURN
+                && !order.submits(field)
+                && !order.multiline(field)
+            {
+                commands.push(UiCommand::Perform(Action::InsertNewline));
             }
             commands
         }
@@ -457,6 +454,8 @@ fn text_key_commands(
             Key::C => Some(TextIntent::Copy),
             Key::X => Some(TextIntent::Cut),
             Key::V => Some(TextIntent::Paste),
+            Key::Char('z') if modifiers.shift => Some(TextIntent::Redo),
+            Key::Char('z') => Some(TextIntent::Undo),
             _ => None,
         };
         if let Some(action) = action {
@@ -833,8 +832,11 @@ mod tests {
         let copy = dispatch(&mut model, &order, cmd(Key::C, false));
         assert_eq!(copy.action, None, "the field copies");
         assert_eq!(copy.text_actions, vec![(sample::field(), TextIntent::Copy)]);
+        let undo = dispatch(&mut model, &order, cmd(Key::Char('z'), false));
+        assert_eq!(undo.action, None, "the field undoes");
+        assert_eq!(undo.text_actions, vec![(sample::field(), TextIntent::Undo)]);
         let redo = dispatch(&mut model, &order, cmd(Key::Char('z'), true));
-        assert_eq!(redo.action, Some(Action::Redo));
+        assert_eq!(redo.text_actions, vec![(sample::field(), TextIntent::Redo)]);
         let escape = dispatch(&mut model, &order, plain(Key::Escape));
         assert_eq!(escape.action, Some(Action::CancelOperation));
         assert!(escape.text_actions.is_empty());
