@@ -1224,7 +1224,7 @@ Reglas de la pista C:
 - [x] P13 `Dialog`, confirmación, auditoría, indicador de agente (falta la prueba a mano con Cursor o Claude Desktop).
 
 **Etapa 4 — App guía**
-- [x] Widgets previos al P14: checkbox (On, Off y mixto), segmented control (grupo de foco con flechas) y `Select` (lista de la `Session`, teclado completo, `AXPopUpButton` y `AXMenu`). Falta revisarlos con VoiceOver y la búsqueda por tipeo en la lista.
+- [x] Widgets previos al P14: checkbox (On, Off y mixto), segmented control (grupo de foco con flechas) y `Select` (lista de la `Session`, teclado completo con búsqueda por tipeo, `AXPopUpButton` y `AXMenu`). Falta revisarlos con VoiceOver.
 - [x] Sidebar de secciones (`components::sidebar`): un grupo de foco que selecciona, donde ↑/↓ eligen la fila, como en Finder o Mail. AccessKit la publica como `AXOutline` con filas. La demo pasó a ser un shell con sidebar y `ui.ir_a`. Falta revisarla con VoiceOver.
 - [x] Backlog de widgets del P14: toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`, cada uno con ids y tests y en la demo.
 - [x] Lenguaje de color de la selección: token `choice`, `CHOICE_ACTIVE` y `CHOICE_HOVER` en sidebar, select (sin check y con `ChevronDown`), paleta, segmented, toolbar, tabla, `ColorField` y `MediaSlot`.

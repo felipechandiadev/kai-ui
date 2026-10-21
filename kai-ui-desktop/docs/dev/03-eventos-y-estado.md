@@ -168,7 +168,7 @@ Un renderer propio no elimina la integración de plataforma. Validar portapapele
 
 - Bus global de señales, suscripciones cruzadas y componentes con estado local oculto hasta que una app los necesite. Los efectos (`Cmd` de Elm) ya existen como `Effects`; las suscripciones (`Sub`) llegarán con los websockets de DSP (Paso 15 de 13).
 - Tokio como propietario del event loop gráfico.
-- Undo/redo, persistencia de acciones y serialización de cada mensaje.
+- Undo/redo de la app (los campos de texto ya deshacen su edición), persistencia de acciones y serialización de cada mensaje.
 - Ejecución de comandos de IA/MCP dentro del núcleo visual. Una app puede añadir un adaptador opcional y controlado fuera del MVP.
 
 Estos elementos se pueden añadir como módulos de aplicación después de definir casos concretos y límites de seguridad.

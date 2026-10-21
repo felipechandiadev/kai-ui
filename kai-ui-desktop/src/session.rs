@@ -9,6 +9,8 @@
 #[cfg(test)]
 mod busy_tests;
 mod calls;
+#[cfg(test)]
+mod typeahead_tests;
 
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
@@ -394,14 +396,56 @@ struct Popup {
     panel: WidgetId,
     /// Rows of the last `view`, in order.
     rows: Vec<WidgetId>,
+    /// Letters typed to find an option, and when the last one came.
+    typed: String,
+    typed_at: Instant,
 }
 
 /// What a key does to the open pop-up list.
 enum PopupKey {
     Highlight(usize),
     Choose(usize),
+    /// Text typed to find an option by its first letters.
+    Find(String),
     Close,
     Ignore,
+}
+
+/// Pause after which typing in an open list starts a new search.
+pub(crate) const TYPEAHEAD_RESET: Duration = Duration::from_secs(1);
+
+/// `text` for typeahead: lowercase, vowels without accents.
+fn fold(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            c => c,
+        })
+        .collect()
+}
+
+/// The option `typed` finds among `items` with `highlighted` the current
+/// one: the next that starts with it, after the current one when `typed`
+/// is one letter (or the same letter again, which goes through the
+/// options with it) and from the current one otherwise, wrapping around.
+fn typeahead(items: &[String], highlighted: usize, typed: &str) -> Option<usize> {
+    let typed = fold(typed);
+    let mut letters = typed.chars();
+    let first = letters.next()?;
+    let repeated = letters.all(|c| c == first);
+    let (prefix, start) = if repeated {
+        (first.to_string(), highlighted + 1)
+    } else {
+        (typed, highlighted)
+    };
+    (0..items.len())
+        .map(|offset| (start + offset) % items.len())
+        .find(|&index| fold(&items[index]).starts_with(&prefix))
 }
 
 /// Where the list of a pop-up button at `anchor` goes: below it, or above
@@ -1612,6 +1656,8 @@ impl<A: App> Session<A> {
             root: WidgetId(0),
             panel: WidgetId(0),
             rows: Vec::new(),
+            typed: String::new(),
+            typed_at: self.now(),
         });
         self.rebuild();
         self.relayout();
@@ -1700,7 +1746,8 @@ impl<A: App> Session<A> {
 
     /// Keys the open pop-up list takes before anything else: arrows move
     /// the highlight, Return or Space pick it, Escape, ⌘. or Tab close the
-    /// list; other keys and text do nothing while it is open.
+    /// list, and typed letters highlight the option they begin
+    /// ([`typeahead`]); other keys do nothing while it is open.
     fn popup_key(&mut self, intent: &Intent) -> bool {
         let Some(popup) = &self.popup else {
             return false;
@@ -1724,6 +1771,9 @@ impl<A: App> Session<A> {
                 (Key::Period, false) if modifiers.command => PopupKey::Close,
                 _ => PopupKey::Ignore,
             },
+            // Space picks the option; it never searches.
+            TextIntent::InsertText(text) if text.trim().is_empty() => PopupKey::Ignore,
+            TextIntent::InsertText(text) => PopupKey::Find(text.clone()),
             _ => PopupKey::Ignore,
         };
         match action {
@@ -1732,6 +1782,28 @@ impl<A: App> Session<A> {
                     popup.highlighted = index;
                 }
                 self.focus_popup_row();
+            }
+            PopupKey::Find(text) => {
+                let now = self.now();
+                let items = self
+                    .popup
+                    .as_ref()
+                    .and_then(|popup| self.tree.find(popup.owner))
+                    .and_then(|element| element.options.as_ref())
+                    .map(|options| options.items.clone())
+                    .unwrap_or_default();
+                let Some(popup) = &mut self.popup else {
+                    return true;
+                };
+                if now.saturating_duration_since(popup.typed_at) > TYPEAHEAD_RESET {
+                    popup.typed.clear();
+                }
+                popup.typed.push_str(&text);
+                popup.typed_at = now;
+                if let Some(index) = typeahead(&items, popup.highlighted, &popup.typed) {
+                    popup.highlighted = index;
+                    self.focus_popup_row();
+                }
             }
             PopupKey::Choose(index) => self.choose_from_popup(index),
             PopupKey::Close => self.close_popup(),
