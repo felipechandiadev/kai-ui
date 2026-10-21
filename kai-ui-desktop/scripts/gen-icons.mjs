@@ -79,6 +79,9 @@ const ICONS = [
   "library",
   "tags",
   "file-pen",
+  // Table: filters.
+  "funnel",
+  "funnel-x",
 ];
 
 const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");

@@ -63,7 +63,7 @@ impl fmt::Display for Value {
 pub enum ViewChange {
     /// Sort by a column (its index in the table's columns).
     Sort(usize, SortDirection),
-    /// The filter of a column; empty clears it.
+    /// The filter of a column, as typed; empty clears it.
     Filter(usize, String),
     /// Show or hide the filter fields; hiding them clears the filters.
     Filtering(bool),
@@ -119,7 +119,12 @@ impl TableView {
 
     /// Some filter or the global search narrows the rows.
     pub fn is_filtered(&self) -> bool {
-        !self.query.trim().is_empty() || !self.filters.is_empty()
+        !self.query.trim().is_empty() || self.has_filters()
+    }
+
+    /// Some column filter narrows the rows.
+    pub fn has_filters(&self) -> bool {
+        self.filters.values().any(|text| !text.trim().is_empty())
     }
 
     /// Apply `change`; call [`Self::refresh`] after it.
@@ -127,7 +132,7 @@ impl TableView {
         match change {
             ViewChange::Sort(column, direction) => self.sort = Some((column, direction)),
             ViewChange::Filter(column, text) => {
-                if text.trim().is_empty() {
+                if text.is_empty() {
                     self.filters.remove(&column);
                 } else {
                     self.filters.insert(column, text);

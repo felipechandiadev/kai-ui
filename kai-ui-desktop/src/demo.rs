@@ -324,6 +324,9 @@ enum Campo {
 /// Rows of the client table.
 const CLIENTES: u32 = 10_000;
 
+/// Pause in the typing of a column filter before the table refreshes.
+const PAUSA_FILTRO: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// One client of the generated table: number, name, city, plan, amount.
 #[derive(Debug, PartialEq)]
 struct Cliente {
@@ -668,6 +671,8 @@ enum Msg {
     Query(String),
     /// Sort, filter, hide columns or expand rows of the table.
     Tabla(ViewChange),
+    /// Recompute the table's rows after a pause in a filter's typing.
+    RefrescarTabla,
     /// A client of the table, by its index in `clientes`.
     SelectRow(usize),
     /// The «Ver» action of a client's row.
@@ -1389,9 +1394,14 @@ impl App for Demo {
                 self.tabla.refresh(&self.clientes, &columnas());
             }
             Msg::Tabla(change) => {
+                let typing = matches!(change, ViewChange::Filter(..));
                 self.tabla.apply(change);
+                if typing {
+                    return Effects::after(PAUSA_FILTRO, Msg::RefrescarTabla).keyed("filtro");
+                }
                 self.tabla.refresh(&self.clientes, &columnas());
             }
+            Msg::RefrescarTabla => self.tabla.refresh(&self.clientes, &columnas()),
             Msg::SelectRow(index) => self.cliente = Some(index),
             Msg::VerCliente(index) => {
                 let Some(cliente) = self.clientes.get(index) else {
@@ -2164,8 +2174,10 @@ impl Demo {
             Some(cliente) => format!("Seleccionado: {}", cliente.nombre),
             None => "Elige una fila con un clic o con ↑ ↓".to_owned(),
         };
-        let shown = if self.query.trim().is_empty() {
+        let shown = if !self.tabla.is_filtered() {
             format!("{} clientes", self.tabla.len())
+        } else if self.query.trim().is_empty() {
+            format!("{} de {CLIENTES} filtrados", self.tabla.len())
         } else {
             format!(
                 "{} de {CLIENTES} con «{}»",
@@ -2173,6 +2185,29 @@ impl Demo {
                 self.query.trim()
             )
         };
+        let filtrando = self.tabla.filtering;
+        let filtrar = icon_button_sized(
+            if filtrando {
+                Icon::FunnelX
+            } else {
+                Icon::Funnel
+            },
+            "Filtrar",
+            if self.tabla.has_filters() {
+                IconButtonVariant::Primary
+            } else {
+                IconButtonVariant::Outlined
+            },
+            IconButtonSize::Sm,
+        )
+        .tooltip(if filtrando {
+            "Quitar los filtros"
+        } else {
+            "Filtrar por columna"
+        })
+        .pressed(filtrando)
+        .on_click(Msg::Tabla(ViewChange::Filtering(!filtrando)))
+        .test_id("tabla.filtrar");
         card().class("w-full max-w-3xl").test_id("tabla").children([
             card_header(
                 "Clientes",
@@ -2183,7 +2218,9 @@ impl Demo {
                     .class("flex items-center justify-between gap-3")
                     .children([
                         caption(shown).role(Role::Status).test_id("tabla.total"),
-                        caption(summary).test_id("tabla.seleccion"),
+                        div()
+                            .class("flex items-center gap-3")
+                            .children([caption(summary).test_id("tabla.seleccion"), filtrar]),
                     ]),
                 Table::new(Rc::clone(&self.clientes), columnas(), &self.tabla)
                     .on_view(Msg::Tabla)
@@ -4236,6 +4273,69 @@ mod tests {
 
         // Clearing the search shows the ten thousand again.
         app.click(By::test_id("barra.buscar.clear"));
+        assert_eq!(count(&app), Some(10_000));
+    }
+
+    #[test]
+    fn the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause() {
+        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
+        let table = By::test_id("tabla.clientes");
+        let count = |app: &TestApp<Demo>| app.screen().get(table.clone()).node().row_count;
+        let filtrar = By::role(Role::Button).name("Filtrar");
+        assert!(
+            app.screen()
+                .query(By::role(Role::SearchInput).name("Filtrar Ciudad"))
+                .is_none()
+        );
+
+        app.click(filtrar.clone());
+        assert_eq!(
+            app.screen().get(filtrar.clone()).node().control_state,
+            Some(ControlState::On)
+        );
+        let screen = app.screen();
+        let fields: Vec<_> = screen
+            .within(screen.get(table.clone()))
+            .all(By::role(Role::SearchInput))
+            .iter()
+            .filter_map(|field| field.name())
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                "Filtrar Nombre",
+                "Filtrar Ciudad",
+                "Filtrar Plan",
+                "Filtrar Monto"
+            ],
+            "N.º is not filterable"
+        );
+
+        app.type_text(By::test_id("tabla.clientes.filter.2"), "temuco");
+        assert_eq!(count(&app), Some(10_000), "the table waits for a pause");
+        app.advance(super::PAUSA_FILTRO);
+        app.type_text(By::test_id("tabla.clientes.filter.3"), "pro");
+        app.advance(super::PAUSA_FILTRO);
+        let expected = app
+            .app()
+            .clientes
+            .iter()
+            .filter(|c| c.ciudad == "Temuco" && c.plan == "Pro")
+            .count();
+        assert!(expected > 0);
+        assert_eq!(count(&app), Some(expected));
+        assert!(
+            app.screen()
+                .get_by_test_id("tabla.total")
+                .name()
+                .unwrap()
+                .contains("filtrados")
+        );
+
+        // Turning the fields off clears the filters.
+        app.click(filtrar);
+        assert!(!app.app().tabla.filtering);
+        assert!(app.app().tabla.filters.is_empty());
         assert_eq!(count(&app), Some(10_000));
     }
 

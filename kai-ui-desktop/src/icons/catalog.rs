@@ -67,6 +67,8 @@ pub enum Icon {
     Library,
     Tags,
     FilePen,
+    Funnel,
+    FunnelX,
 }
 
 impl Icon {
@@ -134,6 +136,8 @@ impl Icon {
         Icon::Library,
         Icon::Tags,
         Icon::FilePen,
+        Icon::Funnel,
+        Icon::FunnelX,
     ];
 
     /// Lucide name, e.g. `"eye-off"`.
@@ -202,6 +206,8 @@ impl Icon {
             Icon::Library => "library",
             Icon::Tags => "tags",
             Icon::FilePen => "file-pen",
+            Icon::Funnel => "funnel",
+            Icon::FunnelX => "funnel-x",
         }
     }
 
@@ -275,6 +281,8 @@ impl Icon {
             Icon::Library => include_str!("../../assets/icons/library.svg"),
             Icon::Tags => include_str!("../../assets/icons/tags.svg"),
             Icon::FilePen => include_str!("../../assets/icons/file-pen.svg"),
+            Icon::Funnel => include_str!("../../assets/icons/funnel.svg"),
+            Icon::FunnelX => include_str!("../../assets/icons/funnel-x.svg"),
         }
     }
 }

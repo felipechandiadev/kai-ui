@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 pub use view::{Date, TableView, Value, ViewChange};
 
-use super::themed;
-use crate::element::{ControlState, Element, Role, div, icon, text};
+use super::{search_field, themed};
+use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};
 use crate::icons::Icon;
 
 /// Scrolling list of `count` rows of `row_height` points, built by
@@ -271,9 +271,13 @@ impl<T, Msg> Column<T, Msg> {
 /// so the selection survives sorting. With `on_select` the rows are one
 /// Tab stop: a click, ↑/↓, Home/End and PageUp/PageDown select one.
 /// Hidden columns are left out. AppKit rows alternate their background.
+/// While [`TableView::filtering`], each [`Column::filterable`] gets a field
+/// under its header («Filtrar <título>», Escape clears it) that sends
+/// [`ViewChange::Filter`] on every edit: the app may wait for a pause in
+/// the typing before it refreshes (`Effects::after(..).keyed(..)`).
 ///
-/// Parts: `header`, `column.<i>`, `body` and `row.<i>` (`i` is the
-/// column's index, and the row's place on screen).
+/// Parts: `header`, `column.<i>`, `filters`, `filter.<i>`, `body` and
+/// `row.<i>` (`i` is the column's index, and the row's place on screen).
 pub struct Table<T, Msg> {
     data: Rc<[T]>,
     columns: Rc<[Column<T, Msg>]>,
@@ -356,6 +360,7 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .focus_group()
             .part("header")
             .children(visible.iter().map(|&index| self.header_cell(index)));
+        let filters = self.filter_row(&visible);
         let rows = Rc::clone(self.view.rows());
         let count = rows.len();
         let selected = self.selected.and_then(|row| self.view.position(row));
@@ -386,7 +391,9 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
             .role(Role::Table)
             .row_count(count)
             .parts_root()
-            .children([header, body]);
+            .child(header)
+            .children(filters)
+            .child(body);
         if let Some(label) = self.label {
             root = root.label(label);
         }
@@ -448,6 +455,50 @@ impl<T: 'static, Msg: Clone + 'static> Table<T, Msg> {
                 });
         }
         cell
+    }
+
+    /// While [`TableView::filtering`], a row of search fields under the
+    /// header, one per filterable column; each is its own Tab stop.
+    fn filter_row(&self, visible: &[usize]) -> Option<Element<Msg>> {
+        if !self.view.filtering {
+            return None;
+        }
+        let on_view = self.on_view.as_ref()?;
+        let cells = visible.iter().map(|&index| {
+            let column = &self.columns[index];
+            let cell = div()
+                .class(&format!(
+                    "flex items-center {} {}",
+                    column.width_class(),
+                    themed("px-1.5", "px-1")
+                ))
+                .role(Role::Cell);
+            if !column.filterable {
+                return cell;
+            }
+            let on_view = Rc::clone(on_view);
+            let value = self.view.filters.get(&index).cloned().unwrap_or_default();
+            let mut field =
+                search_field(value, move |text| on_view(ViewChange::Filter(index, text)))
+                    .placeholder("Filtrar")
+                    .label(format!("Filtrar {}", column.title))
+                    .control_size(ControlSize::Small);
+            if let Some(id) = &self.test_id {
+                field = field.test_id(format!("{id}.filter.{index}"));
+            }
+            cell.child(field.build().class("min-w-0"))
+        });
+        Some(
+            div()
+                .class(&themed(
+                    "flex items-center h-10 shrink-0 border-b border-border",
+                    "flex items-center h-[28px] shrink-0 border-b border-separator",
+                ))
+                .role(Role::Row)
+                .label("Filtros")
+                .part("filters")
+                .children(cells),
+        )
     }
 }
 
@@ -560,11 +611,14 @@ mod tests {
 
     fn columns() -> Vec<Column<File, Msg>> {
         vec![
-            Column::text("Nombre", |file: &File| file.name.clone()).sortable(),
+            Column::text("Nombre", |file: &File| file.name.clone())
+                .sortable()
+                .filterable(),
             Column::number("Tamaño", |file: &File| file.size as f64)
                 .format(|size| format!("{size} KB"))
                 .fixed(120.0)
-                .sortable(),
+                .sortable()
+                .filterable(),
             Column::text("Tipo", |file: &File| {
                 if file.size.is_multiple_of(2) {
                     "Par"
@@ -638,6 +692,59 @@ mod tests {
 
     fn rows_built(app: &TestApp<Files>) -> usize {
         app.screen().all(By::role(Role::Row)).len() - 1
+    }
+
+    #[test]
+    fn the_filter_fields_narrow_each_column_with_the_global_search() {
+        let mut files = Files::default();
+        files.view.query = "9".into();
+        files.view.apply(ViewChange::Filtering(true));
+        files.view.refresh(&files.data, &columns());
+        let mut app = TestApp::new(files);
+        let screen = app.screen();
+        let filters = screen.get(By::role(Role::Row).name("Filtros"));
+        let fields = screen.within(filters).all(By::role(Role::SearchInput));
+        let names: Vec<_> = fields.iter().filter_map(|field| field.name()).collect();
+        assert_eq!(
+            names,
+            ["Filtrar Nombre", "Filtrar Tamaño"],
+            "only the filterable columns"
+        );
+
+        app.type_text(By::test_id("tabla.filter.0"), "archivo-1");
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(app.is_focused(By::test_id("tabla.filter.0.clear")));
+        app.press(Key::Tab, Modifiers::NONE);
+        assert!(
+            app.is_focused(By::test_id("tabla.filter.1")),
+            "each field is a Tab stop"
+        );
+        app.type_text(By::test_id("tabla.filter.1"), ">=9000");
+        let expected = app
+            .app()
+            .data
+            .iter()
+            .filter(|file| {
+                file.name.contains('9') && file.name.contains("archivo-1") && file.size >= 9_000
+            })
+            .count();
+        assert!(expected > 0);
+        let count = |app: &TestApp<Files>| app.screen().get_by_test_id("tabla").node().row_count;
+        assert_eq!(count(&app), Some(expected));
+        assert_eq!(
+            app.app().view.filters.get(&1).map(String::as_str),
+            Some(">=9000")
+        );
+
+        app.press(Key::Escape, Modifiers::NONE);
+        assert!(!app.app().view.filters.contains_key(&1), "Escape clears it");
+        let by_name = app
+            .app()
+            .data
+            .iter()
+            .filter(|file| file.name.contains('9') && file.name.contains("archivo-1"))
+            .count();
+        assert_eq!(count(&app), Some(by_name));
     }
 
     #[test]
