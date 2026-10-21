@@ -6,7 +6,7 @@ mod view;
 
 use std::rc::Rc;
 
-pub use view::{Date, TableView, Value, ViewChange};
+pub use view::{Date, Sheet, TableView, Value, ViewChange};
 
 use super::{search_field, themed};
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, text};

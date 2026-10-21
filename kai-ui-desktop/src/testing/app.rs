@@ -17,7 +17,7 @@ use crate::element::WidgetId;
 use crate::geometry::{Point, Size};
 use crate::media::{FakeImageLoader, ImageLoader};
 use crate::platform_adapter::adapt_key_input;
-use crate::runtime::{App, LINE_SCROLL, PickFile};
+use crate::runtime::{App, LINE_SCROLL, PickFile, SaveFile};
 use crate::session::{AgentCall, CONFIRMATION, Measure, Session};
 use crate::snapshot::{self, Image, Shot};
 use crate::style::Cursor;
@@ -113,6 +113,8 @@ impl<A: App> TestAppBuilder<A> {
             next_agent_call: 1,
             file_pick_answer: None,
             file_pick_request: None,
+            file_save_answer: None,
+            file_save_request: None,
             cursor: Cursor::Default,
         };
         app.frame();
@@ -163,6 +165,9 @@ pub struct TestApp<A: App> {
     /// Answer for the open panel ([`TestApp::on_file_pick`]).
     file_pick_answer: Option<Option<PathBuf>>,
     file_pick_request: Option<PickFile>,
+    /// Answer for the save panel ([`TestApp::on_file_save`]).
+    file_save_answer: Option<Option<PathBuf>>,
+    file_save_request: Option<SaveFile>,
     /// The last pointer shape the session asked the window for.
     cursor: Cursor,
 }
@@ -908,25 +913,53 @@ impl<A: App> TestApp<A> {
         }
     }
 
-    /// What the window does on `RedrawRequested`, minus paint; an open
-    /// panel asked for meanwhile gets the answer of [`Self::on_file_pick`].
+    /// What the window does on `RedrawRequested`, minus paint; an open or
+    /// save panel asked for meanwhile gets the answer of
+    /// [`Self::on_file_pick`] or [`Self::on_file_save`].
     fn frame(&mut self) {
         loop {
             self.session.prepare_frame();
             let outbox = self.session.take_outbox();
             if let Some(request) = outbox.pick_file {
                 self.file_pick_request = Some(request);
+                self.file_save_request = None;
+            }
+            if let Some(request) = outbox.save_file {
+                self.file_save_request = Some(request);
+                self.file_pick_request = None;
             }
             if let Some(cursor) = outbox.cursor {
                 self.cursor = cursor;
             }
-            match &self.file_pick_answer {
+            let answer = if self.file_save_request.is_some() {
+                &self.file_save_answer
+            } else {
+                &self.file_pick_answer
+            };
+            match answer {
                 Some(answer) if self.session.file_pick_pending() => {
                     self.session.finish_file_pick(answer.clone());
                 }
                 _ => break,
             }
         }
+    }
+
+    /// From now on, answer the save panel of [`Effects::save_file`] with
+    /// `path` (`None`: the person cancels), now if one is open. Until this
+    /// is called the panel stays open ([`Self::file_save_request`]).
+    ///
+    /// [`Effects::save_file`]: crate::runtime::Effects::save_file
+    pub fn on_file_save(&mut self, path: Option<PathBuf>) {
+        self.file_save_answer = Some(path);
+        self.frame();
+    }
+
+    /// The save panel waiting for an answer, if any.
+    pub fn file_save_request(&self) -> Option<&SaveFile> {
+        self.file_save_request
+            .as_ref()
+            .filter(|_| self.session.file_pick_pending())
     }
 
     /// From now on, answer the open panel of [`Effects::pick_file`] with

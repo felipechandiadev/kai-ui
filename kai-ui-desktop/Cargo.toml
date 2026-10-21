@@ -47,6 +47,8 @@ pollster = "0.4"
 png = { version = "0.18.1", optional = true }
 cosmic-text = "0.19.0"
 resvg = { version = "0.48.1", default-features = false }
+# Excel files of a table's rows (`kai::xlsx`, MIT/Apache-2.0, MSRV 1.88).
+rust_xlsxwriter = { version = "0.101", default-features = false }
 # Command inputs and outputs as JSON, described with JSON Schema 2020-12
 # (`kai::commands`, 13 Paso 11).
 schemars = "1.2"

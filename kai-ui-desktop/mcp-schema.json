@@ -457,6 +457,19 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Simular espera"
+    },
+    {
+      "description": "Guarda en un Excel las filas que muestra la tabla de clientes, con su búsqueda, filtros y orden",
+      "exposed": true,
+      "id": "tabla.exportar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Exportar a Excel"
     }
   ],
   "format": 1

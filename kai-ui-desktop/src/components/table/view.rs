@@ -57,6 +57,15 @@ impl fmt::Display for Value {
     }
 }
 
+/// Rows of typed values under column titles: what [`TableView::export`]
+/// gives.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sheet {
+    pub columns: Vec<String>,
+    /// One value per column in each row.
+    pub rows: Vec<Vec<Value>>,
+}
+
 /// A change the table asks for; the app applies it with
 /// [`TableView::apply`] and refreshes the rows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -219,6 +228,32 @@ impl TableView {
             .filter(|index| columns[*index].is_hideable())
             .collect();
         self.value_columns = columns.iter().filter(|column| column.has_value()).count();
+    }
+
+    /// The rows shown, as values: the titles and typed values of the
+    /// columns shown (not hidden, not [`Column::actions`]), row by row in
+    /// display order, so the search, the filters and the sort apply. What
+    /// [`crate::xlsx::write`] saves; it can go to another thread.
+    pub fn export<T, Msg>(&self, data: &[T], columns: &[Column<T, Msg>]) -> Sheet {
+        let shown: Vec<&Column<T, Msg>> = columns
+            .iter()
+            .enumerate()
+            .filter(|(index, column)| column.has_value() && !self.hidden.contains(index))
+            .map(|(_, column)| column)
+            .collect();
+        Sheet {
+            columns: shown.iter().map(|column| column.title.clone()).collect(),
+            rows: self
+                .rows
+                .iter()
+                .map(|&row| {
+                    shown
+                        .iter()
+                        .filter_map(|column| column.value_of(&data[row]))
+                        .collect()
+                })
+                .collect(),
+        }
     }
 
     /// Whether column `index` can be hidden now: it is
@@ -446,6 +481,64 @@ mod tests {
 
     fn nombres(view: &TableView) -> Vec<&'static str> {
         view.rows().iter().map(|&row| DATOS[row].nombre).collect()
+    }
+
+    #[test]
+    fn a_thousand_rows_export_exactly_what_the_search_filter_and_sort_show() {
+        const NOMBRES: [&str; 4] = ["Ana", "Bruno", "Carla", "Diego"];
+        const CIUDADES: [&str; 3] = ["Temuco", "Arica", "Valdivia"];
+        let datos: Vec<Cliente> = (0..1_000)
+            .map(|i| {
+                cliente(
+                    NOMBRES[i % 4],
+                    CIUDADES[i % 3],
+                    "Pro",
+                    ((i * 37) % 1_000) as f64,
+                    (2026, 1 + (i % 12) as u8, 1),
+                    i % 2 == 0,
+                )
+            })
+            .collect();
+        let columns = columnas();
+        let mut view = TableView::new(&datos, &columns);
+        view.query = "temuco".into();
+        view.apply(ViewChange::Filter(3, ">=500".into()));
+        view.apply(ViewChange::Sort(3, SortDirection::Descending));
+        view.apply(ViewChange::Hide(1, true));
+        view.refresh(&datos, &columns);
+
+        let mut expected: Vec<usize> = (0..datos.len())
+            .filter(|&i| datos[i].ciudad == "Temuco" && datos[i].monto >= 500.0)
+            .collect();
+        expected.sort_by(|&a, &b| datos[b].monto.total_cmp(&datos[a].monto).then(a.cmp(&b)));
+        assert!(expected.len() > 100 && expected.len() < 1_000);
+
+        let sheet = view.export(&datos, &columns);
+        assert_eq!(
+            sheet.columns,
+            ["Nombre", "Plan", "Monto", "Alta", "Activo"],
+            "no hidden column, no actions"
+        );
+        let rows: Vec<Vec<Value>> = expected
+            .iter()
+            .map(|&i| {
+                let c = &datos[i];
+                vec![
+                    Value::Text(c.nombre.into()),
+                    Value::Text(c.plan.into()),
+                    Value::Number(c.monto),
+                    Value::Date(c.alta),
+                    Value::Bool(c.activo),
+                ]
+            })
+            .collect();
+        assert_eq!(sheet.rows, rows);
+
+        let path = std::env::temp_dir().join(format!("kai-export-{}.xlsx", std::process::id()));
+        crate::xlsx::write(&sheet, "Clientes", &path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.starts_with(b"PK"));
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

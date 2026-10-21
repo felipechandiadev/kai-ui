@@ -28,6 +28,7 @@ pub mod snapshot;
 pub mod testing;
 pub mod theme;
 pub mod version;
+pub mod xlsx;
 
 #[doc(hidden)]
 pub mod a11y;

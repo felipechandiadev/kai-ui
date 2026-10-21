@@ -57,8 +57,8 @@ pub(crate) const LINE_SCROLL: f32 = 40.0;
 
 /// What `update` asks the runtime to do, as a value (a subset of 13,
 /// Paso 15): [`Effects::after`] sends a message later,
-/// [`Effects::perform`] runs work off the UI thread and
-/// [`Effects::pick_file`] asks for a file.
+/// [`Effects::perform`] runs work off the UI thread, and
+/// [`Effects::pick_file`] and [`Effects::save_file`] ask for a file.
 #[must_use]
 pub struct Effects<Msg>(Vec<Effect<Msg>>);
 
@@ -89,10 +89,15 @@ pub(crate) enum Effect<Msg> {
         request: PickFile,
         done: FilePicked<Msg>,
     },
+    /// Ask the person where to save a file with the system's save panel.
+    SaveFile {
+        request: SaveFile,
+        done: FilePicked<Msg>,
+    },
 }
 
-/// Turns the file chosen in the open panel (`None`: cancelled) into the
-/// app's message.
+/// Turns the file chosen in the open or save panel (`None`: cancelled)
+/// into the app's message.
 pub(crate) type FilePicked<Msg> = Box<dyn FnOnce(Option<PathBuf>) -> Msg>;
 
 /// What a held timer still waits once the pointer and the focus leave its
@@ -126,6 +131,33 @@ impl PickFile {
             title: title.into(),
             types: IMAGE_FILE_TYPES,
         }
+    }
+}
+
+/// What the save panel of [`Effects::save_file`] shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaveFile {
+    /// Title and message of the panel ("Exportar a Excel").
+    pub title: String,
+    /// Name it suggests, with its extension ("clientes.xlsx").
+    pub name: String,
+    /// Extensions the file may have, without the dot; the panel adds the
+    /// first when the name has none. Empty: any.
+    pub types: &'static [&'static str],
+}
+
+impl SaveFile {
+    pub fn new(title: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            name: name.into(),
+            types: &[],
+        }
+    }
+
+    pub fn types(mut self, types: &'static [&'static str]) -> Self {
+        self.types = types;
+        self
     }
 }
 
@@ -187,6 +219,21 @@ impl<Msg> Effects<Msg> {
         }])
     }
 
+    /// Show the system's save panel (`NSSavePanel`) and send
+    /// `to_msg(Some(path))` with where the person chose to save (the
+    /// panel already asked before replacing a file), or `to_msg(None)`
+    /// when they cancel. It shares the one panel slot of
+    /// [`Effects::pick_file`]. Tests answer it with `TestApp::on_file_save`.
+    pub fn save_file(
+        request: SaveFile,
+        to_msg: impl FnOnce(Option<PathBuf>) -> Msg + 'static,
+    ) -> Self {
+        Self(vec![Effect::SaveFile {
+            request,
+            done: Box::new(to_msg),
+        }])
+    }
+
     /// Give these timers and tasks `key`: a new one with the same key
     /// replaces the pending one, and [`Effects::cancel`] drops it.
     ///
@@ -201,7 +248,7 @@ impl<Msg> Effects<Msg> {
                 Effect::After { key: slot, .. } | Effect::Perform { key: slot, .. } => {
                     *slot = Some(key.clone());
                 }
-                Effect::Cancel(_) | Effect::PickFile { .. } => {}
+                Effect::Cancel(_) | Effect::PickFile { .. } | Effect::SaveFile { .. } => {}
             }
         }
         self
@@ -233,6 +280,9 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
                 Effect::PickFile { request, .. } => {
                     list.entry(&format_args!("pick_file({:?})", request.title))
+                }
+                Effect::SaveFile { request, .. } => {
+                    list.entry(&format_args!("save_file({:?})", request.name))
                 }
             };
         }
@@ -827,6 +877,11 @@ impl<A: App> WindowState<A> {
         }
         if let Some(request) = outbox.pick_file {
             let path = crate::platform::file_panel::pick(&request);
+            self.session.finish_file_pick(path);
+            self.flush();
+        }
+        if let Some(request) = outbox.save_file {
+            let path = crate::platform::file_panel::save(&request);
             self.session.finish_file_pick(path);
             self.flush();
         }

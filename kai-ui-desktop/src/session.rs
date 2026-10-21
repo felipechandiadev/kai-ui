@@ -49,8 +49,8 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, TaskDone, action_message,
-    build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
+    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, SaveFile, TaskDone,
+    action_message, build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -97,6 +97,8 @@ pub(crate) struct Outbox {
     pub commands: Option<Vec<CommandState>>,
     /// Show the open panel; answer with [`Session::finish_file_pick`].
     pub pick_file: Option<PickFile>,
+    /// Show the save panel; answer with [`Session::finish_file_pick`].
+    pub save_file: Option<SaveFile>,
 }
 
 pub(crate) struct Session<A: App> {
@@ -672,7 +674,13 @@ impl<A: App> Session<A> {
                 }
                 Effect::PickFile { request, done } => {
                     self.file_pick = Some(done);
+                    self.outbox.save_file = None;
                     self.outbox.pick_file = Some(request);
+                }
+                Effect::SaveFile { request, done } => {
+                    self.file_pick = Some(done);
+                    self.outbox.pick_file = None;
+                    self.outbox.save_file = Some(request);
                 }
             }
         }
@@ -741,7 +749,8 @@ impl<A: App> Session<A> {
         self.run_tasks()
     }
 
-    /// Whether the open panel of [`Effects::pick_file`] waits for an answer.
+    /// Whether the panel of [`Effects::pick_file`] or
+    /// [`Effects::save_file`] waits for an answer.
     pub fn file_pick_pending(&self) -> bool {
         self.file_pick.is_some()
     }

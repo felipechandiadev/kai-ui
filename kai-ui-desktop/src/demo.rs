@@ -37,7 +37,7 @@ use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
 use crate::render::Color;
-use crate::runtime::{self, App, Effects, PickFile};
+use crate::runtime::{self, App, Effects, PickFile, SaveFile};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -90,11 +90,12 @@ struct Demo {
     pestana: usize,
     /// Tabla: the toolbar search, the clients, what the table shows of
     /// them (search, filters, sort) and the selected one (index into
-    /// `clientes`).
+    /// `clientes`), and whether an Excel file is being written.
     query: String,
     clientes: Rc<[Cliente]>,
     tabla: TableView,
     cliente: Option<usize>,
+    exportando: bool,
     /// Multimedia: the three image fields, the URL typed and the one
     /// loaded in the avatar.
     foto: Imagen,
@@ -165,6 +166,7 @@ impl Default for Demo {
             tabla: TableView::new(&clientes, &columnas()),
             clientes,
             cliente: None,
+            exportando: false,
             foto: Imagen::with(sample_portrait()),
             portada: Imagen::default(),
             logo: Imagen::with(sample_landscape()),
@@ -677,6 +679,12 @@ enum Msg {
     SelectRow(usize),
     /// The «Ver» action of a client's row.
     VerCliente(usize),
+    /// Ask where to save the rows the table shows as an Excel file.
+    ExportarTabla,
+    /// Where the save panel said (`None`: cancelled).
+    GuardarExcel(Option<PathBuf>),
+    /// The Excel file was written (its name and rows) or not.
+    TablaExportada(Result<(String, usize), String>),
     OpenDialog(Dialogo),
     CloseDialog,
     /// The dialog's default button.
@@ -803,6 +811,33 @@ impl Demo {
                 draft.apply(edit);
             }
         }
+    }
+}
+
+/// Saves the rows the client table shows (search, filters, sort; no
+/// hidden columns) as an Excel file where the person chooses.
+#[derive(Clone, Deserialize, JsonSchema)]
+struct ExportarTabla;
+
+impl Action for ExportarTabla {
+    type App = Demo;
+    const ID: &'static str = "tabla.exportar";
+    const TITLE: &'static str = "Exportar a Excel";
+    fn description() -> &'static str {
+        "Guarda en un Excel las filas que muestra la tabla de clientes, con su búsqueda, \
+         filtros y orden"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.exportando {
+            Availability::disabled("Ya se está exportando")
+        } else if demo.tabla.is_empty() {
+            Availability::disabled("No hay filas que exportar")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::ExportarTabla
     }
 }
 
@@ -1219,6 +1254,7 @@ impl App for Demo {
         registry.action::<EditarGeometria>().expose();
         registry.query::<VistaDelMapa>().expose();
         registry.action::<SimularEspera>().menu("Botones").expose();
+        registry.action::<ExportarTabla>().menu("Archivo").expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -1410,6 +1446,40 @@ impl App for Demo {
                 let toast = Toast::new(0, AlertVariant::Info, cliente.nombre.as_str()).message(
                     format!("Cliente N.º {} de {}", cliente.numero, cliente.ciudad),
                 );
+                return self.show_toast(toast);
+            }
+            Msg::ExportarTabla => {
+                if self.exportando || self.tabla.is_empty() {
+                    return Effects::none();
+                }
+                let request = SaveFile::new("Exportar a Excel", "clientes.xlsx").types(&["xlsx"]);
+                return Effects::save_file(request, Msg::GuardarExcel);
+            }
+            Msg::GuardarExcel(None) => {}
+            Msg::GuardarExcel(Some(path)) => {
+                self.exportando = true;
+                let sheet = self.tabla.export(&self.clientes, &columnas());
+                return Effects::perform(
+                    move || {
+                        crate::xlsx::write(&sheet, "Clientes", &path)?;
+                        let name = path.file_name().map_or_else(
+                            || path.display().to_string(),
+                            |name| name.to_string_lossy().into_owned(),
+                        );
+                        Ok((name, sheet.rows.len()))
+                    },
+                    Msg::TablaExportada,
+                );
+            }
+            Msg::TablaExportada(result) => {
+                self.exportando = false;
+                let toast = match result {
+                    Ok((name, rows)) => Toast::new(0, AlertVariant::Success, "Excel exportado")
+                        .message(format!("{rows} filas en {name}")),
+                    Err(error) => {
+                        Toast::new(0, AlertVariant::Error, "No se exportó").message(error)
+                    }
+                };
                 return self.show_toast(toast);
             }
             Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
@@ -2235,6 +2305,9 @@ impl Demo {
                             caption(summary).test_id("tabla.seleccion"),
                             filtrar,
                             columnas_boton,
+                            button_sized("Exportar", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(ExportarTabla)
+                                .busy(self.exportando),
                         ]),
                     ]),
                 Table::new(Rc::clone(&self.clientes), columnas(), &self.tabla)
@@ -3851,7 +3924,7 @@ mod tests {
             include_str!("maps/layers.rs"),
             include_str!("maps/editor.rs"),
         ];
-        const NOT_WIDGETS: [&str; 21] = [
+        const NOT_WIDGETS: [&str; 22] = [
             "MapSpec",
             "Marker",
             "FitRequest",
@@ -3870,6 +3943,7 @@ mod tests {
             "Column",
             "TableView",
             "Date",
+            "Sheet",
             "Toast",
             "PaletteItem",
             "MenuFrame",
@@ -4298,6 +4372,37 @@ mod tests {
     }
 
     #[test]
+    fn exporting_saves_the_rows_the_table_shows_where_the_person_says() {
+        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
+        app.type_text(By::test_id("barra.buscar"), "temuco");
+        app.click(By::role(Role::ColumnHeader).name("Monto"));
+        app.click(By::role(Role::Button).name("Exportar"));
+        let request = app.file_save_request().cloned().expect("the save panel");
+        assert_eq!(request.name, "clientes.xlsx");
+        assert_eq!(request.types, ["xlsx"]);
+
+        let dir = std::env::temp_dir().join(format!("kai-demo-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clientes.xlsx");
+        app.on_file_save(Some(path.clone()));
+        app.run_until_idle();
+        assert!(!app.app().exportando);
+        assert!(std::fs::read(&path).unwrap().starts_with(b"PK"));
+        let rows = app.app().tabla.len();
+        assert!(rows > 0 && rows < 10_000);
+        app.screen().get(By::text("Excel exportado"));
+        app.screen()
+            .get(By::text(format!("{rows} filas en clientes.xlsx")));
+
+        // The command does the same, from the menu, the palette or an agent.
+        std::fs::remove_file(&path).unwrap();
+        assert!(app.perform("tabla.exportar"));
+        app.run_until_idle();
+        assert!(path.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn the_columns_button_hides_a_column_and_the_search_still_looks_in_it() {
         let mut app = TestApp::new(Demo::at(Seccion::Tabla));
         let table = By::test_id("tabla.clientes");
@@ -4707,6 +4812,7 @@ mod tests {
                 "areas.editar_geometria",
                 "mapa.get_view",
                 "botones.simular_espera",
+                "tabla.exportar",
                 "kai.paleta",
             ]
         );
@@ -4745,7 +4851,10 @@ mod tests {
         let app = TestApp::new(Demo::default());
         let model = menu_model(app.commands());
         let titles: Vec<_> = model.iter().map(|group| group.title).collect();
-        assert_eq!(titles, ["Contador", "Formulario", "Ver", "Botones"]);
+        assert_eq!(
+            titles,
+            ["Contador", "Formulario", "Ver", "Botones", "Archivo"]
+        );
         assert_eq!(
             model[0].items[1],
             MenuEntry {
@@ -4865,7 +4974,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            7,
+            8,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -5307,6 +5416,7 @@ mod tests {
                 "areas.editar_geometria",
                 "mapa.get_view",
                 "botones.simular_espera",
+                "tabla.exportar",
             ]
         );
     }
