@@ -15,7 +15,9 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 - **Comandos:** registro tipado de acciones y consultas con disponibilidad; atajos, menú nativo (muda), paleta ⇧⌘P y `on_command`; entrada JSON y esquemas (`mcp-schema.json`, `--describe-commands`).
 - **MCP experimental** (feature `mcp`): servidor stdio con `rmcp`, confirmación humana de acciones destructivas, auditoría e indicador de agente.
 - **Widgets:** checkbox con estado mixto, segmented, `Select`, sidebar plegable a un riel con tooltips, toolbar, search field, textarea, `Dialog` modal, toasts, tabla y lista virtualizadas (10 000 filas), edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`.
-- **Efectos async:** `Effects::perform` en un pool de 4 hilos, `after`, `keyed`/`cancel`, `pick_file` (panel de archivos de macOS) y archivos arrastrados (`on_drop_files`, variante `drag:`).
+- **Efectos async:** `Effects::perform` en un pool de 4 hilos, `after`, `keyed`/`cancel`, `pick_file` y `save_file` (paneles de abrir y guardar de macOS) y archivos arrastrados (`on_drop_files`, variante `drag:`).
+- **Tabla completa:** columnas con valor tipado (`Column::text/number/date/boolean`, `format`, `render` con componente, `actions`) y `TableView` pura con búsqueda global (también en columnas ocultas), filtros por columna, orden estable, columnas ocultas y filas expandidas. Modo filtro con un campo por columna bajo el encabezado. Menú de columnas con checks que queda abierto, por clic derecho, Ctrl+clic o `ShowContextMenu` en el encabezado, y `column_menu` para un botón. Exportar a Excel lo que se ve (`TableView::export`, `kai::xlsx` con `rust_xlsxwriter`), sin columnas ocultas ni acciones; comando `tabla.exportar` en la demo. Filas expandibles con panel de alto declarado (`expandable`) y `virtual_rows` de alto variable. Scroll horizontal con ancho mínimo por columna (`min_width`) y columnas fijas al inicio o al final (`Column::pin`, `Pin`); las acciones quedan fijas al final por defecto.
+- **Motor:** overflow por eje (`overflow-x-*`, `overflow-y-*`) con offsets, recorte, hit-test, `reveal`, barra y AccessKit (`scroll_x`) a lo ancho; Mayús+rueda; `sticky` horizontal (`left-*`/`right-*`) que se pinta y recibe clics encima y que `reveal` respeta; menús contextuales (`Element::context_menu`, `Session::secondary_click`, `TestApp::right_click`) con opciones marcables (`check_options`, `MenuItemCheckBox`); `Role::Region`, `expanded` en filas y `Element::own_tab_stops`; icono `ChevronRight`.
 - **`DotProgress` y botón ocupado:** puntos en ola (`DotProgress`, `dot_progress`, rol `ProgressIndicator`) con la primera animación calculada al pintar (`Motion`, respeta `reduce_motion`). El botón o comando que lanzó un `Effects::perform` queda ocupado hasta que la tarea, y las que encadene, terminan: puntos sobre el texto, mismo color y ancho, cursor de espera y sin clics. Un comando ocupado queda «En curso». Incluye `Button::loading`, `busy_feedback`, las variantes `busy:` y `group-busy:`, `bg-current`, `cursor-wait` y `TestApp::is_busy`.
 - **Accesibilidad y usabilidad:** las preferencias de macOS (reducir movimiento, aumentar contraste, reducir transparencia, acceso completo por teclado) se leen al arrancar y al activar la ventana (`Session::set_system_prefs`), con las variantes `motion-reduce:`, `contrast-more:` y `transparency-reduce:` y bordes sólidos en los controles con contraste aumentado. La fila elegida de la paleta es el `active_descendant` de la búsqueda. Los campos de texto deshacen y rehacen por palabra (⌘Z, ⇧⌘Z). La lista del `Select` busca por tipeo. Componente `Tabs` (`NSTabView`): roles `TabList`, `Tab` y `TabPanel`, y grupo de foco `FocusGroup::Tabs` con ← y →.
 - **Imágenes:** `image(src)` desde archivo, URL (feature `net`), bytes o RGBA; atlas RGBA en GPU con radio propio, `object-*` y `aspect-*`.
@@ -26,6 +28,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Changed
 
+- **`Table` cambia de API:** `Table::new(datos, columnas, &vista)` con `on_view(ViewChange)` reemplaza a `Table::new(columnas, total, cell)`, `sort`/`on_sort` y `leading`; `selected` y `on_select` usan el índice del registro. `Column::new(..).numeric()` pasa a `Column::number(..)`.
+- `Layout::reveal` mueve lo mínimo en los dos ejes: una fila más ancha que la vista conserva el scroll horizontal.
 - Los avisos de error ya no se cierran solos, y un aviso no se cierra mientras tiene el puntero o el foco encima (`toast_timer(&toast, close)`).
 - Las filas de la paleta de comandos son `Row` dentro de una `List` «Comandos».
 - La opción elegida del select ya no lleva check; se marca con el vidrio de elección.
@@ -35,7 +39,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Known issues
 
-- La app aborta si se termina con el panel de archivos abierto (`runModal` dentro del manejador de eventos de winit).
+- La app aborta si se termina con un panel de archivos (abrir o guardar) abierto (`runModal` dentro del manejador de eventos de winit).
+- La barra vertical del cuerpo de una tabla más ancha que su caja queda en el borde derecho de la grilla y se desplaza con el scroll horizontal.
 
 ## [0.1.0] - 2026-10-18
 

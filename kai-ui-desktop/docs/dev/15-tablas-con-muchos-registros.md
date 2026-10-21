@@ -14,11 +14,17 @@ Consecuencias:
 
 La demo lo prueba con 10 000 clientes (sección Tabla, `CLIENTES` en `src/demo.rs`) y el test `the_toolbar_search_filters_and_the_headers_sort_the_table`.
 
+### Búsqueda, filtros, orden y Excel
+
+`TableView::refresh` recorre todos los registros: búsqueda global, filtros por columna y orden estable por el valor tipado de cada columna. El resultado es una lista de índices (`rows()`) que comparten la tabla y la exportación, así el Excel (`TableView::export` + `xlsx::write`) tiene exactamente las filas y el orden que se ven, sin las columnas ocultas ni las acciones. El test `a_thousand_rows_export_exactly_what_the_search_filter_and_sort_show` lo comprueba con 1 000 filas.
+
+La pausa al tipear un filtro es de la app: la demo refresca 250 ms después de la última tecla (`Effects::after(..).keyed("filtro")`). Exportar escribe el archivo en el pool de tareas (`Effects::perform`) y el botón queda ocupado mientras tanto.
+
 ### Límites
 
-1. **Ordenar y filtrar es trabajo de la app.** `Table` solo pide `cell(fila, columna)` en el orden de pantalla. En la demo, cada búsqueda o cambio de orden recorre los 10 000 clientes, filtra y ordena (`clientes()` en `demo.rs`). Con 10 000 es instantáneo; con cientos de miles o millones conviene hacerlo fuera del hilo de la UI (`Effects::perform` con `.keyed(..)`, así una búsqueda nueva reemplaza la anterior) o pedirlo al servidor ya ordenado.
-2. **Todas las filas miden lo mismo** (`row_height`). La posición de una fila es su índice por la altura; no hay filas de altura variable (texto que salta de línea).
-3. **La tabla no pagina.** Llama a `cell(i, col)` por cada fila visible y espera la respuesta en el momento: los datos tienen que estar en memoria o ser instantáneos de consultar por índice.
+1. **El refresco corre en el hilo de la UI.** Con 10 000 registros es instantáneo; con cientos de miles o millones conviene calcular las filas fuera del hilo de la UI (`Effects::perform` con `.keyed(..)`, así una búsqueda nueva reemplaza la anterior) o pedirlas al servidor ya ordenadas.
+2. **Las filas miden lo mismo** (`row_height`), salvo los paneles de las filas expandidas, que declaran su alto (`expandable(detalle, alto)`). La posición de una fila se calcula con su índice, la altura y los paneles abiertos por encima; no hay filas que midan su contenido (texto que salta de línea).
+3. **La tabla no pagina.** Construye las filas visibles leyendo los registros en memoria (`Rc<[T]>`), así que tienen que estar cargados.
 4. **Una sola fila seleccionada.** No hay selección múltiple (⌘-clic, ⇧-clic).
 
 ## 2. Datos remotos: 100 000 registros en un servidor
@@ -28,11 +34,12 @@ La demo lo prueba con 10 000 clientes (sección Tabla, `CLIENTES` en `src/demo.r
 ### Estrategia
 
 1. **El servidor manda.** La API recibe la búsqueda, el orden y la ventana (`?q=temuco&orden=monto&dir=desc&offset=4200&limit=100`) y devuelve esa página y el total (`{ "total": 100000, "filas": [...] }`).
-2. **La tabla usa el total real.** `Table::new(columnas, total, cell)`: el scroll mide lo que corresponde, VoiceOver dice «fila 5 431 de 100 000» y la virtualización construye solo lo visible.
+2. **La tabla usa el total real.** Una tabla con tantas filas como el total: el scroll mide lo que corresponde, VoiceOver dice «fila 5 431 de 100 000» y la virtualización construye solo lo visible.
 3. **Caché de páginas en el modelo.** Por ejemplo `HashMap<usize, Vec<Fila>>` con páginas de 100 filas y un tope (unas 20 páginas); se descartan las más lejanas a la vista.
-4. **Una fila que no llegó se dibuja como pendiente** («…» en las celdas). `cell(i, col)` nunca hace una petición: solo lee el caché.
+4. **Una fila que no llegó se dibuja como pendiente** («…» en las celdas). Construir una fila nunca hace una petición: solo lee el caché.
+5. **La búsqueda, los filtros y el orden van al servidor.** La app recibe los mismos `ViewChange` de la tabla y los traduce a la consulta, en vez de `TableView::refresh`, que filtra y ordena en memoria. Exportar el resultado completo también es una petición (el servidor arma el archivo o entrega todas las filas de la consulta).
 5. **Cuando se ve una página que falta, se pide en segundo plano** con `Effects::perform(..).keyed(format!("pagina.{n}"))`. La clave evita pedir dos veces la misma página. La respuesta llega como `Msg`, se guarda en el caché y la tabla se redibuja.
-6. **Buscar u ordenar empieza de cero:**
+6. **Buscar, filtrar u ordenar empieza de cero:**
    - Pausa al tipear (debounce) de unos 300 ms con `Effects::after(..).keyed("buscar")`: cada tecla reinicia la espera.
    - Luego se vacía el caché, se cancelan las peticiones viejas (`Effects::cancel`) y se pide la página 0.
    - Cada consulta lleva un número de generación; una respuesta de una búsqueda anterior se descarta.
@@ -110,7 +117,9 @@ fn pedir(&self, numero: usize) -> Effects<Msg> {
 - `.keyed(..)` y `Effects::cancel`: no duplicar peticiones y descartar las viejas.
 - `Effects::after`: la pausa al tipear.
 - `ureq`, con la feature `net` (activa por defecto).
-- `Table` acepta cualquier cantidad de filas y una función `cell` que solo lee el modelo.
+- `Table` acepta cualquier cantidad de filas y construye solo las visibles; `ViewChange` le dice a la app qué pidió la persona (orden, filtro, columnas, filas expandidas).
+
+**Falta: una tabla sobre datos que no están todos en memoria.** Hoy `Table` recibe los registros (`Rc<[T]>`) y su `TableView` filtra y ordena en memoria. Para una API hace falta un modo con el total y una fuente de filas por índice, que dibuje como pendientes las que no llegaron.
 
 **Falta: que la tabla avise qué filas muestra.** La `Session` lo sabe (`virtual_rows::materialize` devuelve el rango construido de cada lista), pero no hay un callback que lo convierta en `Msg`. La función que construye cada fila se llama mientras se arma el árbol y no puede mandar mensajes. El cambio es chico: algo como `Table::on_rows_needed(|rango| Msg::FilasVisibles(rango))`, que la `Session` emite cuando cambia el rango construido, con una pausa corta para no pedir páginas mientras se arrastra la barra a toda velocidad. Está anotado como pendiente en el Paso 14 de [13](13-hoja-de-ruta-plataforma.md).
 
@@ -129,7 +138,7 @@ Sin tocar el framework funciona la paginación por botones: una página de 100 f
 
 | Escenario | Qué hacer |
 |---|---|
-| Hasta decenas de miles de filas en memoria | `Table` tal cual; filtrar y ordenar en `update`. |
-| Cientos de miles en memoria | Igual, pero filtrar y ordenar con `Effects::perform(..).keyed(..)`. |
+| Hasta decenas de miles de filas en memoria | `Table` tal cual, con `TableView::refresh` en `update`; Excel con `export`. |
+| Cientos de miles en memoria | Igual, pero calcular las filas con `Effects::perform(..).keyed(..)`. |
 | Datos en un servidor, hoy | Paginación por botones con `Effects::perform`. |
 | Datos en un servidor, con `on_rows_needed` | Total real en la tabla, caché de páginas, peticiones por ventana visible, debounce y generación. |

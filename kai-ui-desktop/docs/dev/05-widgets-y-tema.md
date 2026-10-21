@@ -59,7 +59,7 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 | Display y flex | `block` `flex` `grid` `hidden` `inline-flex` `inline-block` `flex-row` `flex-col` `flex-wrap` `flex-1` `flex-auto` `flex-none` `grow` `shrink-0` `items-*` `self-*` `justify-*` |
 | Espaciado | `gap-*` `gap-x-*` `gap-y-*` `p*-*` `m*-*` (negativos y `mx-auto`) `inset-*` `top/right/bottom/left-*` |
 | Tamaño | `w-*` `h-*` `size-*` `min-w/h-*` `max-w/h-*` (`max-w-xs`…`7xl`) fracciones `full` `screen` `h-control` `h-control-compact` `min-h-control` `py-control` |
-| Posición y overflow | `relative` `absolute` `z-N` `overflow-visible/hidden/clip/auto/scroll` `overflow-y-auto/scroll` `grid-cols-N` |
+| Posición y overflow | `relative` `absolute` `sticky` `z-N` `overflow-visible/hidden/clip/auto/scroll` y por eje `overflow-x-*` `overflow-y-*` `grid-cols-N` |
 | Color | `bg-*` `text-*` `border-*` `ring-*` `placeholder-*` con nombre del tema (incluye `field-muted`), alfa `/N` o `[#hex]`; `bg-current` (fondo del color del texto, como `currentColor`) |
 | Borde y radio | `border` `border-N` `border-t/b/l/r/x/y` `rounded-*` (`sm` 2, `md` 6, `lg` 8, `xl` 12, `2xl`, `3xl`, `full`) |
 | Efectos | `shadow-sm/md/lg/xl/none` `ring` `ring-N` `ring-offset-N` `outline-none` `opacity-N` |
@@ -68,6 +68,8 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 | Interacción | `cursor-default/pointer/text/not-allowed/wait` `pointer-events-none/auto` `group` |
 
 - El espaciado usa la unidad del tema (`--space-4 / 4`), así que `p-4` es `--space-4` y escala con la densidad; los valores arbitrarios (`w-[180px]`) no escalan.
+- Overflow por eje: `overflow-x-auto` desplaza solo a lo ancho, `overflow-y-auto` solo hacia abajo y `overflow-auto` en los dos. Como en CSS, si un eje no es visible el otro deja de serlo. La rueda mueve el contenedor más interno bajo el puntero que todavía puede moverse en ese eje; Mayús+rueda desplaza a lo ancho. La barra horizontal se dibuja abajo.
+- `sticky` con `left-*` o `right-*` deja el elemento a esa distancia del borde del contenedor más cercano con scroll a lo ancho (`overflow-x-auto`), sin salir de su padre, y lo pinta y le da los clics por encima de sus hermanos. A diferencia de CSS, un contenedor intermedio que solo desplaza hacia abajo (el cuerpo de una tabla) no lo detiene. Solo el eje horizontal. Al revelar un elemento (foco o clic), sus hermanos `sticky` y los de sus ancestros tapan el borde al que se pegan, como `scroll-padding` en CSS, y un elemento dentro de un `sticky` no desplaza a lo ancho.
 - `text-lg` y `text-xl` usan los tamaños de título de página y sección del tema; `leading-*` siempre gana al interlineado implícito del tamaño, sin importar el orden.
 - Las propiedades de texto se heredan como en CSS (color, tamaño, interlineado, peso, `nowrap` y el trazo de los iconos).
 - Variantes del tema, que se evalúan al parsear: `kai:` `appkit:` `glass:` `mix-a/b/c:` `label-*:` `dark:` `light:` y las preferencias del Mac (`Theme.prefs`, `SystemPrefs`): `motion-reduce:` (reducir movimiento), `contrast-more:` (aumentar contraste) y `transparency-reduce:` (reducir transparencia). El runtime lee esas preferencias de macOS al arrancar y cada vez que la ventana se activa, y las superpone al tema de la app (`Session::set_system_prefs`; en pruebas, `TestApp::set_system_prefs`). Con `contrast-more:` los bordes de campos, botones push, checkbox, segmented y botones de icono con contorno pasan a un borde sólido (`border-foreground` en Kai, `border-secondary-label` en AppKit). `full_keyboard_access` también viene del sistema en AppKit; Kai lo mantiene encendido, como en la web.
@@ -164,35 +166,53 @@ icon(Icon::Search).class("size-5 text-secondary stroke-[1.5]")
 ### Table y virtual_list
 
 ```rust
-Table::new(
+fn columnas() -> Vec<Column<Cliente, Msg>> {
     vec![
-        Column::new("N.º").fixed(64.0).numeric(),
-        Column::new("Nombre").flex(2.0).sortable(),
-        Column::new("Monto").fixed(96.0).numeric().sortable(),
-    ],
-    model.filas.len(),
-    move |row, column| celda(&filas[row], column),
-)
-.sort(model.sort.0, model.sort.1)
-.on_sort(Msg::Sort)
-.selected(model.seleccionada)
-.on_select(Msg::SelectRow)
-.label("Clientes")
-.test_id("clientes")
-.build()
-.class("h-[360px]")
+        Column::number("N.º", |c: &Cliente| f64::from(c.numero)).fixed(72.0).sortable(),
+        Column::text("Nombre", |c: &Cliente| c.nombre.clone())
+            .render(|c: &Cliente| avatar_y_nombre(c)) // componente que conserva el valor
+            .flex(2.0)
+            .min_width(160.0)
+            .sortable()
+            .filterable(),
+        Column::number("Monto", |c: &Cliente| f64::from(c.monto))
+            .format(|monto| format!("$ {monto}"))
+            .fixed(112.0)
+            .sortable()
+            .filterable()
+            .hideable(),
+        Column::actions(|c: &Cliente| ver(c)).fixed(64.0), // fija al final
+    ]
+}
+
+// update: Msg::Tabla(cambio) => { vista.apply(cambio); vista.refresh(&clientes, &columnas()) }
+Table::new(Rc::clone(&clientes), columnas(), &vista)
+    .on_view(Msg::Tabla)
+    .selected(model.cliente) // índice en `clientes`
+    .on_select(Msg::SelectRow)
+    .expandable(detalle_cliente, 64.0)
+    .label("Clientes")
+    .test_id("clientes")
+    .build()
+    .class("h-[360px]")
 ```
 
 Tabla virtualizada, equivalente a `NSTableView` ([12](12-modelo-appkit.md), Paso 20). Es un componente especial: con muchos registros o datos de una API, leer [15](15-tablas-con-muchos-registros.md).
 
 - **Virtualización.** Solo se construyen las filas visibles, más 6 por lado (`virtual_rows.rs`); el resto son espaciadores con su altura. 10 000 filas cuestan lo que una pantalla. La fila seleccionada y la que recibe el foco se construyen siempre.
-- **Datos.** `cell(fila, columna)` devuelve el texto de la celda en el orden de pantalla. La tabla no ordena, no filtra ni pagina: la app ordena y filtra sus datos y traduce el índice. `cell` solo debe leer el modelo, nunca hacer una petición.
-- **Columnas** (`Column`): `fixed(pt)`, `flex(parte)`, `numeric()` (alineada a la derecha) y `sortable()`. El encabezado de una columna ordenable envía `on_sort(columna, dirección)`, invierte la dirección si ya era la ordenada y muestra una flecha.
-- **Selección.** Con `on_select` las filas son una sola parada de Tab; un clic, ↑/↓, Inicio/Fin y RePág/AvPág eligen una. Una sola fila a la vez. Conviene guardar en el modelo el id del registro, no el índice, para que la selección sobreviva al ordenar o filtrar.
-- **Aspecto.** Filas de 32 pt por defecto (`row_height`; 24 es la de AppKit); en AppKit alternan el fondo. La fila elegida lleva el tinte de elección (`bg-choice/20`). `leading(columna, |fila| ..)` pone un elemento antes del texto (un avatar junto al nombre), construido solo para las filas visibles.
-- **Accesibilidad.** `Role::Table` con `row_count` (el total), encabezados `ColumnHeader` con su orden, y filas `Row` de `Cell` con su `row_index` real.
-- **Partes:** `<id>.header`, `<id>.column.<i>`, `<id>.body` y `<id>.row.<i>` (índice de pantalla).
-- **Límites:** filas de altura fija, sin selección múltiple y sin aviso a la app de qué filas se ven (`on_rows_needed`, necesario para cargar páginas de una API; ver [15](15-tablas-con-muchos-registros.md)).
+- **Datos y columnas.** La tabla recibe los registros (`Rc<[T]>`) y columnas con un valor tipado por registro: `Column::text`, `number`, `date` y `boolean` (`Value::{Text, Number, Date, Bool}`). `format` decide cómo se lee el valor y `render` lo muestra con un componente (un avatar, un badge), construido solo para las filas visibles; la celda conserva el valor como nombre accesible y para buscar, filtrar, ordenar y exportar. `Column::actions` no tiene valor: nunca se ordena, filtra, busca, oculta ni exporta, y su encabezado se lee «Acciones». Ancho: `fixed(pt)` o `flex(parte)` con `min_width(pt)` (80 por defecto).
+- **`TableView`** (pura, sin `Msg`): guarda la búsqueda global (`query`), los filtros por columna, el modo filtro, el orden, las columnas ocultas, las filas expandidas y el resultado (`rows()`, índices de los registros en orden de pantalla). `apply(ViewChange)` aplica un cambio y `refresh(&datos, &columnas)` recalcula: búsqueda en las columnas `searchable` (por defecto las de texto, también las ocultas) y cada filtro, luego orden estable. El texto se compara sin mayúsculas ni acentos; un número acepta `=`, `>`, `<` y `a..b`; una fecha, un prefijo como `2026-10`; un booleano, «sí» o «no».
+- **Cambios** (`on_view`, `ViewChange`): `Sort` (clic en un encabezado `sortable`; invierte si ya era la ordenada y muestra una flecha), `Filtering` y `Filter` (con el modo filtro, cada columna `filterable` tiene un campo «Filtrar <título>» bajo el encabezado, su propia parada de Tab, y Esc lo borra; apagar el modo borra los filtros), `Hide` y `Expand`. La app decide cuándo refrescar: la demo espera una pausa al tipear un filtro (`Effects::after(..).keyed("filtro")`).
+- **Ocultar columnas.** Un clic derecho (o Ctrl+clic, o la acción `ShowContextMenu` de AccessKit) en el encabezado abre un menú con un check por columna `hideable`, que queda abierto al elegir. Nunca se ocultan todas. `column_menu(botón, &columnas, &vista, Msg::Tabla)` da el mismo menú a un botón «Columnas».
+- **Exportar.** `vista.export(&datos, &columnas)` devuelve una `Sheet` con lo que se ve: títulos y valores tipados de las columnas visibles (sin acciones ni ocultas), en el orden del resultado de búsqueda, filtros y orden. `xlsx::write(&sheet, hoja, ruta)` la guarda como Excel (`rust_xlsxwriter`) con la fila de títulos fija, autofiltro, y números y fechas con su tipo. La ruta la pide `Effects::save_file` ([03](03-eventos-y-estado.md)).
+- **Filas expandibles.** `expandable(|registro| detalle, alto)` suma una columna de chevrons al inicio: el chevron, → y ← sobre la fila abren y cierran un panel de ese alto debajo de ella. Varias a la vez. El panel es una `Region` con el nombre de la fila y sus controles son paradas de Tab propias. La fila publica `expanded`. No se exporta.
+- **Scroll horizontal.** Si las columnas no caben con su ancho mínimo, encabezado, filtros y filas se desplazan juntos a lo ancho (trackpad, Mayús+rueda, o el foco que llega a una celda fuera de la vista).
+- **Columnas fijas.** `pin(Pin::Start | Pin::End)` deja una columna al inicio o al final mientras el resto se desplaza (`sticky`); una columna flex fija mide su `min_width`. `Column::actions` queda fija al final salvo `unpin()`; los chevrons, al inicio. Encabezado, filtros y filas usan las mismas: las celdas fijas son opacas con el tinte de su fila, y la fija más interna de cada lado dibuja el borde. El foco y los clics revelan una celda sin dejarla bajo una columna fija.
+- **Selección.** Con `on_select` las filas son una sola parada de Tab; un clic, ↑/↓, Inicio/Fin y RePág/AvPág eligen una. Una sola fila a la vez. `selected` y `on_select` usan el índice del registro, así la selección sobrevive al ordenar y filtrar.
+- **Aspecto.** Filas de 32 pt por defecto (`row_height`; 24 es la de AppKit); en AppKit alternan el fondo. La fila elegida lleva el tinte de elección (`bg-choice/20`).
+- **Accesibilidad.** `Role::Table` con `row_count` (el total), encabezados `ColumnHeader` con su orden, y filas `Row` de `Cell` con su `row_index` real; el encabezado publica `ShowContextMenu`, el menú de columnas es de `MenuItemCheckBox` y los paneles son `Region`.
+- **Partes:** `<id>.scroller`, `<id>.header`, `<id>.column.<i>`, `<id>.filters`, `<id>.filter.<i>`, `<id>.body`, `<id>.row.<r>`, `<id>.row.<r>.toggle` y `<id>.detail.<r>` (`i` es el índice de la columna y `r` el de pantalla).
+- **Límites:** sin selección múltiple, sin edición en la celda y sin aviso a la app de qué filas se ven (`on_rows_needed`, necesario para cargar páginas de una API; ver [15](15-tablas-con-muchos-registros.md)). La barra vertical del cuerpo queda en el borde derecho de la grilla, así que se desplaza con el scroll horizontal. Una grilla editable (DataGrid) es un componente aparte, por planificar.
 - **`virtual_list(count, row_height, selected, render)`**: la misma virtualización para listas sin columnas; las filas sin rol son `ListItem` dentro de una `List`. Con `Element::selecting_focus_group` es una sola parada de Tab cuyas flechas eligen.
 
 ### Botones con comando y paleta

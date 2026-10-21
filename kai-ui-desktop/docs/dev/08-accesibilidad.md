@@ -25,6 +25,8 @@ El MSRV del crate sigue siendo 1.89 (lo impone `cosmic-text` 0.19).
   - Los controles deshabilitados se publican con `disabled` y sin acciones. Los nodos con `display: none` se omiten.
   - `A11ySnapshot::active_descendant` (input, fila) publica la fila que resaltan las flechas como `active_descendant` del input enfocado. La usa la paleta de comandos: el foco se queda en la búsqueda para seguir escribiendo, y VoiceOver lee la fila elegida (`Row` con `selected`) como foco efectivo.
   - Pestañas (`components::Tabs`): `Role::TabList` → `TabList` (AXTabGroup), `Role::Tab` → `Tab`, una hoja con el nombre de su texto y `selected` según `pressed`, y `Role::TabPanel` → `TabPanel` con el nombre de su pestaña. La fila es un grupo de foco `FocusGroup::Tabs`: ← y → mueven y eligen, ↑ y ↓ no.
+  - Tablas (`components::Table`, ver [05](05-widgets-y-tema.md#table-y-virtual_list)): `Table` con `row_count` (el total, aunque solo se construyan las filas visibles), `ColumnHeader` con su orden, `Row` con su `row_index` real y `Cell` con el valor formateado como nombre aunque muestre un componente. Una fila expandible publica `expanded` y su panel es una `Region` con el nombre de la fila. Un elemento con `Element::context_menu` (el encabezado de la tabla) publica la acción `ShowContextMenu`, que abre su menú como un clic derecho. Las opciones marcables de un menú son `MenuItemCheckBox` con `Toggled`.
+  - Scroll: un contenedor que desplaza publica `scroll_y` (con `scroll_y_min` y `scroll_y_max`) y, si desplaza a lo ancho, `scroll_x` con sus límites.
   - `intents_for_action(&ActionRequest, &FocusOrder) -> Vec<Intent>` traduce acciones de asistencia a intents de Kai solo para elementos habilitados y focusables: `Focus` → `SetFocus`, `Click` → `Intent::Activate`, `ReplaceSelectedText` en un input → foco + `InsertText`.
 - `Intent::Activate(id)` en `ui_engine.rs` enfoca el elemento y, si es un botón, lo activa con `ActivationSource::Accessibility`; el runtime lo convierte en su mensaje `on_click`.
 - `runtime.rs`:
@@ -46,12 +48,13 @@ Tests en `a11y.rs` y `ui_engine.rs`:
 - Foco reportado según `UiModel` y bounds que siguen al layout, al scroll y al clip.
 - Paleta (`demo.rs`): la búsqueda conserva el foco y su `active_descendant` sigue a la fila elegida con las flechas.
 - Traducción de `Click`, `Focus` y `ReplaceSelectedText` a intents; las acciones sobre nodos no interactivos o deshabilitados se ignoran.
+- Tabla (`components/table.rs`): total, índices, orden y nombres de celda; `expanded` y el panel `Region`; `ShowContextMenu` en el encabezado abre el menú de columnas (`MenuItemCheckBox`); bounds que siguen al scroll horizontal (`a11y.rs`).
 
 ## Limitaciones conocidas
 
 - El árbol se reconstruye completo en cada frame; no hay actualizaciones incrementales.
 - El `TextInput` no publica todavía selección de texto ni runs de caracteres (`set_text_selection`, `Role::TextRun`); los lectores de pantalla leen el valor completo pero no la posición del caret.
-- No se implementan `SetValue`, `ScrollIntoView` ni acciones de scroll de los contenedores.
+- No se implementan `SetValue`, `ScrollIntoView` ni acciones de scroll de los contenedores (se publica la posición del scroll, pero un lector no puede moverlo).
 - Los landmarks dependen de que la app asigne `Role::Main`/`Header`/`Group`; la demo lo hace.
 
 El árbol AccessKit se deriva del mismo `Layout` que paint y hit-testing (ver [02](02-geometria-y-layout.md) y [05](05-widgets-y-tema.md)), con ids estables por ruta o `key`.

@@ -36,10 +36,10 @@ runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 - `Effects::after(duración, msg)` es un temporizador (los toasts lo usan para cerrarse).
 - `.keyed(key)` reemplaza la tarea o el temporizador pendiente con la misma key, y `Effects::cancel(key)` descarta su resultado.
 - **Temporizadores retenidos.** Si la key de un temporizador es el `test_id` de un elemento, el temporizador espera mientras el puntero (`hover_path`) o el foco estén dentro de ese elemento. Cuando los dos salen, todavía espera al menos `HELD_TIMER_RESUME` (2 s). Así un toast (`toast_key(id)` es también su test id) no se cierra mientras alguien lo lee o llega a sus botones (WCAG 2.2.1). `toast_timer(&toast, close)` no crea temporizador para un error: queda hasta que se cierra.
-- `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS y entrega la ruta o `None`. Hoy el panel es modal dentro del manejador de eventos, y la app aborta si se termina con él abierto (fallo conocido, ver el Paso 15 de 13).
+- `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS y entrega la ruta o `None`. `Effects::save_file(SaveFile::new(título, nombre).types(&["xlsx"]), a_msg)` abre el panel de guardar (`NSSavePanel`) con un nombre propuesto y entrega la ruta elegida o `None`; la demo lo usa para exportar la tabla a Excel. Hoy los dos paneles son modales dentro del manejador de eventos, y la app aborta si se termina con uno abierto (fallo conocido, ver el Paso 15 de 13).
 - `Effects::none()` y `Effects::batch(..)` combinan.
 
-En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve el reloj de los temporizadores y `on_file_pick(ruta)` responde el panel de archivos. Faltan futures (`perform` recibe una función, no un `async`) y suscripciones.
+En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve el reloj de los temporizadores, y `on_file_pick(ruta)` y `on_file_save(ruta)` responden los paneles de archivos. Faltan futures (`perform` recibe una función, no un `async`) y suscripciones.
 
 **Botón ocupado.** Cada tarea de `Effects::perform` guarda qué la lanzó (`TaskOrigin`): el control clicado (`Widget(id)`) o el comando (`Command(id)`), ya venga de un atajo, del menú, de la paleta, de un botón con `on_command`, de un script o de un agente. Mientras la tarea no entrega su `Msg`, ese origen está ocupado:
 
@@ -54,14 +54,15 @@ En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve e
 - **Eventos como mensajes.** `on_click(msg)`, `on_input(|valor| msg)` y `on_submit(msg)` registran el mensaje que el runtime envía a `update`. El clic burbujea desde el nodo más interno de `hit_path` hasta el control más cercano, igual que un evento DOM.
 - **Inputs controlados**, como en React: el valor del árbol se copia al editor en cada frame si difiere. El editor conserva caret, selección e IME; cada edición que cambia el texto emite `on_input` con el valor nuevo, y Enter emite `on_submit`. Un input sin `on_input` es de solo lectura.
 - **Estado de interacción fuera del modelo.** El runtime es dueño de `UiModel` (foco y presión como `Signal<Option<WidgetId>>`), del hover, de los offsets de scroll y de los `TextFieldState`. Las variantes `hover:`, `focus:`, `focus-within:`, `active:`, `disabled:` y `group-*` se resuelven en el layout a partir de ese estado, sin que la app lo gestione.
-- **Ciclo de un frame:** `view` → `FocusOrder` + handlers → sincronizar inputs controlados → layout → hover → paint → render → árbol AccessKit. El foco por teclado desplaza el contenedor con scroll para revelar el elemento (`Layout::reveal`); la rueda desplaza el contenedor con overflow más interno bajo el puntero que aún puede moverse.
+- **Ciclo de un frame:** `view` → `FocusOrder` + handlers → sincronizar inputs controlados → layout → hover → paint → render → árbol AccessKit. El foco por teclado desplaza el contenedor con scroll para revelar el elemento (`Layout::reveal`, en los dos ejes y moviéndolo lo mínimo: una fila más ancha que la vista conserva el scroll horizontal); la rueda desplaza, en cada eje, el contenedor con overflow más interno bajo el puntero que aún puede moverse, y Mayús+rueda desplaza a lo ancho.
+- **Menú contextual.** Un clic derecho, o Ctrl+clic, abre el `Element::context_menu` del elemento más interno bajo el puntero que tenga uno, en el puntero y sin moverle el foco; la acción `ShowContextMenu` de AccessKit lo abre también. Es la misma lista de la `Session` que el `Select`, con opciones que pueden ser checks (`check_options`) y no cerrarse al elegir. En `TestApp`, `right_click(by)`.
 
 ### `Session`, `WindowState` y `Outbox`
 
 El runtime está partido en dos para que los tests recorran el mismo camino que la ventana (Paso 4 de [13](13-hoja-de-ruta-plataforma.md)):
 
 - **`Session<A>`** (`session.rs`, sin winit) tiene la app, el árbol, los handlers, el `FocusOrder`, el layout, `UiModel`, el hover, el scroll, los `TextFieldState`, el portapapeles (`ClipboardPort`) y, en tests, el log de `Msg`.
-  - Recibe entradas en unidades lógicas: `pointer_moved(Option<Point>)`, `pointer_button(pressed)`, `scroll_by(delta_y)`, `apply_intent(Intent)`, `set_window_active(bool)`, `accessibility_action(&ActionRequest)` y `set_viewport(Size)`.
+  - Recibe entradas en unidades lógicas: `pointer_moved(Option<Point>)`, `pointer_button(pressed)`, `secondary_click()`, `wheel(delta, líneas)`, `scroll_by(delta_y)`, `scroll_by_x(delta_x)`, `apply_intent(Intent)`, `set_window_active(bool)`, `accessibility_action(&ActionRequest)` y `set_viewport(Size)`.
   - Para un frame ofrece `prepare_frame()` (view, layout, hover, scroll y buffers de los inputs), `paint_list()` y `a11y_tree(scale)`.
   - Mide el texto con las fuentes (`Measure::Real`, en la ventana) o con `FixedMeasure` (`Measure::Fixed`, en tests).
 - **`Outbox`**: lo que la sesión pide a la ventana. Guarda la última petición de cada tipo: `redraw`, `ime_allowed`, `ime_cursor_area` (en puntos lógicos), `cursor`, `title`, `theme` y `commands` (estados de los comandos, para el menú).
