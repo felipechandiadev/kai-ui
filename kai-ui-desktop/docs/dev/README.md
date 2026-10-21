@@ -19,6 +19,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 13. [Guía: modelo AppKit como estándar de Kai](12-modelo-appkit.md)
 14. [Hoja de ruta: de Kai UI a plataforma de desarrollo de apps](13-hoja-de-ruta-plataforma.md)
 15. [MCP experimental: cómo probarlo](14-mcp.md)
+16. [Caso especial: tablas con muchos registros y datos remotos](15-tablas-con-muchos-registros.md)
 
 ## Dónde estamos
 

@@ -27,7 +27,9 @@ pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_im
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
-pub use table::{Column, ColumnWidth, SortDirection, Table, virtual_list};
+pub use table::{
+    Column, ColumnWidth, Date, SortDirection, Table, TableView, Value, ViewChange, virtual_list,
+};
 pub use tabs::Tabs;
 pub use text_area::{TextArea, text_area};
 pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};

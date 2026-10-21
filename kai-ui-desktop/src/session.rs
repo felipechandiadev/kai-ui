@@ -31,6 +31,7 @@ use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, WidgetId, div,
 };
+use crate::fold::fold;
 use crate::geo::{Camera, LatLon, MapView, TileId};
 use crate::geometry::{Point, Rect, Size};
 use crate::layout::testing::FixedMeasure;
@@ -413,21 +414,6 @@ enum PopupKey {
 
 /// Pause after which typing in an open list starts a new search.
 pub(crate) const TYPEAHEAD_RESET: Duration = Duration::from_secs(1);
-
-/// `text` for typeahead: lowercase, vowels without accents.
-fn fold(text: &str) -> String {
-    text.chars()
-        .flat_map(char::to_lowercase)
-        .map(|c| match c {
-            'á' | 'à' | 'â' | 'ä' => 'a',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'í' | 'ì' | 'î' | 'ï' => 'i',
-            'ó' | 'ò' | 'ô' | 'ö' => 'o',
-            'ú' | 'ù' | 'û' | 'ü' => 'u',
-            c => c,
-        })
-        .collect()
-}
 
 /// The option `typed` finds among `items` with `highlighted` the current
 /// one: the next that starts with it, after the current one when `typed`

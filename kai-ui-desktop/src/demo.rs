@@ -17,11 +17,11 @@ use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
     CHOICE_ACTIVE, CHOICE_HOVER, Column, Dialog, DialogWidth, DotProgress, DotSize, FieldBezel,
     FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout, MediaSlot,
-    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SortDirection, SwitchDensity, Table, Tabs,
-    TextField, Toast, alert, avatar, badge, button, button_sized, caption, card, card_actions,
-    card_content, card_header, checkbox, checkbox_with_options, color_field, dot_progress,
-    group_box, heading, icon_button, icon_button_sized, paragraph, search_field, segmented,
-    segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
+    MediaVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table, TableView, Tabs,
+    TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized, caption, card,
+    card_actions, card_content, card_header, checkbox, checkbox_with_options, color_field,
+    dot_progress, group_box, heading, icon_button, icon_button_sized, paragraph, search_field,
+    segmented, segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
     switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
     toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
     virtual_list,
@@ -88,12 +88,13 @@ struct Demo {
     alineacion: usize,
     /// Contenedores: the selected tab.
     pestana: usize,
-    /// Tabla: the toolbar search, the sort and the selected client.
+    /// Tabla: the toolbar search, the clients, what the table shows of
+    /// them (search, filters, sort) and the selected one (index into
+    /// `clientes`).
     query: String,
-    sort: (usize, SortDirection),
-    /// Client numbers in display order: filtered by `query`, sorted.
-    rows: Rc<[u32]>,
-    cliente: Option<u32>,
+    clientes: Rc<[Cliente]>,
+    tabla: TableView,
+    cliente: Option<usize>,
     /// Multimedia: the three image fields, the URL typed and the one
     /// loaded in the avatar.
     foto: Imagen,
@@ -128,6 +129,7 @@ const ESPERA: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl Default for Demo {
     fn default() -> Self {
+        let clientes: Rc<[Cliente]> = (1..=CLIENTES).map(cliente).collect();
         Self {
             clicks: 0,
             name: String::new(),
@@ -160,8 +162,8 @@ impl Default for Demo {
             alineacion: 0,
             pestana: 0,
             query: String::new(),
-            sort: (0, SortDirection::Ascending),
-            rows: clientes("", (0, SortDirection::Ascending)),
+            tabla: TableView::new(&clientes, &columnas()),
+            clientes,
             cliente: None,
             foto: Imagen::with(sample_portrait()),
             portada: Imagen::default(),
@@ -323,6 +325,7 @@ enum Campo {
 const CLIENTES: u32 = 10_000;
 
 /// One client of the generated table: number, name, city, plan, amount.
+#[derive(Debug, PartialEq)]
 struct Cliente {
     numero: u32,
     nombre: String,
@@ -375,56 +378,61 @@ fn cliente(numero: u32) -> Cliente {
     }
 }
 
-/// Columns of the client table; sortable ones by `sort.0`.
-fn columnas() -> Vec<Column> {
+/// Columns of the client table: number, name with its avatar, city, plan
+/// as a badge, amount and the row's actions.
+fn columnas() -> Vec<Column<Cliente, Msg>> {
     vec![
-        Column::new("N.º").fixed(72.0).sortable().numeric(),
-        Column::new("Nombre").flex(2.0).sortable(),
-        Column::new("Ciudad").flex(1.5).sortable(),
-        Column::new("Plan").fixed(96.0),
-        Column::new("Monto").fixed(112.0).sortable().numeric(),
+        Column::number("N.º", |c: &Cliente| f64::from(c.numero))
+            .fixed(72.0)
+            .sortable(),
+        Column::text("Nombre", |c: &Cliente| c.nombre.clone())
+            .render(|c: &Cliente| {
+                div().class("flex items-center gap-2 min-w-0").children([
+                    Avatar::new(c.nombre.clone()).size(AvatarSize::Xs).build(),
+                    text(c.nombre.as_str()).class("truncate"),
+                ])
+            })
+            .flex(2.0)
+            .sortable()
+            .filterable(),
+        Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned())
+            .flex(1.5)
+            .sortable()
+            .filterable()
+            .hideable(),
+        Column::text("Plan", |c: &Cliente| c.plan.to_owned())
+            .render(|c: &Cliente| badge(c.plan, plan_badge(c.plan)))
+            .fixed(104.0)
+            .sortable()
+            .filterable()
+            .hideable(),
+        Column::number("Monto", |c: &Cliente| f64::from(c.monto))
+            .format(|monto| format!("$ {monto}"))
+            .fixed(112.0)
+            .sortable()
+            .filterable()
+            .hideable(),
+        Column::actions(|c: &Cliente| {
+            icon_button_sized(
+                Icon::Eye,
+                format!("Ver {}", c.nombre),
+                IconButtonVariant::Text,
+                IconButtonSize::Sm,
+            )
+            .on_click(Msg::VerCliente(c.numero as usize - 1))
+            .test_id(format!("tabla.ver.{}", c.numero))
+        })
+        .fixed(64.0),
     ]
 }
 
-/// Text of `column` for `cliente`.
-fn celda(cliente: &Cliente, column: usize) -> String {
-    match column {
-        0 => cliente.numero.to_string(),
-        1 => cliente.nombre.clone(),
-        2 => cliente.ciudad.to_owned(),
-        3 => cliente.plan.to_owned(),
-        _ => format!("$ {}", cliente.monto),
+/// Badge color of a client plan.
+fn plan_badge(plan: &str) -> BadgeVariant {
+    match plan {
+        "Empresa" => BadgeVariant::Primary,
+        "Pro" => BadgeVariant::Info,
+        _ => BadgeVariant::Secondary,
     }
-}
-
-/// Client numbers whose name or city contains `query` (ignoring case),
-/// sorted by `sort`.
-fn clientes(query: &str, (column, direction): (usize, SortDirection)) -> Rc<[u32]> {
-    let query = query.trim().to_lowercase();
-    if query.is_empty() && column == 0 {
-        return match direction {
-            SortDirection::Ascending => (1..=CLIENTES).collect(),
-            SortDirection::Descending => (1..=CLIENTES).rev().collect(),
-        };
-    }
-    let mut rows: Vec<Cliente> = (1..=CLIENTES)
-        .map(cliente)
-        .filter(|c| {
-            query.is_empty()
-                || c.nombre.to_lowercase().contains(&query)
-                || c.ciudad.to_lowercase().contains(&query)
-        })
-        .collect();
-    match column {
-        1 => rows.sort_by(|a, b| a.nombre.cmp(&b.nombre).then(a.numero.cmp(&b.numero))),
-        2 => rows.sort_by(|a, b| a.ciudad.cmp(b.ciudad).then(a.numero.cmp(&b.numero))),
-        4 => rows.sort_by(|a, b| a.monto.cmp(&b.monto).then(a.numero.cmp(&b.numero))),
-        _ => {}
-    }
-    if direction == SortDirection::Descending {
-        rows.reverse();
-    }
-    rows.into_iter().map(|c| c.numero).collect()
 }
 
 /// Options of the country select (Selección).
@@ -658,9 +666,12 @@ enum Msg {
     SetPestana(usize),
     /// The toolbar search, which filters the table.
     Query(String),
-    Sort(usize, SortDirection),
-    /// A row of the table, in display order.
+    /// Sort, filter, hide columns or expand rows of the table.
+    Tabla(ViewChange),
+    /// A client of the table, by its index in `clientes`.
     SelectRow(usize),
+    /// The «Ver» action of a client's row.
+    VerCliente(usize),
     OpenDialog(Dialogo),
     CloseDialog,
     /// The dialog's default button.
@@ -1373,14 +1384,24 @@ impl App for Demo {
             Msg::SetAlineacion(index) => self.alineacion = index,
             Msg::SetPestana(index) => self.pestana = index,
             Msg::Query(query) => {
+                self.tabla.query.clone_from(&query);
                 self.query = query;
-                self.rows = clientes(&self.query, self.sort);
+                self.tabla.refresh(&self.clientes, &columnas());
             }
-            Msg::Sort(column, direction) => {
-                self.sort = (column, direction);
-                self.rows = clientes(&self.query, self.sort);
+            Msg::Tabla(change) => {
+                self.tabla.apply(change);
+                self.tabla.refresh(&self.clientes, &columnas());
             }
-            Msg::SelectRow(index) => self.cliente = self.rows.get(index).copied(),
+            Msg::SelectRow(index) => self.cliente = Some(index),
+            Msg::VerCliente(index) => {
+                let Some(cliente) = self.clientes.get(index) else {
+                    return Effects::none();
+                };
+                let toast = Toast::new(0, AlertVariant::Info, cliente.nombre.as_str()).message(
+                    format!("Cliente N.º {} de {}", cliente.numero, cliente.ciudad),
+                );
+                return self.show_toast(toast);
+            }
             Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
             Msg::CloseDialog => self.dialogo = None,
             Msg::MapaMovido(vista) => self.vista = vista,
@@ -2130,7 +2151,7 @@ impl Demo {
                 .test_id("contenedores.stats")
                 .children([
                     stat("Clientes", CLIENTES.to_string(), Some("en la tabla")),
-                    stat("Filtrados", self.rows.len().to_string(), None),
+                    stat("Filtrados", self.tabla.len().to_string(), None),
                     stat("Avisos", self.toasts.len().to_string(), Some("abiertos")),
                 ]),
         ]
@@ -2139,21 +2160,16 @@ impl Demo {
     /// Tabla: ten thousand generated clients, sorted by the header and
     /// filtered by the toolbar search.
     fn client_table(&self) -> Element<Msg> {
-        let rows = Rc::clone(&self.rows);
-        let named = Rc::clone(&self.rows);
-        let selected = self
-            .cliente
-            .and_then(|numero| self.rows.iter().position(|row| *row == numero));
-        let summary = match self.cliente {
-            Some(numero) => format!("Seleccionado: {}", cliente(numero).nombre),
+        let summary = match self.cliente.and_then(|index| self.clientes.get(index)) {
+            Some(cliente) => format!("Seleccionado: {}", cliente.nombre),
             None => "Elige una fila con un clic o con ↑ ↓".to_owned(),
         };
         let shown = if self.query.trim().is_empty() {
-            format!("{} clientes", self.rows.len())
+            format!("{} clientes", self.tabla.len())
         } else {
             format!(
                 "{} de {CLIENTES} con «{}»",
-                self.rows.len(),
+                self.tabla.len(),
                 self.query.trim()
             )
         };
@@ -2169,24 +2185,14 @@ impl Demo {
                         caption(shown).role(Role::Status).test_id("tabla.total"),
                         caption(summary).test_id("tabla.seleccion"),
                     ]),
-                Table::new(columnas(), self.rows.len(), move |row, column| {
-                    rows.get(row)
-                        .map_or_else(String::new, |numero| celda(&cliente(*numero), column))
-                })
-                .leading(1, move |row| {
-                    let nombre = named
-                        .get(row)
-                        .map_or_else(String::new, |numero| cliente(*numero).nombre);
-                    Avatar::new(nombre).size(AvatarSize::Xs).build()
-                })
-                .sort(self.sort.0, self.sort.1)
-                .on_sort(Msg::Sort)
-                .selected(selected)
-                .on_select(Msg::SelectRow)
-                .label("Clientes")
-                .test_id("tabla.clientes")
-                .build()
-                .class("h-[360px] rounded-md border border-border appkit:border-separator"),
+                Table::new(Rc::clone(&self.clientes), columnas(), &self.tabla)
+                    .on_view(Msg::Tabla)
+                    .selected(self.cliente)
+                    .on_select(Msg::SelectRow)
+                    .label("Clientes")
+                    .test_id("tabla.clientes")
+                    .build()
+                    .class("h-[360px] rounded-md border border-border appkit:border-separator"),
             ]),
         ])
     }
@@ -2914,7 +2920,7 @@ mod tests {
 
     use super::{
         Campo, CargarUrl, Dialogo, ImageSource, LatLon, LatLonBounds, MapView, PLAZA_DE_ARMAS,
-        SECTORES, SimularEspera, SortDirection, VISTA_INICIAL, VarianteAviso, sector_inicial,
+        SECTORES, SimularEspera, VISTA_INICIAL, VarianteAviso, ViewChange, sector_inicial,
     };
 
     use cosmic_text::{
@@ -2931,6 +2937,7 @@ mod tests {
     use crate::commands::{
         Availability, CommandError, DIALECT, Origin, Outcome, PALETTE, describe_json,
     };
+    use crate::components::SortDirection;
     use crate::element::{ControlState, FocusOrder, KeyEquivalent, Kind, Role, WidgetId};
     use crate::geometry::{Rect, Size};
     use crate::layout::testing::FixedMeasure;
@@ -3774,7 +3781,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 15] = [
+        const SOURCES: [&str; 16] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
@@ -3783,6 +3790,7 @@ mod tests {
             include_str!("components/search.rs"),
             include_str!("components/sidebar.rs"),
             include_str!("components/table.rs"),
+            include_str!("components/table/view.rs"),
             include_str!("components/tabs.rs"),
             include_str!("components/text_area.rs"),
             include_str!("components/toast.rs"),
@@ -3791,7 +3799,7 @@ mod tests {
             include_str!("maps/layers.rs"),
             include_str!("maps/editor.rs"),
         ];
-        const NOT_WIDGETS: [&str; 19] = [
+        const NOT_WIDGETS: [&str; 21] = [
             "MapSpec",
             "Marker",
             "FitRequest",
@@ -3808,6 +3816,8 @@ mod tests {
             "SidebarItem",
             "SidebarGroup",
             "Column",
+            "TableView",
+            "Date",
             "Toast",
             "PaletteItem",
             "MenuFrame",
@@ -4183,7 +4193,14 @@ mod tests {
         app.type_text(By::test_id("barra.buscar"), "temuco");
         app.press(Key::Enter, Modifiers::NONE);
         assert_eq!(app.app().seccion, Seccion::Tabla);
-        let temuco = super::clientes("temuco", (0, super::SortDirection::Ascending)).len();
+        let temuco = (1..=super::CLIENTES)
+            .map(super::cliente)
+            .filter(|c| {
+                [c.nombre.as_str(), c.ciudad, c.plan]
+                    .iter()
+                    .any(|text| text.to_lowercase().contains("temuco"))
+            })
+            .count();
         assert!(temuco > 0 && temuco < super::CLIENTES as usize);
         assert_eq!(count(&app), Some(temuco));
         assert_eq!(cells(&app, 0)[2], "Temuco");
@@ -4198,20 +4215,20 @@ mod tests {
         // A sortable header sorts, and again reverses.
         let monto = || By::role(Role::ColumnHeader).name("Monto");
         app.click(monto());
-        assert_eq!(app.app().sort, (4, super::SortDirection::Ascending));
+        assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Ascending)));
         let amount = |row: Vec<String>| -> u32 { row[4].trim_start_matches("$ ").parse().unwrap() };
         assert!(amount(cells(&app, 0)) <= amount(cells(&app, 1)));
         app.click(monto());
-        assert_eq!(app.app().sort, (4, super::SortDirection::Descending));
+        assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Descending)));
         assert!(amount(cells(&app, 0)) >= amount(cells(&app, 1)));
 
         // A click selects a client, which keeps its place through sorting.
         app.click(By::test_id("tabla.clientes.row.1"));
-        let chosen = app.app().rows[1];
+        let chosen = app.app().tabla.rows()[1];
         assert_eq!(app.app().cliente, Some(chosen));
         app.click(monto());
         assert_eq!(app.app().cliente, Some(chosen));
-        let name = super::cliente(chosen).nombre;
+        let name = app.app().clientes[chosen].nombre.clone();
         assert_eq!(
             app.screen().get_by_test_id("tabla.seleccion").name(),
             Some(format!("Seleccionado: {name}"))
@@ -6897,8 +6914,9 @@ mod tests {
         ] {
             let mut demo = Demo::at(seccion);
             if seccion == Seccion::Tabla {
-                demo.apply(Msg::Sort(4, SortDirection::Descending));
-                demo.apply(Msg::SelectRow(1));
+                demo.apply(Msg::Tabla(ViewChange::Sort(4, SortDirection::Descending)));
+                let second = demo.tabla.rows()[1];
+                demo.apply(Msg::SelectRow(second));
             }
             if name == "demo-mapa" {
                 demo.apply(Msg::ToggleAreas);

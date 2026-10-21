@@ -161,6 +161,40 @@ icon(Icon::Search).class("size-5 text-secondary stroke-[1.5]")
 - `stat(etiqueta, valor, pista)`: tarjeta compacta de estadística.
 - `heading`, `paragraph` y `caption`: texto con rol y estilos de la tipografía del tema.
 
+### Table y virtual_list
+
+```rust
+Table::new(
+    vec![
+        Column::new("N.º").fixed(64.0).numeric(),
+        Column::new("Nombre").flex(2.0).sortable(),
+        Column::new("Monto").fixed(96.0).numeric().sortable(),
+    ],
+    model.filas.len(),
+    move |row, column| celda(&filas[row], column),
+)
+.sort(model.sort.0, model.sort.1)
+.on_sort(Msg::Sort)
+.selected(model.seleccionada)
+.on_select(Msg::SelectRow)
+.label("Clientes")
+.test_id("clientes")
+.build()
+.class("h-[360px]")
+```
+
+Tabla virtualizada, equivalente a `NSTableView` ([12](12-modelo-appkit.md), Paso 20). Es un componente especial: con muchos registros o datos de una API, leer [15](15-tablas-con-muchos-registros.md).
+
+- **Virtualización.** Solo se construyen las filas visibles, más 6 por lado (`virtual_rows.rs`); el resto son espaciadores con su altura. 10 000 filas cuestan lo que una pantalla. La fila seleccionada y la que recibe el foco se construyen siempre.
+- **Datos.** `cell(fila, columna)` devuelve el texto de la celda en el orden de pantalla. La tabla no ordena, no filtra ni pagina: la app ordena y filtra sus datos y traduce el índice. `cell` solo debe leer el modelo, nunca hacer una petición.
+- **Columnas** (`Column`): `fixed(pt)`, `flex(parte)`, `numeric()` (alineada a la derecha) y `sortable()`. El encabezado de una columna ordenable envía `on_sort(columna, dirección)`, invierte la dirección si ya era la ordenada y muestra una flecha.
+- **Selección.** Con `on_select` las filas son una sola parada de Tab; un clic, ↑/↓, Inicio/Fin y RePág/AvPág eligen una. Una sola fila a la vez. Conviene guardar en el modelo el id del registro, no el índice, para que la selección sobreviva al ordenar o filtrar.
+- **Aspecto.** Filas de 32 pt por defecto (`row_height`; 24 es la de AppKit); en AppKit alternan el fondo. La fila elegida lleva el tinte de elección (`bg-choice/20`). `leading(columna, |fila| ..)` pone un elemento antes del texto (un avatar junto al nombre), construido solo para las filas visibles.
+- **Accesibilidad.** `Role::Table` con `row_count` (el total), encabezados `ColumnHeader` con su orden, y filas `Row` de `Cell` con su `row_index` real.
+- **Partes:** `<id>.header`, `<id>.column.<i>`, `<id>.body` y `<id>.row.<i>` (índice de pantalla).
+- **Límites:** filas de altura fija, sin selección múltiple y sin aviso a la app de qué filas se ven (`on_rows_needed`, necesario para cargar páginas de una API; ver [15](15-tablas-con-muchos-registros.md)).
+- **`virtual_list(count, row_height, selected, render)`**: la misma virtualización para listas sin columnas; las filas sin rol son `ListItem` dentro de una `List`. Con `Element::selecting_focus_group` es una sola parada de Tab cuyas flechas eligen.
+
 ### Botones con comando y paleta
 
 - **`.on_command(Accion)`** conecta un control a una acción registrada (Paso 8 de [13](13-hoja-de-ruta-plataforma.md)). Pone su `Msg` como `on_click` y, en cada `view`, aplica la disponibilidad: si la acción está `Disabled` o `Hidden` el control se deshabilita y el motivo es su descripción accesible. Su `test_id` por defecto es el id del comando y su nombre, el título, si no tiene texto propio.
