@@ -8,6 +8,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Spacing + densidad + do/don't (Fase D):** `theme::spacing` (pasos tipados hasta step 16 ≈ 64 pt; alias `FORM_STACK_STEPS` / `DATA_STACK_STEPS`); `theme::motion` (CARET_BLINK / TOAST / TYPEAHEAD_RESET documentados). Guía do/don't Button / TextField / Document. Docs [`23-spacing-density.md`](docs/dev/23-spacing-density.md).
 - **Plantillas de página (Fase C):** `PageHeader` / breadcrumbs, `MasterDetailPage`, `FormPage` (comfortable), `DataPage` (compact) sobre PageGrid 12. Demo: grupo sidebar **Plantillas** (Lista + detalle, Formulario, Vista de datos). Docs [`22-page-templates.md`](docs/dev/22-page-templates.md).
 - **PageGrid 12 + shell de página (Fase B):** `page` / `PageBody` / `page_grid` / `PageGridItem` (span 1–12; 4/8/12 cols; gutter 16 pt; márgenes responsivos). Utilidad `col-span-N` en el motor. Demo: shell de sección + formularios Inicio/Campos. Docs [`21-page-layout.md`](docs/dev/21-page-layout.md). No es Carbon 16 ni UI Shell web.
 

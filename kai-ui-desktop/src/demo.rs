@@ -2407,7 +2407,7 @@ impl Demo {
         MasterDetailPage::new(list, detail)
             .header(
                 PageHeader::new("Clientes")
-                    .subtitle("Lista + detalle · span lista 4 / detalle 8 en md+")
+                    .subtitle("Lista + detalle · span 4/8 · gutter gap-4 (step 4)")
                     .breadcrumbs(["Demo", "Plantillas", "Lista + detalle"])
                     .action(
                         button("Nuevo", ButtonVariant::Primary)
@@ -2425,7 +2425,7 @@ impl Demo {
         FormPage::new()
             .header(
                 PageHeader::new("Nuevo cliente")
-                    .subtitle("Densidad comfortable · campos a span 6 / 12")
+                    .subtitle("Densidad comfortable · gap-5 (step 5) · campos span 6 / 12")
                     .breadcrumbs(["Demo", "Plantillas", "Formulario"]),
             )
             .fields([
@@ -2556,7 +2556,7 @@ impl Demo {
         DataPage::new()
             .header(
                 PageHeader::new("Operaciones")
-                    .subtitle("Densidad compact · métricas + tabla densa")
+                    .subtitle("Densidad compact · gap-3 (step 3) · métricas + tabla densa")
                     .breadcrumbs(["Demo", "Plantillas", "Vista de datos"])
                     .action(
                         button("Exportar", ButtonVariant::Outlined)

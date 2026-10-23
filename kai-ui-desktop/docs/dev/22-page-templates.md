@@ -6,10 +6,10 @@ Tres plantillas reutilizables sobre el shell de [21 — Page layout](21-page-lay
 
 | Contexto | `PageDensity` | `Theme::Density` | Ritmo vertical |
 |---|---|---|---|
-| Formularios, ajustes, alta/edición | `Comfortable` | `Comfortable` | `gap-5` |
-| Tablas, métricas, gráficos densos | `Compact` | `Compact` | `gap-3` |
+| Formularios, ajustes, alta/edición | `Comfortable` | `Comfortable` | `gap-5` (step 5) |
+| Tablas, métricas, gráficos densos | `Compact` | `Compact` | `gap-3` (step 3) |
 
-La plantilla declara la intención (`FormPage::density` / `DataPage::density`); la app puede alinear el tema con `PageDensity::theme_density()`.
+La plantilla declara la intención (`FormPage::density` / `DataPage::density`); la app puede alinear el tema con `PageDensity::theme_density()`. Escala tipada y do/don't: [23-spacing-density.md](23-spacing-density.md).
 
 ## API
 
@@ -73,6 +73,6 @@ Cómo verlo: `cargo run` (tema AppKit) → sidebar **Plantillas**.
 - No sustituye Sidebar / Toolbar.
 - No define un sistema de spacing tipográfico completo (Fase D).
 
-## Fase D (siguiente)
+## Fase D
 
-Spacing extendida (escala tipográfica / do & don’t de márgenes y gaps) documentada sobre estas plantillas; posiblemente tokens adicionales de ritmo vertical más allá de `gap-3` / `gap-5`.
+Hecha: escala `theme::spacing` (hasta step 16 ≈ 64 pt), guía densidad + do/don't, motion documentado — ver [23-spacing-density.md](23-spacing-density.md).

@@ -27,6 +27,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 21. [Contraste WCAG](20-contraste-wcag.md)
 22. [Page layout (PageGrid 12)](21-page-layout.md)
 23. [Plantillas de página](22-page-templates.md)
+24. [Spacing, densidad y do/don't](23-spacing-density.md)
 
 ## Dónde estamos
 
