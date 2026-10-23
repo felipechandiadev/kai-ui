@@ -8,6 +8,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Frontera pública — `Color`:** `kai::Color` / `kai::color` con `parse_hex` / `hex` / `to_hex`. Las apps no deben usar `kai::render::Color` (módulo `#[doc(hidden)]`). `fixtures/external-app` compila contra la ruta estable. DSP desktop aún importa `kai::render::Color` (sigue compilando mientras `render` sea `pub` oculto); migrar a `kai::Color`.
+
 - **Clip redondeado de contenedores (P14b):** `rounded-* overflow-hidden` recorta hijos e imágenes a la curva (máscara SDF heredada). `ClipRect`/`RoundClip` en layout, hit-test y `resolve`; quads, imágenes y geometría descartan fuera de la máscara en GPU. El texto sigue el AABB del clip.
 
 - **Gráficos nativos:** `chart(ChartKind::Bar)` y `Sparkline`, pintados con `Quad` y `Mesh` como el mapa. Las barras usan tokens del tema (`primary`, `success`, `warning`, `error`; la seleccionada, `choice`); un clic envía `on_select(índice)`. Sparkline: polilínea con relleno al 20 %. Tamaño por clases (`h-48`, `flex-1`). Sección **Gráficos** en la demo.

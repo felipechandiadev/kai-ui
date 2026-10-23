@@ -558,6 +558,9 @@ impl<A: App> TestApp<A> {
     }
 
     /// What the current frame draws, in painter's order.
+    ///
+    /// Hidden: `DrawList` still lives in the internal `render` module.
+    #[doc(hidden)]
     pub fn draw_list(&self) -> crate::render::DrawList {
         self.session.paint_list()
     }

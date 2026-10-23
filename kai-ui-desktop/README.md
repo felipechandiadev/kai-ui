@@ -2,7 +2,7 @@
 
 Framework de interfaz de escritorio de Kai en Rust (crate `kai`), con renderizador propio, por ahora solo para macOS. Es una versión preliminar (0.1.x): la API todavía cambia y el paquete no se publica.
 
-El proyecto web está en `../kai-ui-web` y la CLI (`kai dev`) en `../kai-cli`. La primera app real que lo usa es DSP desktop (`dsp-27/desktop`).
+El proyecto web está en `../kai-ui-web` y la CLI (`kai dev`) en `../kai-cli`. La primera app real que lo usa es DSP desktop (`dsp-27/desktop`). La API estable para apps es lo exportado sin `#[doc(hidden)]` en `lib.rs` (p. ej. `kai::Color` para hex, no `kai::render::Color`).
 
 Versión del crate: `Cargo.toml` (sincronizado desde `../version.json`). Historial en [`CHANGELOG.md`](CHANGELOG.md). Release con tag `desktop-vX.Y.Z` — ver [`../docs/versioning.md`](../docs/versioning.md).
 

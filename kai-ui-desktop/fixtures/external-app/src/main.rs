@@ -5,6 +5,7 @@ use kai::components::{ButtonVariant, TextField, button, card, card_content, head
 use kai::element::{Element, div};
 use kai::runtime::{self, App, Effects};
 use kai::theme::{Density, Theme};
+use kai::Color;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -84,6 +85,9 @@ impl App for Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Stable color API (not `kai::render::Color`).
+    let _ = Color::parse_hex("#1e73ae");
+
     if std::env::args()
         .skip(1)
         .any(|arg| arg == "--describe-commands")

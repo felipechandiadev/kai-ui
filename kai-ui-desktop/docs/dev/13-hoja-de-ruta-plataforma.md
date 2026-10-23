@@ -59,6 +59,7 @@
 - **Tabla completa** ✅: columnas con valor tipado, búsqueda, filtros por columna, orden, ocultar columnas (menú contextual), exportar a Excel solo lo que se ve, filas expandibles, scroll horizontal y columnas fijas. El motor ganó overflow por eje, `sticky` horizontal, menús contextuales y el panel de guardar. Detalle en el Paso 14; la grilla editable (DataGrid) va aparte.
 - **Accesibilidad y usabilidad** ✅: preferencias de macOS leídas en vivo (`motion-reduce:`, `contrast-more:`, `transparency-reduce:`), `active_descendant` en la paleta, avisos que se pausan con el puntero o el foco (los de error persisten), deshacer y rehacer en campos de texto, búsqueda por tipeo en el `Select` y el componente `Tabs`. Todo con tests automáticos; falta verlo con VoiceOver. Detalle en el Paso 14.
 - **P14 DSP desktop** 🟡: login con llavero, shell con menú y la sección Áreas (mapa de Parral con las áreas del core, lista y color por área). Faltan editar áreas desde el escritorio, el flujo operativo y las notificaciones.
+- **Frontera pública** 🟡: `kai::Color` estable (antes `kai::render::Color`); el resto de internos sigue `#[doc(hidden)] pub` con TODO hacia `pub(crate)`.
 - **P14b primitivas** ✅: imágenes, geometría y clip redondeado de contenedores (`rounded-* overflow-hidden`).
 - **P15 efectos** 🟡: pool de tareas, `keyed`/`cancel`, `after`, paneles de abrir y guardar como hoja (`beginSheetModalForWindow` + `UserEvent::FilePicked`) y archivos arrastrados. Faltan futures, suscripciones (websockets para notificaciones) y comandos MCP async.
 - **P15b–P15d mapas** 🟡: mapa vectorial con áreas, edición de polígonos existentes y comandos `mapa.*`. Faltan los modos Punto y Línea, dibujar desde cero y `incidencias.set_ubicacion`.
@@ -422,7 +423,7 @@ Reglas de la pista C:
 - **Tests**: los de la demo se mueven con ella; un job de CI compila `fixtures/external-app`.
 - **Hecho cuando**: `fixtures/external-app` compila y abre ventana usando solo la API pública; `cargo run --example demo` reproduce la demo; las capturas de `snapshot_demo` no cambian; `cargo doc` sin warnings sobre la API pública.
 - **Riesgos y reversión**: reducir visibilidad puede romper tests internos; mitigar moviendo esos tests al módulo que prueban. Revertible.
-- **Estado**: hecho. La demo vive en `src/demo.rs` (`run_from_env`); `cargo run` y `cargo run --example demo` la abren igual. Los módulos internos quedan `#[doc(hidden)] pub` en vez de `pub(crate)`, porque las capturas y los tests todavía los usan; pasarán a `pub(crate)` cuando exista `kai::testing` (Pasos 3–4). El CI corre `cargo doc -D warnings` y compila `fixtures/external-app`.
+- **Estado**: hecho, con frontera en progreso. La demo vive en `src/demo.rs` (`run_from_env`); `cargo run` y `cargo run --example demo` la abren igual. `kai::testing` ya existe (Pasos 3–4). Los módulos internos siguen `#[doc(hidden)] pub` (no `pub(crate)`) porque capturas, examples (`demo`/`gallery`) y tipos expuestos por `testing` (`Layout`, `DrawList`) aún los necesitan; cada uno lleva un TODO en `lib.rs`. **Color** ya es API estable: `kai::Color` / `kai::color` (parse hex); no usar `kai::render::Color`. El CI corre `cargo doc -D warnings` y compila `fixtures/external-app`.
 
 #### Paso 1 — Contrato `App` v2
 
