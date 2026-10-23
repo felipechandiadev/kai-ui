@@ -1,10 +1,11 @@
 //! Kai design tokens for the desktop renderer.
 //!
 //! Values mirror `kai-ui-web/src/theme/tokens.css` with `1rem = 16` logical points.
-//! Components never read tokens directly: they use Tailwind-like classes
-//! (`tw`) that resolve against [`Theme::color`], [`Theme::spacing_unit`] and
-//! the type and control tokens. Tokens the desktop cannot honor yet are listed
-//! in [`UNMAPPED_TOKENS`].
+//! The Kai bases are generated into [`kai_tokens`] by `scripts/gen-tokens.mjs`
+//! (versioned in git; compile does not need `kai-ui-web`). Components never
+//! read tokens directly: they use Tailwind-like classes (`tw`) that resolve
+//! against [`Theme::color`], [`Theme::spacing_unit`] and the type and control
+//! tokens. Tokens the desktop cannot honor yet are listed in [`UNMAPPED_TOKENS`].
 //!
 //! Besides the web tokens ([`ColorTokens`]) every theme fills
 //! [`SemanticColors`], named after AppKit's `NSColor` (`label`, `separator`,
@@ -17,6 +18,7 @@
 
 mod appkit;
 mod generation;
+mod kai_tokens;
 
 use cosmic_text::Weight;
 
@@ -419,34 +421,62 @@ pub const UNMAPPED_TOKENS: &[(&str, &str)] = &[
 
 impl Theme {
     pub fn kai(density: Density) -> Self {
-        let colors = color_tokens();
+        let colors = kai_tokens::color_tokens();
         let (space, typography, controls) = match density {
-            Density::Comfortable => (
-                SpaceTokens {
-                    space_1: 0.25 * REM,
-                    space_2: 0.5 * REM,
-                    space_3: 0.75 * REM,
-                    space_4: REM,
-                    page_gap: REM,
-                    section_gap: 0.75 * REM,
-                    card_padding: REM,
-                },
-                type_tokens(REM, 0.875 * REM, 0.75 * REM, 1.125 * REM, 1.25 * REM),
-                (2.25 * REM, 0.5 * REM, 2.0 * REM, 0.25 * REM),
-            ),
-            Density::Compact => (
-                SpaceTokens {
-                    space_1: 0.1875 * REM,
-                    space_2: 0.375 * REM,
-                    space_3: 0.5 * REM,
-                    space_4: 0.75 * REM,
-                    page_gap: 0.75 * REM,
-                    section_gap: 0.5 * REM,
-                    card_padding: 0.75 * REM,
-                },
-                type_tokens(0.875 * REM, 0.8125 * REM, 0.6875 * REM, REM, 1.125 * REM),
-                (2.0 * REM, 0.375 * REM, 1.75 * REM, 0.1875 * REM),
-            ),
+            Density::Comfortable => {
+                use kai_tokens::density::comfortable as d;
+                (
+                    SpaceTokens {
+                        space_1: d::SPACE_1 * REM,
+                        space_2: d::SPACE_2 * REM,
+                        space_3: d::SPACE_3 * REM,
+                        space_4: d::SPACE_4 * REM,
+                        page_gap: d::PAGE_GAP * REM,
+                        section_gap: d::SECTION_GAP * REM,
+                        card_padding: d::CARD_PADDING * REM,
+                    },
+                    type_tokens(
+                        d::FONT_SIZE_BODY * REM,
+                        d::FONT_SIZE_SM * REM,
+                        d::FONT_SIZE_XS * REM,
+                        d::FONT_SIZE_PAGE_TITLE * REM,
+                        d::FONT_SIZE_SECTION_TITLE * REM,
+                    ),
+                    (
+                        d::HEIGHT_MD * REM,
+                        d::PADDING_Y_MD * REM,
+                        d::HEIGHT_COMPACT * REM,
+                        d::PADDING_Y_COMPACT * REM,
+                    ),
+                )
+            }
+            Density::Compact => {
+                use kai_tokens::density::compact as d;
+                (
+                    SpaceTokens {
+                        space_1: d::SPACE_1 * REM,
+                        space_2: d::SPACE_2 * REM,
+                        space_3: d::SPACE_3 * REM,
+                        space_4: d::SPACE_4 * REM,
+                        page_gap: d::PAGE_GAP * REM,
+                        section_gap: d::SECTION_GAP * REM,
+                        card_padding: d::CARD_PADDING * REM,
+                    },
+                    type_tokens(
+                        d::FONT_SIZE_BODY * REM,
+                        d::FONT_SIZE_SM * REM,
+                        d::FONT_SIZE_XS * REM,
+                        d::FONT_SIZE_PAGE_TITLE * REM,
+                        d::FONT_SIZE_SECTION_TITLE * REM,
+                    ),
+                    (
+                        d::HEIGHT_MD * REM,
+                        d::PADDING_Y_MD * REM,
+                        d::HEIGHT_COMPACT * REM,
+                        d::PADDING_Y_COMPACT * REM,
+                    ),
+                )
+            }
         };
         let controls = kai_controls(controls, &space, &typography);
         Self {
@@ -618,35 +648,6 @@ impl Theme {
     }
 }
 
-fn color_tokens() -> ColorTokens {
-    let background = Color::hex(0xffffff);
-    let neutral = Color::hex(0xf3f4f6);
-    let muted_foreground = Color::hex(0x7a8280);
-    let foreground = Color::hex(0x131615);
-    ColorTokens {
-        primary: Color::hex(0x1e73ae),
-        background,
-        surface: Color::hex(0xfcfffe),
-        foreground,
-        border: Color::hex(0xa5c2c2),
-        active: Color::hex(0x02578b),
-        accent: Color::hex(0x02578b),
-        secondary: Color::hex(0x00deef),
-        muted: Color::hex(0xcfeef0),
-        muted_foreground,
-        success: Color::hex(0x2e9e5b),
-        info: Color::hex(0x1e73ae),
-        warning: Color::hex(0xe6a100),
-        error: Color::hex(0xd64545),
-        neutral,
-        hover: neutral.mix(background, 0.65),
-        text_primary: foreground,
-        text_secondary: muted_foreground,
-        text_disabled: muted_foreground.with_alpha(alpha(0.72)),
-        text_on_primary: Color::hex(0xffffff),
-    }
-}
-
 /// Semantic colors of the Kai theme, derived from the web tokens so every
 /// current use keeps its exact color.
 fn kai_semantic(c: &ColorTokens) -> SemanticColors {
@@ -787,18 +788,18 @@ fn type_tokens(body: f32, sm: f32, xs: f32, page_title: f32, section_title: f32)
         font_size_xs: xs,
         font_size_page_title: page_title,
         font_size_section_title: section_title,
-        line_height_tight: 1.25,
-        line_height_normal: 1.5,
-        line_height_relaxed: 1.625,
-        weight_regular: Weight(400),
-        weight_medium: Weight(500),
-        weight_semibold: Weight(600),
-        weight_bold: Weight(700),
+        line_height_tight: kai_tokens::LINE_HEIGHT_TIGHT,
+        line_height_normal: kai_tokens::LINE_HEIGHT_NORMAL,
+        line_height_relaxed: kai_tokens::LINE_HEIGHT_RELAXED,
+        weight_regular: Weight(kai_tokens::WEIGHT_REGULAR),
+        weight_medium: Weight(kai_tokens::WEIGHT_MEDIUM),
+        weight_semibold: Weight(kai_tokens::WEIGHT_SEMIBOLD),
+        weight_bold: Weight(kai_tokens::WEIGHT_BOLD),
         styles: kai_text_styles(body, sm, xs, page_title, section_title),
     }
 }
 
-fn alpha(fraction: f32) -> u8 {
+pub(crate) fn alpha(fraction: f32) -> u8 {
     (fraction * 255.0).round() as u8
 }
 
