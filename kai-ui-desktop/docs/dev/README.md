@@ -22,6 +22,9 @@ Esta documentación describe la implementación gradual de un framework de inter
 16. [Caso especial: tablas con muchos registros y datos remotos](15-tablas-con-muchos-registros.md)
 17. [Widget Document (WordCraft)](16-widget-document.md)
 18. [Ribbon Kai del Document](17-document-ribbon.md)
+19. [Patrones Empty y Loading](18-patterns-empty-loading.md)
+20. [Iconografía de campos](19-iconografia-campos.md)
+21. [Contraste WCAG](20-contraste-wcag.md)
 
 ## Dónde estamos
 

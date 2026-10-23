@@ -288,3 +288,11 @@ app.screen().get_by_test_id("form.password.toggle");
 - **Componentes propios.** `.part("nombre")` marca una parte y `.parts_root()` marca la raíz del componente. `assign_ids` le da a cada parte `<id del ancestro más cercano con test_id propio>.<nombre>`: las partes anidadas no se encadenan (`x.title`, no `x.header.title`). Si la raíz no tiene id, sus partes no toman el de un ancestro; así dos campos sin id dentro de `card().test_id("form")` no chocan. Un `test_id` explícito siempre gana sobre la parte.
 - **`TestApp`.** `value`, `is_focused` e `is_enabled` sobre la raíz de un `TextField` actúan sobre su input, así que `By::test_id("form.nombre")` sirve igual que `By::test_id("form.nombre.input")`.
 - **Sin layout.** `Element::find_test_id("x.title")` busca en el árbol después de `assign_ids`, para tests de componentes que no necesitan `Screen`.
+
+## Patrones e iconografía (P0 design system)
+
+- Estados de TextField/Button exhibidos en la demo (Campos → «Estados de TextField», Botones → «Estados de Button»). `TextField::error` pinta borde y helper en danger.
+- Empty/Loading: [`EmptyState`](18-patterns-empty-loading.md) y `loading_placeholder`.
+- Iconos de campo: [`field_icon_for`](19-iconografia-campos.md) / `TextField::field_icon`.
+- Contraste AA medido: [`theme::contrast`](20-contraste-wcag.md).
+

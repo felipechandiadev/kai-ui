@@ -17,15 +17,16 @@ use crate::commands::{
 use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
     CHOICE_ACTIVE, CHOICE_HOVER, ChartKind, Column, Dialog, DialogWidth, DotProgress, DotSize,
-    FieldBezel, FieldDensity, FieldVariant, IconButtonSize, IconButtonVariant, LabelLayout,
-    MediaSlot, MediaVariant, SearchVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity,
-    Table, TableView, Tabs, TextField, Toast, ViewChange, alert, avatar, badge, button,
-    button_sized, caption, card, card_actions, card_content, card_header, chart, checkbox,
-    checkbox_with_options, color_field, column_menu, dot_progress, group_box, heading, icon_button,
-    icon_button_sized, paragraph, search_field, segmented, segmented_with_options, select,
-    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
-    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
-    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
+    EmptyState, FieldBezel, FieldDensity, FieldKind, FieldVariant, IconButtonSize,
+    IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, SearchVariant, Sidebar, SidebarGroup,
+    SidebarItem, SwitchDensity, Table, TableView, Tabs, TextField, Toast, ViewChange, alert,
+    avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
+    chart, checkbox, checkbox_with_options, color_field, column_menu, dot_progress, group_box,
+    heading, icon_button, icon_button_sized, loading_placeholder, paragraph, search_field,
+    segmented, segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
+    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
+    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
+    virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::document::{document, DocumentChange, DocumentCmd};
@@ -2041,12 +2042,12 @@ impl App for Demo {
                         // Return here activates «Enviar», the default button.
                         TextField::new("Nombre", &self.name)
                             .test_id("form.nombre")
-                            .start_icon(Icon::User)
+                            .field_icon(FieldKind::Name)
                             .on_input(Msg::NameChanged)
                             .build(),
                         TextField::new("Correo", &self.email)
                             .test_id("form.correo")
-                            .start_icon(Icon::Search)
+                            .field_icon(FieldKind::Email)
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
                             .build(),
@@ -2202,9 +2203,10 @@ impl App for Demo {
                 form,
                 stats,
             ],
-            Seccion::Campos => vec![self.fields(), self.more_fields()],
+            Seccion::Campos => vec![self.fields(), self.more_fields(), self.field_states()],
             Seccion::Botones => vec![
                 buttons_section,
+                self.button_states(),
                 self.waiting_buttons(),
                 self.appkit_buttons(),
                 self.control_sizes(),
@@ -2213,7 +2215,11 @@ impl App for Demo {
             Seccion::Contenedores => self.containers(),
             Seccion::Badges => vec![badges_and_alerts],
             Seccion::Multimedia => vec![self.avatars(), self.image_fields()],
-            Seccion::Tabla => vec![self.client_table(), self.simple_list()],
+            Seccion::Tabla => vec![
+                self.client_table(),
+                self.simple_list(),
+                self.patterns_empty_loading(),
+            ],
             Seccion::Mapa => vec![self.mapa()],
             Seccion::Graficos => self.graficos(),
             Seccion::Documento => vec![self.documento()],
@@ -2301,6 +2307,73 @@ impl Demo {
             "w-40 sm:w-52 shrink-0"
         })
         .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
+    }
+
+    /// Matriz de estados de Button: variantes + disabled + loading.
+    fn button_states(&self) -> Element<Msg> {
+        let row = |label: &str, children: Vec<Element<Msg>>| {
+            div()
+                .class("flex flex-col gap-2")
+                .children([
+                    caption(label),
+                    div()
+                        .class("flex flex-wrap items-center gap-3")
+                        .children(children),
+                ])
+        };
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("botones.estados")
+            .children([
+                card_header(
+                    "Estados de Button",
+                    Some(
+                        "Primary / Secondary / Outlined / Danger, disabled y loading                          (hover nativo del tema)",
+                    ),
+                ),
+                card_content().class("gap-4").children([
+                    row(
+                        "Variantes",
+                        vec![
+                            button("Primary", ButtonVariant::Primary),
+                            button("Secondary", ButtonVariant::Secondary),
+                            button("Outlined", ButtonVariant::Outlined),
+                            button("Danger", ButtonVariant::Danger),
+                        ],
+                    ),
+                    row(
+                        "Disabled",
+                        vec![
+                            button("Primary", ButtonVariant::Primary).disabled(true),
+                            button("Secondary", ButtonVariant::Secondary).disabled(true),
+                            button("Outlined", ButtonVariant::Outlined).disabled(true),
+                            button("Danger", ButtonVariant::Danger).disabled(true),
+                        ],
+                    ),
+                    row(
+                        "Loading",
+                        vec![
+                            Button::new("Primary")
+                                .accent(true)
+                                .loading(true)
+                                .on_click(Msg::Increment)
+                                .build(),
+                            Button::new("Secondary")
+                                .loading(true)
+                                .on_click(Msg::Increment)
+                                .build(),
+                            button("Outlined", ButtonVariant::Outlined)
+                                .on_click(Msg::Increment)
+                                .busy(true),
+                            Button::new("Danger")
+                                .destructive(true)
+                                .loading(true)
+                                .on_click(Msg::Increment)
+                                .build(),
+                        ],
+                    ),
+                ]),
+            ])
     }
 
     /// Buttons that start a task (`Effects::perform`): busy, with the dots
@@ -3403,6 +3476,120 @@ impl Demo {
         ])
     }
 
+    /// Matriz de estados TextField (demo kit): placeholders neutros AppKit.
+    fn field_states(&self) -> Element<Msg> {
+        let cell = |label: &str, field: Element<Msg>| {
+            div()
+                .class("flex flex-col gap-1.5 min-w-0")
+                .children([
+                    caption(label).class("text-secondary-label"),
+                    field,
+                ])
+        };
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("campos.estados")
+            .children([
+                card_header(
+                    "Estados de TextField",
+                    Some(
+                        "Default, foco (focus-within), disabled, required, helper y error —                          placeholders neutros",
+                    ),
+                ),
+                card_content().class("gap-4").children([
+                    div()
+                        .class("grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5")
+                        .children([
+                            cell(
+                                "Default",
+                                TextField::new("Nombre", "")
+                                    .placeholder("Valor de ejemplo")
+                                    .field_icon(FieldKind::Name)
+                                    .test_id("estados.default")
+                                    .build(),
+                            ),
+                            cell(
+                                "Con valor (foco vía Tab)",
+                                TextField::new("Correo", "ana@example.com")
+                                    .field_icon(FieldKind::Email)
+                                    .test_id("estados.focus")
+                                    .build(),
+                            ),
+                            cell(
+                                "Disabled",
+                                TextField::new("Teléfono", "+56 9 1234 5678")
+                                    .field_icon(FieldKind::Phone)
+                                    .disabled(true)
+                                    .test_id("estados.disabled")
+                                    .build(),
+                            ),
+                            cell(
+                                "Required",
+                                TextField::new("Usuario", "")
+                                    .placeholder("Requerido")
+                                    .field_icon(FieldKind::User)
+                                    .required(true)
+                                    .test_id("estados.required")
+                                    .build(),
+                            ),
+                            cell(
+                                "Helper text",
+                                TextField::new("Búsqueda", "")
+                                    .placeholder("Escribe para filtrar")
+                                    .field_icon(FieldKind::Search)
+                                    .helper_text("Puedes usar palabras clave")
+                                    .test_id("estados.helper")
+                                    .build(),
+                            ),
+                            cell(
+                                "Error",
+                                TextField::new("Correo", "no-es-un-correo")
+                                    .field_icon(FieldKind::Email)
+                                    .helper_text("Introduce un correo válido")
+                                    .error(true)
+                                    .test_id("estados.error")
+                                    .build(),
+                            ),
+                        ]),
+                ]),
+            ])
+    }
+
+    /// EmptyState + loading placeholder (patrones de datos).
+    fn patterns_empty_loading(&self) -> Element<Msg> {
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("patrones.empty_loading")
+            .children([
+                card_header(
+                    "Empty y Loading",
+                    Some("Patrones reutilizables para listas y tablas vacías o en carga"),
+                ),
+                card_content().class("gap-4").children([
+                    div()
+                        .class(
+                            "rounded-md border border-border appkit:border-separator overflow-hidden",
+                        )
+                        .test_id("patrones.empty")
+                        .child(
+                            EmptyState::new(Icon::Inbox, "No hay resultados")
+                                .description(
+                                    "Prueba otro filtro o crea un elemento para empezar.",
+                                )
+                                .action("Crear elemento", Msg::Increment)
+                                .test_id("patrones.empty.state")
+                                .build(),
+                        ),
+                    div()
+                        .class(
+                            "rounded-md border border-border appkit:border-separator                              overflow-hidden",
+                        )
+                        .test_id("patrones.loading")
+                        .child(loading_placeholder("Cargando filas…")),
+                ]),
+            ])
+    }
+
     /// Card showing the TextField props implemented so far.
     fn fields(&self) -> Element<Msg> {
         let edit = |field: Field| move |value: String| Msg::Edit(field, value);
@@ -3445,12 +3632,13 @@ impl Demo {
                     .class("grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5")
                     .children([
                         TextField::new("Buscar", &self.search)
-                            .placeholder("Buscar productos")
-                            .start_icon(Icon::Search)
+                            .placeholder("Texto de búsqueda")
+                            .field_icon(FieldKind::Search)
                             .on_input(edit(Field::Search))
                             .build(),
                         TextField::new("Contraseña", &self.password)
                             .test_id("form.password")
+                            .field_icon(FieldKind::Password)
                             .password_command(self.show_password, AlternarContrasena)
                             .required(true)
                             .helper_text("Mínimo 8 caracteres")

@@ -8,6 +8,12 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Design system P0 (Polaris/Carbon/M3 gap):**
+  - Matriz de estados en la demo: Campos → «Estados de TextField» (default/focus/disabled/required/helper/error) y Botones → «Estados de Button» (variantes + disabled + loading). Placeholders neutros. `TextField::error` (borde + helper danger AppKit).
+  - Patrones `EmptyState` + `loading_placeholder` (lista/tabla); demo en Tabla. Docs [`18-patterns-empty-loading.md`](docs/dev/18-patterns-empty-loading.md).
+  - Mapa de iconografía de campos (`FieldKind`, `field_icon_for`, `TextField::field_icon`); iconos Lucide `lock`/`phone`. Docs [`19-iconografia-campos.md`](docs/dev/19-iconografia-campos.md). Correo de Inicio ya no usa lupa.
+  - Contraste WCAG E2E: `Color::contrast_ratio` / `composite_over` + tests `theme::contrast` (AA con excepciones documentadas). Docs [`20-contraste-wcag.md`](docs/dev/20-contraste-wcag.md).
+
 - **Ribbon Documento AppKit (iconos + ES):** comandos como `toolbar_item` (icono + tooltip ES + atajo); labels de grupo 11px muted y separadores verticales; tabs Inicio/Insertar/Diseño/…; QAT Abrir/Guardar/Exportar PDF a la izquierda de las tabs (`DocumentRibbon::leading`). Catálogo Lucide ampliado (bold/italic/align/undo/…). Docs [`17-document-ribbon.md`](docs/dev/17-document-ribbon.md). Ids de comando siguen en EN.
 
 - **Caret blink (P0):** fase booleana ~530 ms (AppKit) en TextField y Document; `Session::animating` pide frames con foco de texto; reset al tipar/mover caret; `reduce_motion` → caret fijo visible; Document usa `semantic.caret` y oculta si ventana inactiva.
