@@ -16,7 +16,7 @@ pub mod wgpu_backend;
 
 use crate::background::BackgroundLayer;
 use crate::element::WidgetId;
-use crate::geometry::{Point, Rect};
+use crate::geometry::{ClipRect, Point, Rect};
 use crate::icons::Icon;
 pub use geometry::{Affine2, GeometryDraw, Mesh};
 pub use images::Bitmap;
@@ -266,8 +266,9 @@ pub enum DrawOp {
     Image(ImageDraw),
     /// A triangle mesh (fill or screen-width stroke), antialiased by MSAA.
     Geometry(GeometryDraw),
-    /// Intersect the current clip with `rect` until the matching `PopClip`.
-    PushClip(Rect),
+    /// Intersect the current clip with `clip` until the matching `PopClip`.
+    /// A rounded clip keeps an SDF mask so children follow the curve.
+    PushClip(ClipRect),
     PopClip,
     Text {
         id: TextId,
@@ -310,7 +311,11 @@ impl DrawList {
     }
 
     pub fn push_clip(&mut self, rect: Rect) {
-        self.ops.push(DrawOp::PushClip(rect));
+        self.push_clip_rect(ClipRect::sharp(rect));
+    }
+
+    pub fn push_clip_rect(&mut self, clip: ClipRect) {
+        self.ops.push(DrawOp::PushClip(clip));
     }
 
     pub fn pop_clip(&mut self) {
@@ -326,7 +331,7 @@ impl DrawList {
 pub struct ClippedQuad {
     pub quad: Quad,
     /// Effective clip; `None` means unclipped (whole surface).
-    pub clip: Option<Rect>,
+    pub clip: Option<ClipRect>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -335,21 +340,22 @@ pub struct TextDraw {
     pub origin: Point,
     pub color: Color,
     /// Effective clip; `None` means unclipped (whole surface).
-    pub clip: Option<Rect>,
+    /// Text shaping uses the AABB only; the rounded mask is ignored here.
+    pub clip: Option<ClipRect>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClippedImage {
     pub image: ImageDraw,
     /// Effective clip; `None` means unclipped (whole surface).
-    pub clip: Option<Rect>,
+    pub clip: Option<ClipRect>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClippedGeometry {
     pub draw: GeometryDraw,
     /// Effective clip; `None` means unclipped (whole surface).
-    pub clip: Option<Rect>,
+    pub clip: Option<ClipRect>,
 }
 
 /// Consecutive ops of one kind; batches are drawn in order.
@@ -364,15 +370,15 @@ pub enum Batch {
 #[derive(Clone, Copy)]
 enum Clip {
     Unclipped,
-    Visible(Rect),
+    Visible(ClipRect),
     Empty,
 }
 
 impl Clip {
-    fn rect(self) -> Option<Option<Rect>> {
+    fn clip(self) -> Option<Option<ClipRect>> {
         match self {
             Self::Unclipped => Some(None),
-            Self::Visible(rect) => Some(Some(rect)),
+            Self::Visible(clip) => Some(Some(clip)),
             Self::Empty => None,
         }
     }
@@ -397,13 +403,13 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                 }
             }
             DrawOp::Quad(quad) => {
-                let Some(clip) = current.rect() else {
+                let Some(clip) = current.clip() else {
                     continue;
                 };
                 let invisible =
                     quad.fill.a == 0 && (quad.border.a == 0 || quad.border_width <= 0.0);
                 let clipped_out =
-                    clip.is_some_and(|clip| quad.extent().intersection(clip).is_none());
+                    clip.is_some_and(|clip| quad.extent().intersection(clip.rect).is_none());
                 if invisible || clipped_out {
                     continue;
                 }
@@ -414,11 +420,12 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                 }
             }
             DrawOp::Image(image) => {
-                let Some(clip) = current.rect() else {
+                let Some(clip) = current.clip() else {
                     continue;
                 };
                 let empty = image.rect.width <= 0.0 || image.rect.height <= 0.0;
-                let clipped_out = clip.is_some_and(|clip| image.rect.intersection(clip).is_none());
+                let clipped_out =
+                    clip.is_some_and(|clip| image.rect.intersection(clip.rect).is_none());
                 if image.opacity <= 0.0 || empty || clipped_out {
                     continue;
                 }
@@ -432,13 +439,13 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                 }
             }
             DrawOp::Geometry(draw) => {
-                let Some(clip) = current.rect() else {
+                let Some(clip) = current.clip() else {
                     continue;
                 };
                 let Some(extent) = draw.extent() else {
                     continue;
                 };
-                let clipped_out = clip.is_some_and(|clip| extent.intersection(clip).is_none());
+                let clipped_out = clip.is_some_and(|clip| extent.intersection(clip.rect).is_none());
                 if draw.color.a == 0 || draw.mesh.is_empty() || clipped_out {
                     continue;
                 }
@@ -452,7 +459,7 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
                 }
             }
             DrawOp::Text { id, origin, color } => {
-                let Some(clip) = current.rect() else {
+                let Some(clip) = current.clip() else {
                     continue;
                 };
                 if color.a == 0 {
@@ -478,7 +485,7 @@ pub fn resolve(list: &DrawList) -> Vec<Batch> {
 mod tests {
     use super::{Batch, Color, DrawList, Quad, TextId, resolve, srgb_to_linear};
     use crate::element::WidgetId;
-    use crate::geometry::{Point, Rect};
+    use crate::geometry::{ClipRect, Point, Rect};
 
     const TEXT: TextId = TextId::content(WidgetId(1));
 
@@ -575,7 +582,10 @@ mod tests {
             panic!("quads first");
         };
         assert_eq!(quads.len(), 1, "quad outside the clip is dropped");
-        assert_eq!(quads[0].clip, Some(rect(50.0, 50.0, 50.0, 50.0)));
+        assert_eq!(
+            quads[0].clip,
+            Some(ClipRect::sharp(rect(50.0, 50.0, 50.0, 50.0)))
+        );
         assert_eq!(
             quads[0].quad.rect,
             rect(0.0, 0.0, 80.0, 80.0),
@@ -644,7 +654,10 @@ mod tests {
         let Batch::Images(clipped) = &batches[3] else {
             panic!("images");
         };
-        assert_eq!(clipped[0].clip, Some(rect(0.0, 0.0, 30.0, 30.0)));
+        assert_eq!(
+            clipped[0].clip,
+            Some(ClipRect::sharp(rect(0.0, 0.0, 30.0, 30.0)))
+        );
         assert_eq!(clipped[0].image.bitmap, photo);
         let Batch::Images(first) = &batches[1] else {
             panic!("images");
@@ -713,7 +726,41 @@ mod tests {
         let Batch::Geometry(clipped) = &batches[3] else {
             panic!("geometry");
         };
-        assert_eq!(clipped[0].clip, Some(rect(0.0, 0.0, 20.0, 20.0)));
+        assert_eq!(
+            clipped[0].clip,
+            Some(ClipRect::sharp(rect(0.0, 0.0, 20.0, 20.0)))
+        );
         assert_eq!(clipped[0].draw.width, 2.0);
+    }
+
+    #[test]
+    fn rounded_clip_keeps_the_sdf_mask_through_resolve() {
+        let mut list = DrawList::new(Color::rgb(255, 255, 255));
+        list.push_clip_rect(ClipRect::rounded(rect(0.0, 0.0, 100.0, 100.0), 20.0));
+        list.fill_rect(rect(0.0, 0.0, 100.0, 100.0), Color::rgb(0, 0, 0));
+        list.pop_clip();
+        let batches = resolve(&list);
+        let Batch::Quads(quads) = &batches[0] else {
+            panic!("expected quads");
+        };
+        let clip = quads[0].clip.expect("clipped");
+        assert!(clip.round.is_some());
+        assert!((clip.round.unwrap().radius - 20.0).abs() < f32::EPSILON);
+        list = DrawList::new(Color::rgb(255, 255, 255));
+        list.push_clip_rect(ClipRect::rounded(rect(0.0, 0.0, 100.0, 100.0), 20.0));
+        list.push_clip(rect(10.0, 10.0, 40.0, 40.0));
+        list.fill_rect(rect(0.0, 0.0, 100.0, 100.0), Color::rgb(0, 0, 0));
+        list.pop_clip();
+        list.pop_clip();
+        let batches = resolve(&list);
+        let Batch::Quads(quads) = &batches[0] else {
+            panic!("expected quads");
+        };
+        let clip = quads[0].clip.expect("nested clip");
+        assert_eq!(clip.rect.x, 10.0);
+        assert!(
+            clip.round.is_some(),
+            "sharp child clip keeps the parent rounded mask"
+        );
     }
 }

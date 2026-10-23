@@ -11,7 +11,7 @@
 use super::{DrawList, ImageDraw, Mask, Quad, TRANSPARENT, TextId};
 use crate::background::{BackgroundEffect, BackgroundLayer};
 use crate::element::WidgetId;
-use crate::geometry::{Point, Rect};
+use crate::geometry::{ClipRect, Point, Rect};
 use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
 use crate::render::Color;
 use crate::style::ObjectFit;
@@ -43,7 +43,7 @@ pub struct PaintInput<'a> {
 struct Painter<'a> {
     input: &'a PaintInput<'a>,
     list: DrawList,
-    clip: Option<Rect>,
+    clip: Option<ClipRect>,
 }
 
 pub fn paint(input: &PaintInput<'_>) -> DrawList {
@@ -149,15 +149,15 @@ fn shifted(node: &LayoutNode, dy: f32) -> LayoutNode {
 }
 
 impl Painter<'_> {
-    fn set_clip(&mut self, clip: Option<Rect>) {
+    fn set_clip(&mut self, clip: Option<ClipRect>) {
         if clip == self.clip {
             return;
         }
         if self.clip.is_some() {
             self.list.pop_clip();
         }
-        if let Some(rect) = clip {
-            self.list.push_clip(rect);
+        if let Some(clip) = clip {
+            self.list.push_clip_rect(clip);
         }
         self.clip = clip;
     }
@@ -362,12 +362,14 @@ impl Painter<'_> {
             }
         };
         let clip = match node.clip {
-            None => interior,
-            Some(clip) => clip.intersection(interior).unwrap_or(Rect {
-                width: 0.0,
-                height: 0.0,
-                ..interior
-            }),
+            None => ClipRect::sharp(interior),
+            Some(clip) => clip
+                .intersection(ClipRect::sharp(interior))
+                .unwrap_or(ClipRect::sharp(Rect {
+                    width: 0.0,
+                    height: 0.0,
+                    ..interior
+                })),
         };
         self.set_clip(Some(clip));
         let line_origin = origin(line);
@@ -493,7 +495,7 @@ mod tests {
     use crate::background::{BackgroundEffect, BackgroundKind};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, icon, text};
-    use crate::geometry::{Point, Rect, Size};
+    use crate::geometry::{ClipRect, Point, Rect, Size};
     use crate::icons::Icon;
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
@@ -947,12 +949,12 @@ mod tests {
         };
         assert_eq!(
             texts[0].clip,
-            Some(Rect {
+            Some(ClipRect::sharp(Rect {
                 x: 0.0,
                 y: 0.0,
                 width: 80.0,
                 height: 80.0
-            })
+            }))
         );
         assert_eq!(texts[0].origin, Point { x: 0.0, y: 0.0 });
     }

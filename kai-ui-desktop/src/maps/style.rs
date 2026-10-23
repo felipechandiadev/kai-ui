@@ -468,7 +468,7 @@ mod tests {
 
     use super::*;
     use crate::geo::{LatLon, MapView, project};
-    use crate::geometry::Point;
+    use crate::geometry::{ClipRect, Point};
     use crate::maps::mvt::TileMeshes;
     use crate::maps::tiles::{PlacedTile, TileFrame, TileSource, TileStore};
     use crate::render::{DrawOp, Mesh};
@@ -633,7 +633,7 @@ mod tests {
         let mut list = DrawList::new(Color::rgb(255, 255, 255));
         paint(&mut list, AREA, &spec, &theme);
         let ops = &list.ops;
-        assert_eq!(ops.first(), Some(&DrawOp::PushClip(AREA)));
+        assert_eq!(ops.first(), Some(&DrawOp::PushClip(ClipRect::sharp(AREA))));
         assert_eq!(ops.last(), Some(&DrawOp::PopClip));
 
         let geometry: Vec<&GeometryDraw> = ops
@@ -677,7 +677,7 @@ mod tests {
             .iter()
             .position(|op| matches!(op, DrawOp::Geometry(_)))
             .unwrap();
-        assert_eq!(ops[index - 1], DrawOp::PushClip(inside));
+        assert_eq!(ops[index - 1], DrawOp::PushClip(ClipRect::sharp(inside)));
         assert_eq!(ops[index + 1], DrawOp::PopClip);
         assert_eq!(
             geometry[0].transform.a,

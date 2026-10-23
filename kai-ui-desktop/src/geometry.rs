@@ -105,6 +105,86 @@ impl Rect {
     }
 }
 
+/// Axis-aligned clip with an optional rounded mask. Overflow ancestors build
+/// these in layout; the renderer discards pixels outside `rect` and, when
+/// `round` is set, outside that rounded rectangle (SDF), so
+/// `rounded-xl overflow-hidden` clips its children to the curve.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClipRect {
+    /// Intersection of every overflow clip on the stack.
+    pub rect: Rect,
+    /// Rounded mask from an overflow ancestor (`None`: sharp AABB only).
+    pub round: Option<RoundClip>,
+}
+
+/// A rounded rectangle used as an SDF clip mask.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoundClip {
+    pub rect: Rect,
+    pub radius: f32,
+}
+
+impl ClipRect {
+    pub fn sharp(rect: Rect) -> Self {
+        Self { rect, round: None }
+    }
+
+    /// Clip to `rect`, rounded when `radius` is positive.
+    pub fn rounded(rect: Rect, radius: f32) -> Self {
+        let radius = radius.min(rect.width.min(rect.height) / 2.0).max(0.0);
+        Self {
+            rect,
+            round: (radius > 0.0).then_some(RoundClip { rect, radius }),
+        }
+    }
+
+    pub fn contains(self, point: Point) -> bool {
+        self.rect.contains(point) && self.round.is_none_or(|round| round.contains(point))
+    }
+
+    pub fn intersection(self, other: Self) -> Option<Self> {
+        let rect = self.rect.intersection(other.rect)?;
+        // Innermost rounded mask wins; otherwise keep the ancestor's.
+        let round = other.round.or(self.round);
+        Some(Self { rect, round })
+    }
+
+    pub fn translated(self, offset: Point) -> Self {
+        Self {
+            rect: self.rect.translated(offset),
+            round: self.round.map(|round| RoundClip {
+                rect: round.rect.translated(offset),
+                radius: round.radius,
+            }),
+        }
+    }
+}
+
+impl RoundClip {
+    /// Whether `point` lies inside this rounded rectangle (including the edge).
+    pub fn contains(self, point: Point) -> bool {
+        let Rect {
+            x,
+            y,
+            width,
+            height,
+        } = self.rect;
+        if width <= 0.0 || height <= 0.0 {
+            return false;
+        }
+        let radius = self.radius.min(width.min(height) / 2.0).max(0.0);
+        if radius <= 0.0 {
+            return self.rect.contains(point);
+        }
+        let half_w = width * 0.5;
+        let half_h = height * 0.5;
+        let px = (point.x - (x + half_w)).abs() - half_w + radius;
+        let py = (point.y - (y + half_h)).abs() - half_h + radius;
+        let outside = px.max(0.0).hypot(py.max(0.0)) + px.max(py).min(0.0) - radius;
+        outside <= 0.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicalPoint {
     pub x: f64,
@@ -159,7 +239,7 @@ pub struct NdcRect {
 
 #[cfg(test)]
 mod tests {
-    use super::{Insets, PhysicalPoint, Point, Rect, ScaleFactor, Size};
+    use super::{ClipRect, Insets, PhysicalPoint, Point, Rect, ScaleFactor, Size};
 
     const SAMPLE_RECT: Rect = Rect {
         x: 10.0,
@@ -280,5 +360,43 @@ mod tests {
                 bottom: -0.20000005,
             })
         );
+    }
+
+    #[test]
+    fn rounded_clip_contains_points_inside_the_curve() {
+        let clip = ClipRect::rounded(
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 100.0,
+            },
+            20.0,
+        );
+        assert!(clip.contains(Point { x: 50.0, y: 50.0 }));
+        assert!(
+            clip.contains(Point { x: 20.0, y: 50.0 }),
+            "on the flat edge"
+        );
+        assert!(
+            !clip.contains(Point { x: 2.0, y: 2.0 }),
+            "outside the rounded corner"
+        );
+        assert!(clip.contains(Point { x: 20.0, y: 20.0 }), "on the arc");
+        let nested = clip
+            .intersection(ClipRect::sharp(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 30.0,
+                height: 30.0,
+            }))
+            .unwrap();
+        assert_eq!(nested.rect.width, 30.0);
+        assert!(nested.round.is_some(), "keeps the rounded mask");
+        assert!(
+            !nested.contains(Point { x: 2.0, y: 2.0 }),
+            "still outside the parent curve"
+        );
+        assert!(nested.contains(Point { x: 20.0, y: 20.0 }));
     }
 }

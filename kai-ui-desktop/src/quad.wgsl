@@ -18,12 +18,15 @@ struct Instance {
     @location(0) rect: vec4<f32>,
     @location(1) fill: vec4<f32>,
     @location(2) border: vec4<f32>,
-    // left, top, right, bottom
+    // left, top, right, bottom (AABB clip)
     @location(3) clip: vec4<f32>,
     // radius, border width, blur, mask mode
     @location(4) params: vec4<f32>,
     // mask region in the atlas: x, y, size, unused
     @location(5) uv: vec4<f32>,
+    // rounded overflow mask: left, top, right, bottom; radius in clip_round_params.x
+    @location(6) clip_round: vec4<f32>,
+    @location(7) clip_round_params: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -35,6 +38,8 @@ struct VertexOutput {
     @location(4) clip: vec4<f32>,
     @location(5) params: vec4<f32>,
     @location(6) uv: vec4<f32>,
+    @location(7) clip_round: vec4<f32>,
+    @location(8) clip_round_params: vec4<f32>,
 };
 
 @vertex
@@ -67,6 +72,8 @@ fn vs_main(@builtin(vertex_index) index: u32, instance: Instance) -> VertexOutpu
     output.clip = instance.clip;
     output.params = instance.params;
     output.uv = instance.uv;
+    output.clip_round = instance.clip_round;
+    output.clip_round_params = instance.clip_round_params;
     return output;
 }
 
@@ -85,6 +92,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if (pixel.x < input.clip.x || pixel.y < input.clip.y || pixel.x > input.clip.z || pixel.y > input.clip.w) {
         discard;
     }
+    var clip_coverage = 1.0;
+    let clip_radius = input.clip_round_params.x;
+    if (clip_radius > 0.0) {
+        let half = (input.clip_round.zw - input.clip_round.xy) * 0.5;
+        let center = (input.clip_round.xy + input.clip_round.zw) * 0.5;
+        let radius = min(clip_radius, min(half.x, half.y));
+        let distance = rounded_box(pixel - center, half, radius);
+        clip_coverage = clamp(0.5 - distance, 0.0, 1.0);
+        if (clip_coverage <= 0.0) {
+            discard;
+        }
+    }
     if (input.params.w > 0.5) {
         let texel = input.local + input.half_size;
         let size = input.uv.z;
@@ -92,14 +111,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
         let coverage = textureLoad(masks, vec2<i32>(floor(input.uv.xy + texel)), 0).r;
-        return premultiply(input.fill) * coverage;
+        return premultiply(input.fill) * coverage * clip_coverage;
     }
     let radius = min(input.params.x, min(input.half_size.x, input.half_size.y));
     let distance = rounded_box(input.local, input.half_size, radius);
     let blur = input.params.z;
     if (blur > 0.0) {
         let alpha = 1.0 - smoothstep(-blur, blur, distance);
-        return premultiply(input.fill) * alpha;
+        return premultiply(input.fill) * alpha * clip_coverage;
     }
     let coverage = clamp(0.5 - distance, 0.0, 1.0);
     let border_width = input.params.y;
@@ -108,5 +127,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let inside = clamp(0.5 - (distance + border_width), 0.0, 1.0);
         color = mix(premultiply(input.border), color, inside);
     }
-    return color * coverage;
+    return color * coverage * clip_coverage;
 }

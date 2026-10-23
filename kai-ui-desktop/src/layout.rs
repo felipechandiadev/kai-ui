@@ -5,7 +5,8 @@
 //! element's classes are resolved to a [`Style`] for its interaction state
 //! (hover, focus, active, disabled, group) and translated to Taffy, so
 //! block, flex and grid behave as in CSS. Elements with `overflow-hidden` or
-//! `overflow-auto` clip their descendants to their padding box;
+//! `overflow-auto` clip their descendants to their padding box
+//! (with the container's border radius when it is rounded);
 //! `overflow-y-auto` and `overflow-x-auto` elements (`overflow-auto` is both)
 //! also scroll along that axis with their own offset ([`ScrollOffsets`]).
 //!
@@ -21,7 +22,7 @@ use crate::element::{
     ControlSize, ControlState, Element, KeyEquivalent, Kind, Motion, Role, Rows, WidgetId,
 };
 use crate::geo::Camera;
-use crate::geometry::{Insets, Point, Rect, Size};
+use crate::geometry::{ClipRect, Insets, Point, Rect, Size};
 use crate::icons::Icon;
 use crate::maps::{MapSpec, Marker};
 use crate::media::LoadedImage;
@@ -242,7 +243,9 @@ pub struct LayoutNode {
     pub padding_box: Rect,
     pub content_box: Rect,
     /// Clip inherited from overflow ancestors; `None` = the whole window.
-    pub clip: Option<Rect>,
+    /// When an overflow ancestor has a border radius, `round` carries that
+    /// SDF mask so hit-testing and painting follow the curve.
+    pub clip: Option<ClipRect>,
     pub scroll: Option<ScrollState>,
     /// Text area: the text box, or the vertically centered input line.
     pub text_box: Option<Rect>,
@@ -259,7 +262,7 @@ impl LayoutNode {
     pub fn visible_bounds(&self) -> Option<Rect> {
         match self.clip {
             None => Some(self.bounds),
-            Some(clip) => self.bounds.intersection(clip),
+            Some(clip) => self.bounds.intersection(clip.rect),
         }
     }
 
@@ -621,15 +624,16 @@ fn image_size(content: &Content, known: TaffySize<Option<f32>>) -> Size {
     }
 }
 
-fn clip_to(clip: Option<Rect>, rect: Rect) -> Option<Rect> {
-    let empty = Rect {
+fn clip_to(clip: Option<ClipRect>, rect: Rect, radius: f32) -> Option<ClipRect> {
+    let local = ClipRect::rounded(rect, radius);
+    let empty = ClipRect::sharp(Rect {
         width: 0.0,
         height: 0.0,
         ..rect
-    };
+    });
     Some(match clip {
-        None => rect,
-        Some(clip) => clip.intersection(rect).unwrap_or(empty),
+        None => local,
+        Some(parent) => parent.intersection(local).unwrap_or(empty),
     })
 }
 
@@ -958,7 +962,7 @@ fn place(
     taffy: &TaffyTree<Leaf>,
     index: usize,
     parent_origin: Point,
-    clip: Option<Rect>,
+    clip: Option<ClipRect>,
     offsets: &ScrollOffsets,
     text: &mut dyn TextMeasure,
 ) {
@@ -1053,7 +1057,7 @@ fn place(
     {
         clip
     } else {
-        clip_to(clip, padding_box)
+        clip_to(clip, padding_box, node.style.radius)
     };
     let scrolled = node
         .scroll
@@ -1159,14 +1163,14 @@ fn place_sticky(nodes: &mut [LayoutNode]) {
 
 /// Translate a node and its descendants by `delta`; clips made inside the
 /// subtree (different from `outer`) move with it.
-fn shift_subtree(nodes: &mut [LayoutNode], index: usize, delta: Point, outer: Option<Rect>) {
+fn shift_subtree(nodes: &mut [LayoutNode], index: usize, delta: Point, outer: Option<ClipRect>) {
     let node = &mut nodes[index];
     node.bounds = node.bounds.translated(delta);
     node.padding_box = node.padding_box.translated(delta);
     node.content_box = node.content_box.translated(delta);
     node.text_box = node.text_box.map(|rect| rect.translated(delta));
     if node.clip != outer {
-        node.clip = node.clip.map(|rect| rect.translated(delta));
+        node.clip = node.clip.map(|clip| clip.translated(delta));
     }
     for child in node.children.clone() {
         shift_subtree(nodes, child, delta, outer);
@@ -1237,7 +1241,7 @@ mod tests {
     use super::{Axis, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, text};
-    use crate::geometry::{Point, Rect, Size};
+    use crate::geometry::{ClipRect, Point, Rect, Size};
     use crate::render::Color;
     use crate::theme::{AppKitGeneration, Density, Theme, ThemeKind};
     use crate::tw::State;
@@ -1540,7 +1544,7 @@ mod tests {
         assert!(scroll.max > 0.0);
         assert_eq!(scroll.offset, 0.0);
         let field = layout.node(sample::field()).unwrap();
-        assert_eq!(field.clip, Some(root.padding_box));
+        assert_eq!(field.clip, Some(ClipRect::sharp(root.padding_box)));
         assert!(field.visible_bounds().is_none());
 
         let mut offsets = ScrollOffsets::new();
@@ -1567,6 +1571,43 @@ mod tests {
                 .unwrap()
                 .visible_bounds()
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn rounded_overflow_clip_carries_the_container_radius() {
+        let root = tree(
+            div()
+                .class("w-20 h-20 overflow-hidden rounded-xl")
+                .child(div().class("w-40 h-40 bg-accent")),
+        );
+        let layout = layout(
+            &root,
+            Size {
+                width: 80.0,
+                height: 80.0,
+            },
+        );
+        let clipped = layout.get(1);
+        let clip = clipped.clip.expect("child inherits overflow clip");
+        assert!(clip.round.is_some(), "rounded overflow keeps an SDF mask");
+        let radius = clip.round.unwrap().radius;
+        assert!(
+            (radius - 12.0).abs() < 0.1,
+            "rounded-xl is 12px, got {radius}"
+        );
+        assert!(
+            clip.contains(Point { x: 40.0, y: 40.0 }),
+            "center stays hittable"
+        );
+        assert!(
+            !clip.contains(Point { x: 1.0, y: 1.0 }),
+            "corner outside the curve is not hittable"
+        );
+        let corner_hits = layout.hit_path(Point { x: 1.0, y: 1.0 });
+        assert!(
+            !corner_hits.contains(&clipped.id),
+            "child outside the curve is not in the hit path: {corner_hits:?}"
         );
     }
 

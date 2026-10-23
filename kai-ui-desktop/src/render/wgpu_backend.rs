@@ -51,7 +51,7 @@ use super::{
     Batch, Bitmap, ClippedGeometry, ClippedImage, ClippedQuad, Color, DrawList, Mesh, Quad, resolve,
 };
 use crate::background::{AURORA_WHITEN, BackgroundKind, BackgroundLayer};
-use crate::geometry::Rect;
+use crate::geometry::{ClipRect, Rect};
 
 const MIN_INSTANCE_CAPACITY: usize = 256;
 
@@ -73,12 +73,16 @@ pub struct QuadInstance {
     pub rect: [f32; 4],
     pub fill: [f32; 4],
     pub border: [f32; 4],
-    /// left, top, right, bottom in physical pixels.
+    /// left, top, right, bottom in physical pixels (AABB).
     pub clip: [f32; 4],
     /// radius, border width, blur (physical pixels), mask mode (0 or 1).
     pub params: [f32; 4],
     /// Mask region in the atlas: x, y, size in pixels, unused.
     pub uv: [f32; 4],
+    /// Rounded overflow mask: left, top, right, bottom in physical pixels.
+    pub clip_round: [f32; 4],
+    /// clip radius (physical pixels) in `.x`; unused otherwise.
+    pub clip_round_params: [f32; 4],
 }
 
 /// One image of `image.wgsl`, in physical pixels and atlas texels.
@@ -91,10 +95,12 @@ pub struct ImageInstance {
     pub source: [f32; 4],
     /// left, top, right, bottom in physical pixels.
     pub clip: [f32; 4],
-    /// radius (physical pixels), opacity, linear output (0/1), unused.
+    /// radius (physical pixels), opacity, linear output (0/1), overflow clip radius.
     pub params: [f32; 4],
     /// Whole atlas region of the image: x, y, width, height.
     pub region: [f32; 4],
+    /// Rounded overflow mask: left, top, right, bottom in physical pixels.
+    pub clip_round: [f32; 4],
 }
 
 #[repr(C)]
@@ -215,7 +221,9 @@ pub fn build_instances(
     quads
         .iter()
         .filter_map(|ClippedQuad { quad, clip }| {
-            let clip = clip_pixels(*clip, scale, width, height);
+            let aabb = clip_pixels(*clip, scale, width, height);
+            let (clip_round, clip_radius) = clip_round_pixels(*clip, scale, width, height);
+            let clip_round_params = [clip_radius, 0.0, 0.0, 0.0];
             if let Some(key) = mask_key(quad, scale) {
                 let region = masks.get(&key)?;
                 let size = region.size as f32;
@@ -230,9 +238,11 @@ pub fn build_instances(
                     ],
                     fill: color(quad.fill),
                     border: [0.0; 4],
-                    clip,
+                    clip: aabb,
                     params: [0.0, 0.0, 0.0, 1.0],
                     uv: [region.x as f32, region.y as f32, size, 0.0],
+                    clip_round,
+                    clip_round_params,
                 });
             }
             Some(QuadInstance {
@@ -244,7 +254,7 @@ pub fn build_instances(
                 ],
                 fill: color(quad.fill),
                 border: color(quad.border),
-                clip,
+                clip: aabb,
                 params: [
                     quad.radius * scale,
                     quad.border_width * scale,
@@ -252,12 +262,19 @@ pub fn build_instances(
                     0.0,
                 ],
                 uv: [0.0; 4],
+                clip_round,
+                clip_round_params,
             })
         })
         .collect()
 }
 
-fn clip_pixels(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> [f32; 4] {
+fn clip_pixels(clip: Option<ClipRect>, scale: f32, width: u32, height: u32) -> [f32; 4] {
+    let rect = clip.map(|clip| clip.rect);
+    rect_pixels(rect, scale, width, height)
+}
+
+fn rect_pixels(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> [f32; 4] {
     clip.map_or([0.0, 0.0, width as f32, height as f32], |clip| {
         [
             clip.x * scale,
@@ -266,6 +283,28 @@ fn clip_pixels(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> [f32;
             (clip.y + clip.height) * scale,
         ]
     })
+}
+
+/// Rounded overflow mask in physical pixels: (LTRB, radius). Radius `0` means
+/// sharp AABB-only clipping.
+fn clip_round_pixels(
+    clip: Option<ClipRect>,
+    scale: f32,
+    width: u32,
+    height: u32,
+) -> ([f32; 4], f32) {
+    match clip.and_then(|clip| clip.round) {
+        Some(round) => (
+            [
+                round.rect.x * scale,
+                round.rect.y * scale,
+                (round.rect.x + round.rect.width) * scale,
+                (round.rect.y + round.rect.height) * scale,
+            ],
+            round.radius * scale,
+        ),
+        None => ([0.0, 0.0, width as f32, height as f32], 0.0),
+    }
 }
 
 /// Convert logical images to physical instances for a `width` × `height`
@@ -283,6 +322,7 @@ pub fn build_image_instances(
         .filter_map(|ClippedImage { image, clip }| {
             let region = regions.get(&image.bitmap.id())?;
             let (region_width, region_height) = (region.width as f32, region.height as f32);
+            let (clip_round, clip_radius) = clip_round_pixels(*clip, scale, width, height);
             Some(ImageInstance {
                 rect: [
                     image.rect.x * scale,
@@ -301,7 +341,7 @@ pub fn build_image_instances(
                     image.radius * scale,
                     image.opacity.clamp(0.0, 1.0),
                     if linear { 1.0 } else { 0.0 },
-                    0.0,
+                    clip_radius,
                 ],
                 region: [
                     region.x as f32,
@@ -309,6 +349,7 @@ pub fn build_image_instances(
                     region_width,
                     region_height,
                 ],
+                clip_round,
             })
         })
         .collect()
@@ -320,38 +361,55 @@ pub fn build_image_instances(
 pub struct GeometryUniforms {
     /// Columns of the transform's linear part in physical pixels: a, b, c, d.
     pub linear: [f32; 4],
-    /// tx, ty in physical pixels, half the stroke width, unused.
+    /// tx, ty in physical pixels, half the stroke width, overflow clip radius.
     pub translate: [f32; 4],
     /// Premultiplied, encoded for the target.
     pub color: [f32; 4],
+    /// Rounded overflow mask: left, top, right, bottom in physical pixels.
+    pub clip_round: [f32; 4],
 }
 
-/// Uniforms of `draw` at `scale`.
-pub fn geometry_uniforms(draw: &GeometryDraw, scale: f32, linear: bool) -> GeometryUniforms {
+/// Uniforms of `draw` at `scale` under `clip`.
+pub fn geometry_uniforms(
+    draw: &GeometryDraw,
+    clip: Option<ClipRect>,
+    scale: f32,
+    width: u32,
+    height: u32,
+    linear: bool,
+) -> GeometryUniforms {
     let t = draw.transform;
     let [r, g, b, a] = if linear {
         draw.color.to_linear()
     } else {
         draw.color.to_srgb()
     };
+    let (clip_round, clip_radius) = clip_round_pixels(clip, scale, width, height);
     GeometryUniforms {
         linear: [t.a * scale, t.b * scale, t.c * scale, t.d * scale],
         translate: [
             t.tx * scale,
             t.ty * scale,
             draw.width.max(0.0) * scale / 2.0,
-            0.0,
+            clip_radius,
         ],
         color: [r * a, g * a, b * a, a],
+        clip_round,
     }
 }
 
 /// Scissor rect (x, y, width, height in physical pixels) of a logical
 /// clip; `None` when nothing of it is on the surface.
-pub fn scissor_rect(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> Option<[u32; 4]> {
+pub fn scissor_rect(
+    clip: Option<ClipRect>,
+    scale: f32,
+    width: u32,
+    height: u32,
+) -> Option<[u32; 4]> {
     let Some(clip) = clip else {
         return Some([0, 0, width, height]);
     };
+    let clip = clip.rect;
     let left = (clip.x * scale).floor().clamp(0.0, width as f32) as u32;
     let top = (clip.y * scale).floor().clamp(0.0, height as f32) as u32;
     let right = ((clip.x + clip.width) * scale)
@@ -363,8 +421,8 @@ pub fn scissor_rect(clip: Option<Rect>, scale: f32, width: u32, height: u32) -> 
     (right > left && bottom > top).then_some([left, top, right - left, bottom - top])
 }
 
-fn text_bounds(rect: Option<Rect>, scale: f32, width: u32, height: u32) -> TextBounds {
-    match rect {
+fn text_bounds(clip: Option<ClipRect>, scale: f32, width: u32, height: u32) -> TextBounds {
+    match clip.map(|clip| clip.rect) {
         Some(rect) => TextBounds {
             left: (rect.x * scale).floor() as i32,
             top: (rect.y * scale).floor() as i32,
@@ -578,7 +636,9 @@ impl GeometryPass {
                 });
             let offset = self.staged.len();
             self.staged
-                .extend_from_slice(bytemuck::bytes_of(&geometry_uniforms(draw, scale, linear)));
+                .extend_from_slice(bytemuck::bytes_of(&geometry_uniforms(
+                    draw, *clip, scale, size.0, size.1, linear,
+                )));
             self.staged.resize(offset + self.stride, 0);
             self.calls.push(GeometryCall {
                 mesh: mesh.id(),
@@ -656,7 +716,8 @@ impl ImagePass {
                         1 => Float32x4,
                         2 => Float32x4,
                         3 => Float32x4,
-                        4 => Float32x4
+                        4 => Float32x4,
+                        5 => Float32x4
                     ],
                 })],
             },
@@ -1173,7 +1234,9 @@ impl WgpuRenderer {
                         2 => Float32x4,
                         3 => Float32x4,
                         4 => Float32x4,
-                        5 => Float32x4
+                        5 => Float32x4,
+                        6 => Float32x4,
+                        7 => Float32x4
                     ],
                 })],
             },
@@ -1718,7 +1781,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{MIN_INSTANCE_CAPACITY, build_instances, grown_capacity, mask_key, text_bounds};
-    use crate::geometry::Rect;
+    use crate::geometry::{ClipRect, Rect};
     use crate::icons::Icon;
     use crate::render::icons::{AtlasRect, MaskKey};
     use crate::render::{ClippedQuad, Color, Mask, Quad};
@@ -1781,13 +1844,14 @@ mod tests {
             Color::rgba(255, 0, 0, 51),
             3.0,
         );
-        let u = super::geometry_uniforms(&draw, 2.0, false);
+        let u = super::geometry_uniforms(&draw, None, 2.0, 800, 600, false);
         assert_eq!(u.linear, [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(u.translate, [20.0, 40.0, 3.0, 0.0]);
         assert_eq!(u.color, [0.2, 0.0, 0.0, 0.2]);
+        assert_eq!(u.clip_round, [0.0, 0.0, 800.0, 600.0]);
         assert_eq!(
             std::mem::size_of::<super::GeometryUniforms>(),
-            48,
+            64,
             "matches `Draw` in geometry.wgsl"
         );
     }
@@ -1795,12 +1859,12 @@ mod tests {
     #[test]
     fn scissor_rects_cover_the_clip_in_whole_pixels_and_skip_empty_ones() {
         let clip = |x, y, width, height| {
-            Some(Rect {
+            Some(ClipRect::sharp(Rect {
                 x,
                 y,
                 width,
                 height,
-            })
+            }))
         };
         assert_eq!(
             super::scissor_rect(None, 2.0, 800, 600),
@@ -1849,12 +1913,12 @@ mod tests {
             ClippedQuad { quad, clip: None },
             ClippedQuad {
                 quad,
-                clip: Some(Rect {
+                clip: Some(ClipRect::sharp(Rect {
                     x: 10.0,
                     y: 20.0,
                     width: 30.0,
                     height: 40.0,
-                }),
+                })),
             },
         ];
         let none = HashMap::new();
@@ -1863,6 +1927,10 @@ mod tests {
         assert_eq!(linear[0].params, [12.0, 2.0, 0.0, 0.0]);
         assert_eq!(linear[0].clip, [0.0, 0.0, 800.0, 600.0]);
         assert_eq!(linear[1].clip, [20.0, 40.0, 80.0, 120.0]);
+        assert_eq!(
+            linear[0].clip_round_params[0], 0.0,
+            "sharp clip has no SDF mask"
+        );
         assert!((linear[0].fill[1] - 0.2158).abs() < 0.001);
 
         let srgb = build_instances(&quads, 1.0, 800, 600, false, &none);
@@ -1912,12 +1980,12 @@ mod tests {
     #[test]
     fn text_bounds_scale_clip_or_cover_surface() {
         let bounds = text_bounds(
-            Some(Rect {
+            Some(ClipRect::sharp(Rect {
                 x: 10.25,
                 y: 5.0,
                 width: 20.0,
                 height: 10.0,
-            }),
+            })),
             2.0,
             800,
             600,

@@ -20,10 +20,12 @@ struct Instance {
     @location(1) source: vec4<f32>,
     // left, top, right, bottom
     @location(2) clip: vec4<f32>,
-    // radius, opacity, linear output (0/1), unused
+    // radius, opacity, linear output (0/1), clip_radius of overflow mask
     @location(3) params: vec4<f32>,
     // whole atlas region of the image (for clamping): x, y, width, height
     @location(4) region: vec4<f32>,
+    // rounded overflow mask: left, top, right, bottom
+    @location(5) clip_round: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -34,6 +36,7 @@ struct VertexOutput {
     @location(3) clip: vec4<f32>,
     @location(4) params: vec4<f32>,
     @location(5) region: vec4<f32>,
+    @location(6) clip_round: vec4<f32>,
 };
 
 @vertex
@@ -65,6 +68,7 @@ fn vs_main(@builtin(vertex_index) index: u32, instance: Instance) -> VertexOutpu
     output.clip = instance.clip;
     output.params = instance.params;
     output.region = instance.region;
+    output.clip_round = instance.clip_round;
     return output;
 }
 
@@ -85,6 +89,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if (pixel.x < input.clip.x || pixel.y < input.clip.y || pixel.x > input.clip.z || pixel.y > input.clip.w) {
         discard;
     }
+    var clip_coverage = 1.0;
+    let clip_radius = input.params.w;
+    if (clip_radius > 0.0) {
+        let half = (input.clip_round.zw - input.clip_round.xy) * 0.5;
+        let center = (input.clip_round.xy + input.clip_round.zw) * 0.5;
+        let radius = min(clip_radius, min(half.x, half.y));
+        let distance = rounded_box(pixel - center, half, radius);
+        clip_coverage = clamp(0.5 - distance, 0.0, 1.0);
+        if (clip_coverage <= 0.0) {
+            discard;
+        }
+    }
     // Stay half a texel inside the image so the filter never reads the
     // padding around it.
     let low = input.region.xy + vec2<f32>(0.5);
@@ -98,5 +114,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let radius = min(input.params.x, min(input.half_size.x, input.half_size.y));
     let distance = rounded_box(input.local, input.half_size, radius);
     let coverage = clamp(0.5 - distance, 0.0, 1.0);
-    return color * (input.params.y * coverage);
+    return color * (input.params.y * coverage * clip_coverage);
 }
