@@ -7,7 +7,7 @@
 use serde_json::json;
 use wordcraft_doc::{Document, StoryRef};
 use wordcraft_engine::Session;
-use wordcraft_fonts::FontDb;
+use wordcraft_fonts::{shape, FaceRef, FontDb, DEFAULT_FAMILY};
 use wordcraft_layout::display::{page_display, DisplayOptions, Draw};
 
 use crate::geometry::{Point, Rect};
@@ -23,6 +23,7 @@ use crate::media;
 use crate::render::Bitmap;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::ops::Range;
 
 /// Clave de invalidación del snapshot [`DocumentPaint`].
 ///
@@ -38,6 +39,34 @@ struct PaintKey {
     vp_h: u32,
     view_mode: wordcraft_layout::ViewMode,
     read_mode: bool,
+    /// Firma del preedit IME (texto + cursor); 0 = ausente.
+    preedit_sig: u64,
+}
+
+/// Composición IME pendiente (no muta el modelo WordCraft hasta Commit).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DocumentImePreedit {
+    text: String,
+    /// Rango de bytes del caret IME dentro de `text`; `None` oculta caret en la composición.
+    cursor: Option<Range<usize>>,
+}
+
+impl DocumentImePreedit {
+    fn signature(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.text.hash(&mut h);
+        match &self.cursor {
+            Some(r) => {
+                r.start.hash(&mut h);
+                r.end.hash(&mut h);
+            }
+            None => {
+                usize::MAX.hash(&mut h);
+            }
+        }
+        h.finish()
+    }
 }
 
 /// Clipboard no-op para tests / APIs que no necesitan host clipboard.
@@ -72,6 +101,8 @@ pub struct DocumentEditor {
     bitmaps: HashMap<String, Bitmap>,
     /// Atlas de glifos WordCraft (swash → Bitmap); sin TextStore.
     glyph_atlas: DocumentGlyphAtlas,
+    /// Composición IME (preedit) superpuesta al caret; no toca undo/doc.
+    ime_preedit: Option<DocumentImePreedit>,
     /// Modelo clonado tras [`DocumentCmd::TakeDocument`].
     taken_document: Option<std::sync::Arc<wordcraft_doc::Document>>,
     paint: DocumentPaint,
@@ -104,6 +135,7 @@ impl DocumentEditor {
             },
             bitmaps: HashMap::new(),
             glyph_atlas: DocumentGlyphAtlas::new(),
+            ime_preedit: None,
             taken_document: None,
             paint: DocumentPaint::default(),
             last_paint_key: None,
@@ -276,25 +308,24 @@ impl DocumentEditor {
         let is_copy = matches!(intent, TextIntent::Copy);
         let changed = match intent {
             TextIntent::InsertText(text) => {
+                let cleared = self.clear_ime_preedit();
                 if text.is_empty() {
-                    return false;
+                    return cleared;
                 }
-                self.insert_str(&text)
+                self.insert_str(&text) || cleared
             }
             TextIntent::Ime(ImeIntent::Commit(text)) => {
+                let cleared = self.clear_ime_preedit();
                 if text.is_empty() {
-                    return false;
+                    return cleared;
                 }
-                self.insert_str(&text)
+                self.insert_str(&text) || cleared
             }
-            TextIntent::Ime(
-                ImeIntent::Preedit { .. }
-                | ImeIntent::Enabled
-                | ImeIntent::Disabled
-                | ImeIntent::Cancel,
-            ) => {
-                // Fase 0: sin preedit visual en el cuerpo; el commit inserta.
-                false
+            TextIntent::Ime(ImeIntent::Preedit { text, cursor }) => {
+                self.set_ime_preedit(text, cursor)
+            }
+            TextIntent::Ime(ImeIntent::Enabled | ImeIntent::Disabled | ImeIntent::Cancel) => {
+                self.clear_ime_preedit()
             }
             TextIntent::Undo => self.run_cmd(&DocumentCmd::Undo),
             TextIntent::Redo => self.run_cmd(&DocumentCmd::Redo),
@@ -376,6 +407,33 @@ impl DocumentEditor {
             clipboard.set_html(html, Some(text)).is_ok()
         } else {
             clipboard.set_text(text).is_ok()
+        }
+    }
+
+    /// Preedit activo (tests / a11y).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn ime_preedit_text(&self) -> Option<&str> {
+        self.ime_preedit.as_ref().map(|p| p.text.as_str())
+    }
+
+    fn set_ime_preedit(&mut self, text: String, cursor: Option<Range<usize>>) -> bool {
+        let next = if text.is_empty() {
+            None
+        } else {
+            Some(DocumentImePreedit { text, cursor })
+        };
+        if self.ime_preedit == next {
+            return false;
+        }
+        self.ime_preedit = next;
+        true
+    }
+
+    fn clear_ime_preedit(&mut self) -> bool {
+        if self.ime_preedit.take().is_some() {
+            true
+        } else {
+            false
         }
     }
 
@@ -603,7 +661,102 @@ impl DocumentEditor {
             vp_h: self.last_viewport.height.to_bits(),
             view_mode: self.session.view.mode,
             read_mode: self.session.view.read_mode,
+            preedit_sig: self
+                .ime_preedit
+                .as_ref()
+                .map(DocumentImePreedit::signature)
+                .unwrap_or(0),
         }
+    }
+
+    /// Rasteriza el preedit IME junto al caret (glifos WordCraft + underline).
+    /// No muta la Session: el commit es quien inserta.
+    fn paint_ime_preedit(
+        &mut self,
+        paint_scale: f32,
+        glyphs_out: &mut Vec<DocumentGlyph>,
+        underline_out: &mut Vec<Rect>,
+        caret: &mut Option<Rect>,
+    ) {
+        let Some(pre) = self.ime_preedit.clone() else {
+            return;
+        };
+        let Some(anchor) = *caret else {
+            return;
+        };
+        let props = self.session.typing_props();
+        let family = props
+            .font
+            .as_deref()
+            .filter(|f| !f.trim().is_empty())
+            .unwrap_or(DEFAULT_FAMILY);
+        let style = if props.italic == Some(true) && props.bold == Some(true) {
+            "Bold Italic"
+        } else if props.bold == Some(true) {
+            "Bold"
+        } else if props.italic == Some(true) {
+            "Italic"
+        } else {
+            "Regular"
+        };
+        let face_arc = FontDb::global().face(family, style);
+        let face = FaceRef::of(&face_arc);
+        let size_pt = props.size.unwrap_or(11.0).clamp(1.0, 1584.0);
+        let shaped = shape(face.get(), &pre.text, &[], |c| c);
+        if shaped.is_empty() {
+            return;
+        }
+        let upem = face.upem.max(1.0) as f32;
+        let k = size_pt / upem;
+        // Caret WordCraft: top→bottom de la línea; baseline ≈ cerca del fondo.
+        let baseline = anchor.y + anchor.height * 0.85;
+        let color = Color::rgb(0, 0, 0);
+        let synth_bold = props.bold == Some(true) && face.weight < 600.0;
+        let px_size = (size_pt * paint_scale).max(1.0);
+        let cursor_at = pre
+            .cursor
+            .as_ref()
+            .map(|r| r.end.min(pre.text.len()))
+            .unwrap_or(pre.text.len());
+        let mut pen_x = anchor.x;
+        let start_x = pen_x;
+        let mut caret_x = pen_x;
+        for g in &shaped {
+            if g.cluster <= cursor_at {
+                caret_x = pen_x + g.x_advance as f32 * k;
+            }
+            let gx = pen_x + g.x_offset as f32 * k;
+            let gy = baseline - g.y_offset as f32 * k;
+            if let Some((bmp, left, top)) =
+                self.glyph_atlas.glyph(face, g.gid, px_size, color, synth_bold)
+            {
+                let w = bmp.width() as f32 / paint_scale;
+                let h = bmp.height() as f32 / paint_scale;
+                glyphs_out.push(DocumentGlyph {
+                    rect: Rect {
+                        x: gx + left as f32 / paint_scale,
+                        y: gy - top as f32 / paint_scale,
+                        width: w.max(0.5),
+                        height: h.max(0.5),
+                    },
+                    bitmap: bmp,
+                });
+            }
+            pen_x += g.x_advance as f32 * k;
+        }
+        let width = (pen_x - start_x).max(1.0);
+        underline_out.push(Rect {
+            x: start_x,
+            y: baseline + 1.0,
+            width,
+            height: 1.25,
+        });
+        *caret = Some(Rect {
+            x: caret_x,
+            y: anchor.y,
+            width: anchor.width,
+            height: anchor.height,
+        });
     }
 
     pub fn refresh_paint(&mut self) {
@@ -657,6 +810,13 @@ impl DocumentEditor {
                 height: c.height.max(1.0),
             });
         }
+        let mut preedit_underline = Vec::new();
+        self.paint_ime_preedit(
+            paint_scale,
+            &mut glyphs,
+            &mut preedit_underline,
+            &mut caret,
+        );
         let m = viewport_metrics(self.last_viewport, (pw, ph));
         let content_h = if page_count == 0 {
             0.0
@@ -675,6 +835,7 @@ impl DocumentEditor {
             images,
             selection,
             caret,
+            preedit_underline,
             page_size: (pw, ph),
             page_count,
             scroll_y: self.scroll_y,
@@ -1385,6 +1546,79 @@ mod tests {
             md.contains("**"),
             "RTF \\b should become bold markdown: {md:?}"
         );
+    }
+
+    #[test]
+    fn ime_preedit_shows_glyphs_and_underline_without_committing() {
+        let mut ed = DocumentEditor::new("");
+        let before = ed.plain_text();
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Preedit {
+            text: "nihon".into(),
+            cursor: Some(5..5),
+        })));
+        assert_eq!(ed.ime_preedit_text(), Some("nihon"));
+        assert_eq!(
+            ed.plain_text(),
+            before,
+            "preedit must not mutate the WordCraft doc"
+        );
+        let paint = ed.paint();
+        assert!(
+            !paint.preedit_underline.is_empty(),
+            "expected IME underline under caret"
+        );
+        assert!(
+            !paint.glyphs.is_empty(),
+            "preedit should rasterize composition glyphs"
+        );
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Preedit {
+            text: "nihongo".into(),
+            cursor: Some(7..7),
+        })));
+        assert_eq!(ed.ime_preedit_text(), Some("nihongo"));
+        assert_eq!(ed.plain_text(), before);
+    }
+
+    #[test]
+    fn ime_preedit_then_commit_inserts_once_and_clears_overlay() {
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Preedit {
+            text: "にほん".into(),
+            cursor: Some(9..9),
+        })));
+        assert!(ed.ime_preedit_text().is_some());
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Commit(
+            "日本".into()
+        ))));
+        assert!(ed.ime_preedit_text().is_none());
+        assert!(
+            ed.paint().preedit_underline.is_empty(),
+            "underline must clear after commit"
+        );
+        let plain = ed.plain_text();
+        assert!(
+            plain.contains("日本"),
+            "commit inserts final text: {plain:?}"
+        );
+        assert!(!ed.apply_text_intent(TextIntent::Ime(ImeIntent::Preedit {
+            text: String::new(),
+            cursor: None,
+        })));
+        assert_eq!(ed.plain_text(), plain);
+    }
+
+    #[test]
+    fn ime_cancel_clears_preedit_without_insert() {
+        let mut ed = DocumentEditor::new("Base");
+        let before = ed.plain_text();
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Preedit {
+            text: "xxx".into(),
+            cursor: Some(3..3),
+        })));
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Cancel)));
+        assert!(ed.ime_preedit_text().is_none());
+        assert!(ed.paint().preedit_underline.is_empty());
+        assert_eq!(ed.plain_text(), before);
     }
 
 }

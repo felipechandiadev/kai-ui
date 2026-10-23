@@ -7,7 +7,7 @@
 //! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
 //! Ribbon Kai (catálogo WordCraft) en `ribbon`. Atlas glifos (`glyph_atlas`) +
 //! clipboard rich (HTML via `ClipboardPort`; RTF paste si el port lo trae);
-//! tablas/imágenes en clipboard / keytips = deuda.
+//! IME preedit visual en el cuerpo; tablas/imágenes en clipboard / keytips = deuda.
 //!
 //! ```ignore
 //! document()
@@ -142,6 +142,8 @@ pub struct DocumentPaint {
     pub selection: Vec<Rect>,
     /// Caret en coords canvas (página apilada).
     pub caret: Option<Rect>,
+    /// Subrayado de composición IME (coords canvas), como TextField.
+    pub preedit_underline: Vec<Rect>,
     /// Tamaño de una página WordCraft en puntos (letter ≈ 612×792).
     pub page_size: (f32, f32),
     pub page_count: usize,
@@ -160,6 +162,7 @@ impl Default for DocumentPaint {
             images: Vec::new(),
             selection: Vec::new(),
             caret: None,
+            preedit_underline: Vec::new(),
             page_size: (612.0, 792.0),
             page_count: 1,
             scroll_y: 0.0,
@@ -394,6 +397,20 @@ pub(crate) fn paint_document(
                 height: (r.height * metrics.scale).max(1.0),
             },
             sel_color,
+        );
+    }
+
+    for r in &paint.preedit_underline {
+        // Misma tinta que el caret/texto: composición bajo el caret.
+        let ink = theme.semantic.caret.with_alpha(200);
+        list.fill_rect(
+            Rect {
+                x: origin.x + r.x * metrics.scale,
+                y: origin.y + r.y * metrics.scale,
+                width: (r.width * metrics.scale).max(1.0),
+                height: (r.height * metrics.scale).max(1.0),
+            },
+            ink,
         );
     }
 

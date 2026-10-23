@@ -123,7 +123,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 ## 7. Pruebas y demo
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
-- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); scroll multi-página + tipar tras scroll; query a11y por `label`.
+- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); IME preedit vía unit tests del editor; scroll multi-página + tipar tras scroll; query a11y por `label`.
 - Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
@@ -135,6 +135,13 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 - MSRV documentado: **1.95** (alineado al `rev` de WordCraft).
 - Comandos del editor reutilizan `kai::commands`; MCP no abre un segundo servidor WordCraft.
 - Cada fase tiene tests de geometría o de `TestApp` y una entrada en [CHANGELOG](../../CHANGELOG.md).
+
+## IME (preedit visual)
+
+- **Commit:** `ImeIntent::Commit` → `text.insert` (igual que tipado).
+- **Preedit:** composición en overlay Kai (no muta Session/undo): glifos WordCraft (`shape` + atlas) anclados al caret + subrayado en `DocumentPaint::preedit_underline`.
+- **Cancel / Enabled / Disabled / preedit vacío:** limpia el overlay.
+- WordCraft no modela composition nativa; el techo es overlay en paint/caret. Candidatos IME del SO siguen en el panel del sistema (fuera del cuerpo).
 
 ## Clipboard (rich)
 
@@ -150,7 +157,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Guía (este documento) | Hecha (21-oct-2026) |
 | Spike §4 / §0 (crate aislado + display list) | **Hecho (23-oct-2026)** — ver §10 |
 | Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in) |
-| `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME / selección / ⌘B / undo; hit multi-página |
+| `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME preedit visual / selección / ⌘B / undo; hit multi-página |
 | Demo sección Documento | **Hecho** (Datos → Documento; Ribbon Full; Archivo; markdown multi-página + scroll) |
 | Subida de MSRV | **Hecho** — 1.95 |
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
@@ -160,7 +167,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
 | Clipboard cuerpo | **Hecho (rich HTML, 23-oct-2026)** — ⌘C/X/V → `edit.copy`/`cut`/`paste` + `ClipboardPort` (texto + HTML; RTF en paste si el port lo trae). Techo: ver § clipboard |
-| Deuda post-plan | RTF nativo en copy/SO (arboard no expone RTF); tablas/imágenes en clipboard; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
+| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; tablas/imágenes en clipboard; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
