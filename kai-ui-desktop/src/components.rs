@@ -10,6 +10,8 @@ use std::rc::Rc;
 
 mod color;
 mod dialog;
+mod empty_state;
+mod field_icons;
 mod media;
 mod progress;
 mod search;
@@ -24,6 +26,8 @@ pub use crate::charts::{ChartKind, ChartSpec, chart};
 pub use crate::color::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
+pub use empty_state::{EmptyState, loading_placeholder};
+pub use field_icons::{FIELD_ICON_MAP, FieldKind, field_icon_for};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, SearchVariant, search_field};
@@ -502,6 +506,8 @@ pub struct TextField<Msg> {
     password_command: Option<&'static str>,
     required: bool,
     helper_text: Option<String>,
+    /// Danger outline + danger helper (AppKit `systemRed`).
+    error: bool,
     read_only: bool,
     disabled: bool,
     select_on_focus: bool,
@@ -533,6 +539,7 @@ impl<Msg> TextField<Msg> {
             password_command: None,
             required: false,
             helper_text: None,
+            error: false,
             read_only: false,
             disabled: false,
             select_on_focus: false,
@@ -646,6 +653,21 @@ impl<Msg> TextField<Msg> {
     /// Hint below the field, also its accessible description.
     pub fn helper_text(mut self, text: impl Into<String>) -> Self {
         self.helper_text = Some(text.into());
+        self
+    }
+
+    /// Validation error: danger border and danger-colored helper text
+    /// (AppKit `systemRed` / Kai `error`). Pair with [`Self::helper_text`].
+    pub fn error(mut self, on: bool) -> Self {
+        self.error = on;
+        self
+    }
+
+    /// Apply the documented field-icon map ([`field_icon_for`]) as `start_icon`.
+    pub fn field_icon(mut self, kind: FieldKind) -> Self {
+        if let Some(icon) = field_icon_for(kind) {
+            self.start = Some(Adornment::Icon(icon));
+        }
         self
     }
 
@@ -776,6 +798,10 @@ impl<Msg> TextField<Msg> {
         } else {
             let (border, surface) = match self.variant {
                 FieldVariant::Normal if muted => ("border border-border/50", "bg-field-muted"),
+                FieldVariant::Normal if self.error => (
+                    "border border-error focus-within:border-error",
+                    "bg-background",
+                ),
                 FieldVariant::Normal => (
                     "border border-border hover:border-muted-foreground \
                      contrast-more:border-foreground focus-within:border-primary",
@@ -866,9 +892,18 @@ impl<Msg> TextField<Msg> {
             root = root.child(shell);
         }
         let helper = self.helper_text.as_ref().map(|helper| {
-            text(helper)
-                .class("mt-1 text-xs text-muted-foreground")
-                .part("helper")
+            let classes = if self.error {
+                themed(
+                    "mt-1 text-xs text-error",
+                    "mt-1 text-xs text-system-red",
+                )
+            } else {
+                themed(
+                    "mt-1 text-xs text-muted-foreground",
+                    "mt-1 text-xs text-secondary-label",
+                )
+            };
+            text(helper).class(&classes).part("helper")
         });
         match self.counter.take() {
             Some(count) => root.child(
@@ -893,23 +928,33 @@ impl<Msg> TextField<Msg> {
     fn appkit_shell(&self) -> String {
         let surface = if self.disabled {
             "bg-fill-5"
+        } else if self.error {
+            "bg-field"
         } else {
             "bg-field hover:border-tertiary-label mix-c:hover:border-secondary-label"
         };
+        let border = if self.error {
+            "border-[0.5px] border-system-red"
+        } else {
+            "border-[0.5px] border-separator"
+        };
         let shape = match self.bezel {
-            _ if self.rows.is_some() => {
-                "py-1 rounded-field-square border-[0.5px] border-separator px-1"
-            }
+            _ if self.rows.is_some() => format!("py-1 rounded-field-square {border} px-1"),
             FieldBezel::Square => {
-                "h-field-square rounded-field-square border-[0.5px] border-separator px-1"
+                format!("h-field-square rounded-field-square {border} px-1")
             }
-            FieldBezel::Rounded => "h-field rounded-field border-[0.5px] border-separator px-1.5",
+            FieldBezel::Rounded => format!("h-field rounded-field {border} px-1.5"),
         };
         // Candidates (heights come from `Theme::with_mix`): B pads like a
         // small Kai field; C takes Kai's padding, 1 pt border and radius.
+        let mix_border = if self.error {
+            "mix-c:border-system-red"
+        } else {
+            "mix-c:border-tertiary-label"
+        };
         format!(
             "{shape} {surface} mix-b:px-2 mix-c:px-3 mix-c:rounded-md mix-c:border \
-             mix-c:border-tertiary-label {APPKIT_CONTRAST_BORDER}"
+             {mix_border} {APPKIT_CONTRAST_BORDER}"
         )
     }
 
@@ -3430,7 +3475,31 @@ mod tests {
         assert_eq!(display(&overlay.class, group_focused()), Display::None);
         let helper = part(&field, "campo.helper");
         assert_eq!(helper.text_content(), "Usaremos este correo para avisarte");
-        assert!(helper.class.contains("text-muted-foreground"));
+        assert!(
+            helper.class.contains("text-muted-foreground")
+                || helper.class.contains("text-secondary-label"),
+            "{}",
+            helper.class
+        );
+
+        let errored = campo(
+            TextField::new("Correo", "malo")
+                .helper_text("Formato inválido")
+                .error(true),
+        );
+        let err_helper = part(&errored, "campo.helper");
+        assert!(
+            err_helper.class.contains("text-error")
+                || err_helper.class.contains("text-system-red"),
+            "{}",
+            err_helper.class
+        );
+        assert!(
+            part(&errored, "campo.shell").class.contains("border-error")
+                || part(&errored, "campo.shell").class.contains("border-system-red"),
+            "{}",
+            part(&errored, "campo.shell").class
+        );
 
         let filled = campo(TextField::new("Correo", "a@b.cl").required(true));
         assert!(filled.find_test_id("campo.placeholder").is_none());
