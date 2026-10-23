@@ -56,7 +56,7 @@ use crate::runtime::{
     selects_on_focus,
 };
 use crate::style::Cursor;
-use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
+use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState, caret_blink_visible};
 use crate::theme::{SystemPrefs, Theme};
 use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch, sync_focus};
 use crate::virtual_rows::{self, Viewport};
@@ -181,6 +181,8 @@ pub(crate) struct Session<A: App> {
     clock: Option<Instant>,
     /// When the session started: time zero of [`Motion`](crate::element::Motion).
     epoch: Instant,
+    /// When the caret blink was last reset to the visible half (AppKit-style).
+    caret_blink_at: Instant,
     /// Row the keys are moving to in a virtual list: the next rebuild
     /// builds it wherever it is.
     row_pin: Option<(WidgetId, usize)>,
@@ -635,6 +637,7 @@ impl<A: App> Session<A> {
             file_drag: false,
             clock: None,
             epoch: Instant::now(),
+            caret_blink_at: Instant::now(),
             row_pin: None,
             row_windows: Vec::new(),
             tooltips: HashMap::new(),
@@ -2351,6 +2354,7 @@ impl<A: App> Session<A> {
             let text_field = self.focused_text_field();
             self.outbox.ime_allowed = Some(text_field.is_some());
             if let Some(id) = text_field {
+                self.reset_caret_blink();
                 if selects_on_focus(&self.tree, id)
                     && let Some(field) = self.text_fields.get_mut(&id)
                 {
@@ -2474,6 +2478,7 @@ impl<A: App> Session<A> {
             eprintln!("{status}");
         }
         if effect.changed {
+            self.reset_caret_blink();
             self.update_ime_cursor_area();
             self.invalidate();
         }
@@ -2599,10 +2604,33 @@ impl<A: App> Session<A> {
         self.report_maps();
     }
 
-    /// Whether a map glides or zooms on its own, its labels fade in, or an
-    /// element in view moves ([`Motion`](crate::element::Motion)): the window needs frames.
+    /// Whether a map glides or zooms on its own, its labels fade in, an
+    /// element in view moves ([`Motion`](crate::element::Motion)), or a text
+    /// caret is blinking: the window needs frames.
     pub fn animating(&self) -> bool {
-        self.labels_fading || self.maps.values().any(CameraState::animating) || self.moving()
+        self.labels_fading
+            || self.maps.values().any(CameraState::animating)
+            || self.moving()
+            || self.caret_blinking()
+    }
+
+    /// Text focus with blink enabled: frames keep the insertion point toggling.
+    fn caret_blinking(&self) -> bool {
+        self.focused_text_field().is_some() && !self.theme.prefs.reduce_motion
+    }
+
+    /// Reset the blink phase to visible (typing, caret move, or focus).
+    fn reset_caret_blink(&mut self) {
+        self.caret_blink_at = self.now();
+    }
+
+    /// Whether the focused text caret should paint this frame.
+    fn caret_is_visible(&self) -> bool {
+        if self.focused_text_field().is_none() {
+            return true;
+        }
+        let elapsed = self.now().saturating_duration_since(self.caret_blink_at);
+        caret_blink_visible(elapsed, self.theme.prefs.reduce_motion)
     }
 
     /// Send `on_view_change` for every map whose gesture settled; returns
@@ -3101,18 +3129,21 @@ impl<A: App> Session<A> {
                     };
                     if ed.drag_to(local, page_local) {
                         self.report_document_change(id);
+                        self.reset_caret_blink();
                         self.update_ime_cursor_area();
                         redraw = true;
                     }
                 }
             } else if let Some(field) = self.text_fields.get_mut(&id) {
                 field.drag(&mut self.text.font_system, local);
+                self.reset_caret_blink();
                 self.update_ime_cursor_area();
                 redraw = true;
             }
             #[cfg(not(feature = "document"))]
             if let Some(field) = self.text_fields.get_mut(&id) {
                 field.drag(&mut self.text.font_system, local);
+                self.reset_caret_blink();
                 self.update_ime_cursor_area();
                 redraw = true;
             }
@@ -3207,15 +3238,18 @@ impl<A: App> Session<A> {
                         };
                         ed.click(local, page_local, clicks);
                         self.report_document_change(id);
+                        self.reset_caret_blink();
                         self.update_ime_cursor_area();
                     }
                 } else if let Some(field) = self.text_fields.get_mut(&id) {
                     field.click_count(&mut self.text.font_system, local, clicks);
+                    self.reset_caret_blink();
                     self.update_ime_cursor_area();
                 }
                 #[cfg(not(feature = "document"))]
                 if let Some(field) = self.text_fields.get_mut(&id) {
                     field.click_count(&mut self.text.font_system, local, clicks);
+                    self.reset_caret_blink();
                     self.update_ime_cursor_area();
                 }
             }
@@ -3444,6 +3478,7 @@ impl<A: App> Session<A> {
         {
             self.send(handler(change));
         }
+        self.reset_caret_blink();
         self.update_ime_cursor_area();
         self.invalidate();
     }
@@ -3499,6 +3534,7 @@ impl<A: App> Session<A> {
             background: self.background,
             time: self.motion_time(),
             documents: &document_paints,
+            caret_visible: self.caret_is_visible(),
         })
     }
 

@@ -8,6 +8,10 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Caret blink (P0):** fase booleana ~530 ms (AppKit) en TextField y Document; `Session::animating` pide frames con foco de texto; reset al tipar/mover caret; `reduce_motion` → caret fijo visible; Document usa `semantic.caret` y oculta si ventana inactiva.
+- **Demo Documento Pages (P0):** shell sin card/`h-96`/`max-w-3xl`; ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`; scale viewport `min(w/pw, h/ph)` para caber una hoja Letter.
+- **Default AppKit (P0):** `demo_theme` / `run_from_env` sin `KAI_THEME` (o vacío/`Err`) → AppKit current light; `KAI_THEME=kai` explícito.
+
 
 - **Widget `document` — Ribbon Kai (ampliado):** `RibbonMode::Full` añade Layout / Review / References / View desde el catálogo WordCraft (allowlist; `default_run_params` para márgenes/columnas/saltos). Demo + TestApp cambian de tab y disparan cmds. Docs [`17-document-ribbon.md`](docs/dev/17-document-ribbon.md). Design / keytips / Backstage = deuda. Excluye cmds con dialogs egui/rfd o params interactivos.
 - **Widget `document` — Ribbon Kai (MVP):** chrome `document_ribbon` / `RibbonMode` alimentado por `wordcraft_engine::cmd::registry()` (`CommandSpec` id/label/location/shortcut). Tabs Home+Insert (allowlist); clic → `DocumentCmd` / `Session::run`. Demo Datos→Documento reemplaza la toolbar ad-hoc; test_ids `documento.ribbon*`. Docs [`17-document-ribbon.md`](docs/dev/17-document-ribbon.md). Keytips / Backstage / resto de pestañas Word = deuda. Atlas glifos + clipboard body siguen en stash WIP (no bloquean Ribbon).

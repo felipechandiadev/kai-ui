@@ -179,6 +179,7 @@ fn render_with_layout<Msg>(
         background,
         time: Some(seconds),
                 documents: &[],
+            caret_visible: true,
         });
     let mut list = list;
     list.background = list.background.map(|layer| layer.at(seconds));

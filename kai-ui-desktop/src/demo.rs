@@ -2220,21 +2220,30 @@ impl App for Demo {
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
 
+        let content = if self.seccion == Seccion::Documento {
+            // Pages metaphor: ribbon + archivo + full-height canvas (no card / scroll shell).
+            div()
+                .class("flex-1 flex flex-col min-h-0 min-w-0 bg-under-page")
+                .key(self.seccion.key())
+                .test_id("contenido")
+                .children(cards)
+        } else {
+            // Keyed by section: each one keeps its own scroll.
+            div()
+                .class("flex-1 overflow-y-auto")
+                .key(self.seccion.key())
+                .test_id("contenido")
+                .child(
+                    div()
+                        .class("flex flex-col items-center gap-6 p-6")
+                        .children(cards),
+                )
+        };
         let mut layers = vec![
             header,
-            div().class("flex-1 flex min-h-0").children([
-                self.sidebar(),
-                // Keyed by section: each one keeps its own scroll.
-                div()
-                    .class("flex-1 overflow-y-auto")
-                    .key(self.seccion.key())
-                    .test_id("contenido")
-                    .child(
-                        div()
-                            .class("flex flex-col items-center gap-6 p-6")
-                            .children(cards),
-                    ),
-            ]),
+            div()
+                .class("flex-1 flex min-h-0")
+                .children([self.sidebar(), content]),
             toast_stack(&self.toasts, Msg::CloseToast),
         ];
         if let Some(dialogo) = self.dialogo {
@@ -3186,14 +3195,14 @@ impl Demo {
             .child(text("Compila con --features document para el ribbon WordCraft."))
     }
 
-    /// Documento: tipar / páginas / tabla / imagen / archivo (.docx + PDF).
+    /// Documento: metáfora Pages — ribbon + Archivo + canvas a hoja Letter completa.
     fn documento(&self) -> Element<Msg> {
         let mut editor = document()
             .label("Informe de demostración")
             .placeholder_text("Escribe aquí…")
             .markdown(&self.doc_markdown)
             .on_change(Msg::Documento)
-            .class("h-96 w-full")
+            .class("flex-1 min-h-0 w-full")
             .test_id("documento.editor");
         if let Some((cmd, serial)) = &self.doc_cmd {
             editor = editor.pending_cmd(cmd.clone(), *serial);
@@ -3201,35 +3210,36 @@ impl Demo {
         if let Some((serial, bytes)) = &self.doc_load {
             editor = editor.pending_load(bytes.clone(), *serial);
         }
-        card()
-            .class("w-full max-w-3xl")
+        div()
+            .class("flex flex-col flex-1 min-h-0 w-full")
             .test_id("documento")
             .children([
-                card_header(
-                    "Documento",
-                    Some("Ribbon Kai (Home…View) + Archivo .docx/PDF; tipar / ⌘B (WordCraft)"),
-                ),
-                card_content().class("gap-3").children([
-                    self.documento_ribbon_chrome(),
-                    div()
-                        .class("flex flex-wrap items-center gap-2")
-                        .test_id("documento.archivo")
-                        .children([
-                            button_sized("Abrir…", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocAbrir)
-                                .test_id("documento.abrir"),
-                            button_sized("Guardar…", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocGuardar)
-                                .test_id("documento.guardar"),
-                            button_sized("Exportar PDF…", ButtonVariant::Outlined, ButtonSize::Sm)
+                div()
+                    .class(
+                        "flex-none flex flex-col gap-2 px-3 pt-3 pb-2 bg-window border-b border-separator",
+                    )
+                    .children([
+                        self.documento_ribbon_chrome(),
+                        div()
+                            .class("flex flex-wrap items-center gap-2")
+                            .test_id("documento.archivo")
+                            .children([
+                                button_sized("Abrir…", ButtonVariant::Outlined, ButtonSize::Sm)
+                                    .on_command(DocAbrir)
+                                    .test_id("documento.abrir"),
+                                button_sized("Guardar…", ButtonVariant::Outlined, ButtonSize::Sm)
+                                    .on_command(DocGuardar)
+                                    .test_id("documento.guardar"),
+                                button_sized(
+                                    "Exportar PDF…",
+                                    ButtonVariant::Outlined,
+                                    ButtonSize::Sm,
+                                )
                                 .on_command(DocExportarPdf)
                                 .test_id("documento.exportar_pdf"),
-                        ]),
-                    editor,
-                    caption(
-                        "Archivo vía Effects::pick_file / save_file + perform; encode WordCraft off-thread.",
-                    ),
-                ]),
+                            ]),
+                    ]),
+                editor,
             ])
     }
 
@@ -3517,8 +3527,7 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Theme of the demo, chosen with `KAI_THEME=kai|appkit|appkit-dark`
-/// (default `kai`). Temporary: Paso 16 replaces it with `--theme appkit`
-/// and the live system theme.
+/// (default AppKit current light). `KAI_THEME=kai` keeps the Kai theme.
 /// `KAI_THEME`: `appkit[-dark]` follows this Mac ([`Theme::appkit_current`]);
 /// `aqua11[-dark]` and `glass27[-dark]` force a generation. `KAI_HOVER=0`
 /// turns hover off (strict AppKit). `KAI_MIX=appkit|a|b|c` picks the mixed
@@ -3529,19 +3538,21 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 fn demo_theme() -> Theme {
     let forced = |generation, appearance| Theme::appkit_static(generation, appearance);
     let theme = match std::env::var("KAI_THEME").as_deref() {
-        Ok("appkit" | "appkit-light") => Theme::appkit_current(Appearance::Light),
+        Ok("appkit" | "appkit-light") | Ok("") | Err(_) => {
+            Theme::appkit_current(Appearance::Light)
+        }
         Ok("appkit-dark") => Theme::appkit_current(Appearance::Dark),
         Ok("aqua11") => forced(AppKitGeneration::Aqua11, Appearance::Light),
         Ok("aqua11-dark") => forced(AppKitGeneration::Aqua11, Appearance::Dark),
         Ok("glass27") => forced(AppKitGeneration::Glass27, Appearance::Light),
         Ok("glass27-dark") => forced(AppKitGeneration::Glass27, Appearance::Dark),
-        Ok("kai" | "") | Err(_) => Theme::kai(Density::Comfortable),
+        Ok("kai") => Theme::kai(Density::Comfortable),
         Ok(other) => {
             eprintln!(
                 "KAI_THEME={other} desconocido (kai, appkit, appkit-dark, aqua11, aqua11-dark, \
-                 glass27, glass27-dark); se usa kai"
+                 glass27, glass27-dark); se usa appkit"
             );
-            Theme::kai(Density::Comfortable)
+            Theme::appkit_current(Appearance::Light)
         }
     };
     let theme = theme.with_hover(std::env::var("KAI_HOVER").as_deref() != Ok("0"));
@@ -4106,6 +4117,7 @@ mod tests {
                 background: Default::default(),
                 time: None,
                         documents: &[],
+            caret_visible: true,
         });
             samples.push(start.elapsed());
             ops += list.ops.len();

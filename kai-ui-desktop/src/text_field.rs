@@ -5,6 +5,7 @@
 //! field's text origin, with the scroll already applied.
 
 use std::ops::Range;
+use std::time::Duration;
 
 use cosmic_text::{
     Action, Buffer, Cursor, Edit, Editor, FontSystem, Metrics, Motion, Selection, Shaping, Wrap,
@@ -15,6 +16,21 @@ use crate::geometry::{Point, Rect};
 use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
 
 pub const CARET_WIDTH: f32 = 1.5;
+/// Half-period of the text insertion-point blink (AppKit `NSTextView` ≈ 530 ms).
+pub const CARET_BLINK_PERIOD: Duration = Duration::from_millis(530);
+
+/// Whether the caret is in its visible half given elapsed time since the last
+/// reset to visible. With `reduce_motion`, the caret stays visible.
+pub fn caret_blink_visible(elapsed: Duration, reduce_motion: bool) -> bool {
+    if reduce_motion {
+        return true;
+    }
+    let period = CARET_BLINK_PERIOD.as_nanos();
+    if period == 0 {
+        return true;
+    }
+    (elapsed.as_nanos() / period) % 2 == 0
+}
 const PREEDIT_UNDERLINE_HEIGHT: f32 = 1.5;
 const BULLET: char = '•';
 
@@ -1005,9 +1021,11 @@ fn scroll_span_to_reveal(scroll: f32, start: f32, extent: f32, viewport: f32, co
 mod tests {
     use cosmic_text::{Edit, FontSystem, Metrics};
 
+    use std::time::Duration;
+
     use super::{
-        CARET_WIDTH, ClipboardPort, Preedit, TextFieldEffect, TextFieldState, masked_index,
-        scroll_to_reveal, unmasked_index,
+        CARET_WIDTH, ClipboardPort, Preedit, TextFieldEffect, TextFieldState, caret_blink_visible,
+        masked_index, scroll_to_reveal, unmasked_index,
     };
     use crate::geometry::Point;
     use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
@@ -1708,5 +1726,18 @@ mod tests {
             },
         );
         assert_eq!(field.editor().cursor().index, 0, "below the line");
+    }
+
+    #[test]
+    fn caret_blink_phase_toggles_and_respects_reduce_motion() {
+        assert!(caret_blink_visible(Duration::ZERO, false));
+        assert!(caret_blink_visible(Duration::from_millis(529), false));
+        assert!(!caret_blink_visible(Duration::from_millis(530), false));
+        assert!(!caret_blink_visible(Duration::from_millis(1059), false));
+        assert!(caret_blink_visible(Duration::from_millis(1060), false));
+        assert!(
+            caret_blink_visible(Duration::from_millis(530), true),
+            "reduce_motion keeps the caret visible"
+        );
     }
 }

@@ -402,8 +402,10 @@ impl DocumentEditor {
             return None;
         }
         let page_count = self.paint.page_count.max(1);
-        let canvas_x = (local.x - m.inset) / m.scale;
-        let canvas_y = (local.y - m.inset + self.scroll_y) / m.scale;
+        let offset_x = m.origin_x - viewport.x;
+        let offset_y = m.origin_y - viewport.y;
+        let canvas_x = (local.x - offset_x) / m.scale;
+        let canvas_y = (local.y - offset_y + self.scroll_y) / m.scale;
         let stride = ph + PAGE_GAP_PT;
         let mut page_idx = if stride > 0.0 {
             (canvas_y / stride).floor().max(0.0) as usize
@@ -432,12 +434,13 @@ impl DocumentEditor {
         if m.scale <= 0.0 {
             return;
         }
-        let caret_top = m.inset + c.y * m.scale - self.scroll_y;
+        let offset_y = m.origin_y - viewport.y;
+        let caret_top = offset_y + c.y * m.scale - self.scroll_y;
         let caret_bot = caret_top + c.height * m.scale;
         let margin = 8.0;
         let mut sy = self.scroll_y;
-        if caret_top < m.inset + margin {
-            sy -= (m.inset + margin) - caret_top;
+        if caret_top < offset_y + margin {
+            sy -= (offset_y + margin) - caret_top;
         } else if caret_bot > viewport.height - margin {
             sy += caret_bot - (viewport.height - margin);
         }
@@ -876,13 +879,13 @@ mod tests {
         let m = viewport_metrics(viewport, (pw, ph));
         // Clic en la mitad de la página 0.
         let local0 = Point {
-            x: m.inset + m.inner_w * 0.5,
-            y: m.inset + 40.0,
+            x: m.origin_x + m.inner_w * 0.5,
+            y: m.origin_y + 40.0,
         };
         let (p0, _) = ed.local_to_page_hit(local0, viewport).expect("hit p0");
         assert_eq!(p0, 0);
         // Misma x, y en la página 1 del canvas (tras scroll 0).
-        let y_page1 = m.inset + (ph + PAGE_GAP_PT) * m.scale + 40.0;
+        let y_page1 = m.origin_y + (ph + PAGE_GAP_PT) * m.scale + 40.0;
         // Sin scroll la página 1 puede estar fuera del viewport; el hit
         // sigue resolviendo el índice por canvas.
         let local1 = Point {
@@ -927,13 +930,13 @@ mod tests {
         let (pw, ph) = ed.paint.page_size;
         let m = viewport_metrics(viewport, (pw, ph));
         let a = Point {
-            x: m.inset + 80.0,
-            y: m.inset + 50.0,
+            x: m.origin_x + 80.0,
+            y: m.origin_y + 50.0,
         };
         assert!(ed.click(a, viewport, 1));
         let b = Point {
-            x: m.inset + 80.0,
-            y: m.inset + (ph + PAGE_GAP_PT) * m.scale + 50.0,
+            x: m.origin_x + 80.0,
+            y: m.origin_y + (ph + PAGE_GAP_PT) * m.scale + 50.0,
         };
         assert!(ed.drag_to(b, viewport));
         assert!(

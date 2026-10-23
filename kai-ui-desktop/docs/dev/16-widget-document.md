@@ -84,7 +84,7 @@ document(&self.doc)
 - Toolbar, menú y paleta: comandos Kai cuyos `into_msg` llaman al id de WordCraft (`format.bold`, `edit.undo`, …). Un subconjunto expuesto a MCP.
 - Accesibilidad: `Role::Document` o `Role::TextArea` según el corte; nombre = `label`; más adelante árbol de párrafos. VoiceOver no lee un bitmap.
 
-Tamaño solo por clases (`flex-1`, `min-h-0`, `h-96`). El documento hace scroll en su caja (`overflow-auto`) o pagina y el viewport desplaza páginas: decidirlo en la fase 1.
+Tamaño solo por clases (`flex-1 min-h-0` en la demo Pages; `h-96` sirve para embebidos compactos). El documento pagina y el viewport desplaza páginas (scroll interno).
 
 ## 6. Fases
 
@@ -100,7 +100,7 @@ Un cuerpo, párrafos y runs: negrita, cursiva, tamaño, color. Toolbar Kai con 6
 
 Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-layout` deja de ser opcional.
 
-**Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / clases `h-96`…) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala al ancho útil (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
+**Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / `flex-1 min-h-0` en la demo) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala `min(w/pw, h/ph)` para que quepa al menos una hoja (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
 
 **Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto vía hit-test WordCraft; selección arrastrando (multi-página); no se usa cosmic-text para *medir* el cuerpo (el bridge `TextStore`→`DrawOp::Text` en paint es deuda de atlas, no shaping del layout).
 
@@ -124,7 +124,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
 - `TestApp`: tipear, ⌘B, undo; scroll multi-página + tipar tras scroll; query a11y por `label`.
-- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos) con markdown seed multi-página y fila Archivo. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
+- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
 ## 8. Criterios de aceptación

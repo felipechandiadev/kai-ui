@@ -41,6 +41,10 @@ pub struct PaintInput<'a> {
     pub time: Option<f32>,
     /// Paint snapshot of every document editor (WordCraft display list).
     pub documents: &'a [(WidgetId, &'a DocumentPaint)],
+    /// Insertion-point blink phase: `false` hides the caret while a text
+    /// field or document keeps focus (AppKit-style). Always `true` when
+    /// motion is reduced or nothing editable is focused.
+    pub caret_visible: bool,
 }
 
 struct Painter<'a> {
@@ -242,6 +246,8 @@ impl Painter<'_> {
                     node.id,
                     paint.unwrap_or(&DocumentPaint::default()),
                     focused,
+                    self.input.caret_visible,
+                    !self.input.window.is_inactive(),
                 );
             }
         }
@@ -424,6 +430,7 @@ impl Painter<'_> {
         }
         if focused
             && !inactive
+            && self.input.caret_visible
             && let Some(caret) = field.caret
         {
             self.list
@@ -570,6 +577,7 @@ mod tests {
             background: BackgroundEffect::NONE,
             time: None,
             documents: &[],
+            caret_visible: true,
         })
     }
 
@@ -607,6 +615,7 @@ mod tests {
             background,
             time: None,
             documents: &[],
+            caret_visible: true,
         };
         let root = layout.root().unwrap().bounds;
         let root_fill = |list: &DrawList| {
@@ -808,6 +817,49 @@ mod tests {
             fill_at(&list, selection),
             Some(theme.semantic.text_selection_inactive)
         );
+    }
+
+    #[test]
+    fn caret_blink_phase_hides_insertion_point() {
+        let tree = sample::tree();
+        let caret = Rect {
+            x: 10.0,
+            y: 0.0,
+            width: 1.5,
+            height: 24.0,
+        };
+        let decorations = TextFieldDecorations {
+            has_content: true,
+            caret: Some(caret),
+            ..TextFieldDecorations::default()
+        };
+        let fields = [(sample::field(), &decorations)];
+        let interaction = Interaction {
+            focused: Some(sample::field()),
+            ..Interaction::default()
+        };
+        let layout = layout(&tree, WINDOW, &interaction);
+        let line = layout.text_box(sample::field()).unwrap();
+        let at = caret.translated(Point {
+            x: line.x,
+            y: line.y,
+        });
+        let fill_at = |visible: bool| {
+            let list = paint(&PaintInput {
+                layout: &layout,
+                theme: &theme(),
+                focused: interaction.focused,
+                window: interaction.window,
+                text_fields: &fields,
+                background: BackgroundEffect::NONE,
+                time: None,
+                documents: &[],
+                caret_visible: visible,
+            });
+            quads(&list).into_iter().any(|q| q.rect == at)
+        };
+        assert!(fill_at(true), "visible phase paints the caret");
+        assert!(!fill_at(false), "hidden phase omits the caret");
     }
 
     #[test]

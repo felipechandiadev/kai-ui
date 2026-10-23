@@ -13,7 +13,7 @@
 //!     .markdown(&self.doc_md)
 //!     .on_change(Msg::Doc)
 //!     .pending_cmd(cmd, serial)
-//!     .class("h-96 w-full")
+//!     .class("flex-1 min-h-0")
 //!     .test_id("documento.editor");
 //! ```
 
@@ -121,7 +121,7 @@ impl std::fmt::Debug for ExportDoc {
 ///
 /// Coordenadas de runs / selection / caret están en **canvas** WordCraft:
 /// página `i` empieza en `y = i * (page_h + PAGE_GAP_PT)`. El paint aplica
-/// scale al ancho del viewport y resta [`DocumentPaint::scroll_y`].
+/// scale (`min` ancho/alto para una hoja) y resta [`DocumentPaint::scroll_y`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentPaint {
     pub plain_text: String,
@@ -322,6 +322,8 @@ pub(crate) fn paint(list: &mut DrawList, area: Rect, spec: &DocumentSpec, theme:
         WidgetId(0),
         &DocumentPaint::default(),
         false,
+        true,
+        true,
     );
 }
 
@@ -335,6 +337,8 @@ pub(crate) fn paint_document(
     widget: WidgetId,
     paint: &DocumentPaint,
     focused: bool,
+    caret_visible: bool,
+    window_active: bool,
 ) {
     if area.width <= 0.0 || area.height <= 0.0 {
         return;
@@ -400,11 +404,12 @@ pub(crate) fn paint_document(
     paint_body_canvas(list, origin, paint, widget, metrics.scale);
 
     if focused
+        && window_active
+        && caret_visible
         && let Some(c) = paint.caret
     {
-        let caret_color = theme
-            .color("foreground")
-            .unwrap_or(Color::rgb(0, 0, 0));
+        // AppKit `textInsertionPointColor` / semantic.caret (parity with TextField).
+        let caret_color = theme.semantic.caret;
         list.fill_rect(
             Rect {
                 x: origin.x + c.x * metrics.scale,
@@ -419,12 +424,14 @@ pub(crate) fn paint_document(
     list.pop_clip();
 }
 
-/// Métricas del viewport: scale al ancho, inset constante.
+/// Métricas del viewport: scale para que quepa al menos una página
+/// (`min(w/pw, h/ph)`), inset constante, hoja centrada en X.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ViewportMetrics {
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     pub inset: f32,
     pub scale: f32,
+    /// Ancho de una hoja escalada (no el del viewport).
     pub inner_w: f32,
     pub origin_x: f32,
     pub origin_y: f32,
@@ -432,18 +439,21 @@ pub(crate) struct ViewportMetrics {
 
 pub(crate) fn viewport_metrics(area: Rect, page_size: (f32, f32)) -> ViewportMetrics {
     let inset = PAGE_INSET.min(area.width / 4.0).min(area.height / 4.0);
-    let inner_w = (area.width - inset * 2.0).max(0.0);
-    let (pw, _) = page_size;
-    let scale = if pw > 0.0 && inner_w > 0.0 {
-        inner_w / pw
-    } else {
-        1.0
+    let avail_w = (area.width - inset * 2.0).max(0.0);
+    let avail_h = (area.height - inset * 2.0).max(0.0);
+    let (pw, ph) = page_size;
+    let scale = match (pw > 0.0, ph > 0.0, avail_w > 0.0, avail_h > 0.0) {
+        (true, true, true, true) => (avail_w / pw).min(avail_h / ph),
+        (true, _, true, _) => avail_w / pw,
+        _ => 1.0,
     };
+    let page_w = pw * scale;
+    let origin_x = area.x + (area.width - page_w) * 0.5;
     ViewportMetrics {
         inset,
         scale,
-        inner_w,
-        origin_x: area.x + inset,
+        inner_w: page_w,
+        origin_x,
         origin_y: area.y + inset,
     }
 }
@@ -648,5 +658,30 @@ mod tests {
     #[test]
     fn wordcraft_crates_link_behind_feature() {
         let _ = std::any::type_name::<wordcraft::doc::Document>();
+    }
+}
+
+#[cfg(test)]
+mod metrics_tests {
+    use super::{viewport_metrics, PAGE_INSET};
+    use crate::geometry::Rect;
+
+    #[test]
+    fn viewport_metrics_fits_one_letter_page() {
+        let area = Rect {
+            width: 900.0,
+            height: 500.0,
+            ..Rect::default()
+        };
+        let m = viewport_metrics(area, (612.0, 792.0));
+        let page_h = 792.0 * m.scale;
+        assert!(
+            page_h + m.inset * 2.0 <= area.height + 0.5,
+            "scaled page {page_h} + insets must fit height {}",
+            area.height
+        );
+        assert!(m.inner_w <= area.width);
+        assert!(m.scale > 0.0);
+        assert!(m.inset <= PAGE_INSET);
     }
 }

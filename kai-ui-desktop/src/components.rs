@@ -2854,6 +2854,7 @@ mod tests {
             background: Default::default(),
             time: None,
             documents: &[],
+            caret_visible: true,
         });
         let rings = list
             .ops
