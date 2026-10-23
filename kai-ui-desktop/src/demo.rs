@@ -28,7 +28,7 @@ use crate::components::{
     toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
-use crate::document::document;
+use crate::document::{document, DocumentChange, DocumentCmd};
 use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
@@ -126,6 +126,10 @@ struct Demo {
     sincronizando: u32,
     /// Gráficos: the selected bar (month index).
     mes: Option<usize>,
+    /// Documento: markdown ligero + último comando de toolbar.
+    doc_markdown: String,
+    doc_cmd: Option<(DocumentCmd, u64)>,
+    doc_cmd_serial: u64,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -188,6 +192,9 @@ impl Default for Demo {
             espera: None,
             sincronizando: 0,
             mes: None,
+            doc_markdown: String::new(),
+            doc_cmd: None,
+            doc_cmd_serial: 0,
         }
     }
 }
@@ -748,6 +755,10 @@ enum Msg {
     ToggleAreas,
     /// The selected bar of the chart, by month index.
     Mes(usize),
+    /// Documento: contenido tipado / formateado.
+    Documento(DocumentChange),
+    /// Documento: comando de toolbar / Action.
+    DocCmd(DocumentCmd),
     /// What the color field of the selected sector holds.
     ColorSector(String),
     /// Starts editing the outline of the sector with this code.
@@ -1111,6 +1122,88 @@ impl Action for FijarVista {
     }
 }
 
+
+/// Documento: negrita (WordCraft `format.bold`).
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocNegrita;
+
+impl Action for DocNegrita {
+    type App = Demo;
+    const ID: &'static str = "format.bold";
+    const TITLE: &'static str = "Negrita";
+    fn description() -> &'static str {
+        "Aplica o quita negrita en la selección del documento de la demo"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::Bold)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocCursiva;
+
+impl Action for DocCursiva {
+    type App = Demo;
+    const ID: &'static str = "format.italic";
+    const TITLE: &'static str = "Cursiva";
+    fn description() -> &'static str {
+        "Aplica o quita cursiva en la selección del documento de la demo"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::Italic)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocLista;
+
+impl Action for DocLista {
+    type App = Demo;
+    const ID: &'static str = "para.bullets";
+    const TITLE: &'static str = "Lista con viñetas";
+    fn description() -> &'static str {
+        "Convierte el párrafo del documento en una lista con viñetas"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::Bullets)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocDeshacer;
+
+impl Action for DocDeshacer {
+    type App = Demo;
+    const ID: &'static str = "edit.undo";
+    const TITLE: &'static str = "Deshacer";
+    fn description() -> &'static str {
+        "Deshace el último cambio del documento"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::Undo)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocRehacer;
+
+impl Action for DocRehacer {
+    type App = Demo;
+    const ID: &'static str = "edit.redo";
+    const TITLE: &'static str = "Rehacer";
+    fn description() -> &'static str {
+        "Rehace el último cambio deshecho del documento"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::Redo)
+    }
+}
+
 /// Frames a box on the map of «Mapa».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1294,6 +1387,11 @@ impl App for Demo {
         registry.query::<VistaDelMapa>().expose();
         registry.action::<SimularEspera>().menu("Botones").expose();
         registry.action::<ExportarTabla>().menu("Archivo").expose();
+        registry.action::<DocNegrita>().menu("Documento").expose();
+        registry.action::<DocCursiva>().menu("Documento").expose();
+        registry.action::<DocLista>().menu("Documento").expose();
+        registry.action::<DocDeshacer>().menu("Documento").expose();
+        registry.action::<DocRehacer>().menu("Documento").expose();
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -1540,6 +1638,13 @@ impl App for Demo {
             Msg::Encuadrar(bounds) => self.encuadrar(bounds),
             Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
             Msg::Mes(index) => self.mes = Some(index),
+            Msg::Documento(change) => {
+                self.doc_markdown = change.markdown;
+            }
+            Msg::DocCmd(cmd) => {
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((cmd, self.doc_cmd_serial));
+            },
             Msg::ColorSector(color) => {
                 let code = self.area.clone();
                 if let Some(sector) = self
@@ -2784,28 +2889,58 @@ impl Demo {
         ]
     }
 
-    /// Documento: esqueleto del mini Word (página en blanco; fase 0 tipará).
+    /// Documento: nota rica (fase 0) — tipar, negrita, undo; markdown en el modelo.
     fn documento(&self) -> Element<Msg> {
+        let mut editor = document()
+            .label("Informe de demostración")
+            .placeholder_text("Escribe aquí…")
+            .markdown(&self.doc_markdown)
+            .on_change(Msg::Documento)
+            .class("h-96 w-full")
+            .test_id("documento.editor");
+        if let Some((cmd, serial)) = &self.doc_cmd {
+            editor = editor.pending_cmd(cmd.clone(), *serial);
+        }
         card()
             .class("w-full max-w-3xl")
             .test_id("documento")
             .children([
                 card_header(
                     "Documento",
-                    Some("Esqueleto del editor: hoja en blanco (sin tipar aún)"),
+                    Some("Nota rica: tipar, seleccionar, ⌘B / toolbar, undo (WordCraft)"),
                 ),
-                card_content().children([
-                    document()
-                        .label("Informe de demostración")
-                        .placeholder_text("Escribe aquí…")
-                        .class("h-96 w-full")
-                        .test_id("documento.editor"),
-                    caption("Página placeholder; WordCraft entra con feature = \"document\"."),
+                card_content().class("gap-3").children([
+                    div()
+                        .class("flex flex-wrap items-center gap-2")
+                        .test_id("documento.toolbar")
+                        .children([
+                            button_sized("Negrita", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocNegrita)
+                                .test_id("documento.bold"),
+                            button_sized("Cursiva", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocCursiva)
+                                .test_id("documento.italic"),
+                            button_sized("Lista", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocLista)
+                                .test_id("documento.lista"),
+                            button_sized("Deshacer", ButtonVariant::Text, ButtonSize::Sm)
+                                .on_command(DocDeshacer)
+                                .test_id("documento.undo"),
+                            button_sized("Rehacer", ButtonVariant::Text, ButtonSize::Sm)
+                                .on_command(DocRehacer)
+                                .test_id("documento.redo"),
+                            button_sized("Seleccionar todo", ButtonVariant::Text, ButtonSize::Sm)
+                                .on_click(Msg::DocCmd(DocumentCmd::Raw("select.all".into())))
+                                .test_id("documento.select_all"),
+                        ]),
+                    editor,
+                    caption(
+                        "Persistencia: Markdown en el modelo de la demo. Motor: WordCraft                          (feature = \"document\").",
+                    ),
                 ]),
             ])
     }
 
-    /// Diálogos y avisos: open a dialog, show toasts, open the palette.
     fn dialogs_and_toasts(&self) -> Element<Msg> {
         card()
             .class("w-full max-w-3xl")
@@ -3678,7 +3813,8 @@ mod tests {
                 text_fields: &[],
                 background: Default::default(),
                 time: None,
-            });
+                        documents: &[],
+        });
             samples.push(start.elapsed());
             ops += list.ops.len();
         }
@@ -3896,6 +4032,28 @@ mod tests {
         }
     }
 
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_types_bold_and_undo() {
+        let mut app = TestApp::new(Demo::at(Seccion::Documento));
+        let editor = || By::test_id("documento.editor");
+        assert_eq!(
+            app.screen().get(editor()).name().as_deref(),
+            Some("Informe de demostración")
+        );
+        app.type_text(editor(), "Hola");
+        assert_eq!(app.value(editor()), "Hola");
+        app.click(By::test_id("documento.select_all"));
+        assert!(app.perform("format.bold"));
+        assert_eq!(app.value(editor()), "Hola");
+        assert!(app.perform("edit.undo"));
+        assert_eq!(app.value(editor()), "Hola");
+        assert!(app.perform("edit.undo"));
+        assert_ne!(app.value(editor()), "Hola");
+    }
+
+    
     #[test]
     fn the_sidebar_shows_one_section_at_a_time() {
         let mut app = TestApp::new(Demo::default());
@@ -4078,7 +4236,7 @@ mod tests {
             include_str!("maps/editor.rs"),
             include_str!("document/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 26] = [
+        const NOT_WIDGETS: [&str; 29] = [
             "ChartSpec",
             "ChartSeries",
             "MapSpec",
@@ -4105,6 +4263,9 @@ mod tests {
             "MenuFrame",
             "DocumentSpec",
             "DocumentChange",
+            "DocumentCmdRequest",
+            "DocumentPaint",
+            "DocumentRun",
         ];
         use Seccion::*;
         let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
@@ -5020,6 +5181,11 @@ mod tests {
                 "mapa.get_view",
                 "botones.simular_espera",
                 "tabla.exportar",
+                "format.bold",
+                "format.italic",
+                "para.bullets",
+                "edit.undo",
+                "edit.redo",
                 "kai.paleta",
             ]
         );
@@ -5060,7 +5226,7 @@ mod tests {
         let titles: Vec<_> = model.iter().map(|group| group.title).collect();
         assert_eq!(
             titles,
-            ["Contador", "Formulario", "Ver", "Botones", "Archivo"]
+            ["Contador", "Formulario", "Ver", "Botones", "Archivo", "Documento"]
         );
         assert_eq!(
             model[0].items[1],
@@ -5181,7 +5347,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            8,
+            13,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -5624,6 +5790,11 @@ mod tests {
                 "mapa.get_view",
                 "botones.simular_espera",
                 "tabla.exportar",
+                "format.bold",
+                "format.italic",
+                "para.bullets",
+                "edit.undo",
+                "edit.redo",
             ]
         );
     }
@@ -7400,6 +7571,7 @@ mod tests {
             ("demo-mapa", Seccion::Mapa),
             ("demo-mapa-areas", Seccion::Mapa),
             ("demo-graficos", Seccion::Graficos),
+            ("demo-documento", Seccion::Documento),
         ] {
             let mut demo = Demo::at(seccion);
             if seccion == Seccion::Tabla {

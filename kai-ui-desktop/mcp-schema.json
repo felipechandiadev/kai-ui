@@ -480,6 +480,71 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Exportar a Excel"
+    },
+    {
+      "description": "Aplica o quita negrita en la selección del documento de la demo",
+      "exposed": true,
+      "id": "format.bold",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Negrita"
+    },
+    {
+      "description": "Aplica o quita cursiva en la selección del documento de la demo",
+      "exposed": true,
+      "id": "format.italic",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Cursiva"
+    },
+    {
+      "description": "Convierte el párrafo del documento en una lista con viñetas",
+      "exposed": true,
+      "id": "para.bullets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Lista con viñetas"
+    },
+    {
+      "description": "Deshace el último cambio del documento",
+      "exposed": true,
+      "id": "edit.undo",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Deshacer"
+    },
+    {
+      "description": "Rehace el último cambio deshecho del documento",
+      "exposed": true,
+      "id": "edit.redo",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Rehacer"
     }
   ],
   "format": 1
