@@ -101,5 +101,4 @@ Los iconos se generan desde `lucide-react` con `node kai-ui-desktop/scripts/gen-
 
 ## Limitaciones conocidas
 
-- **Paneles de archivos:** `Effects::pick_file` y `Effects::save_file` abren el `NSOpenPanel` y el `NSSavePanel` como modales dentro del manejador de eventos. Si la app se termina con uno abierto (Cmd+Q, o `kai dev` que la reinicia), el proceso aborta. El arreglo propuesto (hoja no bloqueante) está en el Paso 15 de la [hoja de ruta](docs/dev/13-hoja-de-ruta-plataforma.md).
 - **Faltan** persistencia (`Store`), `kai.toml`, el resto de la CLI (`kai new`, `kai test`…), bundle y firma, router, varias ventanas y Windows/Linux. El orden y el costo están en la [hoja de ruta, §1.2](docs/dev/13-hoja-de-ruta-plataforma.md#12-lo-que-falta-para-cada-hito-con-costo-estimado).

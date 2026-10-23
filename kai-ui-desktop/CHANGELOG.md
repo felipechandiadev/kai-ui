@@ -41,9 +41,12 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 - La demo pasó a ser un shell con toolbar, sidebar y diez secciones; la baseline de capturas tiene 22 imágenes.
 - `TestApp` arranca su reloj en el inicio de la sesión, así las animaciones dan los mismos frames en cada corrida.
 
+### Fixed
+
+- **Paneles de archivos al cerrar:** `Effects::pick_file` / `save_file` abren `NSOpenPanel` / `NSSavePanel` como hoja (`beginSheetModalForWindow` + `block2`), no con `runModal` dentro del manejador de winit. La ruta vuelve como `UserEvent::FilePicked`. Cerrar la ventana o reiniciar con `kai dev` con el panel abierto ya no aborta.
+
 ### Known issues
 
-- La app aborta si se termina con un panel de archivos (abrir o guardar) abierto (`runModal` dentro del manejador de eventos de winit).
 - La barra vertical del cuerpo de una tabla más ancha que su caja queda en el borde derecho de la grilla y se desplaza con el scroll horizontal.
 
 ## [0.1.0] - 2026-10-18
