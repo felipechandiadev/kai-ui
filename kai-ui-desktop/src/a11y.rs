@@ -78,7 +78,7 @@ pub fn effective_role(node: &LayoutNode) -> KaiRole {
     node.role.unwrap_or(match node.content {
         Content::Input { lines: Some(_), .. } => KaiRole::TextArea,
         Content::Input { .. } => KaiRole::TextInput,
-        Content::Icon(_) | Content::Image(_) => KaiRole::Image,
+        Content::Icon(_) | Content::SvgIcon(_) | Content::Image(_) => KaiRole::Image,
         _ if node.control => KaiRole::Button,
         Content::Text(_) => KaiRole::Label,
         Content::Map(_) => KaiRole::Group,
@@ -97,7 +97,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
             Some(node.label.clone().unwrap_or_else(|| placeholder.clone()))
         }
         Content::Text(text) => Some(node.label.clone().unwrap_or_else(|| text.clone())),
-        Content::Icon(_) | Content::Image(_) | Content::Map(_) | Content::Chart(_) => {
+        Content::Icon(_) | Content::SvgIcon(_) | Content::Image(_) | Content::Map(_) | Content::Chart(_) => {
             node.label.clone()
         }
         Content::Box => node.label.clone().or_else(|| {
@@ -182,7 +182,7 @@ fn role_of(node: &LayoutNode) -> Role {
 /// of the tree.
 fn exposed(node: &LayoutNode) -> bool {
     let decorative =
-        matches!(node.content, Content::Icon(_) | Content::Image(_)) && node.label.is_none();
+        matches!(node.content, Content::Icon(_) | Content::SvgIcon(_) | Content::Image(_)) && node.label.is_none();
     !node.hidden && !decorative
 }
 
@@ -251,6 +251,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             }
         }
         Content::Icon(_)
+        | Content::SvgIcon(_)
         | Content::Image(_)
         | Content::Box
         | Content::Map(_)

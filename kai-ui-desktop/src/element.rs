@@ -272,6 +272,8 @@ pub enum Kind {
     Text(String),
     /// Sized by `size-*` (1em by default) and colored by the text color.
     Icon(Icon),
+    /// Icono propio de la app: cuerpo SVG 24×24 (`include_str!` tras `kai icons add`).
+    SvgIcon(&'static str),
     Input {
         value: String,
         placeholder: String,
@@ -647,6 +649,16 @@ pub fn text<Msg>(content: impl Into<String>) -> Element<Msg> {
 
 pub fn icon<Msg>(icon: Icon) -> Element<Msg> {
     Element::new(Kind::Icon(icon))
+}
+
+/// Icono SVG de la app (solo hijos del viewBox 24×24).
+///
+/// Tras `kai icons add foo`:
+/// ```ignore
+/// icon_svg(include_str!("../assets/icons/foo.svg")).class("size-5")
+/// ```
+pub fn icon_svg<Msg>(body: &'static str) -> Element<Msg> {
+    Element::new(Kind::SvgIcon(body))
 }
 
 /// Image from a file, a URL, bytes or pixels ([`ImageSource`]). The

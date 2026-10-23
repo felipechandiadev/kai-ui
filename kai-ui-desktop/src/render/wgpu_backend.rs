@@ -1949,7 +1949,7 @@ mod tests {
             },
             Color::rgb(0, 222, 239),
             Mask {
-                icon: Icon::Search,
+                icon: Icon::Search.into(),
                 stroke_width: 2.0,
             },
         );

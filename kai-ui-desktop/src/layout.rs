@@ -149,6 +149,8 @@ pub enum Content {
     Box,
     Text(String),
     Icon(Icon),
+    /// Cuerpo SVG de app ([`crate::element::icon_svg`]).
+    SvgIcon(&'static str),
     Input {
         placeholder: String,
         masked: bool,
@@ -392,6 +394,7 @@ impl Builder<'_> {
             Kind::Div => Content::Box,
             Kind::Text(content) => Content::Text(content.clone()),
             Kind::Icon(icon) => Content::Icon(*icon),
+            Kind::SvgIcon(body) => Content::SvgIcon(body),
             Kind::Input {
                 value,
                 placeholder,
@@ -517,7 +520,7 @@ impl Builder<'_> {
             Kind::Text(_) => self
                 .taffy
                 .new_leaf_with_context(taffy_style, Leaf::Text(index))?,
-            Kind::Icon(_) => self
+            Kind::Icon(_) | Kind::SvgIcon(_) => self
                 .taffy
                 .new_leaf_with_context(taffy_style, Leaf::Icon(index))?,
             Kind::Input { .. } => self
@@ -1009,6 +1012,7 @@ fn place(
         match &node.content {
             Content::Box
             | Content::Icon(_)
+            | Content::SvgIcon(_)
             | Content::Image(_)
             | Content::Map(_)
             | Content::Chart(_) => {}

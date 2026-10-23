@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use resvg::{tiny_skia, usvg};
 
-use crate::icons::{self, Icon};
+use crate::icons::{self, IconSource};
 
 /// Side of the square `R8Unorm` atlas texture, in pixels.
 pub const ATLAS_SIZE: u32 = 1024;
@@ -17,15 +17,15 @@ const PADDING: u32 = 1;
 /// hundredths of a view-box unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MaskKey {
-    pub icon: Icon,
+    pub icon: IconSource,
     pub px: u16,
     pub stroke: u16,
 }
 
 impl MaskKey {
-    pub fn new(icon: Icon, px: f32, stroke_width: f32) -> Self {
+    pub fn new(icon: impl Into<IconSource>, px: f32, stroke_width: f32) -> Self {
         Self {
-            icon,
+            icon: icon.into(),
             px: px.round().clamp(1.0, f32::from(u16::MAX)) as u16,
             stroke: (stroke_width * 100.0)
                 .round()
@@ -47,9 +47,13 @@ pub struct AtlasRect {
 }
 
 /// Coverage (alpha) of `icon` rendered into a `px` × `px` square.
-pub fn rasterize(icon: Icon, px: u32, stroke_width: f32) -> Option<Vec<u8>> {
-    let tree =
-        usvg::Tree::from_str(&icons::svg(icon, stroke_width), &usvg::Options::default()).ok()?;
+pub fn rasterize(icon: impl Into<IconSource>, px: u32, stroke_width: f32) -> Option<Vec<u8>> {
+    let icon = icon.into();
+    let tree = usvg::Tree::from_str(
+        &icons::svg_from_body(icon.body(), stroke_width),
+        &usvg::Options::default(),
+    )
+    .ok()?;
     let mut pixmap = tiny_skia::Pixmap::new(px, px)?;
     let scale = px as f32 / 24.0;
     resvg::render(

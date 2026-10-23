@@ -191,23 +191,10 @@ impl Painter<'_> {
             }
             Content::Input { .. } => self.input_contents(node),
             Content::Icon(icon) => {
-                let area = node.content_box;
-                let side = area.width.min(area.height);
-                if side > 0.0 {
-                    self.list.quad(Quad::icon(
-                        Rect {
-                            x: area.x + (area.width - side) / 2.0,
-                            y: area.y + (area.height - side) / 2.0,
-                            width: side,
-                            height: side,
-                        },
-                        faded(node.text.color, node.opacity),
-                        Mask {
-                            icon: *icon,
-                            stroke_width: node.text.stroke_width,
-                        },
-                    ));
-                }
+                self.paint_icon_mask(node, (*icon).into());
+            }
+            Content::SvgIcon(body) => {
+                self.paint_icon_mask(node, crate::icons::IconSource::Svg(body));
             }
             Content::Image(Some(image)) => {
                 let area = node.content_box;
@@ -332,6 +319,26 @@ impl Painter<'_> {
                     self.list.fill_rect(side, border_color);
                 }
             }
+        }
+    }
+
+    fn paint_icon_mask(&mut self, node: &LayoutNode, icon: crate::icons::IconSource) {
+        let area = node.content_box;
+        let side = area.width.min(area.height);
+        if side > 0.0 {
+            self.list.quad(Quad::icon(
+                Rect {
+                    x: area.x + (area.width - side) / 2.0,
+                    y: area.y + (area.height - side) / 2.0,
+                    width: side,
+                    height: side,
+                },
+                faded(node.text.color, node.opacity),
+                Mask {
+                    icon,
+                    stroke_width: node.text.stroke_width,
+                },
+            ));
         }
     }
 
@@ -810,7 +817,7 @@ mod tests {
         assert_eq!(
             icons[0].mask,
             Some(Mask {
-                icon: Icon::Search,
+                icon: Icon::Search.into(),
                 stroke_width: 2.25
             })
         );

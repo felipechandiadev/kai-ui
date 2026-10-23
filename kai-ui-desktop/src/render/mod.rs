@@ -17,7 +17,7 @@ pub mod wgpu_backend;
 use crate::background::BackgroundLayer;
 use crate::element::WidgetId;
 use crate::geometry::{ClipRect, Point, Rect};
-use crate::icons::Icon;
+use crate::icons::IconSource;
 pub use geometry::{Affine2, GeometryDraw, Mesh};
 pub use images::Bitmap;
 
@@ -76,7 +76,7 @@ impl TextId {
 /// icon is drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mask {
-    pub icon: Icon,
+    pub icon: IconSource,
     /// In units of the icon's 24×24 view box.
     pub stroke_width: f32,
 }
