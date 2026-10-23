@@ -21,7 +21,7 @@
 //! nearest one (`ControlFlow::WaitUntil`).
 
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
@@ -57,6 +57,35 @@ use crate::ui_engine::{ClickCounter, Modifiers};
 /// Points per wheel notch.
 pub(crate) const LINE_SCROLL: f32 = 40.0;
 
+/// Identifies one agent / MCP tool call while the app answers it (13 §7.3).
+/// The same id travels on the agent call and on [`Effects::completes`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InvocationId(pub u64);
+
+thread_local! {
+    static CURRENT_INVOCATION: Cell<Option<InvocationId>> = const { Cell::new(None) };
+}
+
+/// The agent call being handled on this thread, if `update` is running
+/// because of one. An action that starts async work marks
+/// [`Effects::completes`] with this id so the runtime answers the agent
+/// when the task's message is applied.
+pub fn current_invocation() -> Option<InvocationId> {
+    CURRENT_INVOCATION.with(|slot| slot.get())
+}
+
+pub(crate) fn with_current_invocation<R>(
+    id: Option<InvocationId>,
+    f: impl FnOnce() -> R,
+) -> R {
+    CURRENT_INVOCATION.with(|slot| {
+        let previous = slot.replace(id);
+        let result = f();
+        slot.set(previous);
+        result
+    })
+}
+
 /// What `update` asks the runtime to do, as a value (a subset of 13,
 /// Paso 15): [`Effects::after`] sends a message later,
 /// [`Effects::perform`] / [`Effects::perform_async`] run work off the UI
@@ -80,10 +109,13 @@ pub(crate) enum Effect<Msg> {
     },
     /// Run `task` on the task pool and send `done(result)`. A keyed task
     /// replaces the pending one with the same key (its result is dropped).
+    /// [`Effects::completes`] sets `completes` so the runtime answers that
+    /// agent call when the result message is applied (13 §7.3).
     Perform {
         key: Option<String>,
         task: Task,
         done: TaskDone<Msg>,
+        completes: Option<InvocationId>,
     },
     /// Drop the pending timer or task with this key.
     Cancel(String),
@@ -205,6 +237,7 @@ impl<Msg> Effects<Msg> {
                     .expect("el resultado de la tarea tiene el tipo de su to_msg");
                 to_msg(*output)
             }),
+            completes: None,
         }])
     }
 
@@ -269,9 +302,24 @@ impl<Msg> Effects<Msg> {
     }
 
     /// Drop the pending timer or task with `key`, if any (a running task
-    /// finishes, but its message is not sent).
+    /// finishes, but its message is not sent). If that task was marked with
+    /// [`Self::completes`], the agent call fails instead of succeeding.
     pub fn cancel(key: impl Into<String>) -> Self {
         Self(vec![Effect::Cancel(key.into())])
+    }
+
+    /// When this task's message reaches `update` and is applied, answer
+    /// agent / MCP call `invocation` with the action's `.returns` query
+    /// (or `null`). Until then the call stays open. Cancel and MCP
+    /// timeout fail it cleanly (13 §7.3). Use [`current_invocation`] from
+    /// `update` when the message came from an agent.
+    pub fn completes(mut self, invocation: InvocationId) -> Self {
+        for effect in &mut self.0 {
+            if let Effect::Perform { completes, .. } = effect {
+                *completes = Some(invocation);
+            }
+        }
+        self
     }
 
     pub(crate) fn into_vec(self) -> Vec<Effect<Msg>> {
@@ -290,7 +338,7 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 Effect::After { key, delay, msg } => {
                     list.entry(&format_args!("after({delay:?}, {msg:?}, key: {key:?})"))
                 }
-                Effect::Perform { key, .. } => list.entry(&format_args!("perform(key: {key:?})")),
+                Effect::Perform { key, completes, .. } => list.entry(&format_args!("perform(key: {key:?}, completes: {completes:?})")),
                 Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
                 Effect::PickFile { request, .. } => {
                     list.entry(&format_args!("pick_file({:?})", request.title))
