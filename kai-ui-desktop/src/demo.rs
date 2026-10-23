@@ -130,6 +130,13 @@ struct Demo {
     doc_markdown: String,
     doc_cmd: Option<(DocumentCmd, u64)>,
     doc_cmd_serial: u64,
+    /// Carga `.docx` pendiente (bytes + serial).
+    doc_load: Option<(u64, std::sync::Arc<[u8]>)>,
+    doc_load_serial: u64,
+    /// Tras elegir ruta de guardar/exportar, pedimos TakeDocument.
+    doc_pending_export: Option<(std::path::PathBuf, DocExportKind)>,
+    /// I/O de archivo en curso (botones Archivo).
+    doc_archivo_busy: bool,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -195,6 +202,10 @@ impl Default for Demo {
             doc_markdown: demo_doc_markdown(),
             doc_cmd: None,
             doc_cmd_serial: 0,
+            doc_load: None,
+            doc_load_serial: 0,
+            doc_pending_export: None,
+            doc_archivo_busy: false,
         }
     }
 }
@@ -202,6 +213,36 @@ impl Default for Demo {
 /// Plaza de Armas de Parral, where the map starts.
 const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
 const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 13.0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DocExportKind {
+    Docx,
+    Pdf,
+}
+
+/// Encode + write off the UI thread (`Effects::perform`).
+#[cfg(feature = "document")]
+fn write_document_file(
+    doc: wordcraft_doc::Document,
+    path: std::path::PathBuf,
+    kind: DocExportKind,
+) -> Result<String, String> {
+    let bytes = match kind {
+        DocExportKind::Docx => wordcraft_docx::write(&doc).map_err(|e| e.to_string())?,
+        DocExportKind::Pdf => wordcraft_pdf::export(&doc, &wordcraft_pdf::PdfOptions::default())
+            .map_err(|e| e.to_string())?,
+    };
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let label = match kind {
+        DocExportKind::Docx => "DOCX",
+        DocExportKind::Pdf => "PDF",
+    };
+    Ok(format!("{label}: {name}"))
+}
 
 fn demo_doc_markdown() -> String {
     let mut parts = vec![
@@ -774,6 +815,20 @@ enum Msg {
     Documento(DocumentChange),
     /// Documento: comando de toolbar / Action.
     DocCmd(DocumentCmd),
+    /// Documento: panel Abrir `.docx`.
+    DocAbrir,
+    /// Ruta elegida al abrir (`None`: cancelado).
+    DocAbrirElegido(Option<PathBuf>),
+    /// Bytes leídos del `.docx` (o error).
+    DocBytesLeidos(Result<Vec<u8>, String>),
+    /// Documento: panel Guardar `.docx`.
+    DocGuardar,
+    DocGuardarEn(Option<PathBuf>),
+    /// Documento: panel Exportar PDF.
+    DocExportarPdf,
+    DocExportarPdfEn(Option<PathBuf>),
+    /// Escritura / export terminó.
+    DocArchivoListo(Result<String, String>),
     /// What the color field of the selected sector holds.
     ColorSector(String),
     /// Starts editing the outline of the sector with this code.
@@ -1251,6 +1306,75 @@ impl Action for DocImagen {
     }
 }
 
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocAbrir;
+
+impl Action for DocAbrir {
+    type App = Demo;
+    const ID: &'static str = "documento.abrir";
+    const TITLE: &'static str = "Abrir documento";
+    fn description() -> &'static str {
+        "Abre un archivo .docx en el editor de Documento (WordCraft)"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.doc_archivo_busy {
+            Availability::disabled("Ya hay una operación de archivo en curso")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocAbrir
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocGuardar;
+
+impl Action for DocGuardar {
+    type App = Demo;
+    const ID: &'static str = "documento.guardar";
+    const TITLE: &'static str = "Guardar documento";
+    fn description() -> &'static str {
+        "Guarda el documento como .docx donde elijas"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.doc_archivo_busy {
+            Availability::disabled("Ya hay una operación de archivo en curso")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocGuardar
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocExportarPdf;
+
+impl Action for DocExportarPdf {
+    type App = Demo;
+    const ID: &'static str = "documento.exportar_pdf";
+    const TITLE: &'static str = "Exportar PDF";
+    fn description() -> &'static str {
+        "Exporta el documento a PDF (WordCraft / craft-pdf) donde elijas"
+    }
+    fn available(demo: &Demo) -> Availability {
+        if demo.doc_archivo_busy {
+            Availability::disabled("Ya hay una operación de archivo en curso")
+        } else {
+            Availability::Enabled
+        }
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocExportarPdf
+    }
+}
+
 /// Frames a box on the map of «Mapa».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1439,6 +1563,9 @@ impl App for Demo {
         registry.action::<DocLista>().menu("Documento").expose();
         registry.action::<DocTabla>().menu("Documento").expose();
         registry.action::<DocImagen>().menu("Documento").expose();
+        registry.action::<DocAbrir>().menu("Documento").expose();
+        registry.action::<DocGuardar>().menu("Documento").expose();
+        registry.action::<DocExportarPdf>().menu("Documento").expose();
         registry.action::<DocDeshacer>().menu("Documento").expose();
         registry.action::<DocRehacer>().menu("Documento").expose();
     }
@@ -1689,11 +1816,100 @@ impl App for Demo {
             Msg::Mes(index) => self.mes = Some(index),
             Msg::Documento(change) => {
                 self.doc_markdown = change.markdown;
+                #[cfg(feature = "document")]
+                if let Some(export) = change.export
+                    && let Some((path, kind)) = self.doc_pending_export.take()
+                {
+                    self.doc_archivo_busy = true;
+                    let doc = (*export.0).clone();
+                    return Effects::perform(
+                        move || write_document_file(doc, path, kind),
+                        Msg::DocArchivoListo,
+                    );
+                }
+                #[cfg(not(feature = "document"))]
+                if self.doc_pending_export.take().is_some() {
+                    return Effects::perform(
+                        || Err("Compila con --features document".into()),
+                        Msg::DocArchivoListo,
+                    );
+                }
             }
             Msg::DocCmd(cmd) => {
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((cmd, self.doc_cmd_serial));
-            },
+            }
+            Msg::DocAbrir => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request = PickFile::new("Abrir documento").types(&["docx"]);
+                return Effects::pick_file(request, Msg::DocAbrirElegido);
+            }
+            Msg::DocAbrirElegido(None) => {}
+            Msg::DocAbrirElegido(Some(path)) => {
+                self.doc_archivo_busy = true;
+                return Effects::perform(
+                    move || std::fs::read(&path).map_err(|e| e.to_string()),
+                    Msg::DocBytesLeidos,
+                );
+            }
+            Msg::DocBytesLeidos(result) => {
+                self.doc_archivo_busy = false;
+                match result {
+                    Ok(bytes) => {
+                        self.doc_load_serial = self.doc_load_serial.saturating_add(1);
+                        self.doc_load = Some((self.doc_load_serial, bytes.into()));
+                        let toast = Toast::new(0, AlertVariant::Success, "Documento abierto")
+                            .message("Se cargó el archivo .docx");
+                        return self.show_toast(toast);
+                    }
+                    Err(error) => {
+                        let toast = Toast::new(0, AlertVariant::Error, "No se abrió")
+                            .message(error);
+                        return self.show_toast(toast);
+                    }
+                }
+            }
+            Msg::DocGuardar => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request =
+                    SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
+                return Effects::save_file(request, Msg::DocGuardarEn);
+            }
+            Msg::DocGuardarEn(None) => {}
+            Msg::DocGuardarEn(Some(path)) => {
+                self.doc_pending_export = Some((path, DocExportKind::Docx));
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
+            }
+            Msg::DocExportarPdf => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request =
+                    SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
+                return Effects::save_file(request, Msg::DocExportarPdfEn);
+            }
+            Msg::DocExportarPdfEn(None) => {}
+            Msg::DocExportarPdfEn(Some(path)) => {
+                self.doc_pending_export = Some((path, DocExportKind::Pdf));
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
+            }
+            Msg::DocArchivoListo(result) => {
+                self.doc_archivo_busy = false;
+                let toast = match result {
+                    Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo")
+                        .message(name),
+                    Err(error) => {
+                        Toast::new(0, AlertVariant::Error, "No se pudo escribir").message(error)
+                    }
+                };
+                return self.show_toast(toast);
+            }
             Msg::ColorSector(color) => {
                 let code = self.area.clone();
                 if let Some(sector) = self
@@ -2938,7 +3154,7 @@ impl Demo {
         ]
     }
 
-    /// Documento: nota rica (fase 0) — tipar, negrita, undo; markdown en el modelo.
+    /// Documento: tipar / páginas / tabla / imagen / archivo (.docx + PDF).
     fn documento(&self) -> Element<Msg> {
         let mut editor = document()
             .label("Informe de demostración")
@@ -2950,13 +3166,16 @@ impl Demo {
         if let Some((cmd, serial)) = &self.doc_cmd {
             editor = editor.pending_cmd(cmd.clone(), *serial);
         }
+        if let Some((serial, bytes)) = &self.doc_load {
+            editor = editor.pending_load(bytes.clone(), *serial);
+        }
         card()
             .class("w-full max-w-3xl")
             .test_id("documento")
             .children([
                 card_header(
                     "Documento",
-                    Some("Tabla 2×2 e imagen; páginas + scroll; tipar / ⌘B (WordCraft)"),
+                    Some("Abrir/guardar .docx y PDF; tabla; páginas; tipar / ⌘B (WordCraft)"),
                 ),
                 card_content().class("gap-3").children([
                     div()
@@ -2988,9 +3207,23 @@ impl Demo {
                                 .on_click(Msg::DocCmd(DocumentCmd::Raw("select.all".into())))
                                 .test_id("documento.select_all"),
                         ]),
+                    div()
+                        .class("flex flex-wrap items-center gap-2")
+                        .test_id("documento.archivo")
+                        .children([
+                            button_sized("Abrir…", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocAbrir)
+                                .test_id("documento.abrir"),
+                            button_sized("Guardar…", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocGuardar)
+                                .test_id("documento.guardar"),
+                            button_sized("Exportar PDF…", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocExportarPdf)
+                                .test_id("documento.exportar_pdf"),
+                        ]),
                     editor,
                     caption(
-                        "Tabla e imagen vía WordCraft; bits de imagen en atlas Kai. feature = \"document\".",
+                        "Archivo vía Effects::pick_file / save_file + perform; encode WordCraft off-thread.",
                     ),
                 ]),
             ])
@@ -4150,7 +4383,83 @@ mod tests {
         assert!(app.value(editor()).contains("ok"));
     }
 
-    
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_save_docx_via_file_panel() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown = "Hola archivo".into();
+        let mut app = TestApp::new(demo);
+        app.click(By::test_id("documento.guardar"));
+        let request = app.file_save_request().cloned().expect("save panel");
+        assert_eq!(request.name, "informe.docx");
+        assert_eq!(request.types, ["docx"]);
+
+        let dir = std::env::temp_dir().join(format!("kai-doc-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("informe.docx");
+        app.on_file_save(Some(path.clone()));
+        app.run_until_idle();
+        assert!(!app.app().doc_archivo_busy);
+        let bytes = std::fs::read(&path).expect("docx written");
+        assert!(bytes.starts_with(b"PK"), "docx zip");
+        app.screen().get(By::text("Archivo listo"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_open_docx_via_file_panel() {
+        // Seed a .docx via Guardar, then Abrir into a fresh demo.
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown = "Desde disco".into();
+        let mut app = TestApp::new(demo);
+        app.click(By::test_id("documento.guardar"));
+        let dir = std::env::temp_dir().join(format!("kai-doc-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("seed.docx");
+        app.on_file_save(Some(path.clone()));
+        app.run_until_idle();
+        assert!(path.exists());
+
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        app.click(By::test_id("documento.abrir"));
+        let request = app.file_pick_request().cloned().expect("open panel");
+        assert_eq!(request.types, ["docx"]);
+        app.on_file_pick(Some(path.clone()));
+        app.run_until_idle();
+        assert!(!app.app().doc_archivo_busy);
+        let value = app.value(By::test_id("documento.editor"));
+        assert!(
+            value.contains("Desde disco"),
+            "opened docx should restore text; got {value:?}"
+        );
+        app.screen().get(By::text("Documento abierto"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_export_pdf_via_file_panel() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown = "PDF demo".into();
+        let mut app = TestApp::new(demo);
+        assert!(app.perform("documento.exportar_pdf"));
+        let request = app.file_save_request().cloned().expect("pdf panel");
+        assert_eq!(request.name, "informe.pdf");
+        assert_eq!(request.types, ["pdf"]);
+        let dir = std::env::temp_dir().join(format!("kai-doc-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("informe.pdf");
+        app.on_file_save(Some(path.clone()));
+        app.run_until_idle();
+        let bytes = std::fs::read(&path).expect("pdf written");
+        assert!(bytes.starts_with(b"%PDF"), "got {} bytes", bytes.len());
+        app.screen().get(By::text("Archivo listo"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn the_sidebar_shows_one_section_at_a_time() {
         let mut app = TestApp::new(Demo::default());
@@ -5286,6 +5595,9 @@ mod tests {
                 "para.bullets",
                 "insert.table",
                 "insert.picture",
+                "documento.abrir",
+                "documento.guardar",
+                "documento.exportar_pdf",
                 "edit.undo",
                 "edit.redo",
                 "kai.paleta",
@@ -5449,7 +5761,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            15,
+            18,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -5897,6 +6209,9 @@ mod tests {
                 "para.bullets",
                 "insert.table",
                 "insert.picture",
+                "documento.abrir",
+                "documento.guardar",
+                "documento.exportar_pdf",
                 "edit.undo",
                 "edit.redo",
             ]

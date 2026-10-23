@@ -547,6 +547,45 @@
       "title": "Insertar imagen"
     },
     {
+      "description": "Abre un archivo .docx en el editor de Documento (WordCraft)",
+      "exposed": true,
+      "id": "documento.abrir",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Abrir documento"
+    },
+    {
+      "description": "Guarda el documento como .docx donde elijas",
+      "exposed": true,
+      "id": "documento.guardar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Guardar documento"
+    },
+    {
+      "description": "Exporta el documento a PDF (WordCraft / craft-pdf) donde elijas",
+      "exposed": true,
+      "id": "documento.exportar_pdf",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Exportar PDF"
+    },
+    {
       "description": "Deshace el último cambio del documento",
       "exposed": true,
       "id": "edit.undo",

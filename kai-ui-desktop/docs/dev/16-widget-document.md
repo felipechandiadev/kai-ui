@@ -114,6 +114,8 @@ Insertar tabla 2×2, imagen inline o wrap simple. Reutilizar `ImageSource` / atl
 
 Abrir/guardar .docx (`wordcraft-docx`) y exportar PDF (`wordcraft-pdf` / `craft-pdf`) con `Effects::pick_file` / `save_file`. Fuera del hilo de paint.
 
+**Hecho (23-oct-2026):** `pending_load` + `DocumentCmd::TakeDocument` → clone del modelo → `Effects::perform` encode/write. Demo Datos→Documento fila Archivo (Abrir / Guardar / Exportar PDF); Actions + MCP `documento.abrir` / `documento.guardar` / `documento.exportar_pdf`. TestApp `on_file_pick` / `on_file_save`.
+
 ### Fuera de este widget (hasta que DSP lo pida)
 
 Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraft, segundo event loop egui.
@@ -122,7 +124,7 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
 - `TestApp`: tipear, ⌘B, undo; scroll multi-página + tipar tras scroll; query a11y por `label`.
-- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos) con markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / schema MCP.
+- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos) con markdown seed multi-página y fila Archivo. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
 ## 8. Criterios de aceptación
@@ -147,6 +149,8 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
 | Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret |
 | Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai); bridge TextStore glifos = deuda atlas WordCraft |
+| Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
+| Deuda post-plan | Atlas glifos WordCraft (bridge TextStore), clipboard rich, markdown rich de ida y vuelta |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
