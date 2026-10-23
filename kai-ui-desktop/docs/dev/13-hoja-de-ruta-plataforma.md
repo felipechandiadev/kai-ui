@@ -1032,7 +1032,7 @@ Reglas de la pista C:
 - **Depende de**: Paso 18.
 - **Diseño**: tokens Kai e iconos Lucide viajan dentro del crate, ya generados y versionados; `scripts/gen-icons.mjs` y `scripts/gen-tokens.mjs` quedan como herramientas internas de Kai; `kai icons add <nombre>` para apps (iconos propios en `assets/icons/`).
 - **Hecho cuando**: `fixtures/external-app` y una app creada con `kai new` compilan en un clon sin `kai-ui-web`.
-- **Estado: tokens e iconos generados y versionados; falta `kai icons add`.** El catálogo Lucide vive en `src/icons/catalog.rs` (`node kai-ui-desktop/scripts/gen-icons.mjs`). Los tokens Kai se generan desde `kai-ui-web/src/theme/tokens.css` hacia `src/theme/kai_tokens.rs` con `node kai-ui-desktop/scripts/gen-tokens.mjs` (no editar a mano; `Theme::kai` / densidades / color-mix consumen ese artefacto). Compilar no necesita `kai-ui-web` ni `node_modules` (verificado con `fixtures/external-app` y `cargo check -p kai-ui-desktop-prototype` en un árbol sin `kai-ui-web`). **Pendiente:** `kai icons add` (CLI para iconos propios de la app).
+- **Estado: cerrado (tokens, catálogo Lucide y `kai icons add`).** El catálogo Lucide vive en `src/icons/catalog.rs` (`node kai-ui-desktop/scripts/gen-icons.mjs`). Los tokens Kai se generan desde `kai-ui-web/src/theme/tokens.css` hacia `src/theme/kai_tokens.rs` con `node kai-ui-desktop/scripts/gen-tokens.mjs` (no editar a mano; `Theme::kai` / densidades / color-mix consumen ese artefacto). Compilar no necesita `kai-ui-web` ni `node_modules` (verificado con `fixtures/external-app` y `cargo check -p kai-ui-desktop-prototype` en un árbol sin `kai-ui-web`). **`kai icons add <nombre>`** (o `kai icons add ./mi.svg --name foo`) copia un SVG al `assets/icons/` de la app (desde el catálogo embebido del crate `kai` vía `cargo metadata`, o `--from`); en código: `kai::element::icon_svg(include_str!("../assets/icons/foo.svg"))` (`IconSource::Svg`). `gen-icons.mjs` sigue siendo interno de Kai.
 
 ### Etapa 6 — Distribución (hito M4: plataforma *preview*)
 
@@ -1142,7 +1142,7 @@ Reglas de la pista C:
 | Fuente de teselas en producción (DSP) | OSM estándar, proveedor comercial, PMTiles propio | **PMTiles propio de la región** (extracto vectorial de Protomaps, leído localmente); OSM raster queda como opción para otras regiones | Paso 15b / M3 |
 | Primer corte de DSP desktop | Áreas + flujo operativo, otro módulo | Áreas + flujo operativo + notificaciones (ejercitan mapa, formularios, tablas, async y websockets) | Paso 14 |
 | Nombre y publicación | `kai`/`kai-*` en crates.io, privado | Decidir con licencia en el Paso 21; mientras tanto `publish = false` | Paso 21 |
-| Tokens Kai | Copia manual en `theme.rs`, generados desde `tokens.css` | **Hecho:** generados y versionados en `src/theme/kai_tokens.rs` (`scripts/gen-tokens.mjs`); `kai icons add` sigue pendiente | Paso 19 |
+| Tokens Kai | Copia manual en `theme.rs`, generados desde `tokens.css` | **Hecho:** generados y versionados en `src/theme/kai_tokens.rs` (`scripts/gen-tokens.mjs`); `kai icons add` en `kai-cli` | Paso 19 |
 | Orden de M3 y del corte A1 | Cerrar M3 primero, adelantar P17–P19 | Adelantar P17–P19 con DSP como cliente (§1.2); pendiente de decidir | Antes de seguir con P14 |
 | Color de la selección | Acento (azul), `secondary` (cyan) | **Decidido: `secondary` como vidrio teñido** (token `choice`); el acento queda para acción, encendido y foco | Paso 14 |
 

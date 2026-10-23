@@ -738,7 +738,7 @@ locales/
 - **Iconos de UI.** Hoy `scripts/gen-icons.mjs` lee `lucide-react` desde `kai-ui-web/node_modules`, escribe `assets/icons/*.svg` y regenera `src/icons/catalog.rs`. Propuesta:
   1. El catálogo Lucide base viaja con `kai-core` (los 16 iconos actuales y los que pidan los widgets).
   2. Los iconos propios de cada app se declaran en `assets/icons/` y `kai build` (o un `build.rs` generado) produce un enum `AppIcon` con el mismo formato (solo los hijos del `<svg>`, trazo aplicado al rasterizar en `render/icons.rs`).
-  3. `kai icons add <nombre-lucide>` sustituye al script de Node para las apps; el script actual se mantiene para el propio Kai mientras dependa de `kai-ui-web`.
+  3. **`kai icons add <nombre-lucide>`** (Paso 19, hecho): copia desde el catálogo versionado del crate `kai` a `assets/icons/` de la app (también `kai icons add ./mi.svg --name foo`). Uso en Rust: `icon_svg(include_str!("../assets/icons/foo.svg"))`. El enum `AppIcon` vía `build.rs` sigue siendo propuesta; `gen-icons.mjs` se mantiene para el propio Kai.
 - **Fuentes.** Los archivos de `[fonts] files` se incrustan (`include_bytes!`) y se cargan en el `FontSystem` antes del primer frame; `ui = "system"` mantiene `fonts.rs`. La licencia de cada fuente se copia al bundle, igual que `assets/icons/LICENSE`.
 - **Traducciones.** Archivos Fluent (`.ftl`) por idioma, accesibles con `t!("clientes.titulo")` en `rsx!`; el idioma inicial sale del sistema y `[i18n] default`. Las cadenas de accesibilidad (por ejemplo "Mostrar contraseña" en el TextField) pasan al catálogo de `kai-widgets`.
 - **Empaquetado.** En desarrollo se leen de disco (permite recargar); en `--release`, las fuentes y SVG se incrustan y `assets/data/**` se copia a `Contents/Resources/`.
