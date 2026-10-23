@@ -3478,7 +3478,7 @@ impl<A: App> Session<A> {
             };
             // Pendientes primero: pueden mutar contenido y ya llaman refresh_paint.
             let mut changed = ed.apply_pending_load(&tmp);
-            changed |= ed.apply_pending_cmd(&tmp);
+            changed |= ed.apply_pending_cmd_clipboard(&tmp, Some(&mut *self.clipboard));
             // Solo rebuild si cambió rev/sel/viewport size/vista — no por scroll.
             if self.layout.text_box(id).is_some() {
                 ed.ensure_paint();

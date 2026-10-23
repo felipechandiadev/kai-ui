@@ -120,7 +120,7 @@ Backstage = fase posterior.
 |------------|--------|
 | `layout.pageSetup` | Empuja `ui_requests` (dialog WC-UI) |
 | `layout.manualHyphenation` | Flujo interactivo de puntos de guion |
-| `arrange.*` | Requiere selección de objeto flotante |
+| `arrange.position` / align / rotate / … | Requieren params o UI; **sí cableados** Paso 6: `arrange.wrap` / `bringForward` / `sendBackward` (objeto seleccionado) |
 | `review.newComment` / reply / edit | Exigen `text` / `id` |
 | `review.compare` / `combine` | Params de archivo |
 | `review.restrict`, speech / readAloud UI | Protect / host audio |
@@ -133,14 +133,15 @@ Backstage = fase posterior.
 
 - `documento.ribbon`
 - `documento.archivo` (QAT Abrir / Guardar / Exportar)
-- `documento.ribbon.tab.{home\|insert\|layout\|review\|references\|view}`
+- `documento.ribbon.tab.{home\|insert\|layout\|review\|references\|view\|table}`
 - `documento.ribbon.panel.{…}`
 - `documento.ribbon.cmd.{command.id}` (p. ej. `layout.orientation`)
 
 ## Fuera de alcance (deuda)
 
 - Keytips Alt, Backstage completo (panel Archivo full-screen), Format Painter sticky (doble clic), rulers dibujados en canvas
-- Design tab, Mailings, contextual Table/Picture Format
+- Design tab, Mailings, contextual Picture Format completo
+- Table Design avanzado (galería completa de estilos, Draw Table, formulas); Paso 6 cableó `table.style`/`look`/`shading`/`borders` + pestaña Tabla mínima
 - Pressed para cmds que Session aún no expone como toggle (p. ej. trackChanges /
   markup / zoom presets) — solo disabled vía `why_disabled` hoy
 - Mixed/indeterminate en selección heterogénea (format.state es booleano)
@@ -155,4 +156,6 @@ cargo +1.95 test --features document --lib demo::tests::document_ribbon
 # Tabs Diseño / Revisar / Vista / Referencias.
 # Format Painter: negrita en una palabra → Copiar formato → arrastrar otra → suelta.
 # Estilos: Título 1 pressed; estado Archivo bajo la QAT.
+# Paso 6: Inicio Pegar texto/combinar; Layout Ajustar texto; pestaña Tabla;
+#   Insertar Encabezado/Pie/Editar/Cerrar.
 ```

@@ -325,7 +325,20 @@ impl DocumentEditor {
     }
 
     /// Aplica un comando pendiente del spec (`format.bold`, …).
+    ///
+    /// Paste Special (`PastePlain` / `PasteMerge` / `PasteKeepSource`) usa el
+    /// [`ClipboardPort`] del host cuando se pasa; si no, cae al clipboard
+    /// interno de WordCraft vía `session.run`.
+    #[allow(dead_code)] // API para hosts sin ClipboardPort; Session usa *_clipboard.
     pub fn apply_pending_cmd(&mut self, spec: &DocumentSpec) -> bool {
+        self.apply_pending_cmd_clipboard(spec, None)
+    }
+
+    pub fn apply_pending_cmd_clipboard(
+        &mut self,
+        spec: &DocumentSpec,
+        clipboard: Option<&mut dyn ClipboardPort>,
+    ) -> bool {
         let Some(req) = &spec.pending_cmd else {
             return false;
         };
@@ -333,7 +346,15 @@ impl DocumentEditor {
             return false;
         }
         self.last_cmd_serial = req.serial;
-        let changed = self.run_cmd(&req.id);
+        let changed = match (&req.id, clipboard) {
+            (
+                DocumentCmd::PastePlain
+                | DocumentCmd::PasteMerge
+                | DocumentCmd::PasteKeepSource,
+                Some(clip),
+            ) => self.clipboard_paste_special(clip, &req.id),
+            _ => self.run_cmd(&req.id),
+        };
         if changed {
             // TakeDocument no muta el cuerpo; el resto sí.
             if !matches!(req.id, DocumentCmd::TakeDocument) {
@@ -462,6 +483,76 @@ impl DocumentEditor {
         ok
     }
 
+
+    /// Paste Special desde el host clipboard.
+    ///
+    /// - [`DocumentCmd::PastePlain`]: solo texto (`edit.pasteText`).
+    /// - [`DocumentCmd::PasteMerge`]: HTML/RTF/texto con merge (`edit.pasteMerge`).
+    /// - [`DocumentCmd::PasteKeepSource`]: HTML/RTF/texto como [`Self::clipboard_paste`].
+    pub fn clipboard_paste_special(
+        &mut self,
+        clipboard: &mut dyn ClipboardPort,
+        cmd: &DocumentCmd,
+    ) -> bool {
+        match cmd {
+            DocumentCmd::PasteKeepSource => self.clipboard_paste(clipboard),
+            DocumentCmd::PastePlain => {
+                let text = clipboard.get_text().unwrap_or_default();
+                if text.is_empty() {
+                    self.last_status = "Pegar texto: portapapeles vacío".into();
+                    return false;
+                }
+                let ok = self
+                    .session
+                    .run("edit.pasteText", &json!({ "text": text }))
+                    .is_ok();
+                if ok {
+                    self.last_paint_key = None;
+                    self.last_status = "Pegado: solo texto".into();
+                } else {
+                    self.last_status = "Pegar texto: falló".into();
+                }
+                ok
+            }
+            DocumentCmd::PasteMerge => {
+                let text = clipboard.get_text().unwrap_or_default();
+                let html = clipboard
+                    .get_html()
+                    .ok()
+                    .flatten()
+                    .filter(|h| !h.trim().is_empty());
+                let rtf = clipboard
+                    .get_rtf()
+                    .ok()
+                    .flatten()
+                    .filter(|r| !r.trim().is_empty());
+                if text.is_empty() && html.is_none() && rtf.is_none() {
+                    self.last_status = "Pegar combinar: portapapeles vacío".into();
+                    return false;
+                }
+                let mut payload = json!({});
+                if !text.is_empty() {
+                    payload["text"] = json!(text);
+                }
+                if let Some(html) = html {
+                    payload["html"] = json!(html);
+                }
+                if let Some(rtf) = rtf {
+                    payload["rtf"] = json!(rtf);
+                }
+                let ok = self.session.run("edit.pasteMerge", &payload).is_ok();
+                if ok {
+                    self.last_paint_key = None;
+                    self.last_status = "Pegado: combinar formato".into();
+                } else {
+                    self.last_status = "Pegar combinar: falló".into();
+                }
+                ok
+            }
+            _ => false,
+        }
+    }
+
     fn write_copy_to_clipboard(
         &self,
         clipboard: &mut dyn ClipboardPort,
@@ -574,6 +665,65 @@ impl DocumentEditor {
                 "edit.replaceAll",
                 &json!({ "text": text, "with": with }),
             ),
+            DocumentCmd::PastePlain
+            | DocumentCmd::PasteMerge
+            | DocumentCmd::PasteKeepSource => {
+                // Sin ClipboardPort aquí: la Session lo aplica vía TextIntent::Paste
+                // o la demo llama `clipboard_paste_special`. Como pending_cmd,
+                // intentamos con el clipboard interno de WordCraft (último copy).
+                let id = cmd.as_str();
+                let params = match cmd {
+                    DocumentCmd::PastePlain => json!({}),
+                    DocumentCmd::PasteMerge => json!({}),
+                    DocumentCmd::PasteKeepSource => json!({}),
+                    _ => unreachable!(),
+                };
+                match self.session.run(id, &params) {
+                    Ok(_) => {
+                        self.note_cmd_status(id, &json!({}));
+                        self.last_status = match cmd {
+                            DocumentCmd::PastePlain => "Pegado: solo texto (clip WC)".into(),
+                            DocumentCmd::PasteMerge => "Pegado: combinar (clip WC)".into(),
+                            _ => "Pegado: mantener origen (clip WC)".into(),
+                        };
+                        true
+                    }
+                    Err(e) => {
+                        self.last_status = format!("{id}: {e}");
+                        false
+                    }
+                }
+            }
+            DocumentCmd::Wrap { mode } => {
+                match self
+                    .session
+                    .run("arrange.wrap", &json!({ "wrap": mode }))
+                {
+                    Ok(_) => {
+                        self.last_status = format!("Ajuste de texto: {mode}");
+                        true
+                    }
+                    Err(e) => {
+                        self.last_status = format!("arrange.wrap: {e}");
+                        false
+                    }
+                }
+            }
+            DocumentCmd::TableStyle { style } => {
+                match self
+                    .session
+                    .run("table.style", &json!({ "style": style }))
+                {
+                    Ok(_) => {
+                        self.last_status = format!("Estilo de tabla: {style}");
+                        true
+                    }
+                    Err(e) => {
+                        self.last_status = format!("table.style: {e}");
+                        false
+                    }
+                }
+            }
             DocumentCmd::NewComment { text } => {
                 match self
                     .session
@@ -1013,7 +1163,12 @@ impl DocumentEditor {
         let mut caret = None;
         for (pi, p) in layout.pages.iter().enumerate() {
             let page_y = pi as f32 * (ph + PAGE_GAP_PT);
-            let draws = page_display(&self.session.doc, p, &DisplayOptions::default());
+            let mut dopts = DisplayOptions::default();
+            if self.session.in_header_footer() {
+                dopts.dim_header = false;
+                dopts.dim_body = true;
+            }
+            let draws = page_display(&self.session.doc, p, &dopts);
             collect_display_at(
                 &draws,
                 page_y,
@@ -2277,6 +2432,155 @@ mod tests {
                 chrome.pressed
             );
         }
+    }
+
+
+    #[test]
+    fn stress_100_pages_paint_is_bounded() {
+        // 100 saltos de página → ≥100 páginas Letter. Soft bound: paint < 30s.
+        let mut ed = DocumentEditor::new("Escala Paso 6");
+        for i in 0..100 {
+            let _ = ed.session.run(
+                "insert.pageBreak",
+                &serde_json::json!({}),
+            );
+            // Un poco de texto por página para forzar layout real.
+            let _ = ed.apply_text_intent(TextIntent::InsertText(format!(
+                "Página {i} — relleno de escala.\n"
+            )));
+        }
+        // Fuerza rebuild: InsertText/pageBreak invalidan rev pero paint()
+        // solo lee el snapshot; ensure_paint hace layout+display list.
+        ed.last_paint_key = None;
+        let t0 = std::time::Instant::now();
+        ed.ensure_paint();
+        let ms = t0.elapsed().as_millis();
+        let pages = ed.page_count();
+        assert!(pages >= 100, "expected ≥100 pages, got {pages}");
+        assert!(
+            ms < 30_000,
+            "ensure_paint of {pages} pages took {ms}ms (soft bound 30s)"
+        );
+        let t1 = std::time::Instant::now();
+        ed.ensure_paint(); // cache hit
+        let ms2 = t1.elapsed().as_millis();
+        println!(
+            "stress_100_pages: pages={pages} paint_cold={ms}ms paint_warm={ms2}ms"
+        );
+    }
+
+    #[test]
+    fn wrap_square_after_insert_picture() {
+        let mut ed = DocumentEditor::new("Antes ");
+        assert!(ed.run_cmd(&DocumentCmd::InsertPicture));
+        assert!(ed.run_cmd(&DocumentCmd::Wrap {
+            mode: "square".into()
+        }));
+        assert!(
+            ed.last_status.to_lowercase().contains("ajuste")
+                || ed.last_status.to_lowercase().contains("square")
+                || ed.last_status.to_lowercase().contains("wrap"),
+            "status={:?}",
+            ed.last_status
+        );
+        // Otros modos que el motor declara.
+        for mode in ["tight", "topAndBottom", "behindText", "inFrontOfText", "inline"] {
+            assert!(
+                ed.run_cmd(&DocumentCmd::Wrap {
+                    mode: mode.into()
+                }),
+                "wrap {mode} failed: {}",
+                ed.last_status
+            );
+        }
+    }
+
+    #[test]
+    fn table_style_grid_light() {
+        let mut ed = DocumentEditor::new("Tabla");
+        assert!(ed.run_cmd(&DocumentCmd::InsertTable));
+        assert!(ed.run_cmd(&DocumentCmd::TableStyle {
+            style: "GridTable1Light".into()
+        }));
+        assert!(
+            ed.last_status.contains("GridTable1Light")
+                || ed.last_status.to_lowercase().contains("estilo"),
+            "status={:?}",
+            ed.last_status
+        );
+    }
+
+    #[test]
+    fn paste_special_plain_and_merge_via_host_clipboard() {
+        let mut ed = DocumentEditor::new("");
+        let mut clip = MemClip::default();
+        clip.text = Some("solo texto plano".into());
+        clip.html = Some("<p><b>HTML</b> rico</p>".into());
+        assert!(ed.clipboard_paste_special(
+            &mut clip,
+            &DocumentCmd::PastePlain
+        ));
+        let plain = ed.plain_text();
+        assert!(
+            plain.contains("solo texto plano"),
+            "plain paste missing text: {plain:?}"
+        );
+        // Merge: HTML preferido.
+        let mut ed2 = DocumentEditor::new("");
+        assert!(ed2.clipboard_paste_special(
+            &mut clip,
+            &DocumentCmd::PasteMerge
+        ));
+        assert!(
+            ed2.last_status.to_lowercase().contains("combinar")
+                || ed2.plain_text().contains("HTML")
+                || ed2.plain_text().contains("rico")
+                || ed2.plain_text().contains("solo texto"),
+            "merge status={} text={:?}",
+            ed2.last_status,
+            ed2.plain_text()
+        );
+        // Keep source = edit.paste path.
+        let mut ed3 = DocumentEditor::new("");
+        assert!(ed3.clipboard_paste_special(
+            &mut clip,
+            &DocumentCmd::PasteKeepSource
+        ));
+    }
+
+    #[test]
+    fn header_footer_edit_cycle() {
+        let mut ed = DocumentEditor::new("Cuerpo del doc");
+        assert!(
+            ed.run_cmd(&DocumentCmd::Raw("insert.header".into())),
+            "insert.header: {}",
+            ed.last_status
+        );
+        assert!(
+            ed.run_cmd(&DocumentCmd::Raw("insert.editHeader".into())),
+            "editHeader: {}",
+            ed.last_status
+        );
+        assert!(
+            ed.session.in_header_footer(),
+            "should be in HF after editHeader"
+        );
+        // Typing goes to header story.
+        assert!(ed.apply_text_intent(TextIntent::InsertText(
+            "ENCABEZADO".into()
+        )));
+        assert!(
+            ed.run_cmd(&DocumentCmd::Raw("insert.closeHeader".into())),
+            "closeHeader: {}",
+            ed.last_status
+        );
+        assert!(
+            !ed.session.in_header_footer(),
+            "should leave HF after close"
+        );
+        // Footer + page number.
+        assert!(ed.run_cmd(&DocumentCmd::Raw("insert.footer".into())));
+        assert!(ed.run_cmd(&DocumentCmd::Raw("insert.pageNumber".into())));
     }
 
 }

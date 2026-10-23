@@ -80,6 +80,16 @@ pub enum DocumentCmd {
     ReplaceAll { text: String, with: String },
     /// `review.newComment` con texto del draft (params obligatorios).
     NewComment { text: String },
+    /// Paste Special: texto plano (`edit.pasteText`).
+    PastePlain,
+    /// Paste Special: combinar formato (`edit.pasteMerge`).
+    PasteMerge,
+    /// Paste Special: mantener origen (`edit.paste` HTML/RTF/texto del host).
+    PasteKeepSource,
+    /// `arrange.wrap` — modo de ajuste de imagen/objeto seleccionado.
+    Wrap { mode: String },
+    /// `table.style` — estilo de tabla en el caret.
+    TableStyle { style: String },
     /// Id crudo de WordCraft (`format.underline`, …).
     Raw(String),
 }
@@ -101,6 +111,11 @@ impl DocumentCmd {
             Self::Replace { .. } => "edit.replace",
             Self::ReplaceAll { .. } => "edit.replaceAll",
             Self::NewComment { .. } => "review.newComment",
+            Self::PastePlain => "edit.pasteText",
+            Self::PasteMerge => "edit.pasteMerge",
+            Self::PasteKeepSource => "edit.paste",
+            Self::Wrap { .. } => "arrange.wrap",
+            Self::TableStyle { .. } => "table.style",
             Self::Raw(id) => id.as_str(),
         }
     }

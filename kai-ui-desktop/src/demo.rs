@@ -4245,6 +4245,89 @@ impl Demo {
                             }))
                             .test_id("documento.comment.new"),
                     ]),
+                // Paso 6: Paste Special / wrap / table style / HF (mínimo).
+                div()
+                    .class("flex flex-row flex-wrap items-center gap-1")
+                    .test_id("documento.paso6")
+                    .children([
+                        text("Pegado especial:")
+                            .class("text-xs text-muted-foreground"),
+                        button("Texto", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::PastePlain))
+                            .test_id("documento.paste.plain"),
+                        button("Combinar", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::PasteMerge))
+                            .test_id("documento.paste.merge"),
+                        button("Mantener", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::PasteKeepSource))
+                            .test_id("documento.paste.keep"),
+                        text("· Ajuste:")
+                            .class("text-xs text-muted-foreground"),
+                        button("Cuadrado", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "square".into(),
+                            }))
+                            .test_id("documento.wrap.square"),
+                        button("Estrecho", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "tight".into(),
+                            }))
+                            .test_id("documento.wrap.tight"),
+                        button("Arriba/abajo", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "topAndBottom".into(),
+                            }))
+                            .test_id("documento.wrap.topbottom"),
+                        button("Detrás", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "behindText".into(),
+                            }))
+                            .test_id("documento.wrap.behind"),
+                        button("Delante", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "inFrontOfText".into(),
+                            }))
+                            .test_id("documento.wrap.infront"),
+                        button("En línea", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
+                                mode: "inline".into(),
+                            }))
+                            .test_id("documento.wrap.inline"),
+                        text("· Tabla:")
+                            .class("text-xs text-muted-foreground"),
+                        button("GridLight", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::TableStyle {
+                                style: "GridTable1Light".into(),
+                            }))
+                            .test_id("documento.table.style.gridlight"),
+                        button("TableGrid", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::TableStyle {
+                                style: "TableGrid".into(),
+                            }))
+                            .test_id("documento.table.style.grid"),
+                        text("· Encab/pie:")
+                            .class("text-xs text-muted-foreground"),
+                        button("Encabezado", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
+                                "insert.header".into(),
+                            )))
+                            .test_id("documento.hf.header"),
+                        button("Pie", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
+                                "insert.footer".into(),
+                            )))
+                            .test_id("documento.hf.footer"),
+                        button("Editar encab.", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
+                                "insert.editHeader".into(),
+                            )))
+                            .test_id("documento.hf.edit_header"),
+                        button("Cerrar HF", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
+                                "insert.closeHeader".into(),
+                            )))
+                            .test_id("documento.hf.close"),
+                    ]),
             ])
     }
 

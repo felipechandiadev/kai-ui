@@ -108,7 +108,7 @@ Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-
 
 Insertar tabla 2×2, imagen inline o wrap simple. Reutilizar `ImageSource` / atlas de Kai para bits; WordCraft decide la caja.
 
-**Hecho (23-oct-2026):** comandos `insert.table` (2×2) e `insert.picture` (PNG demo en base64). Display list: `Draw::Fill`/`Line` → quads; `Draw::Image` → `ImageDraw` + `Bitmap` (decode Kai, atlas). Toolbar / Actions / MCP ids públicos. Wrap flotante avanzado = deuda.
+**Hecho (23-oct-2026):** comandos `insert.table` (2×2) e `insert.picture` (PNG demo en base64). Display list: `Draw::Fill`/`Line` → quads; `Draw::Image` → `ImageDraw` + `Bitmap` (decode Kai, atlas). Toolbar / Actions / MCP ids públicos. Wrap flotante (Paso 6): `arrange.wrap` cableado — ver § Escala.
 
 ### Fase 3 — archivo
 
@@ -152,7 +152,8 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 - **RTF:** solo paste si el port lo aporta (MemClip / host custom). **arboard no lee/escribe RTF** — techo SO documentado.
 - **Interno mismo Session:** si el texto del port coincide con el fragmento WordCraft, se reutiliza el fragmento rico sin reimportar.
 - **Tests:** `clipboard_table_html_roundtrip_across_editors`, `clipboard_picture_html_roundtrip_across_editors`, paste HTML table/img externo, paste RGBA crudo.
-- **Fuera de alcance (deuda):** export RTF en copy; Paste Special UI (paso 6); mathml; copy de subconjunto de celdas como `<table>` (sigue aplanado a párrafos); `set_image` en copy hacia hosts que solo lean bitmap sin HTML.
+- **Paste Special (Paso 6):** `DocumentCmd::{PastePlain,PasteMerge,PasteKeepSource}` → `edit.pasteText` / `pasteMerge` / `paste` con host `ClipboardPort` (`apply_pending_cmd_clipboard`). Ribbon Inicio: Pegar / Pegar texto / Pegar combinar. Demo fila `documento.paso6`.
+- **Fuera de alcance (deuda):** export RTF en copy; mathml; copy de subconjunto de celdas como `<table>` (sigue aplanado a párrafos); `set_image` en copy hacia hosts que solo lean bitmap sin HTML; menú contextual Paste Special con preview.
 
 ## 9. Estado
 
@@ -172,7 +173,8 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
 | Clipboard cuerpo | **Hecho (rich HTML + media, 23-oct-2026)** — texto/HTML/tablas/imágenes vía HTML enriquecido + `ClipboardImage`; RTF paste si el port lo trae. Techo: ver § clipboard |
 | A11y + depth edición (Paso 5) | **Slice (23-oct-2026)** — ver § a11y / find / comments / proofing abajo |
-| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips Alt; Backstage full; rulers dibujados; Format Painter sticky; wrap flotante avanzado; AccessKit TextRun/TextSelection con `character_lengths`; Wave squiggles nativos (hoy `Draw::Line` sólido); panel comentarios lateral |
+| Escala y pulido (Paso 6) | **Slice (23-oct-2026)** — benches 100+ págs; Paste Special; wrap flotante; Table Format; HF editables — ver § Escala abajo |
+| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips Alt; Backstage full; rulers dibujados; Format Painter sticky; AccessKit TextRun/TextSelection con `character_lengths`; Wave squiggles nativos (hoy `Draw::Line` sólido); panel comentarios lateral; menú Paste Special con preview; HF presets ricos / first-page-different UI; Picture Format contextual completo |
 
 
 ## A11y + depth de edición (Paso 5, 23-oct-2026)
@@ -212,6 +214,50 @@ Slice útil (no AccessKit perfecto). Prioridad: estructura a11y → find/replace
 4. Barra Find: buscar una palabra del informe → Siguiente / Reemplazar; ver `documento.edit.status`.
 5. Draft de comentario → **Nuevo comentario**; Revisar → Siguiente/Anterior comentario.
 6. Revisar → **Revisar al escribir** (toggle) y **Ortografía**; tipar un typo y ver subrayado.
+
+
+## Escala y pulido (Paso 6, 23-oct-2026)
+
+Slice útil (no el universo Word). Prioridad ejecutada: benches → Paste Special → image wrap → table format → headers/footers.
+
+### Benches / escala
+
+- Test `stress_100_pages_paint_is_bounded`: 100× `insert.pageBreak` + texto → **101 páginas** Letter.
+- `ensure_paint` (layout + display list) en debug unoptimized: **~60 ms cold**, **~0 ms warm** (cache `PaintKey`); soft bound 30 s. Sin regresiones obvias; no se tocó hot path.
+- Cómo reproducir: `cargo +1.95 test --lib --features document -- stress_100_pages -- --nocapture` → imprime `stress_100_pages: pages=… paint_cold=…ms paint_warm=…ms`.
+
+### Paste Special
+
+- `DocumentCmd::{PastePlain, PasteMerge, PasteKeepSource}` sobre el clipboard host (no solo clip WC interno).
+- Ribbon Inicio: `edit.paste` / `edit.pasteText` / `edit.pasteMerge`.
+- Demo: botones Texto / Combinar / Mantener en `documento.paso6`.
+
+### Wrap flotante de imágenes
+
+- `DocumentCmd::Wrap { mode }` → `arrange.wrap` con modos WC: `inline|square|tight|through|topAndBottom|behindText|inFrontOfText`.
+- Ribbon Layout › Arrange: Ajustar texto (+ bringForward / sendBackward).
+- Demo: botones Cuadrado / Estrecho / Arriba-abajo / Detrás / Delante / En línea (requiere imagen seleccionada tras Insertar › Imagen).
+
+### Table Format
+
+- `DocumentCmd::TableStyle { style }` → `table.style` (p. ej. `GridTable1Light`, `TableGrid`).
+- Nueva pestaña ribbon **Tabla** (`MVP_TABLE`): style / look / shading / borders / selectTable (`why_disabled` greya fuera de tabla).
+- Demo: GridLight / TableGrid en `documento.paso6`.
+
+### Headers / footers editables
+
+- WC ya expone `insert.header` / `footer` / `pageNumber` / `editHeader` / `editFooter` / `closeHeader` — cableados en Insert › Header & Footer + demo.
+- Al editar HF (`session.in_header_footer()`), paint usa `DisplayOptions::{dim_header:false, dim_body:true}` para atenuar el cuerpo.
+- **Techo:** presets ricos (blankThree/title UI), first-page-different / odd-even chrome, doble-clic en área HF del canvas.
+
+### Cómo probar
+
+1. `cargo +1.95 run --example demo --features document` → Datos → Documento.
+2. Pegado especial: copiar HTML externo → **Texto** / **Combinar** / **Mantener**.
+3. Insertar imagen → botones de ajuste (o Layout › Ajustar texto).
+4. Insertar tabla → pestaña **Tabla** o GridLight / TableGrid.
+5. Insertar › Encabezado → Editar encabezado → tipar → Cerrar HF.
+6. Stress: test `stress_100_pages_paint_is_bounded`.
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

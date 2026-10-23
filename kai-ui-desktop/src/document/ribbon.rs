@@ -63,6 +63,8 @@ const MVP_HOME: &[&str] = &[
     "edit.cut",
     "edit.copy",
     "edit.paste",
+    "edit.pasteText",
+    "edit.pasteMerge",
     "edit.formatPainter",
     "edit.undo",
     "edit.redo",
@@ -90,6 +92,12 @@ const MVP_INSERT: &[&str] = &[
     "insert.table",
     "insert.picture",
     "insert.pageBreak",
+    "insert.header",
+    "insert.footer",
+    "insert.pageNumber",
+    "insert.editHeader",
+    "insert.editFooter",
+    "insert.closeHeader",
 ];
 
 /// Layout: Page Setup / Breaks que corren con `{}` o params por defecto (ver
@@ -106,6 +114,18 @@ const MVP_LAYOUT: &[&str] = &[
     "layout.sectionRtl",
     "text.columnBreak",
     "layout.break",
+    "arrange.wrap",
+    "arrange.bringForward",
+    "arrange.sendBackward",
+];
+
+/// Table Design/Layout mínimo (requiere caret en tabla; `why_disabled` greya).
+const MVP_TABLE: &[&str] = &[
+    "table.style",
+    "table.look",
+    "table.shading",
+    "table.borders",
+    "table.selectTable",
 ];
 
 /// Review: proofing / tracking / changes sin dialogs de archivo.
@@ -173,6 +193,7 @@ pub fn ribbon_catalog(mode: RibbonMode) -> Vec<RibbonTab> {
             ("Home", MVP_HOME),
             ("Insert", MVP_INSERT),
             ("Layout", MVP_LAYOUT),
+            ("Table", MVP_TABLE),
             ("Review", MVP_REVIEW),
             ("References", MVP_REFERENCES),
             ("View", MVP_VIEW),
@@ -254,11 +275,12 @@ fn preferred_group_order(tab: &str) -> Vec<&'static str> {
             "Editing",
             "Styles",
         ],
-        "Insert" => vec!["Pages", "Tables", "Illustrations", "Text", "Links"],
+        "Insert" => vec!["Pages", "Tables", "Illustrations", "Header & Footer", "Text", "Links"],
         "Layout" => vec!["Page Setup", "Breaks", "Paragraph", "Arrange"],
         "Review" => vec!["Proofing", "Tracking", "Changes", "Comments"],
         "References" => vec!["Table of Contents", "Footnotes", "Captions", "Citations & Bibliography"],
         "View" => vec!["Views", "Show", "Zoom", "Dark Mode", "Immersive", "Page Movement"],
+        "Table" => vec!["Table Styles", "Table Style Options", "Borders"],
         _ => Vec::new(),
     }
 }
@@ -296,6 +318,15 @@ pub fn document_cmd_for(id: &str) -> DocumentCmd {
         "edit.redo" => DocumentCmd::Redo,
         "insert.table" => DocumentCmd::InsertTable,
         "insert.picture" => DocumentCmd::InsertPicture,
+        "edit.pasteText" => DocumentCmd::PastePlain,
+        "edit.pasteMerge" => DocumentCmd::PasteMerge,
+        "edit.paste" => DocumentCmd::PasteKeepSource,
+        "arrange.wrap" => DocumentCmd::Wrap {
+            mode: "square".into(),
+        },
+        "table.style" => DocumentCmd::TableStyle {
+            style: "GridTable1Light".into(),
+        },
         other => DocumentCmd::Raw(other.into()),
     }
 }
@@ -311,6 +342,14 @@ pub fn default_run_params(id: &str) -> serde_json::Value {
         "layout.columns" => json!({ "count": 2 }),
         "layout.break" => json!({ "kind": "page" }),
         "layout.size" => json!({ "name": "Letter" }),
+        "insert.header" => json!({ "preset": "blank" }),
+        "insert.footer" => json!({ "preset": "pageNumber" }),
+        "insert.pageNumber" => json!({ "position": "bottom", "align": "center" }),
+        "arrange.wrap" => json!({ "wrap": "square" }),
+        "table.style" => json!({ "style": "GridTable1Light" }),
+        "table.look" => json!({ "bandedRows": true, "headerRow": true }),
+        "table.shading" => json!({ "color": "D9E2F3" }),
+        "table.borders" => json!({ "kind": "all", "width": 0.5, "color": "000000" }),
         _ => json!({}),
     }
 }
@@ -428,6 +467,8 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "edit.cut" => Icon::Scissors,
         "edit.copy" => Icon::Copy,
         "edit.paste" => Icon::ClipboardPaste,
+        "edit.pasteText" => Icon::Type,
+        "edit.pasteMerge" => Icon::Clipboard,
         "edit.formatPainter" => Icon::Highlighter,
         "edit.undo" => Icon::Undo,
         "edit.redo" => Icon::Redo,
@@ -454,7 +495,21 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         // Insert
         "insert.table" => Icon::Table,
         "insert.picture" => Icon::ImagePlus,
+        "arrange.wrap" => Icon::Layers,
+        "arrange.bringForward" => Icon::ArrowUp,
+        "arrange.sendBackward" => Icon::ArrowDown,
+        "table.style" => Icon::Table,
+        "table.look" => Icon::Settings,
+        "table.shading" => Icon::Highlighter,
+        "table.borders" => Icon::Grid3x3,
+        "table.selectTable" => Icon::Table,
         "insert.pageBreak" => Icon::SeparatorHorizontal,
+        "insert.header" => Icon::PanelLeft,
+        "insert.footer" => Icon::LayoutDashboard,
+        "insert.pageNumber" => Icon::Hash,
+        "insert.editHeader" => Icon::PanelLeft,
+        "insert.editFooter" => Icon::LayoutDashboard,
+        "insert.closeHeader" => Icon::XCircle,
         // Layout
         "layout.margins" => Icon::Expand,
         "layout.orientation" => Icon::RectangleHorizontal,
@@ -564,6 +619,8 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "edit.cut" => "Cortar",
         "edit.copy" => "Copiar",
         "edit.paste" => "Pegar",
+        "edit.pasteText" => "Pegar texto",
+        "edit.pasteMerge" => "Pegar combinar",
         "edit.formatPainter" => "Copiar formato",
         "edit.undo" => "Deshacer",
         "edit.redo" => "Rehacer",
@@ -587,7 +644,21 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "select.all" => "Seleccionar todo",
         "insert.table" => "Tabla",
         "insert.picture" => "Imagen",
+        "arrange.wrap" => "Ajustar texto",
+        "arrange.bringForward" => "Traer adelante",
+        "arrange.sendBackward" => "Enviar atrás",
+        "table.style" => "Estilo de tabla",
+        "table.look" => "Opciones de estilo",
+        "table.shading" => "Sombreado",
+        "table.borders" => "Bordes",
+        "table.selectTable" => "Seleccionar tabla",
         "insert.pageBreak" => "Salto de página",
+        "insert.header" => "Encabezado",
+        "insert.footer" => "Pie de página",
+        "insert.pageNumber" => "Número de página",
+        "insert.editHeader" => "Editar encabezado",
+        "insert.editFooter" => "Editar pie",
+        "insert.closeHeader" => "Cerrar encabezado/pie",
         "layout.margins" => "Márgenes",
         "layout.orientation" => "Orientación",
         "layout.size" => "Tamaño",
@@ -1104,6 +1175,34 @@ mod tests {
             !chrome.pressed.iter().any(|id| id == "para.normal"),
             "Normal should not stay pressed: {:?}",
             chrome.pressed
+        );
+    }
+
+
+    #[test]
+    fn full_ribbon_includes_paso6_cmds() {
+        let tabs = ribbon_catalog(RibbonMode::Full);
+        let ids: Vec<&str> = tabs
+            .iter()
+            .flat_map(|t| t.groups.iter())
+            .flat_map(|g| g.items.iter())
+            .map(|i| i.cmd_id.as_str())
+            .collect();
+        for need in [
+            "edit.pasteText",
+            "edit.pasteMerge",
+            "arrange.wrap",
+            "table.style",
+            "insert.header",
+            "insert.editHeader",
+            "insert.closeHeader",
+        ] {
+            assert!(ids.contains(&need), "missing {need} in {ids:?}");
+        }
+        assert!(
+            tabs.iter().any(|t| t.id == "table"),
+            "Table tab missing: {:?}",
+            tabs.iter().map(|t| t.id.as_str()).collect::<Vec<_>>()
         );
     }
 
