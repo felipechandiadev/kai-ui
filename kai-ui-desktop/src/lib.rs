@@ -3,17 +3,22 @@
 //!
 //! Apps implement [`runtime::App`] and call [`runtime::run`]; views are
 //! built from [`element`] and [`components`], styled with classes resolved
-//! against a [`theme`]. The demo binary (`cargo run`) and `examples/` use
-//! this crate as `kai`. See `docs/dev/12-modelo-appkit.md` (Paso 1) and
-//! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0).
+//! against a [`theme`]. Colors are [`Color`] / [`color::Color`] (parse hex
+//! with [`Color::parse_hex`]) — do not use the hidden `render` module.
+//! The demo binary (`cargo run`) and `examples/` use this crate as `kai`.
+//! See `docs/dev/12-modelo-appkit.md` (Paso 1) and
+//! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0 / frontera pública).
 //!
 //! Tests find elements by role, accessible name or `test_id` and drive
-//! whole apps (clicks, typing, keys) with [`testing`]. Hidden modules are
-//! internal: they stay public only because captures and older tests still
-//! reach into them, until those tests move to `kai::testing` (13, Paso 6).
+//! whole apps (clicks, typing, keys) with [`testing`]. Modules marked
+//! `#[doc(hidden)]` stay `pub` only so in-crate captures, examples and
+//! older paths still compile; prefer the stable surface below. Closing
+//! them to `pub(crate)` needs moving remaining types into [`testing`]
+//! (see TODOs on each hidden `pub mod`).
 
 pub mod background;
 pub mod charts;
+pub mod color;
 pub mod commands;
 pub mod components;
 pub mod element;
@@ -30,6 +35,14 @@ pub mod testing;
 pub mod theme;
 pub mod version;
 pub mod xlsx;
+
+pub use color::Color;
+
+// --- Hidden internals ----------------------------------------------------
+// TODO(frontera): pass each of these to `pub(crate)` once captures/tests
+// only touch them through `kai::testing` (or a dedicated feature). Apps
+// outside this repo must not rely on these paths; `kai::render::Color`
+// is the known leak that DSP desktop still uses — migrate to [`Color`].
 
 #[doc(hidden)]
 pub mod a11y;

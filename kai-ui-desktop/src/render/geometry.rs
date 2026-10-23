@@ -396,8 +396,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::{Affine2, GeometryDraw, Mesh, MeshBuilder, StrokeStyle};
+    use crate::color::Color;
     use crate::geometry::{Point, Rect};
-    use crate::render::Color;
 
     fn pts(points: &[(f32, f32)]) -> Vec<Point> {
         points.iter().map(|&(x, y)| Point { x, y }).collect()

@@ -22,9 +22,9 @@ use geojson::{Geometry, GeometryValue, Position};
 
 use super::layers::MapLayer;
 use super::{Anchor, Marker};
+use crate::color::Color;
 use crate::element::{Element, Kind, Role};
 use crate::geo::{LatLon, LatLonBounds, WorldPoint, project, unproject};
-use crate::render::Color;
 use crate::responder::Action;
 
 /// Fewest vertices a polygon keeps.

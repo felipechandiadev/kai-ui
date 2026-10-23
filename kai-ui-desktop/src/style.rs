@@ -7,7 +7,7 @@
 
 use cosmic_text::Weight;
 
-use crate::render::Color;
+use crate::color::Color;
 
 /// A CSS length. Percentages are fractions (`0.5` = 50%).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -448,7 +448,7 @@ mod tests {
     use cosmic_text::Weight;
 
     use super::{Align, ComputedText, Display, Edges, LineHeight, Overflow, Style, TextProps};
-    use crate::render::Color;
+    use crate::color::Color;
 
     const BASE: ComputedText = ComputedText {
         color: Color::rgb(0, 0, 0),

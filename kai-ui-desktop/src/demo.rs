@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
+use crate::color::Color;
 use crate::commands::{
     Action, Availability, CommandError, CommandRegistry, PALETTE, Query, Safety, Shortcut,
     describe_json,
@@ -36,7 +37,6 @@ use crate::maps::style::MapStyle;
 use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
-use crate::render::Color;
 use crate::runtime::{self, App, Effects, PickFile, SaveFile};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,

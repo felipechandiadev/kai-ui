@@ -10,10 +10,10 @@
 
 use super::{DrawList, ImageDraw, Mask, Quad, TRANSPARENT, TextId};
 use crate::background::{BackgroundEffect, BackgroundLayer};
+use crate::color::Color;
 use crate::element::WidgetId;
 use crate::geometry::{ClipRect, Point, Rect};
 use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
-use crate::render::Color;
 use crate::style::ObjectFit;
 use crate::text_field::TextFieldDecorations;
 use crate::theme::Theme;

@@ -4,9 +4,9 @@
 use std::rc::Rc;
 
 use super::{TextField, themed};
+use crate::color::Color;
 use crate::element::{Element, Role, div, icon, text};
 use crate::icons::Icon;
-use crate::render::Color;
 
 /// Text field for a color as CSS hex (`#1e73ae`, `#f80`), a swatch of the
 /// color in it, and a row of suggested colors below. Picking a suggestion
@@ -222,8 +222,8 @@ impl<Msg: Clone + 'static> ColorField<Msg> {
 #[cfg(test)]
 mod tests {
     use super::{INVALID_COLOR, color_field};
+    use crate::color::Color;
     use crate::element::{ControlState, Element, Role, div};
-    use crate::render::Color;
     use crate::runtime::SimpleApp;
     use crate::testing::{By, TestApp};
     use crate::theme::{AppKitGeneration, Appearance, Theme};

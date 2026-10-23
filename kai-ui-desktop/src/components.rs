@@ -21,7 +21,7 @@ mod toast;
 mod toolbar;
 
 pub use crate::charts::{ChartKind, ChartSpec, chart};
-pub use crate::render::Color;
+pub use crate::color::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};

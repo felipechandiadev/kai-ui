@@ -20,9 +20,9 @@ mod generation;
 
 use cosmic_text::Weight;
 
+use crate::color::Color;
 use crate::element::ControlSize;
 use crate::geometry::Size;
-use crate::render::Color;
 use crate::style::ComputedText;
 
 pub use generation::{MacVersion, SystemInfo};
@@ -805,7 +805,7 @@ fn alpha(fraction: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{AppKitGeneration, Appearance, Density, Theme, ThemeKind, UNMAPPED_TOKENS};
-    use crate::render::Color;
+    use crate::color::Color;
 
     #[test]
     fn comfortable_theme_mirrors_web_tokens() {

@@ -16,8 +16,8 @@ use super::{
     AppKitGeneration, Appearance, ColorTokens, ControlTokens, Density, SemanticColors, SpaceTokens,
     SystemInfo, SystemPrefs, TextStyleToken, TextStyles, Theme, ThemeKind, TypeTokens, density_for,
 };
+use crate::color::Color;
 use crate::element::ControlSize;
-use crate::render::Color;
 use crate::theme::{BySize, MixStyle};
 
 const fn k(a: u8) -> Color {

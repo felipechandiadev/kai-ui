@@ -1239,10 +1239,10 @@ pub mod testing {
 mod tests {
     use super::testing::FixedMeasure;
     use super::{Axis, Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
+    use crate::color::Color;
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, WidgetId, div, text};
     use crate::geometry::{ClipRect, Point, Rect, Size};
-    use crate::render::Color;
     use crate::theme::{AppKitGeneration, Density, Theme, ThemeKind};
     use crate::tw::State;
 

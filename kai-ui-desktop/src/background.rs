@@ -15,7 +15,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::render::Color;
+use crate::color::Color;
 use crate::theme::Appearance;
 
 /// Which effect.

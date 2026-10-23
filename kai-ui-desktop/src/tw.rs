@@ -49,8 +49,8 @@
 
 use cosmic_text::Weight;
 
+use crate::color::Color;
 use crate::element::ControlSize;
-use crate::render::Color;
 use crate::style::{
     Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, ObjectFit, Overflow,
     Position, Shadow, Style,
@@ -1073,8 +1073,8 @@ mod tests {
     use cosmic_text::Weight;
 
     use super::{ClassList, State};
+    use crate::color::Color;
     use crate::element::ControlSize;
-    use crate::render::Color;
     use crate::style::{
         Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, Overflow,
         Position,
