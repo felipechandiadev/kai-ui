@@ -1,6 +1,6 @@
 # 16 — Widget `document`: mini Word dentro de Kai
 
-**Fase:** fase 0 hecha (MSRV 1.95, tipar / IME / ⌘B / undo / toolbar). Páginas = fase 1+. Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
+**Fase:** fases 0–1 hechas (MSRV 1.95; tipar / IME / ⌘B / undo; multi-página + scroll + hit-test). Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
 
 La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordcraft) (WordCraft, ArtCraft; MIT OR Apache-2.0; clean-room). La información de capas y crates se tomó del README y de [`docs/architecture.md`](https://github.com/storytold/wordcraft/blob/master/docs/architecture.md) el **21-oct-2026**. Fijar un `rev` de Git y volver a leer manifests antes de depender.
 
@@ -100,7 +100,9 @@ Un cuerpo, párrafos y runs: negrita, cursiva, tamaño, color. Toolbar Kai con 6
 
 Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-layout` deja de ser opcional.
 
-**Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto; no se usa cosmic-text para medir el cuerpo.
+**Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / clases `h-96`…) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala al ancho útil (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
+
+**Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto vía hit-test WordCraft; selección arrastrando (multi-página); no se usa cosmic-text para *medir* el cuerpo (el bridge `TextStore`→`DrawOp::Text` en paint es deuda de atlas, no shaping del layout).
 
 ### Fase 2 — tablas e imágenes
 
@@ -117,14 +119,14 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 ## 7. Pruebas y demo
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
-- `TestApp`: tipear, ⌘B, undo; query a11y por `label`.
-- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos). Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `doc.*` / schema MCP cuando tipar.
-- Captura `demo-documento` (`#[ignore]`, GPU).
+- `TestApp`: tipear, ⌘B, undo; scroll multi-página + tipar tras scroll; query a11y por `label`.
+- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos) con markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / schema MCP.
+- Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
 ## 8. Criterios de aceptación
 
 - Un solo renderer de UI: Kai. Cero egui en el binario de la demo por esta feature.
-- El documento no pasa por `TextStore` / cosmic-text.
+- El layout/hit del cuerpo no usa cosmic-text (solo WordCraft). El paint puede puente `TextStore` hasta atlas propio.
 - Dependencia WordCraft fijada por `rev`, feature `document`, NOTICE al día.
 - MSRV documentado: **1.95** (alineado al `rev` de WordCraft).
 - Comandos del editor reutilizan `kai::commands`; MCP no abre un segundo servidor WordCraft.
@@ -137,10 +139,11 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 | Guía (este documento) | Hecha (21-oct-2026) |
 | Spike §4 / §0 (crate aislado + display list) | **Hecho (23-oct-2026)** — ver §10 |
 | Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in) |
-| `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME / selección / ⌘B / undo |
-| Demo sección Documento | **Hecho** (Datos → Documento; toolbar Kai; markdown en el modelo) |
+| `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME / selección / ⌘B / undo; hit multi-página |
+| Demo sección Documento | **Hecho** (Datos → Documento; toolbar; markdown multi-página + scroll) |
 | Subida de MSRV | **Hecho** — 1.95 |
-| Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp; paint bridge `TextStore`→`DrawOp::Text` (deuda atlas WordCraft en fase 1) |
+| Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
+| Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret; bridge `TextStore` paint = deuda atlas (fase 2+) |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

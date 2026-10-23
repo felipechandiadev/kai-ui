@@ -192,7 +192,7 @@ impl Default for Demo {
             espera: None,
             sincronizando: 0,
             mes: None,
-            doc_markdown: String::new(),
+            doc_markdown: demo_doc_markdown(),
             doc_cmd: None,
             doc_cmd_serial: 0,
         }
@@ -202,6 +202,21 @@ impl Default for Demo {
 /// Plaza de Armas de Parral, where the map starts.
 const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
 const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 13.0);
+
+fn demo_doc_markdown() -> String {
+    let mut parts = vec![
+        "# Informe de demostración".to_owned(),
+        "Fase 1: varias páginas Letter, scroll del viewport y hit-test WordCraft.".to_owned(),
+    ];
+    for i in 0..52 {
+        parts.push(format!(
+            "Párrafo {i}. Texto de relleno para forzar paginación WordCraft en la demo."
+        ));
+    }
+    parts.push("Fin del documento multi-página.".to_owned());
+    parts.join("\n\n")
+}
+
 /// Protomaps extract of Parral (`scripts/extract-region.sh`).
 const PARRAL_PMTILES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/parral.pmtiles");
 /// The five starting sectors of DSP Parral, as its seed draws them.
@@ -2907,7 +2922,7 @@ impl Demo {
             .children([
                 card_header(
                     "Documento",
-                    Some("Nota rica: tipar, seleccionar, ⌘B / toolbar, undo (WordCraft)"),
+                    Some("Páginas Letter + scroll; tipar, ⌘B / toolbar, undo (WordCraft)"),
                 ),
                 card_content().class("gap-3").children([
                     div()
@@ -2935,7 +2950,7 @@ impl Demo {
                         ]),
                     editor,
                     caption(
-                        "Persistencia: Markdown en el modelo de la demo. Motor: WordCraft                          (feature = \"document\").",
+                        "Multi-página: scroll interno del viewport. Persistencia Markdown. feature = \"document\".",
                     ),
                 ]),
             ])
@@ -4036,7 +4051,9 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_types_bold_and_undo() {
-        let mut app = TestApp::new(Demo::at(Seccion::Documento));
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
         let editor = || By::test_id("documento.editor");
         assert_eq!(
             app.screen().get(editor()).name().as_deref(),
@@ -4051,6 +4068,29 @@ mod tests {
         assert_eq!(app.value(editor()), "Hola");
         assert!(app.perform("edit.undo"));
         assert_ne!(app.value(editor()), "Hola");
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_multipage_scrolls_and_keeps_hit_target() {
+        let mut app = TestApp::new(Demo::at(Seccion::Documento));
+        let editor = || By::test_id("documento.editor");
+        let before = app.value(editor());
+        assert!(
+            before.contains("Párrafo 40") || before.len() > 200,
+            "demo should seed multi-page markdown, got len={}",
+            before.len()
+        );
+        app.scroll_wheel(editor(), 480.0);
+        app.click(editor());
+        app.type_text(editor(), "¶");
+        let after = app.value(editor());
+        assert!(
+            after.contains('¶') || after.contains("¶"),
+            "typing after scroll should insert; after_len={}",
+            after.len()
+        );
+        assert_ne!(after, before);
     }
 
     

@@ -9,7 +9,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 ### Added
 
 
-- **Widget `document` — fase 0 (nota rica):** con `feature = "document"`, una `wordcraft_engine::Session` por `WidgetId` tipa (IME/teclas), selecciona, aplica `format.bold` / `format.italic` / `para.bullets` / `edit.undo` / `edit.redo`, y pinta la display list como `DrawOp::{Text, Quad}`. Demo Datos → Documento con toolbar Kai y persistencia Markdown en el modelo. Comandos públicos `format.bold`, `format.italic`, `para.bullets`, `edit.undo`, `edit.redo`. Bridge temporal de glifos vía `TextStore` (deuda fase 1: atlas WordCraft). Sin egui / vello_cpu / dsp-27.
+- **Widget `document` — fase 1 (páginas):** viewport fijo + stack Letter + `scroll_y` interno; hit-test y selección arrastre multi-página vía `wordcraft-layout`; demo seed multi-página; TestApp scroll + tipar. Bridge `TextStore`→paint sigue como deuda de atlas (no shaping del cuerpo).
+- **Widget `document` — fase 0 (nota rica):** con `feature = "document"`, una `wordcraft_engine::Session` por `WidgetId` tipa (IME/teclas), selecciona, aplica `format.bold` / `format.italic` / `para.bullets` / `edit.undo` / `edit.redo`, y pinta la display list como `DrawOp::{Text, Quad}`. Demo Datos → Documento con toolbar Kai y persistencia Markdown en el modelo. Comandos públicos `format.bold`, `format.italic`, `para.bullets`, `edit.undo`, `edit.redo`. Bridge temporal de glifos vía `TextStore`. Sin egui / vello_cpu / dsp-27.
 
 - **Corte A1 (Etapa 5 / P17–P18):** `kai.toml` parseado por `kai-cli`; comandos `kai doctor`, `kai test`, `kai new`; `kai dev` lee `[dev]` y observa el manifiesto. Ejemplo en `kai-ui-desktop/kai.toml`. Fuera de este corte: `commands`/`mcp` CLI, bundle/firma (P20), runtime leyendo el manifiesto.
 
