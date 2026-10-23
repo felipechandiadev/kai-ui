@@ -1,33 +1,41 @@
-//! `kai`: development tools for Kai apps (13, Paso 18).
+//! `kai`: herramientas de desarrollo de apps Kai (13, Pasos 17–18).
 //!
-//! `kai dev` rebuilds the app of the current Cargo package when a source
-//! changes and restarts it with its state (window frame and whatever the
-//! app returns from `App::dev_state`). A build that fails leaves the
-//! running version open.
+//! Lee `kai.toml` cuando existe. Comandos del corte A1: `dev`, `doctor`,
+//! `test`, `new`. Firma/bundle (Paso 20) y `commands`/`mcp` quedan fuera.
 
 mod cargo;
 mod dev;
+mod doctor;
+mod manifest;
+mod new_cmd;
+mod test_cmd;
 mod watch;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 const USO: &str = "\
-Uso: kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS DE LA APP]
+Uso: kai <comando> [opciones]
 
-  kai dev       Compila la app del paquete actual, la abre y la reinicia con
-                su estado cada vez que cambia un fuente.
+Comandos:
+  kai doctor              Comprueba Rust ≥ MSRV, Xcode CLT (macOS) y kai.toml
+  kai test [--snapshots] [-- ARGS]
+                          cargo test con features de [dev] en kai.toml
+  kai new <nombre> [--template basic|multiwindow]
+                          Andamiaje mínimo con kai.toml y tests/
+  kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]
+                          Compila, abre y reinicia conservando estado
 
-Opciones de kai dev:
-  --bin NOMBRE      Binario a abrir, si el paquete tiene varios.
-  --watch CARPETA   Carpeta extra a observar (se puede repetir).
-  -- ARGUMENTOS     Se pasan a la app.
+  kai --help | kai --version
 
-  kai --help | kai --version";
+Si hay kai.toml, `kai dev` usa [dev].bin y observa el manifiesto.";
 
 #[derive(Debug, PartialEq)]
 enum Comando {
     Dev(dev::Opciones),
+    Doctor,
+    Test(test_cmd::Opciones),
+    New(new_cmd::Opciones),
     Ayuda,
     Version,
 }
@@ -38,6 +46,14 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Comando, String> {
         None | Some("-h" | "--help" | "help") => Ok(Comando::Ayuda),
         Some("-V" | "--version") => Ok(Comando::Version),
         Some("dev") => parse_dev(args).map(Comando::Dev),
+        Some("doctor") => {
+            if args.next().is_some() {
+                return Err("kai doctor no acepta argumentos".into());
+            }
+            Ok(Comando::Doctor)
+        }
+        Some("test") => parse_test(args).map(Comando::Test),
+        Some("new") => parse_new(args).map(Comando::New),
         Some(otro) => Err(format!("comando desconocido: {otro}")),
     }
 }
@@ -65,6 +81,57 @@ fn parse_dev(mut args: impl Iterator<Item = String>) -> Result<dev::Opciones, St
     Ok(opciones)
 }
 
+fn parse_test(mut args: impl Iterator<Item = String>) -> Result<test_cmd::Opciones, String> {
+    let mut opciones = test_cmd::Opciones::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--snapshots" => opciones.snapshots = true,
+            "--" => {
+                opciones.cargo_args.push("--".into());
+                opciones.cargo_args.extend(args);
+                break;
+            }
+            "-h" | "--help" => return Err(String::new()),
+            otro => {
+                // Cargo-style passthrough (e.g. --lib, filtro).
+                opciones.cargo_args.push(otro.into());
+                opciones.cargo_args.extend(args);
+                break;
+            }
+        }
+    }
+    Ok(opciones)
+}
+
+fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Opciones, String> {
+    let nombre = args
+        .next()
+        .ok_or_else(|| "kai new necesita un nombre de proyecto".to_string())?;
+    if nombre.starts_with('-') {
+        return Err(format!("nombre inválido: {nombre}"));
+    }
+    let mut template = new_cmd::Template::Basic;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--template" => {
+                let t = args.next().ok_or("--template necesita basic o multiwindow")?;
+                template = match t.as_str() {
+                    "basic" => new_cmd::Template::Basic,
+                    "multiwindow" => new_cmd::Template::Multiwindow,
+                    otro => {
+                        return Err(format!(
+                            "plantilla desconocida: {otro} (basic|multiwindow)"
+                        ));
+                    }
+                };
+            }
+            "-h" | "--help" => return Err(String::new()),
+            otro => return Err(format!("argumento desconocido para kai new: {otro}")),
+        }
+    }
+    Ok(new_cmd::Opciones { nombre, template })
+}
+
 fn main() -> ExitCode {
     match parse(std::env::args().skip(1)) {
         Ok(Comando::Ayuda) => {
@@ -79,6 +146,27 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai dev: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Comando::Doctor) => match doctor::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai doctor: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Comando::Test(opciones)) => match test_cmd::run(&opciones) {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("kai test: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Comando::New(opciones)) => match new_cmd::run(&opciones) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai new: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -120,10 +208,25 @@ mod tests {
     }
 
     #[test]
-    fn help_version_and_mistakes() {
+    fn doctor_test_new_and_help() {
         assert_eq!(parse_str(&[]), Ok(Comando::Ayuda));
         assert_eq!(parse_str(&["--help"]), Ok(Comando::Ayuda));
         assert_eq!(parse_str(&["--version"]), Ok(Comando::Version));
+        assert_eq!(parse_str(&["doctor"]), Ok(Comando::Doctor));
+        assert_eq!(
+            parse_str(&["test", "--snapshots"]),
+            Ok(Comando::Test(test_cmd::Opciones {
+                snapshots: true,
+                cargo_args: vec![],
+            }))
+        );
+        assert_eq!(
+            parse_str(&["new", "hola", "--template", "basic"]),
+            Ok(Comando::New(new_cmd::Opciones {
+                nombre: "hola".into(),
+                template: new_cmd::Template::Basic,
+            }))
+        );
         assert_eq!(
             parse_str(&["nuevo"]),
             Err("comando desconocido: nuevo".into())

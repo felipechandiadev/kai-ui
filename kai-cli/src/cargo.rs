@@ -52,7 +52,7 @@ fn parse_metadata(json: &[u8]) -> Result<Proyecto, String> {
         let Some(root) = package.manifest_path.parent() else {
             continue;
         };
-        for entry in ["src", "assets", "build.rs", "Cargo.toml"] {
+        for entry in ["src", "assets", "build.rs", "Cargo.toml", "kai.toml"] {
             watch.push(root.join(entry));
         }
     }
@@ -71,12 +71,15 @@ pub enum Fallo {
 }
 
 /// Build the package in the current folder and return its binary: `bin`,
-/// or the only one it has.
-pub fn build(bin: Option<&str>) -> Result<PathBuf, Fallo> {
+/// or the only one it has. `features` are passed as `--features a,b`.
+pub fn build(bin: Option<&str>, features: &[String]) -> Result<PathBuf, Fallo> {
     let mut command = Command::new(cargo());
     command.args(["build", "--message-format=json-render-diagnostics"]);
     if let Some(bin) = bin {
         command.args(["--bin", bin]);
+    }
+    if !features.is_empty() {
+        command.args(["--features", &features.join(",")]);
     }
     let mut child = command
         .stdout(Stdio::piped())
@@ -180,10 +183,12 @@ mod tests {
                 "/dev/dsp-27/desktop/Cargo.toml",
                 "/dev/dsp-27/desktop/assets",
                 "/dev/dsp-27/desktop/build.rs",
+                "/dev/dsp-27/desktop/kai.toml",
                 "/dev/dsp-27/desktop/src",
                 "/dev/kai-ui/kai-ui-desktop/Cargo.toml",
                 "/dev/kai-ui/kai-ui-desktop/assets",
                 "/dev/kai-ui/kai-ui-desktop/build.rs",
+                "/dev/kai-ui/kai-ui-desktop/kai.toml",
                 "/dev/kai-ui/kai-ui-desktop/src",
             ]
         );

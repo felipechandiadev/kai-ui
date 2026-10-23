@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 publish = false
-description = "Herramientas de desarrollo de Kai (13, Paso 18): por ahora `kai dev`."
+description = "Herramientas de desarrollo de Kai (13, Pasos 17–18): kai.toml, doctor, test, new, dev."
 
 [[bin]]
 name = "kai"
 path = "src/main.rs"
 
-# Only JSON: `cargo metadata` and `cargo build --message-format=json`. The
-# arguments are parsed by hand and the watcher polls modification times.
+# JSON de cargo + TOML del manifiesto. Sin clap ni notify: args a mano, watcher por mtime.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"

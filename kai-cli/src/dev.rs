@@ -7,6 +7,10 @@
 //! quits, and the next run reads them back. An app that does not answer in
 //! [`PLAZO_SALIDA`] is killed. When the build fails, the running version
 //! stays open. Ctrl+C reaches the whole process group, the app included.
+//!
+//! If a `kai.toml` is found, `[dev].bin` fills in `--bin` when omitted and
+//! `[dev].features` are passed to `cargo build`. The manifesto path is
+//! watched (via `cargo` metadata roots).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,6 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::cargo::{self, Fallo};
+use crate::manifest;
 use crate::watch::{self, Snapshot};
 
 /// Variable and line the Kai runtime listens for (`kai::dev_state`).
@@ -38,9 +43,39 @@ pub struct Opciones {
 }
 
 pub fn run(opciones: &Opciones) -> Result<(), String> {
+    let loaded = manifest::find(
+        &std::env::current_dir().map_err(|error| format!("cwd: {error}"))?,
+    )
+    .and_then(|path| match manifest::load(&path) {
+        Ok(loaded) => Some(loaded),
+        Err(error) => {
+            eprintln!("kai dev: aviso: {error}");
+            None
+        }
+    });
+
+    let mut bin = opciones.bin.clone();
+    let mut features: Vec<String> = Vec::new();
+    if let Some(ref loaded) = loaded {
+        eprintln!(
+            "kai dev: manifiesto {} ({})",
+            loaded.path.display(),
+            loaded.manifest.app.name
+        );
+        if bin.is_none() {
+            bin = loaded.manifest.dev.bin.clone();
+        }
+        features = loaded.manifest.dev.features.clone();
+    }
+
     let proyecto = cargo::proyecto()?;
     let mut carpetas = proyecto.watch;
     carpetas.extend(opciones.watch.iter().cloned());
+    if let Some(ref loaded) = loaded {
+        carpetas.push(loaded.path.clone());
+        carpetas.sort();
+        carpetas.dedup();
+    }
     let estado = proyecto
         .target_directory
         .join("kai-dev")
@@ -57,11 +92,11 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
     );
 
     let mut app: Option<Child> = None;
-    let mut fotos = watch::snapshot(&carpetas);
+    let mut fotos: Snapshot;
     loop {
         eprintln!("kai dev: compilando…");
         let inicio = Instant::now();
-        match cargo::build(opciones.bin.as_deref()) {
+        match cargo::build(bin.as_deref(), &features) {
             Ok(binario) => {
                 let reinicio = app.is_some();
                 if let Some(anterior) = app.take() {
@@ -88,6 +123,8 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
             }
             Err(Fallo::Otro(error)) => eprintln!("kai dev: {error}"),
         }
+        // Cambios durante la compilación no deben reiniciar la app al terminar.
+        fotos = watch::snapshot(&carpetas);
         esperar_cambio(&carpetas, &mut fotos, &mut app);
     }
 }
