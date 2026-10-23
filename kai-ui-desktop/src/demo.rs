@@ -146,6 +146,11 @@ struct Demo {
     doc_ribbon_tab: String,
     /// Plantilla lista+detalle: índice del cliente seleccionado.
     plantilla_idx: usize,
+    /// Catálogo vivo (Fase E): preset de tema, densidad y tamaño.
+    catalog_preset: CatalogPreset,
+    catalog_density: Density,
+    catalog_size: ControlSize,
+    catalog_sample: String,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -217,6 +222,10 @@ impl Default for Demo {
             doc_archivo_busy: false,
             doc_ribbon_tab: "home".into(),
             plantilla_idx: 0,
+            catalog_preset: CatalogPreset::AppKitLight,
+            catalog_density: Density::Comfortable,
+            catalog_size: ControlSize::Regular,
+            catalog_sample: String::new(),
         }
     }
 }
@@ -647,6 +656,41 @@ struct EstadoDev {
     area: Option<String>,
 }
 
+/// Theme preset for the live catalog (Fase E). Swaps `App::theme` while
+/// the Catálogo section is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CatalogPreset {
+    AppKitLight,
+    AppKitDark,
+    GlassLight,
+    GlassDark,
+    Kai,
+}
+
+impl CatalogPreset {
+    const ALL: [CatalogPreset; 5] = [
+        Self::AppKitLight,
+        Self::AppKitDark,
+        Self::GlassLight,
+        Self::GlassDark,
+        Self::Kai,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::AppKitLight => "AppKit",
+            Self::AppKitDark => "AppKit Dark",
+            Self::GlassLight => "Glass",
+            Self::GlassDark => "Glass Dark",
+            Self::Kai => "Kai",
+        }
+    }
+
+    fn index(self) -> usize {
+        Self::ALL.iter().position(|p| *p == self).unwrap_or(0)
+    }
+}
+
 /// Sections of the sidebar, in its order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -681,10 +725,12 @@ enum Seccion {
     PlantillaFormulario,
     /// Plantilla vista de datos (densidad compact).
     PlantillaDatos,
+    /// Catálogo vivo: matriz filtrable tema × density × size.
+    Catalogo,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 15] = [
+    const ALL: [Seccion; 16] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
@@ -699,6 +745,7 @@ impl Seccion {
         Self::PlantillaLista,
         Self::PlantillaFormulario,
         Self::PlantillaDatos,
+        Self::Catalogo,
         Self::Dialogos,
     ];
 
@@ -723,6 +770,7 @@ impl Seccion {
             Self::PlantillaLista => "plantilla_lista",
             Self::PlantillaFormulario => "plantilla_formulario",
             Self::PlantillaDatos => "plantilla_datos",
+            Self::Catalogo => "catalogo",
         }
     }
 
@@ -744,6 +792,7 @@ impl Seccion {
             Self::PlantillaLista => ("Lista + detalle", Icon::Columns3),
             Self::PlantillaFormulario => ("Formulario", Icon::TextCursorInput),
             Self::PlantillaDatos => ("Vista de datos", Icon::Sheet),
+            Self::Catalogo => ("Catálogo vivo", Icon::LayoutTemplate),
         };
         SidebarItem::new(label).icon(glyph)
     }
@@ -783,6 +832,12 @@ enum Msg {
     IrA(Seccion),
     /// Plantilla lista+detalle: seleccionar fila.
     PlantillaSelect(usize),
+    CatalogPreset(usize),
+    CatalogDensity(usize),
+    CatalogSize(usize),
+    CatalogSample(String),
+    /// Empty filter demo: clear the sample field.
+    CatalogClearFilter,
     ToggleSidebar,
     /// First window size: whether it is narrower than `sm`.
     InitialWidth {
@@ -1603,6 +1658,10 @@ impl App for Demo {
         registry.action::<DocRehacer>().menu("Documento").expose();
     }
 
+    fn theme(&self) -> Option<Theme> {
+        (self.seccion == Seccion::Catalogo).then(|| self.catalog_theme())
+    }
+
     fn resized(&self, size: Size) -> Option<Msg> {
         (!self.sized).then_some(Msg::InitialWidth {
             narrow: size.width < 640.0,
@@ -1753,6 +1812,33 @@ impl App for Demo {
             Msg::ToggleTerms => self.terms = !self.terms,
             Msg::IrA(seccion) => self.seccion = seccion,
             Msg::PlantillaSelect(index) => self.plantilla_idx = index,
+            Msg::CatalogPreset(index) => {
+                self.catalog_preset = CatalogPreset::ALL
+                    .get(index)
+                    .copied()
+                    .unwrap_or(CatalogPreset::AppKitLight);
+            }
+            Msg::CatalogDensity(index) => {
+                self.catalog_density = if index == 0 {
+                    Density::Comfortable
+                } else {
+                    Density::Compact
+                };
+            }
+            Msg::CatalogSize(index) => {
+                self.catalog_size = [
+                    ControlSize::Mini,
+                    ControlSize::Small,
+                    ControlSize::Regular,
+                    ControlSize::Large,
+                    ControlSize::ExtraLarge,
+                ]
+                .get(index)
+                .copied()
+                .unwrap_or(ControlSize::Regular);
+            }
+            Msg::CatalogSample(value) => self.catalog_sample = value,
+            Msg::CatalogClearFilter => self.catalog_sample.clear(),
             Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
             Msg::InitialWidth { narrow } => {
                 self.sidebar_collapsed = narrow;
@@ -2254,6 +2340,7 @@ impl App for Demo {
             Seccion::PlantillaLista => vec![self.plantilla_lista()],
             Seccion::PlantillaFormulario => vec![self.plantilla_formulario()],
             Seccion::PlantillaDatos => vec![self.plantilla_datos()],
+            Seccion::Catalogo => vec![self.catalogo_vivo()],
         };
 
         let content = if self.seccion == Seccion::Documento {
@@ -2326,6 +2413,7 @@ impl Demo {
                     Seccion::PlantillaDatos.item(),
                 ],
             ),
+            SidebarGroup::titled("Catálogo", [Seccion::Catalogo.item()]),
             SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
         ];
         Sidebar::new(&groups, self.seccion.index(), |index| {
@@ -2341,6 +2429,260 @@ impl Demo {
             "w-40 sm:w-52 shrink-0"
         })
         .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
+    }
+
+    fn catalog_theme(&self) -> Theme {
+        let base = match self.catalog_preset {
+            CatalogPreset::AppKitLight => {
+                Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light)
+            }
+            CatalogPreset::AppKitDark => {
+                Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Dark)
+            }
+            CatalogPreset::GlassLight => {
+                Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
+            }
+            CatalogPreset::GlassDark => {
+                Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Dark)
+            }
+            CatalogPreset::Kai => Theme::kai(self.catalog_density),
+        };
+        Theme {
+            control_size: self.catalog_size,
+            density: match self.catalog_preset {
+                CatalogPreset::Kai => self.catalog_density,
+                // Catalog lets density move independently of size for exploration.
+                _ => self.catalog_density,
+            },
+            ..base
+        }
+    }
+
+    /// Fase E — catálogo vivo: filtros tema × density × size + muestras.
+    fn catalogo_vivo(&self) -> Element<Msg> {
+        let size = self.catalog_size;
+        let field_density = match self.catalog_density {
+            Density::Comfortable => FieldDensity::Default,
+            Density::Compact => FieldDensity::Compact,
+        };
+        let preset_labels = [
+            CatalogPreset::AppKitLight.label(),
+            CatalogPreset::AppKitDark.label(),
+            CatalogPreset::GlassLight.label(),
+            CatalogPreset::GlassDark.label(),
+            CatalogPreset::Kai.label(),
+        ];
+        let density_idx = match self.catalog_density {
+            Density::Comfortable => 0,
+            Density::Compact => 1,
+        };
+        let size_idx = size.index();
+        let filters = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.filtros")
+            .children([
+                card_header(
+                    "Filtros",
+                    Some("Tema (App::theme mientras esta sección está abierta), densidad y ControlSize"),
+                ),
+                card_content().class("gap-4").children([
+                    div().class("flex flex-col gap-1.5").children([
+                        caption("Tema"),
+                        segmented_with_options(
+                            &preset_labels,
+                            self.catalog_preset.index(),
+                            Msg::CatalogPreset,
+                            false,
+                        )
+                        .test_id("catalogo.preset"),
+                    ]),
+                    div().class("flex flex-col gap-1.5").children([
+                        caption("Densidad"),
+                        segmented_with_options(
+                            &["Comfortable", "Compact"],
+                            density_idx,
+                            Msg::CatalogDensity,
+                            false,
+                        )
+                        .test_id("catalogo.density"),
+                    ]),
+                    div().class("flex flex-col gap-1.5").children([
+                        caption("Tamaño (ControlSize)"),
+                        segmented_with_options(
+                            &["Mini", "Small", "Regular", "Large", "XL"],
+                            size_idx,
+                            Msg::CatalogSize,
+                            false,
+                        )
+                        .test_id("catalogo.size"),
+                    ]),
+                ]),
+            ]);
+
+        let buttons = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.botones")
+            .children([
+                card_header("Button", Some("Variantes + disabled + loading al tamaño filtrado")),
+                card_content().class("gap-3").children([
+                    div()
+                        .class("flex flex-wrap items-center gap-2")
+                        .children([
+                            button("Primary", ButtonVariant::Primary)
+                                .control_size(size)
+                                .on_click(Msg::Increment),
+                            button("Secondary", ButtonVariant::Secondary)
+                                .control_size(size)
+                                .on_click(Msg::Increment),
+                            button("Outlined", ButtonVariant::Outlined)
+                                .control_size(size)
+                                .on_click(Msg::Increment),
+                            button("Danger", ButtonVariant::Danger)
+                                .control_size(size)
+                                .on_click(Msg::Increment),
+                            button("Disabled", ButtonVariant::Primary)
+                                .control_size(size)
+                                .disabled(true),
+                            Button::new("Loading")
+                                .accent(true)
+                                .loading(true)
+                                .control_size(size)
+                                .on_click(Msg::Increment)
+                                .build(),
+                        ]),
+                ]),
+            ]);
+
+        let fields = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.campos")
+            .children([
+                card_header(
+                    "TextField",
+                    Some("Default / required / helper / error / disabled · FieldDensity del filtro"),
+                ),
+                card_content().class("gap-4").children([
+                    page_grid().children([
+                        page_grid_item(6).child(
+                            TextField::new("Nombre", &self.catalog_sample)
+                                .placeholder("Valor de ejemplo")
+                                .field_icon(FieldKind::Name)
+                                .density(field_density)
+                                .on_input(Msg::CatalogSample)
+                                .test_id("catalogo.campo.default")
+                                .build()
+                                .control_size(size),
+                        ),
+                        page_grid_item(6).child(
+                            TextField::new("Correo", "ana@example.com")
+                                .field_icon(FieldKind::Email)
+                                .density(field_density)
+                                .required(true)
+                                .test_id("catalogo.campo.required")
+                                .build()
+                                .control_size(size),
+                        ),
+                        page_grid_item(6).child(
+                            TextField::new("Búsqueda", "")
+                                .placeholder("Escribe para filtrar")
+                                .field_icon(FieldKind::Search)
+                                .helper_text("Puedes usar palabras clave")
+                                .density(field_density)
+                                .test_id("catalogo.campo.helper")
+                                .build()
+                                .control_size(size),
+                        ),
+                        page_grid_item(6).child(
+                            TextField::new("Correo", "no-es-un-correo")
+                                .field_icon(FieldKind::Email)
+                                .helper_text("Introduce un correo válido")
+                                .error(true)
+                                .density(field_density)
+                                .disabled(false)
+                                .test_id("catalogo.campo.error")
+                                .build()
+                                .control_size(size),
+                        ),
+                    ]),
+                ]),
+            ]);
+
+        let empties = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.empty")
+            .children([
+                card_header(
+                    "Empty filter vs empty resource",
+                    Some("EmptyKind::Filter (búsqueda sin filas) · EmptyKind::Resource (colección vacía)"),
+                ),
+                card_content().class("gap-4").children([
+                    page_grid().children([
+                        page_grid_item(6).child(
+                            div()
+                                .class(
+                                    "rounded-md border border-border appkit:border-separator \
+                                     overflow-hidden bg-control",
+                                )
+                                .child(
+                                    EmptyState::filter("No hay resultados")
+                                        .description("Ningún ítem coincide con el filtro.")
+                                        .action("Limpiar filtros", Msg::CatalogClearFilter)
+                                        .test_id("catalogo.empty.filter")
+                                        .build(),
+                                ),
+                        ),
+                        page_grid_item(6).child(
+                            div()
+                                .class(
+                                    "rounded-md border border-border appkit:border-separator \
+                                     overflow-hidden bg-control",
+                                )
+                                .child(
+                                    EmptyState::resource("Sin elementos")
+                                        .description("Todavía no hay nada en esta colección.")
+                                        .action("Crear elemento", Msg::Increment)
+                                        .test_id("catalogo.empty.resource")
+                                        .build(),
+                                ),
+                        ),
+                    ]),
+                ]),
+            ]);
+
+        let surface = |name: &str, class: &str| {
+            div()
+                .class(&format!(
+                    "flex flex-col gap-1 min-h-20 rounded-md border border-border/60 \
+                     appkit:border-separator p-3 {class}"
+                ))
+                .children([
+                    caption(name),
+                    text("Aa")
+                        .class("text-sm text-foreground appkit:text-label"),
+                ])
+        };
+        let layers = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.capas")
+            .children([
+                card_header(
+                    "Capas AppKit",
+                    Some("window / under-page / control / fill — ver docs/dev/24-layering.md"),
+                ),
+                card_content().class("gap-3").children([
+                    page_grid().children([
+                        page_grid_item(3).child(surface("bg-window", "bg-window")),
+                        page_grid_item(3).child(surface("bg-under-page", "bg-under-page")),
+                        page_grid_item(3).child(surface("bg-control", "bg-control")),
+                        page_grid_item(3).child(surface("bg-fill-3", "bg-fill-3")),
+                    ]),
+                ]),
+            ]);
+
+        div()
+            .class("flex flex-col gap-5 w-full")
+            .test_id("catalogo")
+            .children([filters, buttons, fields, empties, layers])
     }
 
     /// Fase C — lista + detalle (master/detail) sobre PageGrid.
@@ -3821,23 +4163,35 @@ impl Demo {
                     Some("Patrones reutilizables para listas y tablas vacías o en carga"),
                 ),
                 card_content().class("gap-4").children([
+                    caption("Empty filter — la consulta no devolvió filas"),
                     div()
                         .class(
                             "rounded-md border border-border appkit:border-separator overflow-hidden",
                         )
-                        .test_id("patrones.empty")
+                        .test_id("patrones.empty.filter")
                         .child(
-                            EmptyState::new(Icon::Inbox, "No hay resultados")
-                                .description(
-                                    "Prueba otro filtro o crea un elemento para empezar.",
-                                )
+                            EmptyState::filter("No hay resultados")
+                                .description("Prueba otro filtro o límpialo.")
+                                .action("Limpiar filtros", Msg::Clear)
+                                .test_id("patrones.empty.filter.state")
+                                .build(),
+                        ),
+                    caption("Empty resource — la colección nunca tuvo ítems"),
+                    div()
+                        .class(
+                            "rounded-md border border-border appkit:border-separator overflow-hidden",
+                        )
+                        .test_id("patrones.empty.resource")
+                        .child(
+                            EmptyState::resource("Sin elementos")
+                                .description("Todavía no hay nada aquí.")
                                 .action("Crear elemento", Msg::Increment)
                                 .test_id("patrones.empty.state")
                                 .build(),
                         ),
                     div()
                         .class(
-                            "rounded-md border border-border appkit:border-separator                              overflow-hidden",
+                            "rounded-md border border-border appkit:border-separator overflow-hidden",
                         )
                         .test_id("patrones.loading")
                         .child(loading_placeholder("Cargando filas…")),
@@ -4802,6 +5156,7 @@ mod tests {
             Seccion::PlantillaLista => "plantilla.lista",
             Seccion::PlantillaFormulario => "plantilla.formulario",
             Seccion::PlantillaDatos => "plantilla.datos",
+            Seccion::Catalogo => "catalogo",
         }
     }
 
@@ -5039,7 +5394,14 @@ mod tests {
             .collect();
         assert_eq!(
             titles,
-            ["Demo", "Componentes", "Datos", "Plantillas", "Superposiciones"]
+            [
+                "Demo",
+                "Componentes",
+                "Datos",
+                "Plantillas",
+                "Catálogo",
+                "Superposiciones",
+            ]
         );
         let rows: Vec<_> = nav
             .all(By::role(Role::SidebarItem))
@@ -5063,6 +5425,7 @@ mod tests {
                 "Lista + detalle",
                 "Formulario",
                 "Vista de datos",
+                "Catálogo vivo",
                 "Diálogos y avisos",
             ]
         );
@@ -5166,8 +5529,9 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 19] = [
+        const SOURCES: [&str; 20] = [
             include_str!("components.rs"),
+            include_str!("components/empty_state.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
@@ -5481,6 +5845,18 @@ mod tests {
                 PlantillaDatos,
                 None,
                 By::test_id("plantilla.datos"),
+            ),
+            (
+                &["EmptyState"],
+                Catalogo,
+                None,
+                By::test_id("catalogo.empty"),
+            ),
+            (
+                &["loading_placeholder"],
+                Tabla,
+                None,
+                By::test_id("patrones.loading"),
             ),
         ];
         let mut covered = BTreeSet::new();

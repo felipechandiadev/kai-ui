@@ -195,6 +195,11 @@
                 "const": "plantilla_datos",
                 "description": "Plantilla vista de datos (densidad compact).",
                 "type": "string"
+              },
+              {
+                "const": "catalogo",
+                "description": "Catálogo vivo: matriz filtrable tema × density × size.",
+                "type": "string"
               }
             ]
           }
