@@ -141,6 +141,8 @@ struct Demo {
     doc_pending_export: Option<(std::path::PathBuf, DocExportKind)>,
     /// I/O de archivo en curso (botones Archivo).
     doc_archivo_busy: bool,
+    /// Último archivo abierto/guardado (nombre para chrome Archivo).
+    doc_archivo_name: Option<String>,
     /// Pestaña activa del ribbon Documento (`home` / `insert`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_tab: String,
@@ -230,6 +232,7 @@ impl Default for Demo {
             doc_load_serial: 0,
             doc_pending_export: None,
             doc_archivo_busy: false,
+            doc_archivo_name: None,
             doc_ribbon_tab: "home".into(),
             doc_ribbon_pressed: Vec::new(),
             doc_ribbon_disabled: Vec::new(),
@@ -2001,6 +2004,11 @@ impl App for Demo {
             Msg::DocAbrirElegido(None) => {}
             Msg::DocAbrirElegido(Some(path)) => {
                 self.doc_archivo_busy = true;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                self.doc_archivo_name = Some(name);
                 return Effects::perform(
                     move || std::fs::read(&path).map_err(|e| e.to_string()),
                     Msg::DocBytesLeidos,
@@ -2032,6 +2040,11 @@ impl App for Demo {
             }
             Msg::DocGuardarEn(None) => {}
             Msg::DocGuardarEn(Some(path)) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                self.doc_archivo_name = Some(name);
                 self.doc_pending_export = Some((path, DocExportKind::Docx));
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
@@ -2045,6 +2058,7 @@ impl App for Demo {
             }
             Msg::DocExportarPdfEn(None) => {}
             Msg::DocExportarPdfEn(Some(path)) => {
+                // No cambia el nombre del .docx activo; solo toast al terminar.
                 self.doc_pending_export = Some((path, DocExportKind::Pdf));
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
@@ -4119,15 +4133,24 @@ impl Demo {
         if let Some((serial, bytes)) = &self.doc_load {
             editor = editor.pending_load(bytes.clone(), *serial);
         }
+        let archivo_status = match &self.doc_archivo_name {
+            Some(name) => format!("Archivo: {name}"),
+            None => "Archivo: (sin guardar — Abrir / Guardar / Exportar PDF en la QAT)".into(),
+        };
         div()
             .class("flex flex-col flex-1 min-h-0 w-full")
             .test_id("documento")
             .children([
                 div()
                     .class(
-                        "flex-none flex flex-col px-3 pt-2 pb-2 bg-window border-b border-separator",
+                        "flex-none flex flex-col px-3 pt-2 pb-1 bg-window border-b border-separator gap-1",
                     )
-                    .child(self.documento_ribbon_chrome()),
+                    .children([
+                        self.documento_ribbon_chrome(),
+                        text(archivo_status)
+                            .class("text-xs text-muted-foreground px-0.5")
+                            .test_id("documento.archivo.status"),
+                    ]),
                 editor,
             ])
     }

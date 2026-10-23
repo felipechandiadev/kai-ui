@@ -8,6 +8,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Document chrome Word-like (slice):** Format Painter (`edit.formatPainter`) armado/pressed + `edit.pasteFormat` al soltar selección; Escape desarma; ⌘⇧C/V. Gallery mínima Normal/Título 1–3 en Inicio › Estilos. Línea de estado Archivo bajo la QAT. Keytips / Backstage full / rulers dibujados = deuda. Docs [`16`](docs/dev/16-widget-document.md) / [`17`](docs/dev/17-document-ribbon.md).
 - **Document clipboard media (tablas + imágenes):** copy/cut re-exporta HTML con `<table>` (story/tabla completa) e `<img data-URI>` (`wordcraft-formats` + media adjunta). Paste: HTML table/img externo, RTF si el port lo trae, o RGBA crudo → PNG data-URI. `ClipboardPort::{get,set}_image` + arboard `image-data`. RTF nativo SO / Paste Special = deuda. Docs [`16-widget-document.md`](docs/dev/16-widget-document.md).
 - **Document ribbon vivo (pressed / disabled):** `ribbon_chrome_for` lee `format.state`, alineación/listas del párrafo al caret y `view.dark_mode` para **pressed**; catálogo × `Session::why_disabled` para **disabled**. `DocumentChange` + Demo → `DocumentRibbon::pressed_ids` / `disabled_ids`. Docs [`17-document-ribbon.md`](docs/dev/17-document-ribbon.md).
 - **Document IME preedit visual:** `ImeIntent::Preedit` pinta composición (glifos WordCraft + subrayado) bajo el caret sin mutar el doc; Commit inserta y limpia; Cancel descarta. Docs [`16-widget-document.md`](docs/dev/16-widget-document.md).

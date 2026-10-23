@@ -96,11 +96,18 @@ document_ribbon()
 
 Backstage = fase posterior.
 
+## Chrome Word-like (slice Paso 4)
+
+- **Format Painter** (`edit.formatPainter`): Inicio › Portapapeles. Pressed mientras `Session::painter` está armado. Al soltar un arrastre de selección no colapsada, Kai llama `edit.pasteFormat`. Escape desarma. Atajos ⌘⇧C / ⌘⇧V (`edit.copyFormat` / `edit.pasteFormat`). Sticky (doble clic) = deuda.
+- **Estilos mínimos:** `para.normal` / `para.heading1..3` en Inicio › Estilos; pressed según `format.state.style`.
+- **Archivo:** QAT Abrir/Guardar/Exportar + línea `documento.archivo.status` con el nombre del último archivo. Backstage full-screen = deuda.
+- **Fuera de este slice:** keytips Alt, reglas de página dibujadas (`view.ruler` solo toggle de flag), pestaña Design.
+
 ## Tabs
 
 | Tab (UI ES) | id | Grupos / ids típicos | Notas |
 |-------------|----|----------------------|-------|
-| **Inicio** | `home` | Portapapeles, Fuente, Párrafo, Edición (+ select.all; QAT undo/redo → Edición) | MVP original |
+| **Inicio** | `home` | Portapapeles (+ Format Painter), Fuente, Párrafo, Estilos (Normal/H1–H3), Edición | MVP + Paso 4 slice |
 | **Insertar** | `insert` | Tablas, Ilustraciones, Páginas | table / picture / pageBreak |
 | **Diseño** | `layout` | Configurar página, Saltos | orientation (toggle), margins→`preset:normal`, columns→`count:2`, size→Letter, hyphenation, lineNumbers, textDirection, sectionRtl, columnBreak, break→`kind:page` |
 | **Revisar** | `review` | Revisión, Seguimiento, Cambios, Comentarios (nav) | spelling, wordCount, trackChanges, markup, accept/reject (±All), next/prev change & comment |
@@ -132,7 +139,7 @@ Backstage = fase posterior.
 
 ## Fuera de alcance (deuda)
 
-- Keytips Alt, Backstage completo, Styles gallery live, rulers dibujados
+- Keytips Alt, Backstage completo (panel Archivo full-screen), Format Painter sticky (doble clic), rulers dibujados en canvas
 - Design tab, Mailings, contextual Table/Picture Format
 - Pressed para cmds que Session aún no expone como toggle (p. ej. trackChanges /
   markup / zoom presets) — solo disabled vía `why_disabled` hoy
@@ -146,4 +153,6 @@ cargo +1.95 test --features document --lib demo::tests::document_ribbon
 # UI: demo → Datos → Documento; tipar → seleccionar todo → Negrita:
 #   botón format.bold queda pressed; sin selección edit.cut disabled.
 # Tabs Diseño / Revisar / Vista / Referencias.
+# Format Painter: negrita en una palabra → Copiar formato → arrastrar otra → suelta.
+# Estilos: Título 1 pressed; estado Archivo bajo la QAT.
 ```

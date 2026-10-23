@@ -167,11 +167,11 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
 | Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret |
 | Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai) |
-| Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Home+Insert+Layout+Review+References+View (`RibbonMode::Full`); ver guía [17](17-document-ribbon.md); Design/keytips/Backstage = deuda |
+| Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Full tabs; **Paso 4 slice:** Format Painter + estilos Normal/H1–H3 + estado Archivo; ver [17](17-document-ribbon.md). Design/keytips/Backstage full/rulers dibujados = deuda |
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
 | Clipboard cuerpo | **Hecho (rich HTML + media, 23-oct-2026)** — texto/HTML/tablas/imágenes vía HTML enriquecido + `ClipboardImage`; RTF paste si el port lo trae. Techo: ver § clipboard |
-| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
+| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips Alt; Backstage full; rulers dibujados; Format Painter sticky; wrap flotante avanzado |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

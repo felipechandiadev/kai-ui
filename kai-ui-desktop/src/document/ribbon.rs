@@ -63,6 +63,7 @@ const MVP_HOME: &[&str] = &[
     "edit.cut",
     "edit.copy",
     "edit.paste",
+    "edit.formatPainter",
     "edit.undo",
     "edit.redo",
     "format.bold",
@@ -78,6 +79,10 @@ const MVP_HOME: &[&str] = &[
     "para.alignCenter",
     "para.alignRight",
     "para.justify",
+    "para.normal",
+    "para.heading1",
+    "para.heading2",
+    "para.heading3",
     "select.all",
 ];
 
@@ -345,6 +350,14 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
         if on("superscript") {
             pressed.push("format.superscript".into());
         }
+        // Gallery mínima de estilos de párrafo.
+        match state.get("style").and_then(|v| v.as_str()).unwrap_or("Normal") {
+            "Normal" => pressed.push("para.normal".into()),
+            "Heading1" => pressed.push("para.heading1".into()),
+            "Heading2" => pressed.push("para.heading2".into()),
+            "Heading3" => pressed.push("para.heading3".into()),
+            _ => {}
+        }
     }
 
     let focus = session.sel.focus.clone();
@@ -372,6 +385,10 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
 
     if session.view.dark_mode {
         pressed.push("view.darkMode".into());
+    }
+
+    if session.painter.is_some() {
+        pressed.push("edit.formatPainter".into());
     }
 
     // Solo ids que el catálogo puede mostrar (evita pressed huérfanos).
@@ -404,6 +421,7 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "edit.cut" => Icon::Scissors,
         "edit.copy" => Icon::Copy,
         "edit.paste" => Icon::ClipboardPaste,
+        "edit.formatPainter" => Icon::Highlighter,
         "edit.undo" => Icon::Undo,
         "edit.redo" => Icon::Redo,
         // Font
@@ -421,6 +439,10 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "para.alignCenter" => Icon::AlignCenter,
         "para.alignRight" => Icon::AlignRight,
         "para.justify" => Icon::AlignJustify,
+        "para.normal" => Icon::Type,
+        "para.heading1" => Icon::BookType,
+        "para.heading2" => Icon::BookMarked,
+        "para.heading3" => Icon::Baseline,
         "select.all" => Icon::Baseline,
         // Insert
         "insert.table" => Icon::Table,
@@ -534,6 +556,7 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "edit.cut" => "Cortar",
         "edit.copy" => "Copiar",
         "edit.paste" => "Pegar",
+        "edit.formatPainter" => "Copiar formato",
         "edit.undo" => "Deshacer",
         "edit.redo" => "Rehacer",
         "format.bold" => "Negrita",
@@ -549,6 +572,10 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "para.alignCenter" => "Centrar",
         "para.alignRight" => "Alinear a la derecha",
         "para.justify" => "Justificar",
+        "para.normal" => "Normal",
+        "para.heading1" => "Título 1",
+        "para.heading2" => "Título 2",
+        "para.heading3" => "Título 3",
         "select.all" => "Seleccionar todo",
         "insert.table" => "Tabla",
         "insert.picture" => "Imagen",
@@ -1010,6 +1037,63 @@ mod tests {
         assert!(
             !chrome.pressed.iter().any(|id| id == "para.alignLeft"),
             "left should not be pressed: {:?}",
+            chrome.pressed
+        );
+    }
+
+    #[test]
+    fn home_catalog_includes_format_painter_and_styles() {
+        let home = ribbon_catalog(RibbonMode::HomeOnly)
+            .into_iter()
+            .find(|t| t.id == "home")
+            .expect("home tab");
+        let ids: Vec<&str> = home
+            .groups
+            .iter()
+            .flat_map(|g| g.items.iter())
+            .map(|i| i.cmd_id.as_str())
+            .collect();
+        assert!(ids.contains(&"edit.formatPainter"), "{ids:?}");
+        assert!(ids.contains(&"para.heading1"), "{ids:?}");
+        assert!(ids.contains(&"para.normal"), "{ids:?}");
+        let styles = home
+            .groups
+            .iter()
+            .find(|g| g.label == "Estilos")
+            .expect("Estilos group");
+        assert!(styles.items.len() >= 4, "{styles:?}");
+    }
+
+    #[test]
+    fn ribbon_chrome_format_painter_pressed_when_armed() {
+        use wordcraft_doc::Document;
+        use wordcraft_engine::Session;
+        let mut s = Session::new(Document::from_text("hola"));
+        let _ = s.run("edit.formatPainter", &serde_json::json!({}));
+        assert!(s.painter.is_some());
+        let chrome = ribbon_chrome_for(&mut s, RibbonMode::HomeOnly);
+        assert!(
+            chrome.pressed.iter().any(|id| id == "edit.formatPainter"),
+            "pressed={:?}",
+            chrome.pressed
+        );
+    }
+
+    #[test]
+    fn ribbon_chrome_heading1_pressed() {
+        use wordcraft_doc::Document;
+        use wordcraft_engine::Session;
+        let mut s = Session::new(Document::from_text("hola"));
+        let _ = s.run("para.heading1", &serde_json::json!({}));
+        let chrome = ribbon_chrome_for(&mut s, RibbonMode::HomeOnly);
+        assert!(
+            chrome.pressed.iter().any(|id| id == "para.heading1"),
+            "pressed={:?}",
+            chrome.pressed
+        );
+        assert!(
+            !chrome.pressed.iter().any(|id| id == "para.normal"),
+            "Normal should not stay pressed: {:?}",
             chrome.pressed
         );
     }

@@ -3290,6 +3290,15 @@ impl<A: App> Session<A> {
                 }
             }
         } else {
+            #[cfg(feature = "document")]
+            if let Some(id) = self.dragging {
+                if let Some(ed) = self.documents.get_mut(&id) {
+                    if ed.apply_armed_format_painter() {
+                        self.report_document_change(id);
+                        self.reset_caret_blink();
+                    }
+                }
+            }
             self.apply_intent(Intent::PointerUp(target));
             self.dragging = None;
             self.vertex_drag = None;

@@ -523,6 +523,11 @@ impl DocumentEditor {
     }
 
     fn key_down(&mut self, key: Key, modifiers: Modifiers) -> bool {
+        if key == Key::Escape && self.session.painter.is_some() {
+            self.session.painter = None;
+            self.last_paint_key = None;
+            return true;
+        }
         if modifiers.command && !modifiers.option && !modifiers.control {
             match key {
                 Key::Char('b') | Key::Char('B') => {
@@ -530,6 +535,12 @@ impl DocumentEditor {
                 }
                 Key::Char('i') | Key::Char('I') => {
                     return self.run_cmd(&DocumentCmd::Italic);
+                }
+                Key::Char('c') | Key::Char('C') if modifiers.shift => {
+                    return self.run("edit.copyFormat");
+                }
+                Key::Char('v') | Key::Char('V') if modifiers.shift => {
+                    return self.run("edit.pasteFormat");
                 }
                 Key::Char('z') | Key::Char('Z') if modifiers.shift => {
                     return self.run_cmd(&DocumentCmd::Redo);
@@ -605,6 +616,30 @@ impl DocumentEditor {
         self.refresh_paint();
         self.ensure_caret_visible();
         true
+    }
+
+    /// Al soltar el puntero: si el Format Painter está armado y hay selección,
+    /// aplica `edit.pasteFormat` (comportamiento WordCraft canvas).
+    pub fn apply_armed_format_painter(&mut self) -> bool {
+        if self.session.painter.is_none() {
+            return false;
+        }
+        if self.session.sel.is_collapsed() {
+            return false;
+        }
+        let ok = self.session.run("edit.pasteFormat", &json!({})).is_ok();
+        if ok {
+            self.last_paint_key = None;
+            self.last_markdown = self.markdown();
+            self.refresh_paint();
+        }
+        ok
+    }
+
+    /// ¿Format Painter armado? (tests / chrome).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn format_painter_armed(&self) -> bool {
+        self.session.painter.is_some()
     }
 
     /// Viewport local → (índice de página, punto en coords de esa página).
@@ -1489,6 +1524,63 @@ mod tests {
             "expected selection rects after drag"
         );
     }
+
+    #[test]
+    fn format_painter_applies_bold_to_selection_on_release() {
+        let mut ed = DocumentEditor::new("uno dos");
+        ed.session
+            .run("select.text", &json!({ "text": "uno" }))
+            .expect("select uno");
+        assert!(ed.run("format.bold"));
+        assert!(ed.run("edit.formatPainter"));
+        assert!(ed.format_painter_armed());
+
+        ed.session
+            .run("select.text", &json!({ "text": "dos" }))
+            .expect("select dos");
+        assert!(!ed.session.sel.is_collapsed());
+        assert!(
+            ed.apply_armed_format_painter(),
+            "pasteFormat should apply with selection"
+        );
+        assert!(
+            !ed.format_painter_armed(),
+            "one-shot painter clears after paste"
+        );
+        let state = ed
+            .session
+            .run("format.state", &json!({}))
+            .expect("format.state");
+        assert_eq!(
+            state.get("bold").and_then(|v| v.as_bool()),
+            Some(true),
+            "painted range should be bold: {state:?}"
+        );
+    }
+
+    #[test]
+    fn escape_disarms_format_painter() {
+        let mut ed = DocumentEditor::new("hola");
+        assert!(ed.run("edit.formatPainter"));
+        assert!(ed.format_painter_armed());
+        assert!(ed.key_down(Key::Escape, Modifiers::default()));
+        assert!(!ed.format_painter_armed());
+    }
+
+    #[test]
+    fn para_heading1_updates_markdown_and_style() {
+        let mut ed = DocumentEditor::new("Titulo");
+        assert!(ed.run("para.heading1"));
+        let md = ed.markdown();
+        assert!(
+            md.contains("# ") || md.to_lowercase().contains("titulo"),
+            "heading should affect markdown: {md:?}"
+        );
+        let state = ed.session.run("format.state", &json!({})).unwrap();
+        assert_eq!(state.get("style").and_then(|v| v.as_str()), Some("Heading1"));
+    }
+
+
     #[test]
     fn insert_table_2x2() {
         let mut ed = DocumentEditor::new("");

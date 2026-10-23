@@ -7,7 +7,7 @@
 //! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
 //! Ribbon Kai (catálogo WordCraft) en `ribbon`. Atlas glifos (`glyph_atlas`) +
 //! clipboard rich (HTML via `ClipboardPort`; RTF paste si el port lo trae);
-//! IME preedit visual en el cuerpo; tablas/imágenes en clipboard / keytips = deuda.
+//! IME preedit / clipboard media / Format Painter+estilos (Paso 4 slice); keytips/Backstage full/rulers = deuda.
 //!
 //! ```ignore
 //! document()
