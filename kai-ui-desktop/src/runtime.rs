@@ -679,6 +679,12 @@ pub fn cursor_for(layout: &Layout, path: &[WidgetId]) -> Cursor {
     Cursor::Default
 }
 
+/// Open or save request waiting to become a sheet in [`WindowState::flush`].
+enum FileSheet {
+    Pick(PickFile),
+    Save(SaveFile),
+}
+
 /// What reaches the event loop from outside winit's own events.
 #[derive(Debug)]
 enum UserEvent {
@@ -688,6 +694,8 @@ enum UserEvent {
     Menu(String),
     /// An [`Effects::perform`] task finished.
     Task,
+    /// The open or save sheet closed with this path (`None`: cancelled).
+    FilePicked(Option<PathBuf>),
     /// `kai dev` is about to restart the app: save the state and quit.
     DevQuit,
     /// News from the MCP server: a client connected, called or cancelled a
@@ -736,6 +744,10 @@ struct WindowState<A: App> {
     /// Files of a drop: winit sends one `DroppedFile` per file, and they go
     /// to the drop zone together before the loop waits again.
     dropped: Vec<PathBuf>,
+    /// Wakes the loop when a sheet or task finishes.
+    proxy: EventLoopProxy<UserEvent>,
+    /// Open or save sheet while AppKit shows it (Paso 15: not `runModal`).
+    file_sheet: Option<crate::platform::file_panel::ActiveSheet>,
     #[cfg(target_os = "macos")]
     menu: Option<crate::menu::NativeMenu>,
 }
@@ -775,6 +787,7 @@ impl<A: App> WindowState<A> {
         renderer: WgpuRenderer,
         theme: Theme,
         app: A,
+        proxy: EventLoopProxy<UserEvent>,
     ) -> Result<Self, String> {
         let scale_factor = ScaleFactor::new(window.scale_factor())
             .ok_or_else(|| "La ventana informó un factor de escala inválido".to_owned())?;
@@ -807,6 +820,8 @@ impl<A: App> WindowState<A> {
             background_layer: None,
             next_frame: None,
             dropped: Vec::new(),
+            proxy,
+            file_sheet: None,
             #[cfg(target_os = "macos")]
             menu: None,
         };
@@ -876,14 +891,50 @@ impl<A: App> WindowState<A> {
             }
         }
         if let Some(request) = outbox.pick_file {
-            let path = crate::platform::file_panel::pick(&request);
-            self.session.finish_file_pick(path);
-            self.flush();
+            self.begin_file_sheet(FileSheet::Pick(request));
         }
         if let Some(request) = outbox.save_file {
-            let path = crate::platform::file_panel::save(&request);
-            self.session.finish_file_pick(path);
-            self.flush();
+            self.begin_file_sheet(FileSheet::Save(request));
+        }
+    }
+
+    /// Start an open/save sheet; dismiss any previous one without delivering.
+    fn begin_file_sheet(&mut self, kind: FileSheet) {
+        if let Some(sheet) = self.file_sheet.take() {
+            sheet.dismiss();
+        }
+        let proxy = self.proxy.clone();
+        let done: crate::platform::file_panel::Done = Box::new(move |path| {
+            let _ = proxy.send_event(UserEvent::FilePicked(path));
+        });
+        let sheet = match kind {
+            FileSheet::Pick(request) => {
+                crate::platform::file_panel::begin_pick(&self.window, &request, done)
+            }
+            FileSheet::Save(request) => {
+                crate::platform::file_panel::begin_save(&self.window, &request, done)
+            }
+        };
+        match sheet {
+            Some(sheet) => self.file_sheet = Some(sheet),
+            None => {
+                // Sheet never started (no main thread / no NSWindow / not
+                // macOS): `done` was not called, so finish here.
+                self.session.finish_file_pick(None);
+                self.flush();
+            }
+        }
+    }
+
+    /// Drop the sheet handle after its completion handler already ran.
+    fn take_file_sheet(&mut self) {
+        // `live` is false, so `Drop` will not call `cancel:` again.
+        self.file_sheet.take();
+    }
+
+    fn dismiss_file_sheet(&mut self) {
+        if let Some(sheet) = self.file_sheet.take() {
+            sheet.dismiss();
         }
     }
 
@@ -1057,7 +1108,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         window.set_visible(true);
         let theme = self.theme;
         let state = pollster::block_on(WgpuRenderer::new(Arc::clone(&window)))
-            .and_then(|renderer| WindowState::new(window, accessibility, renderer, theme, app));
+            .and_then(|renderer| {
+                WindowState::new(window, accessibility, renderer, theme, app, self.proxy.clone())
+            });
         match state {
             #[cfg_attr(not(feature = "mcp"), allow(unused_mut))]
             Ok(mut state) => {
@@ -1092,7 +1145,11 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         };
         state.accessibility.process_event(&state.window, &event);
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                state.dismiss_file_sheet();
+                event_loop.exit();
+                return;
+            }
             WindowEvent::Resized(size) => {
                 state.renderer.resize(size.width, size.height);
                 state.resize();
@@ -1201,6 +1258,9 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             event => event,
         };
         if matches!(event, UserEvent::DevQuit) {
+            if let Some(state) = self.state.as_mut() {
+                state.dismiss_file_sheet();
+            }
             if let (Some(state), Some(path)) = (&self.state, &self.dev_state)
                 && let Err(error) = dev_state::write(path, &state.dev_state())
             {
@@ -1222,6 +1282,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             }
             UserEvent::Task => {
                 state.session.run_tasks();
+            }
+            UserEvent::FilePicked(path) => {
+                state.take_file_sheet();
+                state.session.finish_file_pick(path);
             }
             UserEvent::DevQuit => return,
             #[cfg(feature = "mcp")]

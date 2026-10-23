@@ -1247,7 +1247,7 @@ mod tests {
         use crate::components::{ButtonVariant, button};
         use crate::devtools::MsgSource;
         use crate::element::{Element, Role, div, text};
-        use crate::runtime::{App, Effects, IMAGE_FILE_TYPES, PickFile};
+        use crate::runtime::{App, Effects, IMAGE_FILE_TYPES, PickFile, SaveFile};
         use crate::testing::{By, TestApp};
 
         #[derive(Clone, Debug, PartialEq)]
@@ -1323,6 +1323,62 @@ mod tests {
             app.on_file_pick(None);
             app.click(By::role(Role::Button).name("Elegir"));
             assert_eq!(app.messages().last(), Some(&Msg::Chosen(None)));
+        }
+
+        #[test]
+        fn the_save_panel_answers_with_the_programmed_path_or_none() {
+            #[derive(Clone, Debug, PartialEq)]
+            enum SaveMsg {
+                Export,
+                Saved(Option<PathBuf>),
+            }
+            struct Exporter;
+            impl App for Exporter {
+                type Msg = SaveMsg;
+                fn title(&self) -> String {
+                    "Exportar".into()
+                }
+                fn update(&mut self, msg: SaveMsg) -> Effects<SaveMsg> {
+                    match msg {
+                        SaveMsg::Export => Effects::save_file(
+                            SaveFile::new("Exportar a Excel", "clientes.xlsx").types(&["xlsx"]),
+                            SaveMsg::Saved,
+                        ),
+                        SaveMsg::Saved(_) => Effects::none(),
+                    }
+                }
+                fn view(&self) -> Element<SaveMsg> {
+                    button("Exportar", ButtonVariant::Primary).on_click(SaveMsg::Export)
+                }
+            }
+
+            let mut app = TestApp::new(Exporter);
+            // No answer programmed: the panel stays open (closing the real
+            // window with a sheet open takes this same pending path).
+            app.click(By::role(Role::Button).name("Exportar"));
+            assert_eq!(
+                app.file_save_request(),
+                Some(&SaveFile {
+                    title: "Exportar a Excel".into(),
+                    name: "clientes.xlsx".into(),
+                    types: &["xlsx"],
+                })
+            );
+            assert!(app.file_pick_request().is_none());
+            assert_eq!(app.messages(), [SaveMsg::Export], "waiting for the person");
+
+            app.on_file_save(Some("/tmp/clientes.xlsx".into()));
+            assert_eq!(app.file_save_request(), None);
+            assert_eq!(
+                app.messages().last(),
+                Some(&SaveMsg::Saved(Some("/tmp/clientes.xlsx".into())))
+            );
+            assert_eq!(app.message_sources().last(), Some(&MsgSource::Files));
+
+            app.on_file_save(None);
+            app.click(By::role(Role::Button).name("Exportar"));
+            assert_eq!(app.file_save_request(), None);
+            assert_eq!(app.messages().last(), Some(&SaveMsg::Saved(None)));
         }
 
         #[test]

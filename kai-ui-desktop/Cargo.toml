@@ -70,11 +70,14 @@ muda = { version = "0.19.3", default-features = false }
 # `NSProcessInfo.operatingSystemVersion` for `AppKitGeneration::current()`;
 # already in Cargo.lock through wgpu/winit.
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo", "NSArray", "NSString", "NSURL"] }
-# `NSOpenPanel` for `Effects::pick_file` (`src/platform/file_panel.rs`) and
-# the accessibility preferences of `NSWorkspace` (`src/platform/prefs.rs`);
-# both already in Cargo.lock through winit and muda.
+# `NSOpenPanel` / `NSSavePanel` sheets for `Effects::pick_file` /
+# `save_file` (`src/platform/file_panel.rs`) and the accessibility
+# preferences of `NSWorkspace` (`src/platform/prefs.rs`); already in
+# Cargo.lock through winit and muda. `block2` + `NSView` are for
+# `beginSheetModalForWindow:completionHandler:` (Paso 15).
+block2 = { version = "0.6", default-features = false }
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSApplication", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSAccessibility", "NSApplication", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow", "NSWorkspace"] }
 
 [dev-dependencies]
 png = "0.18.1"
