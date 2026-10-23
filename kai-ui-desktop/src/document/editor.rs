@@ -25,6 +25,22 @@ use crate::render::Bitmap;
 use std::collections::HashMap;
 use std::io::Cursor;
 
+/// Clave de invalidación del snapshot [`DocumentPaint`].
+///
+/// El scroll (`scroll_y`) **no** entra: el paint reutiliza runs/fills y solo
+/// actualiza el offset. Incluye `rev`, selección (caret/highlights; los
+/// comandos `caret.*` no bumpan `rev`), tamaño de viewport (afecta scale /
+/// `scroll_max`) y modo de vista WordCraft.
+#[derive(Clone, PartialEq, Eq)]
+struct PaintKey {
+    rev: u64,
+    sel: wordcraft_engine::Selection,
+    vp_w: u32,
+    vp_h: u32,
+    view_mode: wordcraft_layout::ViewMode,
+    read_mode: bool,
+}
+
 /// Editor vivo: una [`Session`] WordCraft + snapshot de paint + scroll.
 pub struct DocumentEditor {
     session: Session,
@@ -43,6 +59,11 @@ pub struct DocumentEditor {
     /// Modelo clonado tras [`DocumentCmd::TakeDocument`].
     taken_document: Option<std::sync::Arc<wordcraft_doc::Document>>,
     paint: DocumentPaint,
+    /// Última clave con la que se construyó `paint` (None = nunca).
+    last_paint_key: Option<PaintKey>,
+    /// Contador de rebuilds de display list (tests de fluidez P1).
+    #[cfg(test)]
+    paint_rebuilds: u64,
 }
 
 impl DocumentEditor {
@@ -68,6 +89,9 @@ impl DocumentEditor {
             bitmaps: HashMap::new(),
             taken_document: None,
             paint: DocumentPaint::default(),
+            last_paint_key: None,
+            #[cfg(test)]
+            paint_rebuilds: 0,
         };
         editor.refresh_paint();
         editor
@@ -113,9 +137,12 @@ impl DocumentEditor {
     }
 
     /// Rueda / TestApp: desplaza el canvas. `delta_y` > 0 mueve el contenido hacia arriba.
+    ///
+    /// No reconstruye la display list si solo cambia el scroll: actualiza
+    /// `paint.scroll_y` sobre el snapshot existente.
     pub fn scroll_by(&mut self, delta_y: f32, viewport: Rect) -> bool {
         self.last_viewport = viewport;
-        self.refresh_paint();
+        self.ensure_paint();
         let before = self.scroll_y;
         let max = self.paint.scroll_max;
         self.scroll_y = (self.scroll_y + delta_y).clamp(0.0, max);
@@ -124,6 +151,11 @@ impl DocumentEditor {
         }
         self.paint.scroll_y = self.scroll_y;
         true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn paint_rebuilds(&self) -> u64 {
+        self.paint_rebuilds
     }
 
     pub fn change(&mut self) -> DocumentChange {
@@ -451,6 +483,29 @@ impl DocumentEditor {
         }
     }
 
+    /// Reusa [`DocumentPaint`] si `rev` / selección / viewport size / vista
+    /// no cambiaron; solo sincroniza `scroll_y`. Llamar desde sync de frame y
+    /// scroll — no desde mutaciones de contenido (esas usan [`refresh_paint`]).
+    pub(crate) fn ensure_paint(&mut self) {
+        let key = self.current_paint_key();
+        if self.last_paint_key.as_ref() == Some(&key) {
+            self.paint.scroll_y = self.scroll_y;
+            return;
+        }
+        self.refresh_paint();
+    }
+
+    fn current_paint_key(&self) -> PaintKey {
+        PaintKey {
+            rev: self.session.rev(),
+            sel: self.session.sel.clone(),
+            vp_w: self.last_viewport.width.to_bits(),
+            vp_h: self.last_viewport.height.to_bits(),
+            view_mode: self.session.view.mode,
+            read_mode: self.session.view.read_mode,
+        }
+    }
+
     pub fn refresh_paint(&mut self) {
         let layout = self.session.layout();
         let page_count = layout.pages.len().max(1);
@@ -521,6 +576,11 @@ impl DocumentEditor {
             scroll_y: self.scroll_y,
             scroll_max,
         };
+        self.last_paint_key = Some(self.current_paint_key());
+        #[cfg(test)]
+        {
+            self.paint_rebuilds = self.paint_rebuilds.wrapping_add(1);
+        }
     }
 }
 
@@ -915,6 +975,66 @@ mod tests {
         let y = ed.scroll_y();
         assert!(!ed.scroll_by(1_000_000.0, viewport) || ed.scroll_y() >= y);
         assert!((ed.scroll_y() - ed.paint.scroll_max).abs() < 1.0);
+    }
+
+    #[test]
+    fn scroll_by_does_not_rebuild_paint() {
+        let mut ed = DocumentEditor::new(&multipage_sample());
+        let viewport = Rect {
+            width: 480.0,
+            height: 320.0,
+            ..Rect::default()
+        };
+        ed.last_viewport = viewport;
+        ed.refresh_paint();
+        let rebuilds = ed.paint_rebuilds();
+        let runs = ed.paint.runs.clone();
+        assert!(ed.paint.scroll_max > 0.0);
+        assert!(ed.scroll_by(120.0, viewport));
+        assert_eq!(
+            ed.paint_rebuilds(),
+            rebuilds,
+            "scroll must not rebuild page_display / glyph runs"
+        );
+        assert_eq!(ed.paint.runs, runs);
+        assert_eq!(ed.paint.scroll_y, ed.scroll_y());
+        assert!(ed.scroll_y() > 0.0);
+    }
+
+    #[test]
+    fn ensure_paint_skips_when_key_unchanged() {
+        let mut ed = DocumentEditor::new("hola");
+        let viewport = Rect {
+            width: 400.0,
+            height: 300.0,
+            ..Rect::default()
+        };
+        ed.last_viewport = viewport;
+        ed.refresh_paint();
+        let n = ed.paint_rebuilds();
+        ed.scroll_y = 12.0;
+        ed.ensure_paint();
+        assert_eq!(ed.paint_rebuilds(), n);
+        assert_eq!(ed.paint.scroll_y, 12.0);
+    }
+
+    #[test]
+    fn ensure_paint_rebuilds_when_viewport_size_changes() {
+        let mut ed = DocumentEditor::new(&multipage_sample());
+        ed.last_viewport = Rect {
+            width: 480.0,
+            height: 320.0,
+            ..Rect::default()
+        };
+        ed.refresh_paint();
+        let n = ed.paint_rebuilds();
+        ed.last_viewport = Rect {
+            width: 480.0,
+            height: 200.0,
+            ..Rect::default()
+        };
+        ed.ensure_paint();
+        assert_eq!(ed.paint_rebuilds(), n + 1);
     }
 
     #[test]

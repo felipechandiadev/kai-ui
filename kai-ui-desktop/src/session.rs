@@ -3408,7 +3408,6 @@ impl<A: App> Session<A> {
             ed.sync_markdown(&markdown);
             if let Some(viewport) = self.layout.text_box(id) {
                 ed.last_viewport = viewport;
-                ed.refresh_paint();
             }
             let tmp = crate::document::DocumentSpec {
                 markdown: markdown.clone(),
@@ -3416,8 +3415,13 @@ impl<A: App> Session<A> {
                 pending_load,
                 ..Default::default()
             };
+            // Pendientes primero: pueden mutar contenido y ya llaman refresh_paint.
             let mut changed = ed.apply_pending_load(&tmp);
             changed |= ed.apply_pending_cmd(&tmp);
+            // Solo rebuild si cambió rev/sel/viewport size/vista — no por scroll.
+            if self.layout.text_box(id).is_some() {
+                ed.ensure_paint();
+            }
             if changed {
                 changes.push((id, ed.change()));
             }
