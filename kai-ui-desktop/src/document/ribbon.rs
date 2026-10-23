@@ -15,16 +15,18 @@ use crate::element::{div, text, Element, Role};
 
 use super::DocumentCmd;
 
-/// Qué pestañas del catálogo WordCraft expone el ribbon MVP.
+/// Qué pestañas del catálogo WordCraft expone el ribbon.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum RibbonMode {
     /// Sin chrome de ribbon.
     None,
     /// Solo Home (font / paragraph / clipboard / undo).
     HomeOnly,
-    /// Home + Insert (MVP por defecto).
-    #[default]
+    /// Home + Insert (MVP original).
     HomeInsert,
+    /// Home + Insert + Layout + Review + References + View.
+    #[default]
+    Full,
 }
 
 /// Ítem clicable: un `CommandSpec.id` WordCraft.
@@ -79,21 +81,88 @@ const MVP_INSERT: &[&str] = &[
     "insert.pageBreak",
 ];
 
+/// Layout: Page Setup / Breaks que corren con `{}` o params por defecto (ver
+/// [`default_run_params`]). Excluye `layout.pageSetup` (abre dialog WC-UI) y
+/// Arrange (requiere selección de objeto).
+const MVP_LAYOUT: &[&str] = &[
+    "layout.margins",
+    "layout.orientation",
+    "layout.size",
+    "layout.columns",
+    "layout.hyphenation",
+    "layout.lineNumbers",
+    "layout.textDirection",
+    "layout.sectionRtl",
+    "text.columnBreak",
+    "layout.break",
+];
+
+/// Review: proofing / tracking / changes sin dialogs de archivo ni texto libre.
+/// Excluye `review.newComment` (exige `text`), compare/combine, restrict, speech UI.
+const MVP_REVIEW: &[&str] = &[
+    "review.spelling",
+    "review.wordCount",
+    "review.trackChanges",
+    "review.markup",
+    "review.nextChange",
+    "review.previousChange",
+    "review.accept",
+    "review.reject",
+    "review.acceptAll",
+    "review.rejectAll",
+    "review.nextComment",
+    "review.previousComment",
+];
+
+/// References: TOC / footnotes mínimos. Excluye citations/sources/researcher
+/// (params de fuentes o UI de investigación).
+const MVP_REFERENCES: &[&str] = &[
+    "references.toc",
+    "references.updateToc",
+    "references.removeToc",
+    "references.footnote",
+    "references.endnote",
+    "references.nextFootnote",
+];
+
+/// View: zoom / vistas / show toggles. Excluye window/macros/organizer y
+/// `view.interfaceTheme` (exige value); darkMode queda (toggle).
+const MVP_VIEW: &[&str] = &[
+    "view.printLayout",
+    "view.webLayout",
+    "view.draft",
+    "view.ruler",
+    "view.gridlines",
+    "view.navigationPane",
+    "view.hideWhiteSpace",
+    "view.zoomIn",
+    "view.zoomOut",
+    "view.zoom100",
+    "view.onePage",
+    "view.pageWidth",
+    "view.multiplePages",
+    "view.darkMode",
+];
+
 fn wc_registry() -> &'static Registry {
     static REG: OnceLock<Registry> = OnceLock::new();
     REG.get_or_init(wordcraft_engine::cmd::registry)
 }
 
-/// Tabs Home (+ Insert) construidos desde el Registry WordCraft.
+/// Tabs construidos desde el Registry WordCraft según [`RibbonMode`].
 pub fn ribbon_catalog(mode: RibbonMode) -> Vec<RibbonTab> {
     match mode {
         RibbonMode::None => Vec::new(),
-        RibbonMode::HomeOnly => {
-            let mut tabs = build_tabs(&[("Home", MVP_HOME)]);
-            tabs.retain(|t| t.id == "home");
-            tabs
-        }
+        RibbonMode::HomeOnly => build_tabs(&[("Home", MVP_HOME)]),
         RibbonMode::HomeInsert => build_tabs(&[("Home", MVP_HOME), ("Insert", MVP_INSERT)]),
+        RibbonMode::Full => build_tabs(&[
+            ("Home", MVP_HOME),
+            ("Insert", MVP_INSERT),
+            ("Layout", MVP_LAYOUT),
+            ("Review", MVP_REVIEW),
+            ("References", MVP_REFERENCES),
+            ("View", MVP_VIEW),
+        ]),
     }
 }
 
@@ -169,6 +238,10 @@ fn preferred_group_order(tab: &str) -> Vec<&'static str> {
             "Styles",
         ],
         "Insert" => vec!["Pages", "Tables", "Illustrations", "Text", "Links"],
+        "Layout" => vec!["Page Setup", "Breaks", "Paragraph", "Arrange"],
+        "Review" => vec!["Proofing", "Tracking", "Changes", "Comments"],
+        "References" => vec!["Table of Contents", "Footnotes", "Captions", "Citations & Bibliography"],
+        "View" => vec!["Views", "Show", "Zoom", "Dark Mode", "Immersive", "Page Movement"],
         _ => Vec::new(),
     }
 }
@@ -210,6 +283,21 @@ pub fn document_cmd_for(id: &str) -> DocumentCmd {
     }
 }
 
+/// Params JSON por defecto al ejecutar un id desde el ribbon (sin dialogs).
+///
+/// La mayoría usa `{}`. Algunos cmds de Layout exigen un preset/`kind` mínimo
+/// para no fallar con Params; nunca abren UI egui/rfd.
+pub fn default_run_params(id: &str) -> serde_json::Value {
+    use serde_json::json;
+    match id {
+        "layout.margins" => json!({ "preset": "normal" }),
+        "layout.columns" => json!({ "count": 2 }),
+        "layout.break" => json!({ "kind": "page" }),
+        "layout.size" => json!({ "name": "Letter" }),
+        _ => json!({}),
+    }
+}
+
 /// ¿El comando está greyed-out en esta Session? (`Session::why_disabled`).
 #[allow(dead_code)] // API pública para apps que enrutan Session al chrome.
 pub fn cmd_disabled(session: &Session, id: &str) -> bool {
@@ -229,7 +317,7 @@ pub struct DocumentRibbon<Msg> {
 impl<Msg> Default for DocumentRibbon<Msg> {
     fn default() -> Self {
         Self {
-            mode: RibbonMode::HomeInsert,
+            mode: RibbonMode::Full,
             active_tab: "home".into(),
             on_tab: None,
             on_command: None,
@@ -407,6 +495,44 @@ mod tests {
     }
 
     #[test]
+    fn full_catalog_has_layout_review_view_and_references() {
+        let tabs = ribbon_catalog(RibbonMode::Full);
+        let ids: Vec<_> = tabs.iter().map(|t| t.id.as_str()).collect();
+        for want in ["home", "insert", "layout", "review", "references", "view"] {
+            assert!(ids.contains(&want), "missing tab {want} in {ids:?}");
+        }
+        let tab_cmds = |id: &str| -> Vec<String> {
+            tabs.iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .groups
+                .iter()
+                .flat_map(|g| g.items.iter().map(|i| i.cmd_id.clone()))
+                .collect()
+        };
+        assert!(tab_cmds("layout").contains(&"layout.orientation".into()));
+        assert!(tab_cmds("layout").len() >= 5, "{:?}", tab_cmds("layout"));
+        assert!(tab_cmds("review").contains(&"review.spelling".into()));
+        assert!(tab_cmds("review").contains(&"review.trackChanges".into()));
+        assert!(tab_cmds("review").len() >= 5, "{:?}", tab_cmds("review"));
+        assert!(tab_cmds("view").contains(&"view.zoomIn".into()));
+        assert!(tab_cmds("view").contains(&"view.printLayout".into()));
+        assert!(tab_cmds("view").len() >= 5, "{:?}", tab_cmds("view"));
+        assert!(tab_cmds("references").contains(&"references.footnote".into()));
+        assert!(tab_cmds("references").contains(&"references.toc".into()));
+    }
+
+    #[test]
+    fn default_run_params_cover_layout_presets() {
+        assert_eq!(
+            default_run_params("layout.margins")["preset"],
+            "normal"
+        );
+        assert_eq!(default_run_params("layout.columns")["count"], 2);
+        assert_eq!(default_run_params("view.zoomIn"), serde_json::json!({}));
+    }
+
+    #[test]
     fn document_cmd_for_maps_known_ids() {
         assert_eq!(document_cmd_for("format.bold"), DocumentCmd::Bold);
         assert_eq!(
@@ -422,7 +548,14 @@ mod tests {
     #[test]
     fn specs_exist_in_wordcraft_registry() {
         let reg = wc_registry();
-        for id in MVP_HOME.iter().chain(MVP_INSERT.iter()) {
+        let all = MVP_HOME
+            .iter()
+            .chain(MVP_INSERT.iter())
+            .chain(MVP_LAYOUT.iter())
+            .chain(MVP_REVIEW.iter())
+            .chain(MVP_REFERENCES.iter())
+            .chain(MVP_VIEW.iter());
+        for id in all {
             assert!(reg.get(id).is_some(), "missing CommandSpec `{id}`");
         }
     }

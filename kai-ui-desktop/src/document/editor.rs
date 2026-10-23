@@ -266,7 +266,8 @@ impl DocumentEditor {
     }
 
     fn run(&mut self, id: &str) -> bool {
-        self.session.run(id, &json!({})).is_ok()
+        let params = super::default_run_params(id);
+        self.session.run(id, &params).is_ok()
     }
 
     fn run_cmd(&mut self, cmd: &DocumentCmd) -> bool {

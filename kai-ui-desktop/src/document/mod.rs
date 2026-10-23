@@ -32,7 +32,7 @@ mod ribbon;
 pub(crate) use editor::{run_text_style, DocumentEditor};
 #[cfg(feature = "document")]
 pub use ribbon::{
-    cmd_disabled, document_cmd_for, document_ribbon, parse_location, ribbon_catalog, DocumentRibbon,
+    cmd_disabled, default_run_params, document_cmd_for, document_ribbon, parse_location, ribbon_catalog, DocumentRibbon,
     RibbonGroup, RibbonItem, RibbonMode, RibbonTab,
 };
 
