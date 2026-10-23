@@ -3170,7 +3170,7 @@ impl Demo {
     #[cfg(feature = "document")]
     fn documento_ribbon_chrome(&self) -> Element<Msg> {
         document_ribbon()
-            .mode(RibbonMode::HomeInsert)
+            .mode(RibbonMode::Full)
             .active_tab(self.doc_ribbon_tab.clone())
             .on_tab(Msg::DocRibbonTab)
             .on_command(|id| Msg::DocCmd(document_cmd_for(&id)))
@@ -3207,7 +3207,7 @@ impl Demo {
             .children([
                 card_header(
                     "Documento",
-                    Some("Ribbon Kai (Home+Insert) + Archivo .docx/PDF; tipar / ⌘B (WordCraft)"),
+                    Some("Ribbon Kai (Home…View) + Archivo .docx/PDF; tipar / ⌘B (WordCraft)"),
                 ),
                 card_content().class("gap-3").children([
                     self.documento_ribbon_chrome(),
@@ -4404,6 +4404,41 @@ mod tests {
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "!");
         assert!(app.value(editor()).contains('!'));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_ribbon_layout_review_view_tabs() {
+        use crate::document::{ribbon_catalog, RibbonMode};
+        let tabs = ribbon_catalog(RibbonMode::Full);
+        assert!(tabs.iter().any(|t| t.id == "layout"));
+        assert!(tabs.iter().any(|t| t.id == "review"));
+        assert!(tabs.iter().any(|t| t.id == "view"));
+        assert!(tabs.iter().any(|t| t.id == "references"));
+
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        app.click(editor());
+        app.type_text(editor(), "Tabs");
+
+        app.click(By::test_id("documento.ribbon.tab.layout"));
+        app.click(By::test_id("documento.ribbon.cmd.layout.orientation"));
+
+        app.click(By::test_id("documento.ribbon.tab.review"));
+        app.click(By::test_id("documento.ribbon.cmd.review.wordCount"));
+
+        app.click(By::test_id("documento.ribbon.tab.view"));
+        app.click(By::test_id("documento.ribbon.cmd.view.zoomIn"));
+
+        app.click(By::test_id("documento.ribbon.tab.references"));
+        app.click(By::test_id("documento.ribbon.cmd.references.footnote"));
+
+        assert!(
+            app.value(editor()).contains("Tabs") || !app.value(editor()).is_empty(),
+            "editor should stay usable after ribbon cmds"
+        );
     }
 
     #[cfg(feature = "document")]

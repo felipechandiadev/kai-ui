@@ -118,7 +118,7 @@ Abrir/guardar .docx (`wordcraft-docx`) y exportar PDF (`wordcraft-pdf` / `craft-
 
 ### Fuera de este widget (hasta que DSP lo pida)
 
-Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraft, segundo event loop egui. Ribbon Kai MVP (Home+Insert desde catálogo): ver [`17-document-ribbon.md`](17-document-ribbon.md).
+Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraft, segundo event loop egui. Ribbon Kai (Home…View desde catálogo, `RibbonMode::Full`): ver [`17-document-ribbon.md`](17-document-ribbon.md).
 
 ## 7. Pruebas y demo
 
@@ -144,12 +144,12 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Spike §4 / §0 (crate aislado + display list) | **Hecho (23-oct-2026)** — ver §10 |
 | Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in) |
 | `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME / selección / ⌘B / undo; hit multi-página |
-| Demo sección Documento | **Hecho** (Datos → Documento; Ribbon Home+Insert; Archivo; markdown multi-página + scroll) |
+| Demo sección Documento | **Hecho** (Datos → Documento; Ribbon Full; Archivo; markdown multi-página + scroll) |
 | Subida de MSRV | **Hecho** — 1.95 |
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
 | Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret |
 | Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai); bridge TextStore glifos = deuda atlas WordCraft |
-| Ribbon Kai (catálogo WC) | **MVP (23-oct-2026)** — Home+Insert; ver guía [17](17-document-ribbon.md); keytips/Backstage = deuda |
+| Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Home+Insert+Layout+Review+References+View (`RibbonMode::Full`); ver guía [17](17-document-ribbon.md); Design/keytips/Backstage = deuda |
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Deuda post-plan | Atlas glifos WordCraft (bridge TextStore), clipboard rich, markdown rich de ida y vuelta |
 
