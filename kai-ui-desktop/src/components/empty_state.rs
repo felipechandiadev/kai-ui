@@ -3,12 +3,26 @@
 //! Inspired by Polaris `EmptyState` and Carbon empty/loading patterns, kept
 //! AppKit-canonical: Lucide icon, title, optional body, optional Primary /
 //! Secondary action — no web chrome.
+//!
+//! Distinguish **filter empty** (query returned nothing) from **resource
+//! empty** (collection never had items) via [`EmptyKind`] /
+//! [`EmptyState::filter`] / [`EmptyState::resource`].
 
 use crate::element::{Element, Role, div, icon, text};
 use crate::icons::Icon;
 
 use super::progress::{DotProgress, DotSize};
 use super::{ButtonVariant, button, caption, paragraph};
+
+
+/// Why the surface is empty — drives recommended copy and icons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmptyKind {
+    /// A search or filter returned no rows; suggest clearing or refining.
+    Filter,
+    /// The collection has never had items; suggest creating the first one.
+    Resource,
+}
 
 /// Reusable empty surface: icon + title + optional description + optional action.
 #[derive(Clone, Debug)]
@@ -20,6 +34,7 @@ pub struct EmptyState<Msg> {
     action: Option<Msg>,
     action_variant: ButtonVariant,
     test_id: Option<String>,
+    kind: EmptyKind,
 }
 
 impl<Msg> EmptyState<Msg> {
@@ -32,7 +47,33 @@ impl<Msg> EmptyState<Msg> {
             action: None,
             action_variant: ButtonVariant::Primary,
             test_id: None,
+            kind: EmptyKind::Resource,
         }
+    }
+
+    /// Filter/search empty: search icon + title (default kind [`EmptyKind::Filter`]).
+    pub fn filter(title: impl Into<String>) -> Self {
+        Self {
+            kind: EmptyKind::Filter,
+            ..Self::new(Icon::Search, title)
+        }
+    }
+
+    /// Resource empty: inbox icon + title (default kind [`EmptyKind::Resource`]).
+    pub fn resource(title: impl Into<String>) -> Self {
+        Self {
+            kind: EmptyKind::Resource,
+            ..Self::new(Icon::Inbox, title)
+        }
+    }
+
+    pub fn kind(mut self, kind: EmptyKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    pub fn empty_kind(&self) -> EmptyKind {
+        self.kind
     }
 
     pub fn description(mut self, text: impl Into<String>) -> Self {
@@ -164,5 +205,26 @@ mod tests {
         assert_eq!(tree.role, Some(Role::Status));
         assert_eq!(tree.test_id.as_deref(), Some("pattern.loading"));
         assert!(tree.find_test_id("pattern.loading.dots").is_some());
+    }
+
+    #[test]
+    fn filter_and_resource_kinds() {
+        assert_eq!(
+            EmptyState::<()>::filter("Sin coincidencias").empty_kind(),
+            EmptyKind::Filter
+        );
+        assert_eq!(
+            EmptyState::<()>::resource("Sin elementos").empty_kind(),
+            EmptyKind::Resource
+        );
+        let f = assigned(
+            EmptyState::<()>::filter("Sin coincidencias")
+                .test_id("f")
+                .build(),
+        );
+        assert_eq!(
+            f.find_test_id("f.title").map(|e| e.text_content()),
+            Some("Sin coincidencias".into())
+        );
     }
 }

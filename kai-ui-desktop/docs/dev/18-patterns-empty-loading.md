@@ -5,16 +5,24 @@ Patrones de datos alineados a Polaris `EmptyState` y Carbon empty/loading, en vo
 ## EmptyState
 
 ```rust
-use kai::components::{EmptyState, ButtonVariant};
-use kai::icons::Icon;
+use kai::components::{EmptyState, EmptyKind, ButtonVariant};
 
-EmptyState::new(Icon::Inbox, "No hay resultados")
-    .description("Prueba otro filtro o crea un elemento.")
+// Filter empty — la consulta no devolvió filas (icono Search).
+EmptyState::filter("No hay resultados")
+    .description("Prueba otro filtro o límpialo.")
+    .action("Limpiar filtros", Msg::ClearFilters)
+    .test_id("lista.empty.filter")
+    .build()
+
+// Resource empty — la colección nunca tuvo ítems (icono Inbox).
+EmptyState::resource("Sin elementos")
+    .description("Todavía no hay nada aquí.")
     .action("Crear elemento", Msg::Create)
-    .action_variant(ButtonVariant::Primary) // default
-    .test_id("lista.empty")
+    .test_id("lista.empty.resource")
     .build()
 ```
+
+`EmptyKind::{Filter, Resource}` tipa la intención; `EmptyState::new(icon, title)` sigue disponible.
 
 - Icono Lucide + título + descripción opcional + acción opcional.
 - Rol `Status`; partes `icon`, `title`, `description`, `action`.
@@ -37,7 +45,8 @@ loading_placeholder("Cargando filas…")
 
 ## Demo
 
-Sección **Tabla** → card «Empty y Loading» (`patrones.empty_loading`).
+- **Tabla** → card «Empty y Loading» (`patrones.empty_loading`): filter + resource + loading.
+- **Catálogo vivo** → ambas variantes bajo los filtros de tema/densidad/tamaño ([25](25-catalogo-vivo.md)).
 
 ## Qué no es
 

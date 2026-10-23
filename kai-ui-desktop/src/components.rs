@@ -28,7 +28,7 @@ pub use crate::charts::{ChartKind, ChartSpec, chart};
 pub use crate::color::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
-pub use empty_state::{EmptyState, loading_placeholder};
+pub use empty_state::{EmptyKind, EmptyState, loading_placeholder};
 pub use field_icons::{FIELD_ICON_MAP, FieldKind, field_icon_for};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
 pub use page::{
