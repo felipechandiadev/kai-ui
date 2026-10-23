@@ -127,7 +127,7 @@ flowchart LR
 | Pieza | Estado actual | Propuesta |
 |---|---|---|
 | Imágenes rasterizadas | **Hecho** ([04](04-renderer-y-texto.md), «Imágenes»): `DrawOp::Image { rect, bitmap, source, radius, opacity }`, atlas `Rgba8Unorm` de 4096² con estantes y margen (lleno, se re-empaqueta con las imágenes del frame), sampler lineal en `image.wgsl`; `image(src)`, `Avatar` y `MediaSlot` lo usan | Para teselas: subir un número limitado por frame y, si el atlas compartido se queda chico, un atlas propio del mapa o un `TextureArray`. |
-| Clip | Rectangular por instancia en `quad.wgsl` e `image.wgsl`, pila resuelta en `resolve`; cada imagen recorta además con su propio radio (SDF) | Falta el clip redondeado de contenedores (máscara SDF heredada por los hijos) para `rounded-xl overflow-hidden` ([13](13-hoja-de-ruta-plataforma.md), Paso 14b). |
+| Clip | AABB + máscara SDF por instancia en `quad.wgsl`, `image.wgsl` y `geometry.wgsl`; pila `ClipRect` en `resolve`; cada imagen recorta además con su propio radio | Hecho: `rounded-* overflow-hidden` hereda la máscara SDF del contenedor ([13](13-hoja-de-ruta-plataforma.md), Paso 14b). |
 | Transformaciones | **Hecho** ([04](04-renderer-y-texto.md), «Geometría»): `Affine2` por dibujo, en un uniforme con offset dinámico | Las mallas viven en coordenadas propias (tesela 0..4096, o relativas al origen de una capa) y pan/zoom solo cambian la transformación: no se reconstruyen buffers aunque el árbol se reconstruya cada frame. |
 | Geometría | **Hecho**: `Mesh` con `lyon` (rellenos y trazos con normal de extrusión), `DrawOp::Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines, buffers por id de malla | — |
 | Orden de pintor | **Hecho**: `resolve` alterna lotes `Quads`/`Texts`/`Images`/`Geometry` | — |
@@ -359,7 +359,7 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 ### M0 — Primitivas de renderer (13, Paso 14b)
 
 - `DrawOp::Image` con `TextureArray`/atlas RGBA y sampler lineal; lotes `Images` en `resolve`; uniforme de transformación; pipeline de geometría con vértices de `lyon`; clip redondeado.
-- **Estado: hecho salvo el clip redondeado.** Hechos `DrawOp::Image`, el atlas RGBA, los lotes `Images` con sus tests de `resolve`, el radio propio de cada imagen y la captura `images-primitive`; la geometría (`render/geometry.rs`: `Mesh` con `lyon`, `Affine2` por dibujo, trazos de ancho constante en pantalla, `DrawOp::Geometry` y lotes `Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines) con la captura `geometry-primitive`. Pendiente el clip redondeado de contenedores ([04](04-renderer-y-texto.md), «Pendiente»).
+- **Estado: hecho.** Hechos `DrawOp::Image`, el atlas RGBA, los lotes `Images` con sus tests de `resolve`, el radio propio de cada imagen y la captura `images-primitive`; la geometría (`render/geometry.rs`: `Mesh` con `lyon`, `Affine2` por dibujo, trazos de ancho constante en pantalla, `DrawOp::Geometry` y lotes `Geometry`, `geometry.wgsl`, MSAA 4× en todos los pipelines) con la captura `geometry-primitive`; clip redondeado de contenedores (`ClipRect` + SDF en shaders) ([04](04-renderer-y-texto.md)).
 - **Terminado cuando:** las capturas offscreen ([04](04-renderer-y-texto.md), «Capturas») muestran una imagen recortada por `rounded-xl overflow-hidden`, una polilínea con AA y un polígono semitransparente en el orden de pintor correcto, y los tests puros de `resolve` cubren los nuevos lotes.
 
 ### M1 — Mapa raster (v1) (13, Paso 15b)

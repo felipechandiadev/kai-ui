@@ -109,7 +109,7 @@ La opacidad efectiva multiplica el alfa de todo lo que pinta el nodo. No hay col
 - [x] Iconos SVG (Lucide) en un atlas de máscaras.
 - [x] Imágenes rasterizadas (atlas RGBA, `object-*`, radio propio).
 - [x] Geometría vectorial con `lyon` (rellenos y trazos de ancho constante en pantalla), transformación afín por dibujo y MSAA 4×.
-- [ ] Sombras múltiples, gradientes y clip redondeado de contenedores (`rounded-xl overflow-hidden` recorta sus hijos con un rectángulo).
+- [x] Clip redondeado de contenedores: `rounded-* overflow-hidden` recorta hijos (quads, imágenes, geometría) con máscara SDF heredada (`ClipRect`); el texto sigue el AABB del clip. Pendiente: sombras múltiples y gradientes.
 - [ ] Política de recursos de fuentes (carga propia, invalidación al cambiar de escala) más allá del `FontSystem` del sistema.
 
 ## Accesibilidad
