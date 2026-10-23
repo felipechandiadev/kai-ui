@@ -123,7 +123,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 ## 7. Pruebas y demo
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
-- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard; scroll multi-página + tipar tras scroll; query a11y por `label`.
+- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); scroll multi-página + tipar tras scroll; query a11y por `label`.
 - Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
@@ -135,6 +135,13 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 - MSRV documentado: **1.95** (alineado al `rev` de WordCraft).
 - Comandos del editor reutilizan `kai::commands`; MCP no abre un segundo servidor WordCraft.
 - Cada fase tiene tests de geometría o de `TestApp` y una entrada en [CHANGELOG](../../CHANGELOG.md).
+
+## Clipboard (rich)
+
+- **Copy/Cut:** WordCraft `edit.copy` / `edit.cut` → `{ text, html? }`. Kai escribe ambos en `ClipboardPort` (`set_html` + alt text). En macOS, `SystemClipboard` usa arboard `set_html` (`NSPasteboardTypeHTML`).
+- **Paste:** lee `get_html` / `get_rtf` / `get_text` y llama `edit.paste` con lo disponible. HTML gana formato entre apps; RTF solo si el port lo aporta (memoria / host custom) — **arboard no lee/escribe RTF**.
+- **Interno mismo Session:** si el texto del port coincide con el fragmento WordCraft, se reutiliza el fragmento rico sin reimportar.
+- **Fuera de alcance:** export RTF en copy; tablas/imágenes/mathml en el port del SO; Paste Special UI.
 
 ## 9. Estado
 
@@ -152,8 +159,8 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Home+Insert+Layout+Review+References+View (`RibbonMode::Full`); ver guía [17](17-document-ribbon.md); Design/keytips/Backstage = deuda |
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
-| Clipboard cuerpo | **Hecho (texto plano, 23-oct-2026)** — ⌘C/X/V → `edit.copy`/`cut`/`paste` + `ClipboardPort`; rich/RTF = deuda |
-| Deuda post-plan | Clipboard rich/RTF; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
+| Clipboard cuerpo | **Hecho (rich HTML, 23-oct-2026)** — ⌘C/X/V → `edit.copy`/`cut`/`paste` + `ClipboardPort` (texto + HTML; RTF en paste si el port lo trae). Techo: ver § clipboard |
+| Deuda post-plan | RTF nativo en copy/SO (arboard no expone RTF); tablas/imágenes en clipboard; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

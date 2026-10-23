@@ -5417,6 +5417,34 @@ mod tests {
 
     #[cfg(feature = "document")]
     #[test]
+    fn document_clipboard_copy_preserves_bold_via_html() {
+        let clipboard = MemoryClipboard::new();
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::builder(demo).clipboard(clipboard.clone()).build();
+        let editor = || By::test_id("documento.editor");
+        app.type_text(editor(), "RichDoc");
+        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        assert!(app.perform("format.bold"));
+        app.press(Key::C, CMD);
+        assert_eq!(clipboard.text().as_deref(), Some("RichDoc"));
+        assert!(
+            clipboard.html().is_some_and(|h| h.contains("RichDoc")),
+            "⌘C must publish HTML for rich interop: {:?}",
+            clipboard.html()
+        );
+        // Vaciar el editor y pegar: el markdown debe conservar bold.
+        app.press(Key::X, CMD);
+        app.press(Key::V, CMD);
+        let md = app.app().doc_markdown.clone();
+        assert!(
+            md.contains("**") && md.contains("RichDoc"),
+            "paste after cut should keep bold in persisted markdown: {md:?}"
+        );
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
     fn document_multipage_scrolls_and_keeps_hit_target() {
         let mut app = TestApp::new(Demo::at(Seccion::Documento));
         let editor = || By::test_id("documento.editor");

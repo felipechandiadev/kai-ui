@@ -8,6 +8,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Document clipboard rich (HTML):** `ClipboardPort` gana `get/set_html` (+ RTF opcional). Document copy/cut publica HTML de WordCraft; paste prefiere HTML/RTF sobre plano. macOS interop vía arboard HTML. RTF nativo en SO / tablas-imágenes en clipboard = deuda. Docs [`16-widget-document.md`](docs/dev/16-widget-document.md).
 - **Catálogo vivo ampliado:** Checkbox / Switch / Select, Badge / Alert, DotProgress / Tabs bajo los mismos filtros tema × density × ControlSize. Docs [`25-catalogo-vivo.md`](docs/dev/25-catalogo-vivo.md).
 - **Catálogo vivo (Fase E):** sección sidebar **Catálogo** con matriz filtrable tema × density × ControlSize (Button, TextField, EmptyState). `EmptyKind` / `EmptyState::filter` vs `::resource`. Layering doc. Docs [`25-catalogo-vivo.md`](docs/dev/25-catalogo-vivo.md), [`24-layering.md`](docs/dev/24-layering.md).
 - **Spacing + densidad + do/don't (Fase D):** `theme::spacing` (pasos tipados hasta step 16 ≈ 64 pt; alias `FORM_STACK_STEPS` / `DATA_STACK_STEPS`); `theme::motion` (CARET_BLINK / TOAST / TYPEAHEAD_RESET documentados). Guía do/don't Button / TextField / Document. Docs [`23-spacing-density.md`](docs/dev/23-spacing-density.md).

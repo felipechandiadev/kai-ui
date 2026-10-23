@@ -6,7 +6,8 @@
 //! `save_file` + `perform` (fuera del paint). El modelo WordCraft se
 //! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
 //! Ribbon Kai (catálogo WordCraft) en `ribbon`. Atlas glifos (`glyph_atlas`) +
-//! clipboard texto plano; markdown rich tablas/imágenes / keytips = deuda.
+//! clipboard rich (HTML via `ClipboardPort`; RTF paste si el port lo trae);
+//! tablas/imágenes en clipboard / keytips = deuda.
 //!
 //! ```ignore
 //! document()

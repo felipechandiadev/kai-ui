@@ -29,10 +29,18 @@ use crate::ui_engine::{Intent, Key, Modifiers, TextIntent};
 pub const DRAG_STEPS: u32 = 8;
 pub const DRAG_STEP: Duration = Duration::from_millis(16);
 
-/// In-memory clipboard. Clones share the contents, so a test can keep one
-/// and hand another to [`TestAppBuilder::clipboard`].
+/// Shared clipboard payload. Clones of [`MemoryClipboard`] share this cell.
 #[derive(Clone, Debug, Default)]
-pub struct MemoryClipboard(Rc<RefCell<Option<String>>>);
+struct MemoryClipboardData {
+    text: Option<String>,
+    html: Option<String>,
+    rtf: Option<String>,
+}
+
+/// In-memory clipboard for [`TestApp`]: plain text plus optional HTML / RTF.
+/// Clones share the contents (hand one to the builder, keep another to assert).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryClipboard(Rc<RefCell<MemoryClipboardData>>);
 
 impl MemoryClipboard {
     pub fn new() -> Self {
@@ -40,11 +48,22 @@ impl MemoryClipboard {
     }
 
     pub fn text(&self) -> Option<String> {
-        self.0.borrow().clone()
+        self.0.borrow().text.clone()
+    }
+
+    pub fn html(&self) -> Option<String> {
+        self.0.borrow().html.clone()
+    }
+
+    pub fn rtf(&self) -> Option<String> {
+        self.0.borrow().rtf.clone()
     }
 
     pub fn set(&self, text: impl Into<String>) {
-        *self.0.borrow_mut() = Some(text.into());
+        let mut data = self.0.borrow_mut();
+        data.text = Some(text.into());
+        data.html = None;
+        data.rtf = None;
     }
 }
 
@@ -55,6 +74,28 @@ impl ClipboardPort for MemoryClipboard {
 
     fn set_text(&mut self, text: String) -> Result<(), String> {
         self.set(text);
+        Ok(())
+    }
+
+    fn get_html(&mut self) -> Result<Option<String>, String> {
+        Ok(self.html())
+    }
+
+    fn set_html(&mut self, html: String, alt_text: Option<String>) -> Result<(), String> {
+        let mut data = self.0.borrow_mut();
+        data.html = Some(html);
+        if let Some(text) = alt_text {
+            data.text = Some(text);
+        }
+        Ok(())
+    }
+
+    fn get_rtf(&mut self) -> Result<Option<String>, String> {
+        Ok(self.rtf())
+    }
+
+    fn set_rtf(&mut self, rtf: String) -> Result<(), String> {
+        self.0.borrow_mut().rtf = Some(rtf);
         Ok(())
     }
 }

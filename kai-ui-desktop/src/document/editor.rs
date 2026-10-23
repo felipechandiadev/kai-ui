@@ -319,48 +319,64 @@ impl DocumentEditor {
         changed || is_copy
     }
 
-    /// Copia la selección al clipboard del host (texto plano) vía `edit.copy`.
+    /// Copia la selección vía `edit.copy`: texto plano + HTML (runs) al [`ClipboardPort`].
+    ///
+    /// WordCraft no emite RTF en copy; el host puede ofrecer RTF al pegar desde fuera.
     pub fn clipboard_copy(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         match self.session.run("edit.copy", &json!({})) {
-            Ok(v) => {
-                let text = v
-                    .get("text")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-                clipboard.set_text(text).is_ok()
-            }
+            Ok(v) => Self::write_copy_to_clipboard(clipboard, &v),
             Err(_) => false,
         }
     }
 
-    /// Corta la selección (`edit.cut`) y escribe texto plano al host.
+    /// Corta la selección (`edit.cut`) y escribe texto + HTML al host.
     pub fn clipboard_cut(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         match self.session.run("edit.cut", &json!({})) {
             Ok(v) => {
-                let text = v
-                    .get("text")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-                let _ = clipboard.set_text(text);
+                let _ = Self::write_copy_to_clipboard(clipboard, &v);
                 true
             }
             Err(_) => false,
         }
     }
 
-    /// Pega texto plano del host (`edit.paste` con `{"text"}`).
+    /// Pega desde el host: HTML o RTF si hay, si no texto plano (`edit.paste`).
     pub fn clipboard_paste(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
-        let Ok(text) = clipboard.get_text() else {
-            return false;
-        };
-        if text.is_empty() {
+        let text = clipboard.get_text().unwrap_or_default();
+        let html = clipboard.get_html().ok().flatten().filter(|h| !h.trim().is_empty());
+        let rtf = clipboard.get_rtf().ok().flatten().filter(|r| !r.trim().is_empty());
+        if text.is_empty() && html.is_none() && rtf.is_none() {
             return false;
         }
-        self.session
-            .run("edit.paste", &json!({ "text": text }))
-            .is_ok()
+        let mut payload = json!({});
+        if !text.is_empty() {
+            payload["text"] = json!(text);
+        }
+        if let Some(html) = html {
+            payload["html"] = json!(html);
+        }
+        if let Some(rtf) = rtf {
+            payload["rtf"] = json!(rtf);
+        }
+        self.session.run("edit.paste", &payload).is_ok()
+    }
+
+    fn write_copy_to_clipboard(clipboard: &mut dyn ClipboardPort, v: &serde_json::Value) -> bool {
+        let text = v
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let html = v
+            .get("html")
+            .and_then(|t| t.as_str())
+            .filter(|h| !h.is_empty())
+            .map(str::to_owned);
+        if let Some(html) = html {
+            clipboard.set_html(html, Some(text)).is_ok()
+        } else {
+            clipboard.set_text(text).is_ok()
+        }
     }
 
     fn insert_str(&mut self, text: &str) -> bool {
@@ -1239,14 +1255,14 @@ mod tests {
         ));
         assert!(ed.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
         assert!(ed.apply_text_intent_clipboard(TextIntent::Copy, &mut clip));
-        assert_eq!(clip.0.as_deref(), Some("Hola mundo"));
+        assert_eq!(clip.text.as_deref(), Some("Hola mundo"));
         assert!(ed.apply_text_intent_clipboard(TextIntent::Cut, &mut clip));
         assert!(
             ed.plain_text().is_empty() || !ed.plain_text().contains("Hola mundo"),
             "cut should remove selection: {:?}",
             ed.plain_text()
         );
-        assert_eq!(clip.0.as_deref(), Some("Hola mundo"));
+        assert_eq!(clip.text.as_deref(), Some("Hola mundo"));
         assert!(ed.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
         assert!(
             ed.plain_text().contains("Hola mundo"),
@@ -1256,17 +1272,119 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemClip(Option<String>);
+    struct MemClip {
+        text: Option<String>,
+        html: Option<String>,
+        rtf: Option<String>,
+    }
 
     impl ClipboardPort for MemClip {
         fn get_text(&mut self) -> Result<String, String> {
-            Ok(self.0.clone().unwrap_or_default())
+            Ok(self.text.clone().unwrap_or_default())
         }
 
         fn set_text(&mut self, text: String) -> Result<(), String> {
-            self.0 = Some(text);
+            self.text = Some(text);
+            self.html = None;
+            self.rtf = None;
             Ok(())
         }
+
+        fn get_html(&mut self) -> Result<Option<String>, String> {
+            Ok(self.html.clone())
+        }
+
+        fn set_html(&mut self, html: String, alt_text: Option<String>) -> Result<(), String> {
+            self.html = Some(html);
+            if let Some(text) = alt_text {
+                self.text = Some(text);
+            }
+            Ok(())
+        }
+
+        fn get_rtf(&mut self) -> Result<Option<String>, String> {
+            Ok(self.rtf.clone())
+        }
+
+        fn set_rtf(&mut self, rtf: String) -> Result<(), String> {
+            self.rtf = Some(rtf);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn clipboard_rich_html_roundtrip_across_editors() {
+        let mut clip = MemClip::default();
+        let mut src = DocumentEditor::new("");
+        assert!(src.apply_text_intent_clipboard(
+            TextIntent::InsertText("Hola rich".into()),
+            &mut clip
+        ));
+        assert!(src.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
+        assert!(src.run("format.bold"));
+        assert!(
+            src.markdown().contains("**"),
+            "source should be bold markdown: {:?}",
+            src.markdown()
+        );
+        assert!(src.clipboard_copy(&mut clip));
+        assert_eq!(clip.text.as_deref(), Some("Hola rich"));
+        assert!(
+            clip.html.as_ref().is_some_and(|h| h.contains("Hola") || h.contains("rich")),
+            "copy must put HTML on the port for cross-editor paste: {:?}",
+            clip.html
+        );
+
+        // Destino sin fragmento WordCraft propio: solo lo que hay en el port.
+        let mut dst = DocumentEditor::new("");
+        assert!(dst.clipboard_paste(&mut clip));
+        let md = dst.markdown();
+        assert!(
+            md.contains("**") && md.contains("Hola rich"),
+            "paste must keep bold runs via HTML: {md:?}"
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_prefers_html_over_plain_when_both_present() {
+        let mut clip = MemClip {
+            text: Some("plain only".into()),
+            html: Some("<p><strong>Bold HTML</strong></p>".into()),
+            rtf: None,
+        };
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.clipboard_paste(&mut clip));
+        let md = ed.markdown();
+        assert!(
+            md.contains("**") || md.to_lowercase().contains("bold"),
+            "HTML payload should win formatting: {md:?}"
+        );
+        assert!(
+            md.contains("Bold HTML") || md.contains("Bold"),
+            "expected HTML text in doc: {md:?}"
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_rtf_bold_when_no_html() {
+        // WordCraft importa RTF en edit.paste; arboard no expone RTF al SO —
+        // el port en memoria simula un host que sí lo ofrece.
+        let mut clip = MemClip {
+            text: Some("Bold RTF".into()),
+            html: None,
+            rtf: Some(r"{\rtf1\ansi {\b Bold RTF}\par}".into()),
+        };
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.clipboard_paste(&mut clip));
+        let md = ed.markdown();
+        assert!(
+            md.contains("Bold RTF"),
+            "RTF text should land: {md:?}"
+        );
+        assert!(
+            md.contains("**"),
+            "RTF \\b should become bold markdown: {md:?}"
+        );
     }
 
 }

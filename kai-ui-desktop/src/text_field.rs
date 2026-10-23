@@ -35,9 +35,36 @@ const PREEDIT_UNDERLINE_HEIGHT: f32 = 1.5;
 const BULLET: char = '•';
 
 /// System clipboard access, injectable so editing can be tested without one.
+///
+/// Plain text is required. Optional HTML / RTF let Document (and hosts) round-trip
+/// rich runs: WordCraft `edit.copy` emits HTML; `edit.paste` accepts `html` / `rtf`.
+/// Defaults are no-ops so TextField and simple mocks stay text-only.
 pub trait ClipboardPort {
     fn get_text(&mut self) -> Result<String, String>;
     fn set_text(&mut self, text: String) -> Result<(), String>;
+
+    /// HTML fragment from the host clipboard, if any (`None` = absent / unsupported).
+    fn get_html(&mut self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    /// Place HTML plus optional plain alternative. Default: store only `alt_text` via [`set_text`].
+    fn set_html(&mut self, _html: String, alt_text: Option<String>) -> Result<(), String> {
+        match alt_text {
+            Some(text) => self.set_text(text),
+            None => Ok(()),
+        }
+    }
+
+    /// RTF from the host, if any. arboard has no RTF API — [`SystemClipboard`] leaves this `None`;
+    /// in-memory ports may carry RTF for Document paste tests / future hosts.
+    fn get_rtf(&mut self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    fn set_rtf(&mut self, _rtf: String) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub struct SystemClipboard;
@@ -52,6 +79,21 @@ impl ClipboardPort for SystemClipboard {
     fn set_text(&mut self, text: String) -> Result<(), String> {
         arboard::Clipboard::new()
             .and_then(|mut clipboard| clipboard.set_text(text))
+            .map_err(|error| error.to_string())
+    }
+
+    fn get_html(&mut self) -> Result<Option<String>, String> {
+        match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get().html()) {
+            Ok(html) if !html.trim().is_empty() => Ok(Some(html)),
+            Ok(_) => Ok(None),
+            // Empty board / no HTML type is normal — fall back to plain text.
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn set_html(&mut self, html: String, alt_text: Option<String>) -> Result<(), String> {
+        arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_html(html, alt_text))
             .map_err(|error| error.to_string())
     }
 }
