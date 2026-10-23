@@ -76,8 +76,8 @@ Cómo verlo: `cargo run` (tema AppKit por defecto) → Inicio / Campos; estrecha
 - No es la grilla Carbon de **16** columnas.
 - No es UI Shell de Carbon React ni bottom navigation M3.
 - No sustituye Sidebar / Toolbar AppKit (chrome de ventana).
-- No son plantillas de página (Fase C).
+- Las plantillas de página están en Fase C ([22](22-page-templates.md)).
 
-## Fase C (pendiente)
+## Fase C
 
-Plantillas reutilizables (formulario, dashboard, detalle maestro) sobre este shell + PageGrid; densidad de spans tipados; posiblemente `PageHeader` / breadcrumbs AppKit.
+Hecha: plantillas lista+detalle / formulario / datos + `PageHeader` — ver [22-page-templates.md](22-page-templates.md).

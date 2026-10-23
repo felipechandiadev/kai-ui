@@ -8,6 +8,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Plantillas de página (Fase C):** `PageHeader` / breadcrumbs, `MasterDetailPage`, `FormPage` (comfortable), `DataPage` (compact) sobre PageGrid 12. Demo: grupo sidebar **Plantillas** (Lista + detalle, Formulario, Vista de datos). Docs [`22-page-templates.md`](docs/dev/22-page-templates.md).
 - **PageGrid 12 + shell de página (Fase B):** `page` / `PageBody` / `page_grid` / `PageGridItem` (span 1–12; 4/8/12 cols; gutter 16 pt; márgenes responsivos). Utilidad `col-span-N` en el motor. Demo: shell de sección + formularios Inicio/Campos. Docs [`21-page-layout.md`](docs/dev/21-page-layout.md). No es Carbon 16 ni UI Shell web.
 
 - **Design system P0 (Polaris/Carbon/M3 gap):**

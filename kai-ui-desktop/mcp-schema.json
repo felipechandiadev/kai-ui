@@ -180,6 +180,21 @@
                 "const": "dialogos",
                 "description": "Diálogos, avisos (toasts) y la paleta de comandos.",
                 "type": "string"
+              },
+              {
+                "const": "plantilla_lista",
+                "description": "Plantilla lista + detalle (master/detail).",
+                "type": "string"
+              },
+              {
+                "const": "plantilla_formulario",
+                "description": "Plantilla formulario (densidad comfortable).",
+                "type": "string"
+              },
+              {
+                "const": "plantilla_datos",
+                "description": "Plantilla vista de datos (densidad compact).",
+                "type": "string"
               }
             ]
           }

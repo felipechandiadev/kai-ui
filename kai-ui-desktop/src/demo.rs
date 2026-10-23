@@ -22,8 +22,9 @@ use crate::components::{
     SidebarItem, SwitchDensity, Table, TableView, Tabs, TextField, Toast, ViewChange, alert,
     avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
     chart, checkbox, checkbox_with_options, color_field, column_menu, dot_progress, group_box,
-    heading, icon_button, icon_button_sized, loading_placeholder, page, page_body, page_grid,
-    page_grid_item, paragraph, search_field, segmented, segmented_with_options, select,
+    form_field_cell, form_full_cell, heading, icon_button, icon_button_sized,
+    loading_placeholder, page, page_body, page_grid, page_grid_item, paragraph, search_field,
+    segmented, segmented_with_options, select, DataPage, FormPage, MasterDetailPage, PageHeader,
     select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
     toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
     toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
@@ -143,6 +144,8 @@ struct Demo {
     /// Pestaña activa del ribbon Documento (`home` / `insert`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_tab: String,
+    /// Plantilla lista+detalle: índice del cliente seleccionado.
+    plantilla_idx: usize,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -213,6 +216,7 @@ impl Default for Demo {
             doc_pending_export: None,
             doc_archivo_busy: false,
             doc_ribbon_tab: "home".into(),
+            plantilla_idx: 0,
         }
     }
 }
@@ -671,10 +675,16 @@ enum Seccion {
     Documento,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
     Dialogos,
+    /// Plantilla lista + detalle (master/detail).
+    PlantillaLista,
+    /// Plantilla formulario (densidad comfortable).
+    PlantillaFormulario,
+    /// Plantilla vista de datos (densidad compact).
+    PlantillaDatos,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 12] = [
+    const ALL: [Seccion; 15] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
@@ -686,6 +696,9 @@ impl Seccion {
         Self::Mapa,
         Self::Graficos,
         Self::Documento,
+        Self::PlantillaLista,
+        Self::PlantillaFormulario,
+        Self::PlantillaDatos,
         Self::Dialogos,
     ];
 
@@ -707,6 +720,9 @@ impl Seccion {
             Self::Graficos => "graficos",
             Self::Documento => "documento",
             Self::Dialogos => "dialogos",
+            Self::PlantillaLista => "plantilla_lista",
+            Self::PlantillaFormulario => "plantilla_formulario",
+            Self::PlantillaDatos => "plantilla_datos",
         }
     }
 
@@ -725,6 +741,9 @@ impl Seccion {
             Self::Graficos => ("Gráficos", Icon::LayoutDashboard),
             Self::Documento => ("Documento", Icon::FileText),
             Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
+            Self::PlantillaLista => ("Lista + detalle", Icon::Columns3),
+            Self::PlantillaFormulario => ("Formulario", Icon::TextCursorInput),
+            Self::PlantillaDatos => ("Vista de datos", Icon::Sheet),
         };
         SidebarItem::new(label).icon(glyph)
     }
@@ -762,6 +781,8 @@ enum Msg {
     SetRole(usize),
     ToggleTerms,
     IrA(Seccion),
+    /// Plantilla lista+detalle: seleccionar fila.
+    PlantillaSelect(usize),
     ToggleSidebar,
     /// First window size: whether it is narrower than `sm`.
     InitialWidth {
@@ -1731,6 +1752,7 @@ impl App for Demo {
             Msg::SetRole(index) => self.role = Some(index),
             Msg::ToggleTerms => self.terms = !self.terms,
             Msg::IrA(seccion) => self.seccion = seccion,
+            Msg::PlantillaSelect(index) => self.plantilla_idx = index,
             Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
             Msg::InitialWidth { narrow } => {
                 self.sidebar_collapsed = narrow;
@@ -2229,6 +2251,9 @@ impl App for Demo {
             Seccion::Graficos => self.graficos(),
             Seccion::Documento => vec![self.documento()],
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
+            Seccion::PlantillaLista => vec![self.plantilla_lista()],
+            Seccion::PlantillaFormulario => vec![self.plantilla_formulario()],
+            Seccion::PlantillaDatos => vec![self.plantilla_datos()],
         };
 
         let content = if self.seccion == Seccion::Documento {
@@ -2293,6 +2318,14 @@ impl Demo {
                     Seccion::Documento.item(),
                 ],
             ),
+            SidebarGroup::titled(
+                "Plantillas",
+                [
+                    Seccion::PlantillaLista.item(),
+                    Seccion::PlantillaFormulario.item(),
+                    Seccion::PlantillaDatos.item(),
+                ],
+            ),
             SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
         ];
         Sidebar::new(&groups, self.seccion.index(), |index| {
@@ -2308,6 +2341,233 @@ impl Demo {
             "w-40 sm:w-52 shrink-0"
         })
         .class("border-r border-border/70 bg-background appkit:border-separator appkit:bg-fill-4")
+    }
+
+    /// Fase C — lista + detalle (master/detail) sobre PageGrid.
+    fn plantilla_lista(&self) -> Element<Msg> {
+        const CLIENTES: [(&str, &str, &str); 5] = [
+            ("Ana Ruiz", "ana.ruiz@ejemplo.cl", "Activa"),
+            ("Bruno Vega", "bruno.vega@ejemplo.cl", "Activo"),
+            ("Carla Soto", "carla.soto@ejemplo.cl", "Pendiente"),
+            ("Diego Núñez", "diego.nunez@ejemplo.cl", "Activo"),
+            ("Elena Paredes", "elena.paredes@ejemplo.cl", "Inactiva"),
+        ];
+        let idx = self.plantilla_idx.min(CLIENTES.len() - 1);
+        let list = div()
+            .class(
+                "flex flex-col gap-1 w-full rounded-lg border border-border/70 \
+                 appkit:border-separator appkit:rounded-md overflow-hidden bg-card appkit:bg-control",
+            )
+            .part("lista")
+            .children(CLIENTES.iter().enumerate().map(|(i, (name, email, _))| {
+                let selected = i == idx;
+                div()
+                    .class(if selected {
+                        "flex flex-col gap-0.5 px-3 py-2 cursor-pointer \
+                         bg-accent/15 appkit:bg-selected-content"
+                    } else {
+                        "flex flex-col gap-0.5 px-3 py-2 cursor-pointer \
+                         hover:bg-muted/40 appkit:hover:bg-fill-3"
+                    })
+                    .role(Role::Button)
+                    .on_click(Msg::PlantillaSelect(i))
+                    .test_id(format!("plantilla.lista.row.{i}"))
+                    .children([
+                        text(*name).class(
+                            "text-sm font-medium text-foreground appkit:text-label",
+                        ),
+                        text(*email).class(
+                            "text-xs text-muted-foreground appkit:text-secondary-label",
+                        ),
+                    ])
+            }));
+        let (name, email, estado) = CLIENTES[idx];
+        let detail = div()
+            .class(
+                "flex flex-col gap-3 w-full min-h-40 rounded-lg border border-border/70 \
+                 appkit:border-separator appkit:rounded-md p-4 bg-card appkit:bg-control",
+            )
+            .part("panel")
+            .children([
+                heading(name),
+                caption(format!("{email} · {estado}")),
+                paragraph(
+                    "Panel de detalle: en una app real aquí van fichas, historial o acciones \
+                     sobre el ítem seleccionado en la lista.",
+                ),
+                div().class("flex flex-wrap gap-2 pt-1").children([
+                    button("Editar", ButtonVariant::Primary)
+                        .on_click(Msg::Increment)
+                        .test_id("plantilla.lista.editar"),
+                    button("Archivar", ButtonVariant::Outlined)
+                        .on_click(Msg::Reset)
+                        .test_id("plantilla.lista.archivar"),
+                ]),
+            ]);
+        MasterDetailPage::new(list, detail)
+            .header(
+                PageHeader::new("Clientes")
+                    .subtitle("Lista + detalle · span lista 4 / detalle 8 en md+")
+                    .breadcrumbs(["Demo", "Plantillas", "Lista + detalle"])
+                    .action(
+                        button("Nuevo", ButtonVariant::Primary)
+                            .on_click(Msg::Increment)
+                            .test_id("plantilla.lista.nuevo"),
+                    ),
+            )
+            .list_span(4)
+            .test_id("plantilla.lista")
+            .build()
+    }
+
+    /// Fase C — formulario comfortable con PageGrid (spans 6/12).
+    fn plantilla_formulario(&self) -> Element<Msg> {
+        FormPage::new()
+            .header(
+                PageHeader::new("Nuevo cliente")
+                    .subtitle("Densidad comfortable · campos a span 6 / 12")
+                    .breadcrumbs(["Demo", "Plantillas", "Formulario"]),
+            )
+            .fields([
+                form_field_cell(
+                    TextField::new("Nombre", &self.name)
+                        .placeholder("Ana Ruiz")
+                        .on_input(Msg::NameChanged)
+                        .test_id("plantilla.form.nombre")
+                        .build(),
+                ),
+                form_field_cell(
+                    TextField::new("Correo", &self.email)
+                        .placeholder("ana@ejemplo.cl")
+                        .on_input(Msg::EmailChanged)
+                        .test_id("plantilla.form.correo")
+                        .build(),
+                ),
+                form_full_cell(
+                    TextField::new("Notas", &self.notes)
+                        .placeholder("Contexto, preferencias…")
+                        .on_input(|v| Msg::Edit(Field::Notes, v))
+                        .test_id("plantilla.form.notas")
+                        .build(),
+                ),
+            ])
+            .actions([
+                button("Cancelar", ButtonVariant::Text)
+                    .on_click(Msg::Clear)
+                    .test_id("plantilla.form.cancelar"),
+                button("Guardar", ButtonVariant::Primary)
+                    .on_click(Msg::Submit)
+                    .test_id("plantilla.form.guardar"),
+            ])
+            .test_id("plantilla.formulario")
+            .build()
+    }
+
+    /// Fase C — vista de datos compacta (tabla / métricas densas).
+    fn plantilla_datos(&self) -> Element<Msg> {
+        let metrics = page_grid().children([
+            page_grid_item(4).child(
+                div()
+                    .class(
+                        "flex flex-col gap-1 rounded-md border border-border/70 \
+                         appkit:border-separator p-3 bg-card appkit:bg-control",
+                    )
+                    .children([
+                        caption("Ingresos"),
+                        text("$ 128.4k").class(
+                            "text-lg font-semibold text-foreground appkit:text-label",
+                        ),
+                    ]),
+            ),
+            page_grid_item(4).child(
+                div()
+                    .class(
+                        "flex flex-col gap-1 rounded-md border border-border/70 \
+                         appkit:border-separator p-3 bg-card appkit:bg-control",
+                    )
+                    .children([
+                        caption("Conversiones"),
+                        text("3.2 %").class(
+                            "text-lg font-semibold text-foreground appkit:text-label",
+                        ),
+                    ]),
+            ),
+            page_grid_item(4).child(
+                div()
+                    .class(
+                        "flex flex-col gap-1 rounded-md border border-border/70 \
+                         appkit:border-separator p-3 bg-card appkit:bg-control",
+                    )
+                    .children([
+                        caption("Tickets abiertos"),
+                        text("47").class(
+                            "text-lg font-semibold text-foreground appkit:text-label",
+                        ),
+                    ]),
+            ),
+        ]);
+        let rows = [
+            ("#1042", "Ana Ruiz", "Pagado", "$ 240"),
+            ("#1043", "Bruno Vega", "Pendiente", "$ 180"),
+            ("#1044", "Carla Soto", "Pagado", "$ 95"),
+            ("#1045", "Diego Núñez", "Fallido", "$ 310"),
+            ("#1046", "Elena Paredes", "Pagado", "$ 120"),
+            ("#1047", "Felipe Chandía", "Pendiente", "$ 75"),
+        ];
+        let table = div()
+            .class(
+                "w-full rounded-md border border-border/70 appkit:border-separator \
+                 overflow-hidden bg-card appkit:bg-control",
+            )
+            .part("tabla")
+            .children({
+                let mut kids: Vec<Element<Msg>> = vec![div()
+                    .class(
+                        "grid grid-cols-4 gap-2 px-3 py-1.5 text-xs font-medium \
+                         text-muted-foreground appkit:text-secondary-label \
+                         bg-muted/30 appkit:bg-fill-3 border-b border-border/50 \
+                         appkit:border-separator",
+                    )
+                    .children([
+                        text("Orden"),
+                        text("Cliente"),
+                        text("Estado"),
+                        text("Monto"),
+                    ])];
+                for (i, (orden, cliente, estado, monto)) in rows.iter().enumerate() {
+                    kids.push(
+                        div()
+                            .class(
+                                "grid grid-cols-4 gap-2 px-3 py-1.5 text-sm \
+                                 text-foreground appkit:text-label border-b \
+                                 border-border/40 appkit:border-separator last:border-0",
+                            )
+                            .test_id(format!("plantilla.datos.row.{i}"))
+                            .children([
+                                text(*orden),
+                                text(*cliente),
+                                text(*estado),
+                                text(*monto),
+                            ]),
+                    );
+                }
+                kids
+            });
+        DataPage::new()
+            .header(
+                PageHeader::new("Operaciones")
+                    .subtitle("Densidad compact · métricas + tabla densa")
+                    .breadcrumbs(["Demo", "Plantillas", "Vista de datos"])
+                    .action(
+                        button("Exportar", ButtonVariant::Outlined)
+                            .on_click(Msg::ExportarTabla)
+                            .test_id("plantilla.datos.exportar"),
+                    ),
+            )
+            .child(metrics)
+            .child(table)
+            .test_id("plantilla.datos")
+            .build()
     }
 
     /// Matriz de estados de Button: variantes + disabled + loading.
@@ -4539,6 +4799,9 @@ mod tests {
             Seccion::Graficos => "graficos.barras",
             Seccion::Documento => "documento.editor",
             Seccion::Dialogos => "dialogos",
+            Seccion::PlantillaLista => "plantilla.lista",
+            Seccion::PlantillaFormulario => "plantilla.formulario",
+            Seccion::PlantillaDatos => "plantilla.datos",
         }
     }
 
@@ -4774,7 +5037,10 @@ mod tests {
             .iter()
             .filter_map(|heading| heading.name())
             .collect();
-        assert_eq!(titles, ["Demo", "Componentes", "Datos", "Superposiciones"]);
+        assert_eq!(
+            titles,
+            ["Demo", "Componentes", "Datos", "Plantillas", "Superposiciones"]
+        );
         let rows: Vec<_> = nav
             .all(By::role(Role::SidebarItem))
             .iter()
@@ -4794,6 +5060,9 @@ mod tests {
                 "Mapa",
                 "Gráficos",
                 "Documento",
+                "Lista + detalle",
+                "Formulario",
+                "Vista de datos",
                 "Diálogos y avisos",
             ]
         );
@@ -4897,11 +5166,12 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 18] = [
+        const SOURCES: [&str; 19] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
             include_str!("components/media.rs"),
+            include_str!("components/page_templates.rs"),
             include_str!("components/progress.rs"),
             include_str!("components/search.rs"),
             include_str!("components/sidebar.rs"),
@@ -4917,7 +5187,7 @@ mod tests {
             include_str!("maps/editor.rs"),
             include_str!("document/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 32] = [
+        const NOT_WIDGETS: [&str; 34] = [
             "ChartSpec",
             "ChartSeries",
             "MapSpec",
@@ -4950,6 +5220,8 @@ mod tests {
             "DocumentFill",
             "DocumentLine",
             "DocumentImage",
+            "master_list_span_classes",
+            "master_detail_span_classes",
         ];
         use Seccion::*;
         let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
@@ -5191,6 +5463,24 @@ mod tests {
                 Dialogos,
                 Some("dialogos.paleta"),
                 By::test_id("kai.paleta"),
+            ),
+            (
+                &["MasterDetailPage", "PageHeader", "breadcrumb_trail"],
+                PlantillaLista,
+                None,
+                By::test_id("plantilla.lista"),
+            ),
+            (
+                &["FormPage", "form_field_cell", "form_full_cell"],
+                PlantillaFormulario,
+                None,
+                By::test_id("plantilla.formulario"),
+            ),
+            (
+                &["DataPage"],
+                PlantillaDatos,
+                None,
+                By::test_id("plantilla.datos"),
             ),
         ];
         let mut covered = BTreeSet::new();

@@ -26,6 +26,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 20. [Iconografía de campos](19-iconografia-campos.md)
 21. [Contraste WCAG](20-contraste-wcag.md)
 22. [Page layout (PageGrid 12)](21-page-layout.md)
+23. [Plantillas de página](22-page-templates.md)
 
 ## Dónde estamos
 
