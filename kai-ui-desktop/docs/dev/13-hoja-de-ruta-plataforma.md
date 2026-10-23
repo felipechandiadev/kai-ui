@@ -995,7 +995,7 @@ Reglas de la pista C:
 | `kai new <nombre> [--template basic\|multiwindow]` | Proyecto con `kai.toml`, `Cargo.toml`, un comando de ejemplo, **`tests/` con ejemplos de `TestApp`**, CI y `.gitignore`. |
 | `kai dev` | Compila y ejecuta observando `src/`, `assets/`, `kai.toml`; reinicia conservando tamaño, posición y ruta de la ventana. |
 | `kai test` | `cargo test` con las features de pruebas; `--snapshots` incluye capturas (macOS). |
-| `kai doctor` | Rust ≥ MSRV (1.89), Xcode Command Line Tools, coherencia de `kai.toml`. |
+| `kai doctor` | Rust ≥ MSRV (1.95), Xcode Command Line Tools, coherencia de `kai.toml`. |
 | `kai commands list [--json]` | Registro: id, título, seguridad, atajo, menú y si se expone por MCP (y por qué). |
 | `kai mcp list [--json]` / `kai mcp diff <ref>` | Lo que vería un cliente; diferencias de esquema contra un commit, marcando rupturas. |
 

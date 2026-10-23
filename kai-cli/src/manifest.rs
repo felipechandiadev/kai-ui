@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 /// MSRV de Kai (13 / `Cargo.toml` de `kai-ui-desktop` y `kai-cli`).
-pub const MSRV: &str = "1.89";
+pub const MSRV: &str = "1.95";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

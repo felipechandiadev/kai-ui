@@ -98,7 +98,7 @@ cargo test --lib -- --ignored snapshot_demo && scripts/snapshot-baseline.sh --ch
 scripts/snapshot-baseline.sh   # regenera la baseline
 ```
 
-El CI (`.github/workflows/ci.yml`) ejecuta fmt, clippy y tests en macOS para la librería y para `kai-cli`, además de un `cargo check` con el MSRV 1.89.
+El CI (`.github/workflows/ci.yml`) ejecuta fmt, clippy y tests en macOS para la librería y para `kai-cli`, además de un `cargo check` con el MSRV 1.95.
 
 Los iconos se generan desde `lucide-react` con `node kai-ui-desktop/scripts/gen-icons.mjs` (requiere `npm ci` en `kai-ui-web`); los SVG resultantes y su licencia ISC quedan versionados en `assets/icons/`, y el catálogo generado en `src/icons/`, así que compilar no necesita `node_modules`.
 

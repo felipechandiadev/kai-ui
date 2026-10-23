@@ -9,7 +9,7 @@ Kai Desktop expone su UI dibujada a mano a las tecnologías de asistencia median
 | `accesskit` | 0.25.1 | ≤ 1.87 | MIT OR Apache-2.0 | Tipos del árbol (`Node`, `Role`, `TreeUpdate`, `ActionRequest`). |
 | `accesskit_winit` | 0.34.1 | 1.87 | Apache-2.0 | Compatible con winit 0.30. Se usa con `default-features = false` y `rwh_06`; en macOS arrastra `accesskit_macos` 0.27. |
 
-El MSRV del crate sigue siendo 1.89 (lo impone `cosmic-text` 0.19).
+El MSRV del crate es 1.95 (WordCraft / craft-pdf al activar `feature = "document"`; AccessKit no lo sube).
 
 ## Integración
 

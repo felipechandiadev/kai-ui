@@ -76,7 +76,7 @@ fn cargo_toml(nombre: &str) -> String {
 name = "{nombre}"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.95"
 publish = false
 
 [[bin]]

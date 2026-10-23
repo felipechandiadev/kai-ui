@@ -753,7 +753,7 @@ locales/
 | `kai bundle [--format app,dmg]` | Genera `target/kai/<Nombre>.app` con `Info.plist`, `AppIcon.icns`, recursos y entitlements; `.dmg` opcional. |
 | `kai sign [--identity "Developer ID Application: …"]` | `codesign --options runtime --entitlements …` sobre binario y frameworks, en el orden correcto. |
 | `kai notarize [--profile kai-notary]` | `xcrun notarytool submit --wait` y `xcrun stapler staple`; credenciales en el llavero (`notarytool store-credentials`), nunca en `kai.toml`. |
-| `kai doctor` | Rust ≥ MSRV (hoy 1.89), Xcode Command Line Tools, identidades de firma, perfil de notarización, Node (solo para iconos Lucide), coherencia de `kai.toml`. |
+| `kai doctor` | Rust ≥ MSRV (hoy 1.95), Xcode Command Line Tools, identidades de firma, perfil de notarización, Node (solo para iconos Lucide), coherencia de `kai.toml`. |
 | `kai icons add/list` | Gestión del catálogo de iconos (sección 9). |
 | `kai commands list [--json]` | Lista el registro: id, título, seguridad, atajo, menú, si se expone por MCP y por qué (`expose`/`allow`/`deny`). |
 | `kai mcp list [--json]` | Imprime lo que vería un cliente: `tools` con `inputSchema` y salida, `resources`, `prompts`. Ejecuta el binario con `--mcp-describe`, que vuelca el registro sin abrir ventana ni red. Sirve para revisar cambios de esquema en PR. |
