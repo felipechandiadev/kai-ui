@@ -1,0 +1,19 @@
+[package]
+name = "kai-wordcraft-spike"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "Spike aislado §0 Document: wordcraft-doc/fonts/layout/engine sin ui-egui"
+
+[dependencies]
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7" }
+wordcraft-fonts = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7" }
+wordcraft-layout = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7" }
+wordcraft-engine = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7" }
+
+# WordCraft fija krilla desde craft-libs (fork con CRAFT_UNWIND_*). Sin el Cargo.lock
+# de WordCraft, cargo toma crates.io 0.8.2 y craft-pdf no compila.
+[patch.crates-io]
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1de657b860b3c8abb44e1f2b32bd8" }
