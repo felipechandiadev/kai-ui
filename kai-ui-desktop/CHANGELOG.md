@@ -8,6 +8,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Corte A1 (Etapa 5 / P17–P18):** `kai.toml` parseado por `kai-cli`; comandos `kai doctor`, `kai test`, `kai new`; `kai dev` lee `[dev]` y observa el manifiesto. Ejemplo en `kai-ui-desktop/kai.toml`. Fuera de este corte: `commands`/`mcp` CLI, bundle/firma (P20), runtime leyendo el manifiesto.
+
 - **Frontera pública — `Color`:** `kai::Color` / `kai::color` con `parse_hex` / `hex` / `to_hex`. Las apps no deben usar `kai::render::Color` (módulo `#[doc(hidden)]`). `fixtures/external-app` compila contra la ruta estable. DSP desktop aún importa `kai::render::Color` (sigue compilando mientras `render` sea `pub` oculto); migrar a `kai::Color`.
 
 - **Clip redondeado de contenedores (P14b):** `rounded-* overflow-hidden` recorta hijos e imágenes a la curva (máscara SDF heredada). `ClipRect`/`RoundClip` en layout, hit-test y `resolve`; quads, imágenes y geometría descartan fuera de la máscara en GPU. El texto sigue el AABB del clip.

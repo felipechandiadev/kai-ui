@@ -45,7 +45,7 @@
 | 2 — Comandos (P7–P10) | ✅ Hecha | Probar a mano atajos con el menú y la paleta con VoiceOver |
 | 3 — Agentes (P11–P13) | ✅ Hecha | Probar a mano con Cursor o Claude Desktop ([14](14-mcp.md)) |
 | 4 — App guía (P14–P16, mapas M0–M2) | 🟡 En curso | Ver abajo |
-| 5 — Manifiesto y CLI (P17–P19) | 🟡 Empezada: solo `kai dev` | `kai.toml`, `kai new/test/doctor/commands/mcp` |
+| 5 — Manifiesto y CLI (P17–P19) | 🟡 Corte A1: `kai.toml` + `doctor`/`test`/`new`/`dev` | `commands`/`mcp` CLI; P19 verificar clon; P20 bundle |
 | 6 — Distribución (P20–P21) | ⬜ Pendiente | Todo |
 | 7 — Escala (P22–P25) | ⬜ Pendiente, salvo mapas M3 adelantado | Router, varias ventanas, MCP completo, plugins |
 | 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` |
@@ -65,7 +65,7 @@
 - **P15b–P15d mapas** 🟡: mapa vectorial con áreas, edición de polígonos existentes y comandos `mapa.*`. Faltan los modos Punto y Línea, dibujar desde cero y `incidencias.set_ubicacion`.
 - **P16 persistencia** ⬜.
 
-**Cifras:** 554 tests de la librería (558 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 8 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
+**Cifras:** 554 tests de la librería (558 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 18 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
 
 ### 1.2 Lo que falta para cada hito, con costo estimado
 
@@ -980,6 +980,7 @@ Reglas de la pista C:
   - Validación con número de línea y clave; comprobación de que los ids citados en `[mcp]` existan en el registro.
   - Ningún secreto en `kai.toml`.
 - **Hecho cuando**: la app guía arranca desde `kai.toml` y un error de clave muestra línea y sugerencia.
+- **Estado: corte A1 (CLI).** `kai-cli` parsea y valida el manifiesto (`deny_unknown_fields`, mensajes con línea). Ejemplo en `kai-ui-desktop/kai.toml`. El runtime de la app **aún no** aplica `[theme]` ni `[[window]]` al arrancar (sigue el tema pasado a `runtime::run`).
 
 #### Paso 18 — `kai-cli` para el ciclo de desarrollo
 
@@ -1017,9 +1018,10 @@ Reglas de la pista C:
     fn restore_dev_state(&mut self, _state: serde_json::Value) {}
     ```
   - **CI:** job `kai-cli` en macOS con fmt, clippy y tests.
+  - **Estado A1 (2026-10-23):** además de `kai dev`, existen `kai doctor`, `kai test [--snapshots]`, `kai new` (plantilla basic; multiwindow avisa y genera basic). `kai.toml` se observa y `[dev].bin` / `features` alimentan `dev` y `test`.
   - **Falta:**
-    - `kai new`, `kai test`, `kai doctor`, `kai commands` y `kai mcp`.
-    - Observar `kai.toml` (Paso 17).
+    - `kai commands` y `kai mcp` (CLI; el registro vive en la app).
+    - Que el runtime aplique `[theme]` / `[[window]]` al arrancar (cierra el «hecho cuando» del Paso 17).
     - Recargar tema y assets sin reiniciar.
     - El parcheo en vivo queda fuera de alcance.
 
@@ -1258,8 +1260,8 @@ Reglas de la pista C:
 - [ ] P16 `Store` con migración y guardado atómico.
 
 **Etapa 5 — Manifiesto y CLI**
-- [ ] P17 `kai.toml` mínimo con `[theme] kind` y `[mcp]` seguro por defecto.
-- [ ] P18 `kai new/dev/test/doctor/commands/mcp`. Empezado: `kai dev` con reinicio que conserva la ventana y el estado de la app.
+- [x] P17 `kai.toml` mínimo (corte A1): parseo en `kai-cli` (`manifest.rs`), ejemplo en `kai-ui-desktop/kai.toml`; `[theme] kind` y `[mcp]` seguro por defecto. El runtime aún no lo carga.
+- [x] P18 corte A1: `kai doctor`, `kai test`, `kai new` (basic), `kai dev` lee `[dev]` y observa `kai.toml`. Falta: `kai commands` / `kai mcp` en CLI.
 - [ ] P19 Tokens e iconos dentro del crate. Casi hecho: iconos generados en el crate y tokens copiados; falta verificarlo en un clon sin `kai-ui-web`.
 
 **Etapa 6 — Distribución**

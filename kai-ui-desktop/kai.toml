@@ -1,0 +1,25 @@
+# Manifiesto Kai del crate de desarrollo (docs/dev/13, Paso 17 / corte A1).
+# Sin secretos. El runtime aún no lo carga; lo usan `kai doctor`, `kai dev` y `kai test`.
+
+[app]
+name = "Kai UI Desktop"
+id = "dev.kai.ui-desktop"
+
+[theme]
+kind = "system"
+appearance = "system"
+density = "comfortable"
+
+[[window]]
+id = "main"
+title = "Kai UI Desktop"
+size = [1280, 800]
+min-size = [720, 480]
+
+[mcp]
+enabled = false
+expose = "none"
+
+[dev]
+bin = "kai-ui-desktop-prototype"
+# features = ["mcp"]

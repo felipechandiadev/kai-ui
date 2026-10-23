@@ -2,7 +2,7 @@
 
 Framework de interfaz de escritorio de Kai en Rust (crate `kai`), con renderizador propio, por ahora solo para macOS. Es una versión preliminar (0.1.x): la API todavía cambia y el paquete no se publica.
 
-El proyecto web está en `../kai-ui-web` y la CLI (`kai dev`) en `../kai-cli`. La primera app real que lo usa es DSP desktop (`dsp-27/desktop`). La API estable para apps es lo exportado sin `#[doc(hidden)]` en `lib.rs` (p. ej. `kai::Color` para hex, no `kai::render::Color`).
+El proyecto web está en `../kai-ui-web` y la CLI (`kai doctor` / `kai test` / `kai new` / `kai dev`, corte A1) en `../kai-cli`; manifiesto de ejemplo: [`kai.toml`](kai.toml). La primera app real que lo usa es DSP desktop (`dsp-27/desktop`). La API estable para apps es lo exportado sin `#[doc(hidden)]` en `lib.rs` (p. ej. `kai::Color` para hex, no `kai::render::Color`).
 
 Versión del crate: `Cargo.toml` (sincronizado desde `../version.json`). Historial en [`CHANGELOG.md`](CHANGELOG.md). Release con tag `desktop-vX.Y.Z` — ver [`../docs/versioning.md`](../docs/versioning.md).
 
@@ -49,9 +49,9 @@ Desde la raíz del repositorio:
 cargo run --manifest-path kai-ui-desktop/Cargo.toml
 ```
 
-### Recompilar y reiniciar con `kai dev`
+### CLI (`kai doctor`, `kai test`, `kai new`, `kai dev`)
 
-`kai dev` recompila la app al guardar un archivo y la reinicia con su estado: la ventana queda en el mismo lugar y del mismo tamaño, y la app conserva lo que devuelva `App::dev_state` (en la demo, la sección, la barra lateral y el sector elegido). Si la compilación falla, los errores salen en la terminal y la versión anterior sigue abierta. Instalación, desde la carpeta que contiene `kai-ui`:
+Con `kai.toml` en la app, `kai doctor` comprueba el entorno y el manifiesto; `kai test` delega en Cargo; `kai new` genera un andamiaje básico. `kai dev` recompila al guardar y reinicia con su estado: la ventana queda en el mismo lugar y del mismo tamaño, y la app conserva lo que devuelva `App::dev_state` (en la demo, la sección, la barra lateral y el sector elegido). Si la compilación falla, los errores salen en la terminal y la versión anterior sigue abierta. Instalación, desde la carpeta que contiene `kai-ui`:
 
 ```sh
 cargo install --path kai-ui/kai-cli
@@ -60,7 +60,10 @@ cargo install --path kai-ui/kai-cli
 Uso, en la carpeta de la app (aquí, `kai-ui-desktop`):
 
 ```sh
-kai dev                      # la app del paquete actual
+kai doctor                   # Rust, Xcode CLT, kai.toml
+kai test [--snapshots]       # cargo test (+ features de [dev])
+kai new mi-app               # andamiaje con kai.toml
+kai dev                      # usa [dev].bin del manifiesto si existe
 kai dev --bin demo           # si el paquete tiene varios binarios
 kai dev --watch ../temas     # una carpeta más que observar
 kai dev -- --argumento       # argumentos para la app
@@ -101,4 +104,4 @@ Los iconos se generan desde `lucide-react` con `node kai-ui-desktop/scripts/gen-
 
 ## Limitaciones conocidas
 
-- **Faltan** persistencia (`Store`), `kai.toml`, el resto de la CLI (`kai new`, `kai test`…), bundle y firma, router, varias ventanas y Windows/Linux. El orden y el costo están en la [hoja de ruta, §1.2](docs/dev/13-hoja-de-ruta-plataforma.md#12-lo-que-falta-para-cada-hito-con-costo-estimado).
+- **Faltan** persistencia (`Store`), que el runtime lea `kai.toml`, `kai commands`/`mcp` en la CLI, bundle y firma (P20), router, varias ventanas y Windows/Linux. El orden y el costo están en la [hoja de ruta, §1.2](docs/dev/13-hoja-de-ruta-plataforma.md#12-lo-que-falta-para-cada-hito-con-costo-estimado).
