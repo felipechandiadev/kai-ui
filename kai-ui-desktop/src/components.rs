@@ -14,6 +14,7 @@ mod empty_state;
 mod field_icons;
 mod media;
 mod page;
+mod page_templates;
 mod progress;
 mod search;
 mod sidebar;
@@ -34,6 +35,11 @@ pub use page::{
     PAGE_BODY_CLASS, PAGE_BODY_MAX_CONTENT_CLASS, PAGE_CLASS, PAGE_GRID_CLASS, PageBody,
     PageGridItem, col_span_classes, page, page_body, page_grid, page_grid_item, span_at,
     tokens as page_tokens,
+};
+pub use page_templates::{
+    DataPage, FORM_FIELD_SPAN, FORM_FULL_SPAN, MASTER_LIST_SPAN, FormPage, MasterDetailPage,
+    PageDensity, PageHeader, breadcrumb_trail, form_field_cell, form_full_cell,
+    master_detail_span_classes, master_list_span_classes,
 };
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, SearchVariant, search_field};
