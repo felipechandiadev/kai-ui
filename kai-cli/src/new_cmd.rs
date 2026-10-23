@@ -29,22 +29,27 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
         );
     }
 
-    let id = format!("dev.kai.{}", sanitize_id(&opciones.nombre));
+    let crate_name = dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "kai new: el nombre debe terminar en un segmento de carpeta".to_string())?;
+    let id = format!("dev.kai.{}", sanitize_id(crate_name));
     fs::create_dir_all(dir.join("src")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("tests")).map_err(|e| e.to_string())?;
 
     fs::write(
         dir.join("kai.toml"),
-        manifest::example_toml(&opciones.nombre, &id, Some(&opciones.nombre)),
+        manifest::example_toml(crate_name, &id, Some(crate_name)),
     )
     .map_err(|e| e.to_string())?;
 
-    fs::write(dir.join("Cargo.toml"), cargo_toml(&opciones.nombre))
+    fs::write(dir.join("Cargo.toml"), cargo_toml(crate_name))
         .map_err(|e| e.to_string())?;
     fs::write(dir.join("src/main.rs"), MAIN_RS).map_err(|e| e.to_string())?;
     fs::write(dir.join("tests/smoke.rs"), SMOKE_RS).map_err(|e| e.to_string())?;
     fs::write(dir.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
-    fs::write(dir.join("README.md"), readme(&opciones.nombre)).map_err(|e| e.to_string())?;
+    fs::write(dir.join("README.md"), readme(crate_name)).map_err(|e| e.to_string())?;
 
     eprintln!(
         "kai new: creado {} (edita Cargo.toml para apuntar al crate `kai`)",
