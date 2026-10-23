@@ -29,6 +29,8 @@ use crate::components::{
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::document::{document, DocumentChange, DocumentCmd};
+#[cfg(feature = "document")]
+use crate::document::{document_cmd_for, document_ribbon, RibbonMode};
 use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
@@ -137,6 +139,9 @@ struct Demo {
     doc_pending_export: Option<(std::path::PathBuf, DocExportKind)>,
     /// I/O de archivo en curso (botones Archivo).
     doc_archivo_busy: bool,
+    /// Pestaña activa del ribbon Documento (`home` / `insert`).
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    doc_ribbon_tab: String,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -206,6 +211,7 @@ impl Default for Demo {
             doc_load_serial: 0,
             doc_pending_export: None,
             doc_archivo_busy: false,
+            doc_ribbon_tab: "home".into(),
         }
     }
 }
@@ -813,8 +819,11 @@ enum Msg {
     Mes(usize),
     /// Documento: contenido tipado / formateado.
     Documento(DocumentChange),
-    /// Documento: comando de toolbar / Action.
+    /// Documento: comando de toolbar / Action / ribbon.
     DocCmd(DocumentCmd),
+    /// Documento: cambiar pestaña del ribbon.
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    DocRibbonTab(String),
     /// Documento: panel Abrir `.docx`.
     DocAbrir,
     /// Ruta elegida al abrir (`None`: cancelado).
@@ -1838,6 +1847,9 @@ impl App for Demo {
             Msg::DocCmd(cmd) => {
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((cmd, self.doc_cmd_serial));
+            }
+            Msg::DocRibbonTab(id) => {
+                self.doc_ribbon_tab = id;
             }
             Msg::DocAbrir => {
                 if self.doc_archivo_busy {
@@ -3154,6 +3166,26 @@ impl Demo {
         ]
     }
 
+
+    #[cfg(feature = "document")]
+    fn documento_ribbon_chrome(&self) -> Element<Msg> {
+        document_ribbon()
+            .mode(RibbonMode::HomeInsert)
+            .active_tab(self.doc_ribbon_tab.clone())
+            .on_tab(Msg::DocRibbonTab)
+            .on_command(|id| Msg::DocCmd(document_cmd_for(&id)))
+            .test_id("documento.ribbon")
+            .build()
+    }
+
+    #[cfg(not(feature = "document"))]
+    fn documento_ribbon_chrome(&self) -> Element<Msg> {
+        div()
+            .class("text-sm text-muted-foreground")
+            .test_id("documento.ribbon")
+            .child(text("Compila con --features document para el ribbon WordCraft."))
+    }
+
     /// Documento: tipar / páginas / tabla / imagen / archivo (.docx + PDF).
     fn documento(&self) -> Element<Msg> {
         let mut editor = document()
@@ -3175,38 +3207,10 @@ impl Demo {
             .children([
                 card_header(
                     "Documento",
-                    Some("Abrir/guardar .docx y PDF; tabla; páginas; tipar / ⌘B (WordCraft)"),
+                    Some("Ribbon Kai (Home+Insert) + Archivo .docx/PDF; tipar / ⌘B (WordCraft)"),
                 ),
                 card_content().class("gap-3").children([
-                    div()
-                        .class("flex flex-wrap items-center gap-2")
-                        .test_id("documento.toolbar")
-                        .children([
-                            button_sized("Negrita", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocNegrita)
-                                .test_id("documento.bold"),
-                            button_sized("Cursiva", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocCursiva)
-                                .test_id("documento.italic"),
-                            button_sized("Lista", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocLista)
-                                .test_id("documento.lista"),
-                            button_sized("Tabla 2×2", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocTabla)
-                                .test_id("documento.tabla"),
-                            button_sized("Imagen", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(DocImagen)
-                                .test_id("documento.imagen"),
-                            button_sized("Deshacer", ButtonVariant::Text, ButtonSize::Sm)
-                                .on_command(DocDeshacer)
-                                .test_id("documento.undo"),
-                            button_sized("Rehacer", ButtonVariant::Text, ButtonSize::Sm)
-                                .on_command(DocRehacer)
-                                .test_id("documento.redo"),
-                            button_sized("Seleccionar todo", ButtonVariant::Text, ButtonSize::Sm)
-                                .on_click(Msg::DocCmd(DocumentCmd::Raw("select.all".into())))
-                                .test_id("documento.select_all"),
-                        ]),
+                    self.documento_ribbon_chrome(),
                     div()
                         .class("flex flex-wrap items-center gap-2")
                         .test_id("documento.archivo")
@@ -4334,7 +4338,7 @@ mod tests {
         );
         app.type_text(editor(), "Hola");
         assert_eq!(app.value(editor()), "Hola");
-        app.click(By::test_id("documento.select_all"));
+        app.click(By::test_id("documento.ribbon.cmd.select.all"));
         assert!(app.perform("format.bold"));
         assert_eq!(app.value(editor()), "Hola");
         assert!(app.perform("edit.undo"));
@@ -4381,6 +4385,25 @@ mod tests {
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "ok");
         assert!(app.value(editor()).contains("ok"));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_ribbon_bold_and_insert_table() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        app.type_text(editor(), "Ribbon");
+        assert_eq!(app.value(editor()), "Ribbon");
+        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.click(By::test_id("documento.ribbon.cmd.format.bold"));
+        assert_eq!(app.value(editor()), "Ribbon");
+        app.click(By::test_id("documento.ribbon.tab.insert"));
+        app.click(By::test_id("documento.ribbon.cmd.insert.table"));
+        assert!(app.perform("edit.undo"));
+        app.type_text(editor(), "!");
+        assert!(app.value(editor()).contains('!'));
     }
 
     #[cfg(feature = "document")]
