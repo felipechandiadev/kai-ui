@@ -1,12 +1,12 @@
 //! Widget [`document`]: mini procesador de texto (guía
 //! [`docs/dev/16-widget-document.md`](../../docs/dev/16-widget-document.md)).
 //!
-//! **Fase 1 — páginas:** con `feature = "document"`, una
-//! `wordcraft_engine::Session` por [`WidgetId`] tipa, selecciona y pagina.
-//! El viewport del widget es fijo (clases); las páginas Letter se apilan
-//! en vertical con `scroll_y` interno (rueda / TestApp). Hit-test y
-//! selección usan `wordcraft-layout` por índice de página. Bridge
-//! `TextStore`→`DrawOp::Text` sigue como deuda de atlas.
+//! **Fase 2 — tablas e imágenes:** con `feature = "document"`, una
+//! `wordcraft_engine::Session` por [`WidgetId`] tipa, pagina e inserta
+//! `insert.table` / `insert.picture`. El viewport apila páginas Letter
+//! con `scroll_y`; hit-test WordCraft. Celdas/bordes → quads; bits de
+//! imagen → [`crate::render::ImageDraw`] (atlas Kai). Bridge TextStore
+//! de glifos sigue como deuda de atlas WordCraft.
 //!
 //! ```ignore
 //! document()
@@ -48,6 +48,10 @@ pub enum DocumentCmd {
     Bullets,
     Undo,
     Redo,
+    /// `insert.table` 2×2 (WordCraft decide la caja).
+    InsertTable,
+    /// `insert.picture` con PNG embebido de demo (o bytes vía params en Session).
+    InsertPicture,
     /// Id crudo de WordCraft (`format.underline`, …).
     Raw(String),
 }
@@ -60,6 +64,8 @@ impl DocumentCmd {
             Self::Bullets => "para.bullets",
             Self::Undo => "edit.undo",
             Self::Redo => "edit.redo",
+            Self::InsertTable => "insert.table",
+            Self::InsertPicture => "insert.picture",
             Self::Raw(id) => id.as_str(),
         }
     }
@@ -81,6 +87,12 @@ pub struct DocumentCmdRequest {
 pub struct DocumentPaint {
     pub plain_text: String,
     pub runs: Vec<DocumentRun>,
+    /// Fondos de celda / párrafo (coords canvas).
+    pub fills: Vec<DocumentFill>,
+    /// Bordes de tabla y reglas (coords canvas).
+    pub lines: Vec<DocumentLine>,
+    /// Imágenes inline (bits en atlas Kai).
+    pub images: Vec<DocumentImage>,
     pub selection: Vec<Rect>,
     /// Caret en coords canvas (página apilada).
     pub caret: Option<Rect>,
@@ -97,6 +109,9 @@ impl Default for DocumentPaint {
         Self {
             plain_text: String::new(),
             runs: Vec::new(),
+            fills: Vec::new(),
+            lines: Vec::new(),
+            images: Vec::new(),
             selection: Vec::new(),
             caret: None,
             page_size: (612.0, 792.0),
@@ -116,6 +131,32 @@ pub struct DocumentRun {
     pub font_size: f32,
     pub bold: bool,
     pub color: Color,
+}
+
+/// Rectángulo relleno de la display list (celda, sombreado).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentFill {
+    pub rect: Rect,
+    pub color: Color,
+}
+
+/// Segmento de borde (tabla) en coords canvas.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentLine {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+    pub width: f32,
+    pub color: Color,
+}
+
+/// Imagen de la display list con bitmap Kai (atlas).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentImage {
+    pub rect: Rect,
+    pub bitmap: crate::render::Bitmap,
+    pub opacity: f32,
 }
 
 /// Spec del nodo: markdown de la app + pedido de comando.
@@ -377,7 +418,7 @@ fn canvas_origin(m: &ViewportMetrics, scroll_y: f32) -> Point {
     }
 }
 
-/// Emite `DrawOp::Text` por run en coords canvas escaladas.
+/// Emite fills / imágenes / bordes / `DrawOp::Text` en coords canvas escaladas.
 pub(crate) fn paint_body_canvas(
     list: &mut DrawList,
     origin: Point,
@@ -387,6 +428,67 @@ pub(crate) fn paint_body_canvas(
 ) {
     if widget.0 == 0 {
         return;
+    }
+    for f in &paint.fills {
+        list.fill_rect(
+            Rect {
+                x: origin.x + f.rect.x * scale,
+                y: origin.y + f.rect.y * scale,
+                width: (f.rect.width * scale).max(0.5),
+                height: (f.rect.height * scale).max(0.5),
+            },
+            f.color,
+        );
+    }
+    for img in &paint.images {
+        let rect = Rect {
+            x: origin.x + img.rect.x * scale,
+            y: origin.y + img.rect.y * scale,
+            width: (img.rect.width * scale).max(1.0),
+            height: (img.rect.height * scale).max(1.0),
+        };
+        list.image(crate::render::ImageDraw {
+            rect,
+            bitmap: img.bitmap.clone(),
+            source: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            radius: 0.0,
+            opacity: img.opacity.clamp(0.0, 1.0),
+        });
+    }
+    for ln in &paint.lines {
+        let dx = ln.x1 - ln.x0;
+        let dy = ln.y1 - ln.y0;
+        let len = (dx * dx + dy * dy).sqrt().max(0.5);
+        // Eje-alineado: quad delgado; diagonal ≈ bounding box fino.
+        let (rx, ry, rw, rh) = if dx.abs() >= dy.abs() {
+            (
+                origin.x + ln.x0.min(ln.x1) * scale,
+                origin.y + (ln.y0 + ln.y1) * 0.5 * scale - ln.width * scale * 0.5,
+                len * scale,
+                (ln.width * scale).max(1.0),
+            )
+        } else {
+            (
+                origin.x + (ln.x0 + ln.x1) * 0.5 * scale - ln.width * scale * 0.5,
+                origin.y + ln.y0.min(ln.y1) * scale,
+                (ln.width * scale).max(1.0),
+                len * scale,
+            )
+        };
+        list.fill_rect(
+            Rect {
+                x: rx,
+                y: ry,
+                width: rw,
+                height: rh,
+            },
+            ln.color,
+        );
     }
     for (i, run) in paint.runs.iter().enumerate() {
         let at = Point {

@@ -17,9 +17,13 @@ use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
 use cosmic_text::Weight;
 
 use super::{
-    viewport_metrics, DocumentChange, DocumentCmd, DocumentPaint, DocumentRun, DocumentSpec,
-    PAGE_GAP_PT,
+    viewport_metrics, DocumentChange, DocumentCmd, DocumentFill, DocumentImage, DocumentLine,
+    DocumentPaint, DocumentRun, DocumentSpec, PAGE_GAP_PT,
 };
+use crate::media;
+use crate::render::Bitmap;
+use std::collections::HashMap;
+use std::io::Cursor;
 
 /// Editor vivo: una [`Session`] WordCraft + snapshot de paint + scroll.
 pub struct DocumentEditor {
@@ -32,6 +36,8 @@ pub struct DocumentEditor {
     scroll_y: f32,
     /// Último viewport visto (para clamp / ensure_caret).
     pub(crate) last_viewport: Rect,
+    /// Cache media WordCraft → Bitmap Kai (atlas).
+    bitmaps: HashMap<String, Bitmap>,
     paint: DocumentPaint,
 }
 
@@ -54,6 +60,7 @@ impl DocumentEditor {
                 height: 384.0,
                 ..Rect::default()
             },
+            bitmaps: HashMap::new(),
             paint: DocumentPaint::default(),
         };
         editor.refresh_paint();
@@ -80,6 +87,23 @@ impl DocumentEditor {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn scroll_y(&self) -> f32 {
         self.scroll_y
+    }
+
+    /// Tablas en el cuerpo (gate fase 2).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn table_count(&self) -> usize {
+        self.session
+            .doc
+            .body
+            .iter()
+            .filter(|b| b.as_table().is_some())
+            .count()
+    }
+
+    /// Entradas en el almacén de media del documento.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn media_count(&self) -> usize {
+        self.session.doc.media.len()
     }
 
     /// Rueda / TestApp: desplaza el canvas. `delta_y` > 0 mueve el contenido hacia arriba.
@@ -191,7 +215,26 @@ impl DocumentEditor {
     }
 
     fn run_cmd(&mut self, cmd: &DocumentCmd) -> bool {
-        self.run(cmd.as_str())
+        match cmd {
+            DocumentCmd::InsertTable => self
+                .session
+                .run("insert.table", &json!({ "rows": 2, "cols": 2 }))
+                .is_ok(),
+            DocumentCmd::InsertPicture => {
+                let b64 = base64_encode(&demo_picture_png());
+                self.session
+                    .run(
+                        "insert.picture",
+                        &json!({
+                            "data": b64,
+                            "width": 120.0,
+                            "alt": "Imagen de demostración",
+                        }),
+                    )
+                    .is_ok()
+            }
+            other => self.run(other.as_str()),
+        }
     }
 
     fn run_extend(&mut self, id: &str, extend: bool) -> bool {
@@ -354,12 +397,24 @@ impl DocumentEditor {
             .map(|p| (p.w, p.h))
             .unwrap_or((612.0, 792.0));
         let mut runs = Vec::new();
+        let mut fills = Vec::new();
+        let mut lines = Vec::new();
+        let mut images = Vec::new();
         let mut selection = Vec::new();
         let mut caret = None;
         for (pi, p) in layout.pages.iter().enumerate() {
             let page_y = pi as f32 * (ph + PAGE_GAP_PT);
             let draws = page_display(&self.session.doc, p, &DisplayOptions::default());
-            collect_runs_at(&draws, page_y, &mut runs);
+            collect_display_at(
+                &draws,
+                page_y,
+                &self.session.doc.media,
+                &mut self.bitmaps,
+                &mut runs,
+                &mut fills,
+                &mut lines,
+                &mut images,
+            );
         }
         let (a, b) = self.session.sel.ordered();
         for (pi, rect) in layout.selection_rects(&self.session.doc, &a, &b, 0) {
@@ -393,6 +448,9 @@ impl DocumentEditor {
         self.paint = DocumentPaint {
             plain_text: self.plain_text(),
             runs,
+            fills,
+            lines,
+            images,
             selection,
             caret,
             page_size: (pw, ph),
@@ -403,7 +461,17 @@ impl DocumentEditor {
     }
 }
 
-fn collect_runs_at(draws: &[Draw], page_y: f32, out: &mut Vec<DocumentRun>) {
+#[allow(clippy::too_many_arguments)]
+fn collect_display_at(
+    draws: &[Draw],
+    page_y: f32,
+    media: &std::collections::BTreeMap<String, std::sync::Arc<Vec<u8>>>,
+    bitmaps: &mut HashMap<String, Bitmap>,
+    runs: &mut Vec<DocumentRun>,
+    fills: &mut Vec<DocumentFill>,
+    lines: &mut Vec<DocumentLine>,
+    images: &mut Vec<DocumentImage>,
+) {
     for d in draws {
         match d {
             Draw::Glyphs {
@@ -421,7 +489,7 @@ fn collect_runs_at(draws: &[Draw], page_y: f32, out: &mut Vec<DocumentRun>) {
                 }
                 let (gx, gy) = (glyphs[0].1, glyphs[0].2);
                 let bold = *synth_bold || face.weight >= 600.0;
-                out.push(DocumentRun {
+                runs.push(DocumentRun {
                     text: text.clone(),
                     origin: Point {
                         x: gx,
@@ -437,13 +505,127 @@ fn collect_runs_at(draws: &[Draw], page_y: f32, out: &mut Vec<DocumentRun>) {
                     ),
                 });
             }
+            Draw::Fill {
+                rect,
+                color,
+                alpha,
+                ..
+            } => {
+                fills.push(DocumentFill {
+                    rect: Rect {
+                        x: rect.x,
+                        y: rect.y + page_y,
+                        width: rect.w,
+                        height: rect.h,
+                    },
+                    color: Color::rgba(
+                        color.0,
+                        color.1,
+                        color.2,
+                        (alpha.clamp(0.0, 1.0) * 255.0) as u8,
+                    ),
+                });
+            }
+            Draw::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                width,
+                color,
+                alpha,
+                ..
+            } => {
+                lines.push(DocumentLine {
+                    x0: *x0,
+                    y0: *y0 + page_y,
+                    x1: *x1,
+                    y1: *y1 + page_y,
+                    width: (*width).max(0.5),
+                    color: Color::rgba(
+                        color.0,
+                        color.1,
+                        color.2,
+                        (alpha.clamp(0.0, 1.0) * 255.0) as u8,
+                    ),
+                });
+            }
+            Draw::Image {
+                rect,
+                media: key,
+                alpha,
+                ..
+            } => {
+                let bitmap = if let Some(b) = bitmaps.get(key) {
+                    Some(b.clone())
+                } else if let Some(bytes) = media.get(key) {
+                    match media::decode(bytes) {
+                        Ok(loaded) => {
+                            bitmaps.insert(key.clone(), loaded.bitmap.clone());
+                            Some(loaded.bitmap)
+                        }
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(bitmap) = bitmap {
+                    images.push(DocumentImage {
+                        rect: Rect {
+                            x: rect.x,
+                            y: rect.y + page_y,
+                            width: rect.w,
+                            height: rect.h,
+                        },
+                        bitmap,
+                        opacity: alpha.clamp(0.0, 1.0),
+                    });
+                }
+            }
             Draw::Turned { items, .. }
             | Draw::Rotated { items, .. }
             | Draw::Clip { items, .. }
-            | Draw::Figure { draws: items, .. } => collect_runs_at(items, page_y, out),
+            | Draw::Figure { draws: items, .. } => collect_display_at(
+                items, page_y, media, bitmaps, runs, fills, lines, images,
+            ),
             _ => {}
         }
     }
+}
+
+/// PNG 48×32 a rayas (demo / TestApp); WordCraft lo acepta vía `insert.picture`.
+fn demo_picture_png() -> Vec<u8> {
+    use image::{ImageBuffer, ImageFormat, Rgba};
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(48, 32, |x, y| {
+        if (x / 8 + y / 8) % 2 == 0 {
+            Rgba([37, 99, 235, 255])
+        } else {
+            Rgba([191, 219, 254, 255])
+        }
+    });
+    let mut buf = Vec::new();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)
+        .expect("encode demo png");
+    buf
+}
+
+fn base64_encode(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
+    for ch in b.chunks(3) {
+        let n = (u32::from(ch.first().copied().unwrap_or(0)) << 16)
+            | (u32::from(ch.get(1).copied().unwrap_or(0)) << 8)
+            | u32::from(ch.get(2).copied().unwrap_or(0));
+        for i in 0..4 {
+            if i <= ch.len() {
+                out.push(T[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 
@@ -699,4 +881,35 @@ mod tests {
             "expected selection rects after drag"
         );
     }
+    #[test]
+    fn insert_table_2x2() {
+        let mut ed = DocumentEditor::new("");
+        assert_eq!(ed.table_count(), 0);
+        assert!(ed.run_cmd(&DocumentCmd::InsertTable));
+        assert_eq!(ed.table_count(), 1);
+        ed.refresh_paint();
+        // Tabla aporta fills y/o lines en la display list.
+        assert!(
+            !ed.paint().fills.is_empty() || !ed.paint().lines.is_empty(),
+            "table should paint cell fills or borders"
+        );
+        assert!(ed.run_cmd(&DocumentCmd::Undo));
+        assert_eq!(ed.table_count(), 0);
+    }
+
+    #[test]
+    fn insert_picture_uses_kai_bitmap() {
+        let mut ed = DocumentEditor::new("");
+        assert_eq!(ed.media_count(), 0);
+        assert!(ed.run_cmd(&DocumentCmd::InsertPicture));
+        assert!(ed.media_count() >= 1);
+        ed.refresh_paint();
+        assert!(
+            !ed.paint().images.is_empty(),
+            "picture should appear in DocumentPaint.images"
+        );
+        assert!(ed.paint().images[0].bitmap.width() > 0);
+    }
+
+
 }
