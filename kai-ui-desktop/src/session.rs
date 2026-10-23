@@ -49,7 +49,7 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, SaveFile, TaskDone,
+    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, SaveFile, SubKind, TaskDone,
     action_message, build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
 };
 use crate::style::Cursor;
@@ -164,6 +164,8 @@ pub(crate) struct Session<A: App> {
     modal_focus: Option<ModalFocus>,
     /// Pending [`Effects::after`] timers, in the order they were asked for.
     timers: Vec<Timer<A::Msg>>,
+    /// Active [`App::subscriptions`], diffed after `init` and each `update`.
+    subs: Vec<ActiveSub<A::Msg>>,
     /// Running [`Effects::perform`] tasks.
     tasks: Tasks<A::Msg>,
     /// Decoded images of the views, filled into the tree on rebuild.
@@ -310,6 +312,14 @@ struct Timer<Msg> {
     /// The pointer or the focus is inside the element whose `test_id` is
     /// `key` ([`Effects::keyed`]).
     held: bool,
+}
+
+/// An active [`App::subscriptions`] entry, keyed for diff after each update.
+struct ActiveSub<Msg> {
+    key: String,
+    every: Duration,
+    next: Instant,
+    msg: Msg,
 }
 
 /// What started an [`Effects::perform`] task: it stays busy until the
@@ -586,6 +596,7 @@ impl<A: App> Session<A> {
             modal: None,
             modal_focus: None,
             timers: Vec::new(),
+            subs: Vec::new(),
             tasks: Tasks::default(),
             images: ImageStore::default(),
             file_pick: None,
@@ -612,6 +623,7 @@ impl<A: App> Session<A> {
             context_press: false,
         };
         session.apply_effects(effects);
+        session.sync_subscriptions();
         session.notify_resized();
         session.rebuild();
         session.relayout();
@@ -851,7 +863,7 @@ impl<A: App> Session<A> {
         }
     }
 
-    /// When the earliest pending timer is due.
+    /// When the earliest pending timer or subscription tick is due.
     pub fn next_deadline(&self) -> Option<Instant> {
         let tooltip = self
             .tooltip
@@ -861,6 +873,7 @@ impl<A: App> Session<A> {
         self.timers
             .iter()
             .map(|timer| timer.due)
+            .chain(self.subs.iter().map(|sub| sub.next))
             .chain(tooltip)
             .chain(self.maps.values().filter_map(CameraState::deadline))
             .min()
@@ -898,7 +911,48 @@ impl<A: App> Session<A> {
             self.with_source(MsgSource::Timer, |session| session.send(timer.msg));
             ran = true;
         }
+        while let Some(index) = self
+            .subs
+            .iter()
+            .enumerate()
+            .filter(|(_, sub)| sub.next <= now)
+            .min_by_key(|(_, sub)| sub.next)
+            .map(|(index, _)| index)
+        {
+            let msg = self.subs[index].msg.clone();
+            let every = self.subs[index].every;
+            self.subs[index].next = now + every;
+            self.with_source(MsgSource::Subscription, |session| session.send(msg));
+            ran = true;
+        }
         ran | self.report_maps()
+    }
+
+    /// Diff [`App::subscriptions`] against the active set: start new keys,
+    /// stop missing ones, keep the schedule when key and period match.
+    fn sync_subscriptions(&mut self) {
+        let wanted = self.app.subscriptions().into_vec();
+        let now = self.now();
+        let mut next = Vec::with_capacity(wanted.len());
+        for sub in wanted {
+            match sub.kind {
+                SubKind::Every(every) => {
+                    let due = self
+                        .subs
+                        .iter()
+                        .find(|active| active.key == sub.key && active.every == every)
+                        .map(|active| active.next)
+                        .unwrap_or_else(|| now + every);
+                    next.push(ActiveSub {
+                        key: sub.key,
+                        every,
+                        next: due,
+                        msg: sub.msg,
+                    });
+                }
+            }
+        }
+        self.subs = next;
     }
 
     /// Whether the pointer or the focus is inside the element whose
@@ -1551,6 +1605,7 @@ impl<A: App> Session<A> {
             let effects = self.app.update(msg);
             self.apply_effects(effects);
         }
+        self.sync_subscriptions();
         self.invalidate();
     }
 

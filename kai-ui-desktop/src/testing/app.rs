@@ -242,10 +242,12 @@ impl<A: App> TestApp<A> {
     }
 
     /// Let `by` pass on the test app's clock, which only moves here: the
-    /// timers due in that span ([`Effects::after`]) send their messages in
-    /// order, each at its own time, with a frame after each one.
+    /// timers due in that span ([`Effects::after`]) and the ticks of
+    /// [`App::subscriptions`] send their messages in order, each at its
+    /// own time, with a frame after each one.
     ///
     /// [`Effects::after`]: crate::runtime::Effects::after
+    /// [`App::subscriptions`]: crate::runtime::App::subscriptions
     pub fn advance(&mut self, by: Duration) {
         let end = self.session.clock() + by;
         while let Some(due) = self.session.next_deadline().filter(|due| *due <= end) {

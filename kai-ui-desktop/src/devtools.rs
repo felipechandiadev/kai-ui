@@ -90,6 +90,8 @@ pub enum MsgSource {
     /// The open panel of `Effects::pick_file`, or files dropped on the
     /// window.
     Files,
+    /// A tick from [`App::subscriptions`](crate::runtime::App::subscriptions).
+    Subscription,
 }
 
 impl fmt::Display for MsgSource {
@@ -105,6 +107,7 @@ impl fmt::Display for MsgSource {
             Self::Window => f.write_str("Ventana"),
             Self::Task => f.write_str("Tarea"),
             Self::Files => f.write_str("Archivos"),
+            Self::Subscription => f.write_str("Suscripción"),
         }
     }
 }

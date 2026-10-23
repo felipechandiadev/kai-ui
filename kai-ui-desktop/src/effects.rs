@@ -1,11 +1,13 @@
-//! Work off the UI thread for [`Effects::perform`]: a pool of
-//! [`POOL_THREADS`] threads runs each task, and its result waits in an
-//! [`Inbox`] until the session turns it into a message on the UI thread.
-//! The window runtime is woken with a `UserEvent::Task`; `TestApp` waits
-//! with [`Inbox::wait`] (13, Paso 15, without Tokio: it stays optional,
-//! for MCP only).
+//! Work off the UI thread for [`Effects::perform`] and
+//! [`Effects::perform_async`]: a pool of [`POOL_THREADS`] threads runs each
+//! task (async futures via [`pollster::block_on`] on the worker), and its
+//! result waits in an [`Inbox`] until the session turns it into a message
+//! on the UI thread. The window runtime is woken with a `UserEvent::Task`;
+//! `TestApp` waits with [`Inbox::wait`] (13, Paso 15, without Tokio: it
+//! stays optional, for MCP only).
 //!
 //! [`Effects::perform`]: crate::runtime::Effects::perform
+//! [`Effects::perform_async`]: crate::runtime::Effects::perform_async
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -159,7 +161,7 @@ mod tests {
 
     use crate::components::{ButtonVariant, button};
     use crate::element::{Element, Role, div, text};
-    use crate::runtime::{App, Effects};
+    use crate::runtime::{App, Effects, Subscriptions};
     use crate::testing::{By, TestApp};
 
     /// Closed until [`Gate::open`]: tasks that wait on it stay running.
@@ -244,7 +246,7 @@ mod tests {
         }
     }
 
-    fn press(app: &mut TestApp<Searches>, name: &str) {
+    fn press<A: App>(app: &mut TestApp<A>, name: &str) {
         app.click(By::role(Role::Button).name(name));
     }
 
@@ -309,5 +311,188 @@ mod tests {
         assert!(inbox.wait(Duration::from_secs(5)));
         let done = inbox.take();
         assert!(matches!(done.as_slice(), [(1, None)]));
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    enum AsyncMsg {
+        Go,
+        Cancel,
+        Done(u32),
+    }
+
+    #[derive(Default)]
+    struct AsyncApp {
+        gate: Gate,
+        done: Vec<u32>,
+    }
+
+    impl App for AsyncApp {
+        type Msg = AsyncMsg;
+
+        fn title(&self) -> String {
+            "Async".into()
+        }
+
+        fn update(&mut self, msg: AsyncMsg) -> Effects<AsyncMsg> {
+            match msg {
+                AsyncMsg::Go => {
+                    let gate = self.gate.clone();
+                    return Effects::perform_async(
+                        async move {
+                            gate.pass();
+                            7u32
+                        },
+                        AsyncMsg::Done,
+                    )
+                    .keyed("async");
+                }
+                AsyncMsg::Cancel => return Effects::cancel("async"),
+                AsyncMsg::Done(n) => self.done.push(n),
+            }
+            Effects::none()
+        }
+
+        fn view(&self) -> Element<AsyncMsg> {
+            div().children([
+                button("Go", ButtonVariant::Primary).on_click(AsyncMsg::Go),
+                button("Cancel", ButtonVariant::Secondary).on_click(AsyncMsg::Cancel),
+            ])
+        }
+    }
+
+    #[test]
+    fn an_async_future_comes_back_as_a_message() {
+        let mut app = TestApp::new(AsyncApp::default());
+        press(&mut app, "Go");
+        assert!(app.tasks_pending());
+        assert!(app.app().done.is_empty());
+        app.app().gate.open();
+        app.run_until_idle();
+        assert_eq!(app.app().done, [7]);
+        assert!(app.messages().contains(&AsyncMsg::Done(7)));
+    }
+
+    #[test]
+    fn cancelling_a_keyed_async_task_drops_its_message() {
+        let mut app = TestApp::new(AsyncApp::default());
+        press(&mut app, "Go");
+        press(&mut app, "Cancel");
+        assert!(!app.tasks_pending());
+        app.app().gate.open();
+        app.run_until_idle();
+        assert!(app.app().done.is_empty());
+    }
+
+    #[test]
+    fn a_panicking_async_task_lands_as_none() {
+        let inbox = Arc::new(Inbox::default());
+        spawn(
+            &inbox,
+            2,
+            Box::new(|| {
+                let _ = pollster::block_on(async {
+                    panic!("falla async a propósito");
+                    #[allow(unreachable_code)]
+                    0u32
+                });
+                Box::new(0u32) as Box<dyn Any + Send>
+            }),
+        );
+        assert!(inbox.wait(Duration::from_secs(5)));
+        let done = inbox.take();
+        assert!(matches!(done.as_slice(), [(2, None)]));
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    enum SubMsg {
+        Start,
+        Stop,
+        Faster,
+        Tick,
+    }
+
+    #[derive(Default)]
+    struct Ticker {
+        on: bool,
+        ticks: u32,
+        every_ms: u64,
+    }
+
+    impl App for Ticker {
+        type Msg = SubMsg;
+
+        fn title(&self) -> String {
+            "Ticker".into()
+        }
+
+        fn update(&mut self, msg: SubMsg) -> Effects<SubMsg> {
+            match msg {
+                SubMsg::Start => {
+                    self.on = true;
+                    self.every_ms = 100;
+                }
+                SubMsg::Stop => self.on = false,
+                SubMsg::Faster => self.every_ms = 200,
+                SubMsg::Tick => self.ticks += 1,
+            }
+            Effects::none()
+        }
+
+        fn subscriptions(&self) -> Subscriptions<SubMsg> {
+            if !self.on {
+                return Subscriptions::none();
+            }
+            Subscriptions::every(
+                "tick",
+                Duration::from_millis(self.every_ms),
+                SubMsg::Tick,
+            )
+        }
+
+        fn view(&self) -> Element<SubMsg> {
+            div().children([
+                button("Start", ButtonVariant::Primary).on_click(SubMsg::Start),
+                button("Stop", ButtonVariant::Secondary).on_click(SubMsg::Stop),
+                button("Faster", ButtonVariant::Secondary).on_click(SubMsg::Faster),
+            ])
+        }
+    }
+
+    #[test]
+    fn an_active_subscription_ticks_when_time_advances() {
+        let mut app = TestApp::new(Ticker::default());
+        press(&mut app, "Start");
+        assert_eq!(app.app().ticks, 0);
+        app.advance(Duration::from_millis(100));
+        assert_eq!(app.app().ticks, 1);
+        app.advance(Duration::from_millis(200));
+        assert_eq!(app.app().ticks, 3);
+        assert!(app.messages().contains(&SubMsg::Tick));
+    }
+
+    #[test]
+    fn dropping_a_subscription_stops_its_ticks() {
+        let mut app = TestApp::new(Ticker::default());
+        press(&mut app, "Start");
+        app.advance(Duration::from_millis(100));
+        let before = app.app().ticks;
+        press(&mut app, "Stop");
+        app.advance(Duration::from_millis(500));
+        assert_eq!(app.app().ticks, before);
+    }
+
+    #[test]
+    fn changing_the_period_of_a_keyed_subscription_reschedules() {
+        let mut app = TestApp::new(Ticker::default());
+        press(&mut app, "Start");
+        app.advance(Duration::from_millis(100));
+        assert_eq!(app.app().ticks, 1);
+        press(&mut app, "Faster");
+        assert_eq!(app.app().every_ms, 200);
+        // Same key, new period: schedule from now + 200.
+        app.advance(Duration::from_millis(199));
+        assert_eq!(app.app().ticks, 1);
+        app.advance(Duration::from_millis(1));
+        assert_eq!(app.app().ticks, 2);
     }
 }

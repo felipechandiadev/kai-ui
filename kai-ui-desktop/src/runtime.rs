@@ -17,13 +17,15 @@
 //! is not reduced. Those frames reuse the last prepared draws unless
 //! something else changed (`dirty`). A map that glides or zooms on its own
 //! also asks for frames until it settles. Pending timers ([`Effects::after`])
-//! wake the loop at the nearest one (`ControlFlow::WaitUntil`).
+//! and subscription ticks ([`App::subscriptions`]) wake the loop at the
+//! nearest one (`ControlFlow::WaitUntil`).
 
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{self, Debug};
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -57,8 +59,9 @@ pub(crate) const LINE_SCROLL: f32 = 40.0;
 
 /// What `update` asks the runtime to do, as a value (a subset of 13,
 /// Paso 15): [`Effects::after`] sends a message later,
-/// [`Effects::perform`] runs work off the UI thread, and
-/// [`Effects::pick_file`] and [`Effects::save_file`] ask for a file.
+/// [`Effects::perform`] / [`Effects::perform_async`] run work off the UI
+/// thread, and [`Effects::pick_file`] and [`Effects::save_file`] ask for a
+/// file. Continuous input uses [`App::subscriptions`] instead of effects.
 #[must_use]
 pub struct Effects<Msg>(Vec<Effect<Msg>>);
 
@@ -205,6 +208,17 @@ impl<Msg> Effects<Msg> {
         }])
     }
 
+    /// Run `fut` off the UI thread on the same pool as [`Self::perform`],
+    /// polling it with [`pollster::block_on`] (no Tokio on this path), and
+    /// send `to_msg(result)` when it finishes. Same `.keyed` / `cancel` and
+    /// busy feedback as a blocking task. A future that panics sends nothing.
+    pub fn perform_async<T: Send + 'static>(
+        fut: impl Future<Output = T> + Send + 'static,
+        to_msg: impl FnOnce(T) -> Msg + 'static,
+    ) -> Self {
+        Self::perform(move || pollster::block_on(fut), to_msg)
+    }
+
     /// Show the system's open panel (`NSOpenPanel`) and send
     /// `to_msg(Some(path))` with the chosen file, or `to_msg(None)` when
     /// the person cancels. One panel at a time: a second request while one
@@ -290,6 +304,73 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
     }
 }
 
+/// What [`App::subscriptions`] asks the runtime to keep running: re-evaluated
+/// after `init` and every `update`. Keys that disappear stop; new keys start;
+/// a key that stays with the same period keeps its schedule.
+#[must_use]
+pub struct Subscriptions<Msg>(Vec<Sub<Msg>>);
+
+pub(crate) struct Sub<Msg> {
+    pub(crate) key: String,
+    pub(crate) kind: SubKind,
+    pub(crate) msg: Msg,
+}
+
+pub(crate) enum SubKind {
+    /// Emit `msg` every `every` while the subscription is active.
+    Every(Duration),
+}
+
+impl<Msg> Subscriptions<Msg> {
+    pub fn none() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn batch(subs: impl IntoIterator<Item = Self>) -> Self {
+        Self(subs.into_iter().flat_map(|subs| subs.0).collect())
+    }
+
+    pub fn is_none(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Emit `msg` every `every` while this subscription is returned from
+    /// [`App::subscriptions`]. `key` must be stable across updates so the
+    /// runtime can diff: dropping the key stops the ticks; changing `every`
+    /// reschedules from now. Tests advance with [`crate::testing::TestApp::advance`].
+    pub fn every(key: impl Into<String>, every: Duration, msg: Msg) -> Self {
+        Self(vec![Sub {
+            key: key.into(),
+            kind: SubKind::Every(every),
+            msg,
+        }])
+    }
+
+    pub(crate) fn into_vec(self) -> Vec<Sub<Msg>> {
+        self.0
+    }
+}
+
+impl<Msg: Debug> fmt::Debug for Subscriptions<Msg> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            return f.write_str("Subscriptions::none()");
+        }
+        let mut list = f.debug_list();
+        for sub in &self.0 {
+            match &sub.kind {
+                SubKind::Every(every) => list.entry(&format_args!(
+                    "every({every:?}, {msg:?}, key: {key:?})",
+                    every = every,
+                    msg = sub.msg,
+                    key = sub.key,
+                )),
+            };
+        }
+        list.finish()
+    }
+}
+
 /// An Elm app: a model that turns messages into a new model (and effects)
 /// and is drawn by `view`. Apps without effects implement [`SimpleApp`].
 pub trait App: 'static {
@@ -298,6 +379,12 @@ pub trait App: 'static {
     /// Called once, before the first `view`.
     fn init(&mut self) -> Effects<Self::Msg> {
         Effects::none()
+    }
+
+    /// Continuous input re-evaluated after `init` and every `update`
+    /// (Elm `Sub`). Default: none, so [`SimpleApp`] stays unchanged.
+    fn subscriptions(&self) -> Subscriptions<Self::Msg> {
+        Subscriptions::none()
     }
 
     fn title(&self) -> String;
@@ -1298,9 +1385,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
 #[cfg(test)]
 mod tests {
     use super::{
-        App, Effects, SimpleApp, action_message, background_running, cursor_for, pointer_target,
-        selects_on_focus,
+        App, Effects, SimpleApp, Subscriptions, action_message, background_running, cursor_for,
+        pointer_target, selects_on_focus,
     };
+    use std::time::Duration;
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, div, icon, input};
@@ -1395,6 +1483,16 @@ mod tests {
             r#"[after(1s, Clicked, key: Some("uno")), cancel("dos")]"#
         );
     }
+    #[test]
+    fn subscriptions_every_debug_lists_key() {
+        let subs = Subscriptions::every("tick", Duration::from_secs(1), Msg::Clicked);
+        assert_eq!(
+            format!("{subs:?}"),
+            r#"[every(1s, Clicked, key: "tick")]"#
+        );
+        assert!(Subscriptions::<Msg>::none().is_none());
+    }
+
 
     #[test]
     fn pointer_targets_bubble_from_text_to_the_enclosing_control() {
