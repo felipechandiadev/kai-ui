@@ -521,6 +521,32 @@
       "title": "Lista con viñetas"
     },
     {
+      "description": "Inserta una tabla 2×2 en el documento (WordCraft)",
+      "exposed": true,
+      "id": "insert.table",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Insertar tabla"
+    },
+    {
+      "description": "Inserta una imagen de demostración en el documento (WordCraft + atlas Kai)",
+      "exposed": true,
+      "id": "insert.picture",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Insertar imagen"
+    },
+    {
       "description": "Deshace el último cambio del documento",
       "exposed": true,
       "id": "edit.undo",

@@ -1,6 +1,6 @@
 # 16 — Widget `document`: mini Word dentro de Kai
 
-**Fase:** fases 0–1 hechas (MSRV 1.95; tipar / IME / ⌘B / undo; multi-página + scroll + hit-test). Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
+**Fase:** fases 0–2 hechas (MSRV 1.95; tipar / páginas / tabla 2×2 + imagen). Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
 
 La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordcraft) (WordCraft, ArtCraft; MIT OR Apache-2.0; clean-room). La información de capas y crates se tomó del README y de [`docs/architecture.md`](https://github.com/storytold/wordcraft/blob/master/docs/architecture.md) el **21-oct-2026**. Fijar un `rev` de Git y volver a leer manifests antes de depender.
 
@@ -108,6 +108,8 @@ Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-
 
 Insertar tabla 2×2, imagen inline o wrap simple. Reutilizar `ImageSource` / atlas de Kai para bits; WordCraft decide la caja.
 
+**Hecho (23-oct-2026):** comandos `insert.table` (2×2) e `insert.picture` (PNG demo en base64). Display list: `Draw::Fill`/`Line` → quads; `Draw::Image` → `ImageDraw` + `Bitmap` (decode Kai, atlas). Toolbar / Actions / MCP ids públicos. Wrap flotante avanzado = deuda.
+
 ### Fase 3 — archivo
 
 Abrir/guardar .docx (`wordcraft-docx`) y exportar PDF (`wordcraft-pdf` / `craft-pdf`) con `Effects::pick_file` / `save_file`. Fuera del hilo de paint.
@@ -143,7 +145,8 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 | Demo sección Documento | **Hecho** (Datos → Documento; toolbar; markdown multi-página + scroll) |
 | Subida de MSRV | **Hecho** — 1.95 |
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
-| Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret; bridge `TextStore` paint = deuda atlas (fase 2+) |
+| Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret |
+| Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai); bridge TextStore glifos = deuda atlas WordCraft |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

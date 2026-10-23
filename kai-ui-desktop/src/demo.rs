@@ -1219,6 +1219,38 @@ impl Action for DocRehacer {
     }
 }
 
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocTabla;
+
+impl Action for DocTabla {
+    type App = Demo;
+    const ID: &'static str = "insert.table";
+    const TITLE: &'static str = "Insertar tabla";
+    fn description() -> &'static str {
+        "Inserta una tabla 2×2 en el documento (WordCraft)"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::InsertTable)
+    }
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocImagen;
+
+impl Action for DocImagen {
+    type App = Demo;
+    const ID: &'static str = "insert.picture";
+    const TITLE: &'static str = "Insertar imagen";
+    fn description() -> &'static str {
+        "Inserta una imagen de demostración en el documento (WordCraft + atlas Kai)"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocCmd(DocumentCmd::InsertPicture)
+    }
+}
+
 /// Frames a box on the map of «Mapa».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1405,6 +1437,8 @@ impl App for Demo {
         registry.action::<DocNegrita>().menu("Documento").expose();
         registry.action::<DocCursiva>().menu("Documento").expose();
         registry.action::<DocLista>().menu("Documento").expose();
+        registry.action::<DocTabla>().menu("Documento").expose();
+        registry.action::<DocImagen>().menu("Documento").expose();
         registry.action::<DocDeshacer>().menu("Documento").expose();
         registry.action::<DocRehacer>().menu("Documento").expose();
     }
@@ -2922,7 +2956,7 @@ impl Demo {
             .children([
                 card_header(
                     "Documento",
-                    Some("Páginas Letter + scroll; tipar, ⌘B / toolbar, undo (WordCraft)"),
+                    Some("Tabla 2×2 e imagen; páginas + scroll; tipar / ⌘B (WordCraft)"),
                 ),
                 card_content().class("gap-3").children([
                     div()
@@ -2938,6 +2972,12 @@ impl Demo {
                             button_sized("Lista", ButtonVariant::Outlined, ButtonSize::Sm)
                                 .on_command(DocLista)
                                 .test_id("documento.lista"),
+                            button_sized("Tabla 2×2", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocTabla)
+                                .test_id("documento.tabla"),
+                            button_sized("Imagen", ButtonVariant::Outlined, ButtonSize::Sm)
+                                .on_command(DocImagen)
+                                .test_id("documento.imagen"),
                             button_sized("Deshacer", ButtonVariant::Text, ButtonSize::Sm)
                                 .on_command(DocDeshacer)
                                 .test_id("documento.undo"),
@@ -2950,7 +2990,7 @@ impl Demo {
                         ]),
                     editor,
                     caption(
-                        "Multi-página: scroll interno del viewport. Persistencia Markdown. feature = \"document\".",
+                        "Tabla e imagen vía WordCraft; bits de imagen en atlas Kai. feature = \"document\".",
                     ),
                 ]),
             ])
@@ -4093,6 +4133,23 @@ mod tests {
         assert_ne!(after, before);
     }
 
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_inserts_table_and_picture_from_toolbar() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        app.click(editor());
+        assert!(app.perform("insert.table"));
+        assert!(app.perform("insert.picture"));
+        // Undo picture then table keeps the editor responsive.
+        assert!(app.perform("edit.undo"));
+        assert!(app.perform("edit.undo"));
+        app.type_text(editor(), "ok");
+        assert!(app.value(editor()).contains("ok"));
+    }
+
     
     #[test]
     fn the_sidebar_shows_one_section_at_a_time() {
@@ -4276,7 +4333,7 @@ mod tests {
             include_str!("maps/editor.rs"),
             include_str!("document/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 29] = [
+        const NOT_WIDGETS: [&str; 32] = [
             "ChartSpec",
             "ChartSeries",
             "MapSpec",
@@ -4306,6 +4363,9 @@ mod tests {
             "DocumentCmdRequest",
             "DocumentPaint",
             "DocumentRun",
+            "DocumentFill",
+            "DocumentLine",
+            "DocumentImage",
         ];
         use Seccion::*;
         let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
@@ -5224,6 +5284,8 @@ mod tests {
                 "format.bold",
                 "format.italic",
                 "para.bullets",
+                "insert.table",
+                "insert.picture",
                 "edit.undo",
                 "edit.redo",
                 "kai.paleta",
@@ -5387,7 +5449,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            13,
+            15,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -5833,6 +5895,8 @@ mod tests {
                 "format.bold",
                 "format.italic",
                 "para.bullets",
+                "insert.table",
+                "insert.picture",
                 "edit.undo",
                 "edit.redo",
             ]
