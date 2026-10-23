@@ -223,6 +223,9 @@ impl Painter<'_> {
             Content::Chart(spec) => {
                 crate::charts::paint(&mut self.list, node.padding_box, spec, self.input.theme);
             }
+            Content::Document(spec) => {
+                crate::document::paint(&mut self.list, node.padding_box, spec, self.input.theme);
+            }
         }
         let mut children = node.children.clone();
         children.sort_by_key(|child| layout.get(*child).style.z_index);

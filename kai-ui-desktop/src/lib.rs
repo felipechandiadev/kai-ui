@@ -21,6 +21,7 @@ pub mod charts;
 pub mod color;
 pub mod commands;
 pub mod components;
+pub mod document;
 pub mod element;
 pub mod geo;
 pub mod icons;

@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use taffy::prelude::{AvailableSpace, NodeId, Size as TaffySize, TaffyTree};
 
 use crate::charts::ChartSpec;
+use crate::document::DocumentSpec;
 use crate::element::{
     ControlSize, ControlState, Element, KeyEquivalent, Kind, Motion, Role, Rows, WidgetId,
 };
@@ -165,6 +166,8 @@ pub enum Content {
     Map(Box<MapSpec>),
     /// A chart painted from its spec.
     Chart(Box<ChartSpec>),
+    /// Mini Word editor ([`crate::document::document`]).
+    Document(Box<DocumentSpec>),
 }
 
 /// Where a scrolling element is: vertical `offset` within `0..=max`, and
@@ -414,6 +417,7 @@ impl Builder<'_> {
             Kind::Image { loaded, .. } => Content::Image(loaded.clone()),
             Kind::Map(spec) => Content::Map(spec.clone()),
             Kind::Chart(spec) => Content::Chart(spec.clone()),
+            Kind::Document(spec) => Content::Document(spec.clone()),
         };
         let index = self.nodes.len();
         let node = LayoutNode {
@@ -510,7 +514,7 @@ impl Builder<'_> {
         }
 
         let handle = match element.kind {
-            Kind::Div | Kind::Map(_) | Kind::Chart(_) => {
+            Kind::Div | Kind::Map(_) | Kind::Chart(_) | Kind::Document(_) => {
                 let mut children = Vec::with_capacity(element.children.len());
                 for child in &element.children {
                     children.push(self.build(child, Some(index), child_inherited)?);
@@ -1015,7 +1019,8 @@ fn place(
             | Content::SvgIcon(_)
             | Content::Image(_)
             | Content::Map(_)
-            | Content::Chart(_) => {}
+            | Content::Chart(_)
+            | Content::Document(_) => {}
             Content::Text(content) => {
                 // Re-wrap at the final width so the buffer is ready to draw.
                 if !node.text.nowrap {

@@ -2,7 +2,7 @@
 //!
 //! Every frame the app rebuilds the whole tree from its model, as in Elm. An
 //! element is a box (`div`), a text run (`text`), an icon (`icon`), an
-//! image (`image`), a map, a chart or an input (`input`); its look is a Tailwind-like class string (`tw`), and its
+//! image (`image`), a map, a chart, a document or an input (`input`); its look is a Tailwind-like class string (`tw`), and its
 //! behavior is a set of messages ([`Handlers`]) the runtime sends to the
 //! app's `update`.
 //!
@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::charts::ChartSpec;
+use crate::document::{DocumentChange, DocumentSpec};
 use crate::geo::MapView;
 use crate::icons::Icon;
 use crate::maps::editor::PolygonEdit;
@@ -300,6 +301,10 @@ pub enum Kind {
     /// from [`ChartSpec`]; a bar chart's [`Element::on_select`] gets the
     /// category index.
     Chart(Box<ChartSpec>),
+    /// Mini Word editor ([`crate::document::document`]): page placeholder in
+    /// this cut; WordCraft session arrives in phase 0 behind
+    /// `feature = "document"`.
+    Document(Box<DocumentSpec>),
 }
 
 /// Visible lines of a multiline input: it grows with its text from `min`
@@ -329,6 +334,8 @@ pub struct Handlers<Msg> {
     /// Map with a polygon editor: an edit of its draft
     /// ([`Element::polygon_editor`]).
     pub on_edit: Option<Rc<dyn Fn(PolygonEdit) -> Msg>>,
+    /// Document: content changed ([`Element::on_change`] on a document).
+    pub on_document_change: Option<Rc<dyn Fn(DocumentChange) -> Msg>>,
 }
 
 impl<Msg> Default for Handlers<Msg> {
@@ -343,6 +350,7 @@ impl<Msg> Default for Handlers<Msg> {
             on_view_change: None,
             on_area_click: None,
             on_edit: None,
+            on_document_change: None,
         }
     }
 }
@@ -359,6 +367,7 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_view_change: self.on_view_change.clone(),
             on_area_click: self.on_area_click.clone(),
             on_edit: self.on_edit.clone(),
+            on_document_change: self.on_document_change.clone(),
         }
     }
 }
@@ -375,6 +384,7 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_view_change", &self.on_view_change.is_some())
             .field("on_area_click", &self.on_area_click.is_some())
             .field("on_edit", &self.on_edit.is_some())
+            .field("on_document_change", &self.on_document_change.is_some())
             .finish()
     }
 }
@@ -1349,7 +1359,7 @@ impl<Msg> Element<Msg> {
             return None;
         }
         match self.kind {
-            Kind::Input { .. } => Some(FocusKind::TextField),
+            Kind::Input { .. } | Kind::Document(_) => Some(FocusKind::TextField),
             Kind::Map(_) => Some(FocusKind::Button),
             Kind::Chart(_) => None,
             _ if self.handlers.on_click.is_some()
@@ -1375,7 +1385,7 @@ impl<Msg> Element<Msg> {
     /// Clickable or editable, enabled or not: such elements are hit-test
     /// targets and expose semantic roles.
     pub fn is_control(&self) -> bool {
-        matches!(self.kind, Kind::Input { .. } | Kind::Map(_))
+        matches!(self.kind, Kind::Input { .. } | Kind::Map(_) | Kind::Document(_))
             || matches!(self.kind, Kind::Chart(_)) && self.handlers.on_select.is_some()
             || self.handlers.on_click.is_some()
             || self.picks()

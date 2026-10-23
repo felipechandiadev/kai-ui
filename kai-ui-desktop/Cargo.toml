@@ -2,7 +2,7 @@
 name = "kai-ui-desktop-prototype"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.95"
 publish = false
 
 # Library + demo binary (docs/dev/12-modelo-appkit.md, Paso 1). The library is
@@ -23,6 +23,14 @@ mcp = ["dep:rmcp", "dep:tokio"]
 # Images by URL (`ImageSource::Url`) with a blocking HTTPS client on the
 # task pool; without it those images fail with a message.
 net = ["dep:ureq"]
+# Mini Word editor (`kai::document`, docs/dev/16): WordCraft doc/fonts/layout/engine.
+# Default off so external-app and apps without the editor keep a lean tree.
+document = [
+    "dep:wordcraft-doc",
+    "dep:wordcraft-fonts",
+    "dep:wordcraft-layout",
+    "dep:wordcraft-engine",
+]
 default = ["net"]
 
 [dependencies]
@@ -63,9 +71,18 @@ taffy = { version = "0.15.0", default-features = false, features = ["std", "taff
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
+
+# WordCraft motor (MIT OR Apache-2.0); solo con `feature = "document"`.
+# Rev del spike Document (docs/dev/16 §10); nunca `branch = "main"`.
+wordcraft-doc = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+wordcraft-fonts = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+wordcraft-layout = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+wordcraft-engine = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
-# The native menu bar (`kai::menu`). 0.19 is the last release for Rust 1.89
-# and shares objc2 0.6 / objc2-app-kit 0.3 with winit.
+# The native menu bar (`kai::menu`). Kept on 0.19 (shares objc2 0.6 /
+# objc2-app-kit 0.3 with winit). MSRV is 1.95 for WordCraft; muda 0.21
+# would also compile, but is not required — bump only if menus need it.
 muda = { version = "0.19.3", default-features = false }
 # `NSProcessInfo.operatingSystemVersion` for `AppKitGeneration::current()`;
 # already in Cargo.lock through wgpu/winit.
@@ -81,3 +98,9 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"
 
 [dev-dependencies]
 png = "0.18.1"
+
+# WordCraft fija krilla desde craft-libs (fork con CRAFT_UNWIND_*). Sin el
+# Cargo.lock de WordCraft, cargo tomaría crates.io y craft-pdf no compilaría
+# al activar `feature = "document"`.
+[patch.crates-io]
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1de657b860b3c8abb44e1f2b32bd8" }
