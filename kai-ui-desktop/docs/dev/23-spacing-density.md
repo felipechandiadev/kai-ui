@@ -98,6 +98,6 @@ Stubs no cableados: `TRANSITION_SHORT_STUB_MS` (120), `TRANSITION_MEDIUM_STUB_MS
 - No amplía PageGrid más allá de 12.
 - No es la matriz filtrable de componentes (Fase E).
 
-## Fase E (siguiente)
+## Fase E
 
-Demo matrix filtrable (estados × componentes) y, si aplica, cablear stubs de transition cuando exista infra de animación de layout.
+Hecha: catálogo vivo filtrable — [25-catalogo-vivo.md](25-catalogo-vivo.md). Stubs `TRANSITION_*` siguen sin cablear (sin infra de animación).

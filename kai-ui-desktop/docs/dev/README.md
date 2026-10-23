@@ -28,6 +28,8 @@ Esta documentación describe la implementación gradual de un framework de inter
 22. [Page layout (PageGrid 12)](21-page-layout.md)
 23. [Plantillas de página](22-page-templates.md)
 24. [Spacing, densidad y do/don't](23-spacing-density.md)
+25. [Layering AppKit](24-layering.md)
+26. [Catálogo vivo](25-catalogo-vivo.md)
 
 ## Dónde estamos
 
