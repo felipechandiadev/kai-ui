@@ -151,6 +151,10 @@ struct Demo {
     catalog_density: Density,
     catalog_size: ControlSize,
     catalog_sample: String,
+    catalog_check: bool,
+    catalog_switch: bool,
+    catalog_select: Option<usize>,
+    catalog_tab: usize,
 }
 
 /// How long the «Acciones con espera» buttons wait.
@@ -226,6 +230,10 @@ impl Default for Demo {
             catalog_density: Density::Comfortable,
             catalog_size: ControlSize::Regular,
             catalog_sample: String::new(),
+            catalog_check: true,
+            catalog_switch: true,
+            catalog_select: Some(0),
+            catalog_tab: 0,
         }
     }
 }
@@ -838,6 +846,10 @@ enum Msg {
     CatalogSample(String),
     /// Empty filter demo: clear the sample field.
     CatalogClearFilter,
+    CatalogToggleCheck,
+    CatalogToggleSwitch,
+    CatalogSelect(usize),
+    CatalogTab(usize),
     ToggleSidebar,
     /// First window size: whether it is narrower than `sm`.
     InitialWidth {
@@ -1839,6 +1851,10 @@ impl App for Demo {
             }
             Msg::CatalogSample(value) => self.catalog_sample = value,
             Msg::CatalogClearFilter => self.catalog_sample.clear(),
+            Msg::CatalogToggleCheck => self.catalog_check = !self.catalog_check,
+            Msg::CatalogToggleSwitch => self.catalog_switch = !self.catalog_switch,
+            Msg::CatalogSelect(index) => self.catalog_select = Some(index),
+            Msg::CatalogTab(index) => self.catalog_tab = index,
             Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
             Msg::InitialWidth { narrow } => {
                 self.sidebar_collapsed = narrow;
@@ -2607,6 +2623,173 @@ impl Demo {
                 ]),
             ]);
 
+        let switch_density = match self.catalog_density {
+            Density::Comfortable => SwitchDensity::Default,
+            Density::Compact => SwitchDensity::Compact,
+        };
+        let check_state = if self.catalog_check {
+            ControlState::On
+        } else {
+            ControlState::Off
+        };
+        let choices = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.eleccion")
+            .children([
+                card_header(
+                    "Checkbox · Switch · Select",
+                    Some("Estados útiles; checkbox/select respetan ControlSize del tema; switch usa SwitchDensity"),
+                ),
+                card_content().class("gap-4").children([
+                    div().class("flex flex-col gap-2").children([
+                        caption("Checkbox"),
+                        div()
+                            .class("flex flex-wrap items-center gap-4")
+                            .children([
+                                checkbox_with_options(
+                                    "Activo",
+                                    check_state,
+                                    Msg::CatalogToggleCheck,
+                                    false,
+                                )
+                                .test_id("catalogo.check"),
+                                checkbox_with_options(
+                                    "Mixto",
+                                    ControlState::Mixed,
+                                    Msg::Increment,
+                                    false,
+                                )
+                                .test_id("catalogo.check.mixed"),
+                                checkbox_with_options(
+                                    "Deshabilitado",
+                                    ControlState::On,
+                                    Msg::Increment,
+                                    true,
+                                )
+                                .test_id("catalogo.check.disabled"),
+                            ]),
+                    ]),
+                    div().class("flex flex-col gap-2").children([
+                        caption("Switch"),
+                        div()
+                            .class("flex flex-wrap items-center gap-4")
+                            .children([
+                                switch_labeled(
+                                    "Notificaciones",
+                                    self.catalog_switch,
+                                    Msg::CatalogToggleSwitch,
+                                    false,
+                                    switch_density,
+                                )
+                                .test_id("catalogo.switch"),
+                                switch_labeled(
+                                    "Deshabilitado",
+                                    true,
+                                    Msg::Increment,
+                                    true,
+                                    switch_density,
+                                )
+                                .test_id("catalogo.switch.disabled"),
+                            ]),
+                    ]),
+                    div().class("flex flex-col gap-2 max-w-xs").children([
+                        caption("Select"),
+                        select_with_options(
+                            &["Diseño", "Desarrollo", "Producto"],
+                            self.catalog_select,
+                            "Elegir rol",
+                            Msg::CatalogSelect,
+                            false,
+                        )
+                        .label("Rol")
+                        .control_size(size)
+                        .test_id("catalogo.select"),
+                        select_with_options(
+                            &["Diseño", "Desarrollo", "Producto"],
+                            Some(1),
+                            "Elegir rol",
+                            Msg::CatalogSelect,
+                            true,
+                        )
+                        .label("Deshabilitado")
+                        .control_size(size)
+                        .test_id("catalogo.select.disabled"),
+                    ]),
+                ]),
+            ]);
+
+        let badges = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.badges")
+            .children([
+                card_header(
+                    "Badge · Alert",
+                    Some("Variantes sólidas y outlined (no pills WIP)"),
+                ),
+                card_content().class("gap-3").children([
+                    div()
+                        .class("flex flex-wrap items-center gap-2")
+                        .children([
+                            badge("Primary", BadgeVariant::Primary),
+                            badge("Success", BadgeVariant::Success),
+                            badge("Warning", BadgeVariant::Warning),
+                            badge("Error", BadgeVariant::Error),
+                            badge("Info", BadgeVariant::Info),
+                            badge("Outlined", BadgeVariant::PrimaryOutlined),
+                            badge("Success □", BadgeVariant::SuccessOutlined),
+                        ]),
+                    alert(AlertVariant::Info, "Alerta informativa de ejemplo"),
+                    alert(AlertVariant::Warning, "Revisa los campos requeridos"),
+                ]),
+            ]);
+
+        let progress_size = match size {
+            ControlSize::Mini | ControlSize::Small => DotSize::Sm,
+            ControlSize::Regular => DotSize::Md,
+            ControlSize::Large | ControlSize::ExtraLarge => DotSize::Lg,
+        };
+        let feedback = card()
+            .class("w-full max-w-4xl")
+            .test_id("catalogo.feedback")
+            .children([
+                card_header(
+                    "DotProgress · Tabs",
+                    Some("Progreso indeterminado (tamaño ≈ ControlSize) y pestañas"),
+                ),
+                card_content().class("gap-4").children([
+                    div()
+                        .class("flex flex-wrap items-center gap-6 text-foreground appkit:text-label")
+                        .children([
+                            div().class("flex flex-col gap-1").children([
+                                caption("DotProgress"),
+                                DotProgress::new()
+                                    .size(progress_size)
+                                    .label("Cargando catálogo")
+                                    .test_id("catalogo.progress")
+                                    .build(),
+                            ]),
+                            div().class("flex flex-col gap-1").children([
+                                caption("Sm (referencia)"),
+                                DotProgress::new()
+                                    .size(DotSize::Sm)
+                                    .decorative()
+                                    .build(),
+                            ]),
+                        ]),
+                    Tabs::new(self.catalog_tab, Msg::CatalogTab)
+                        .tab(
+                            "General",
+                            paragraph("Contenido de la pestaña General bajo el tema filtrado."),
+                        )
+                        .tab(
+                            "Avanzado",
+                            paragraph("Contenido de la pestaña Avanzado."),
+                        )
+                        .build()
+                        .test_id("catalogo.tabs"),
+                ]),
+            ]);
+
         let empties = card()
             .class("w-full max-w-4xl")
             .test_id("catalogo.empty")
@@ -2682,7 +2865,16 @@ impl Demo {
         div()
             .class("flex flex-col gap-5 w-full")
             .test_id("catalogo")
-            .children([filters, buttons, fields, empties, layers])
+            .children([
+                filters,
+                buttons,
+                fields,
+                choices,
+                badges,
+                feedback,
+                empties,
+                layers,
+            ])
     }
 
     /// Fase C — lista + detalle (master/detail) sobre PageGrid.
