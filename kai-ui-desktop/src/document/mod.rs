@@ -1,12 +1,12 @@
 //! Widget [`document`]: mini procesador de texto (guía
 //! [`docs/dev/16-widget-document.md`](../../docs/dev/16-widget-document.md)).
 //!
-//! **Fase 0 — nota rica:** con `feature = "document"`, una
-//! `wordcraft_engine::Session` por [`WidgetId`] en la Session Kai tipa,
-//! selecciona, aplica `format.bold` / undo y pinta runs de la display list
-//! como `DrawOp::{Text, Quad}`. Sin egui / vello_cpu. El bridge de glifos
-//! usa `TextStore` solo para emitir `DrawOp::Text` (deuda fase 1: atlas
-//! WordCraft → glifos nativos).
+//! **Fase 1 — páginas:** con `feature = "document"`, una
+//! `wordcraft_engine::Session` por [`WidgetId`] tipa, selecciona y pagina.
+//! El viewport del widget es fijo (clases); las páginas Letter se apilan
+//! en vertical con `scroll_y` interno (rueda / TestApp). Hit-test y
+//! selección usan `wordcraft-layout` por índice de página. Bridge
+//! `TextStore`→`DrawOp::Text` sigue como deuda de atlas.
 //!
 //! ```ignore
 //! document()
@@ -30,11 +30,13 @@ mod editor;
 #[cfg(feature = "document")]
 pub(crate) use editor::{run_text_style, DocumentEditor};
 
-/// Márgenes internos de la “hoja” respecto al padding box del widget.
-const PAGE_INSET: f32 = 16.0;
-/// Radio de la hoja.
+/// Márgenes del stack de páginas respecto al padding box (viewport).
+pub(crate) const PAGE_INSET: f32 = 16.0;
+/// Separación entre páginas en puntos WordCraft (antes del scale a viewport).
+pub(crate) const PAGE_GAP_PT: f32 = 24.0;
+/// Radio de cada hoja.
 const PAGE_RADIUS: f32 = 2.0;
-/// Sombra suave bajo la hoja (blur en puntos lógicos).
+/// Sombra suave bajo cada hoja (blur en puntos lógicos).
 const PAGE_SHADOW_BLUR: f32 = 8.0;
 const PAGE_SHADOW_Y: f32 = 2.0;
 
@@ -71,14 +73,38 @@ pub struct DocumentCmdRequest {
 }
 
 /// Snapshot de paint que la Session rellena cada frame (como tiles/labels).
-#[derive(Clone, Debug, Default, PartialEq)]
+///
+/// Coordenadas de runs / selection / caret están en **canvas** WordCraft:
+/// página `i` empieza en `y = i * (page_h + PAGE_GAP_PT)`. El paint aplica
+/// scale al ancho del viewport y resta [`DocumentPaint::scroll_y`].
+#[derive(Clone, Debug, PartialEq)]
 pub struct DocumentPaint {
     pub plain_text: String,
     pub runs: Vec<DocumentRun>,
     pub selection: Vec<Rect>,
+    /// Caret en coords canvas (página apilada).
     pub caret: Option<Rect>,
-    /// Tamaño de página WordCraft en puntos (letter ≈ 612×792).
+    /// Tamaño de una página WordCraft en puntos (letter ≈ 612×792).
     pub page_size: (f32, f32),
+    pub page_count: usize,
+    /// Scroll vertical del viewport en puntos lógicos (rueda).
+    pub scroll_y: f32,
+    pub scroll_max: f32,
+}
+
+impl Default for DocumentPaint {
+    fn default() -> Self {
+        Self {
+            plain_text: String::new(),
+            runs: Vec::new(),
+            selection: Vec::new(),
+            caret: None,
+            page_size: (612.0, 792.0),
+            page_count: 1,
+            scroll_y: 0.0,
+            scroll_max: 0.0,
+        }
+    }
 }
 
 /// Un run de glifos de la display list, listo para `DrawOp::Text`.
@@ -109,7 +135,8 @@ impl DocumentSpec {
         Self::default()
     }
 
-    /// Caja de la hoja dentro de `area` (padding box del nodo).
+    /// Caja inset del viewport (`area` = padding box). El stack de páginas
+    /// vive dentro; el scroll es interno ([`DocumentPaint::scroll_y`]).
     pub fn page_rect(&self, area: Rect) -> Rect {
         let inset = PAGE_INSET.min(area.width / 4.0).min(area.height / 4.0);
         Rect {
@@ -205,29 +232,6 @@ pub(crate) fn paint(list: &mut DrawList, area: Rect, spec: &DocumentSpec, theme:
     );
 }
 
-/// Emite `DrawOp::Text` por run. `widget` es el id real del nodo.
-pub(crate) fn paint_body(
-    list: &mut DrawList,
-    page: Rect,
-    paint: &DocumentPaint,
-    widget: WidgetId,
-    scale: f32,
-) {
-    if widget.0 == 0 {
-        return;
-    }
-    for (i, run) in paint.runs.iter().enumerate() {
-        let origin = Point {
-            x: page.x + run.origin.x * scale,
-            y: page.y + run.origin.y * scale,
-        };
-        list.text(
-            TextId::document_run(widget, i as u32),
-            origin,
-            run.color,
-        );
-    }
-}
 
 /// Paint con id de widget (usado desde `render/paint.rs`).
 pub(crate) fn paint_document(
@@ -243,12 +247,27 @@ pub(crate) fn paint_document(
         return;
     }
     list.push_clip(area);
-    let page = spec.page_rect(area);
-    if page.width > 0.0 && page.height > 0.0 {
-        let shadow = theme
-            .color("foreground")
-            .unwrap_or(Color::rgb(0, 0, 0))
-            .with_alpha(28);
+    let _ = spec;
+    let metrics = viewport_metrics(area, paint.page_size);
+    if metrics.scale <= 0.0 || metrics.inner_w <= 0.0 {
+        list.pop_clip();
+        return;
+    }
+    let (pw, ph) = paint.page_size;
+    let page_count = paint.page_count.max(1);
+    let shadow = theme
+        .color("foreground")
+        .unwrap_or(Color::rgb(0, 0, 0))
+        .with_alpha(28);
+    let paper = theme.color("background").unwrap_or(Color::rgb(255, 255, 255));
+    let gap = PAGE_GAP_PT * metrics.scale;
+    let page_h = ph * metrics.scale;
+
+    for i in 0..page_count {
+        let page = page_viewport_rect(&metrics, i, paint.scroll_y, page_h, gap);
+        if page.y + page.height < area.y || page.y > area.y + area.height {
+            continue;
+        }
         list.quad(Quad {
             blur: PAGE_SHADOW_BLUR,
             radius: PAGE_RADIUS,
@@ -262,55 +281,120 @@ pub(crate) fn paint_document(
                 shadow,
             )
         });
-        let paper = theme.color("background").unwrap_or(Color::rgb(255, 255, 255));
         list.quad(Quad {
             radius: PAGE_RADIUS,
             ..Quad::fill(page, paper)
         });
-
-        let (pw, ph) = paint.page_size;
-        let scale = if pw > 0.0 && ph > 0.0 {
-            (page.width / pw).min(page.height / ph)
-        } else {
-            1.0
-        };
-
-        let sel_color = theme
-            .color("primary")
-            .unwrap_or(Color::rgb(59, 130, 246))
-            .with_alpha(64);
-        for r in &paint.selection {
-            list.fill_rect(
-                Rect {
-                    x: page.x + r.x * scale,
-                    y: page.y + r.y * scale,
-                    width: (r.width * scale).max(1.0),
-                    height: (r.height * scale).max(1.0),
-                },
-                sel_color,
-            );
-        }
-
-        paint_body(list, page, paint, widget, scale);
-
-        if focused
-            && let Some(c) = paint.caret
-        {
-            let caret_color = theme
-                .color("foreground")
-                .unwrap_or(Color::rgb(0, 0, 0));
-            list.fill_rect(
-                Rect {
-                    x: page.x + c.x * scale,
-                    y: page.y + c.y * scale,
-                    width: (c.width * scale).max(1.0),
-                    height: (c.height * scale).max(1.0),
-                },
-                caret_color,
-            );
-        }
     }
+
+    let origin = canvas_origin(&metrics, paint.scroll_y);
+    let sel_color = theme
+        .color("primary")
+        .unwrap_or(Color::rgb(59, 130, 246))
+        .with_alpha(64);
+    for r in &paint.selection {
+        list.fill_rect(
+            Rect {
+                x: origin.x + r.x * metrics.scale,
+                y: origin.y + r.y * metrics.scale,
+                width: (r.width * metrics.scale).max(1.0),
+                height: (r.height * metrics.scale).max(1.0),
+            },
+            sel_color,
+        );
+    }
+
+    paint_body_canvas(list, origin, paint, widget, metrics.scale);
+
+    if focused
+        && let Some(c) = paint.caret
+    {
+        let caret_color = theme
+            .color("foreground")
+            .unwrap_or(Color::rgb(0, 0, 0));
+        list.fill_rect(
+            Rect {
+                x: origin.x + c.x * metrics.scale,
+                y: origin.y + c.y * metrics.scale,
+                width: (c.width * metrics.scale).max(1.0),
+                height: (c.height * metrics.scale).max(1.0),
+            },
+            caret_color,
+        );
+    }
+    let _ = pw;
     list.pop_clip();
+}
+
+/// Métricas del viewport: scale al ancho, inset constante.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ViewportMetrics {
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    pub inset: f32,
+    pub scale: f32,
+    pub inner_w: f32,
+    pub origin_x: f32,
+    pub origin_y: f32,
+}
+
+pub(crate) fn viewport_metrics(area: Rect, page_size: (f32, f32)) -> ViewportMetrics {
+    let inset = PAGE_INSET.min(area.width / 4.0).min(area.height / 4.0);
+    let inner_w = (area.width - inset * 2.0).max(0.0);
+    let (pw, _) = page_size;
+    let scale = if pw > 0.0 && inner_w > 0.0 {
+        inner_w / pw
+    } else {
+        1.0
+    };
+    ViewportMetrics {
+        inset,
+        scale,
+        inner_w,
+        origin_x: area.x + inset,
+        origin_y: area.y + inset,
+    }
+}
+
+fn page_viewport_rect(
+    m: &ViewportMetrics,
+    index: usize,
+    scroll_y: f32,
+    page_h_scaled: f32,
+    gap_scaled: f32,
+) -> Rect {
+    Rect {
+        x: m.origin_x,
+        y: m.origin_y + index as f32 * (page_h_scaled + gap_scaled) - scroll_y,
+        width: m.inner_w,
+        height: page_h_scaled,
+    }
+}
+
+fn canvas_origin(m: &ViewportMetrics, scroll_y: f32) -> Point {
+    Point {
+        x: m.origin_x,
+        y: m.origin_y - scroll_y,
+    }
+}
+
+/// Emite `DrawOp::Text` por run en coords canvas escaladas.
+pub(crate) fn paint_body_canvas(
+    list: &mut DrawList,
+    origin: Point,
+    paint: &DocumentPaint,
+    widget: WidgetId,
+    scale: f32,
+) {
+    if widget.0 == 0 {
+        return;
+    }
+    for (i, run) in paint.runs.iter().enumerate() {
+        let at = Point {
+            x: origin.x + run.origin.x * scale,
+            y: origin.y + run.origin.y * scale,
+        };
+        list.text(TextId::document_run(widget, i as u32), at, run.color);
+    }
 }
 
 /// Id estable para session (keyed por widget).

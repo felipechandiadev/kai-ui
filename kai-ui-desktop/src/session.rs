@@ -2279,24 +2279,20 @@ impl<A: App> Session<A> {
         };
         #[cfg(feature = "document")]
         if let Some(ed) = self.documents.get(&id) {
-            let Some(page) = self.layout.text_box(id) else {
+            let Some(viewport) = self.layout.text_box(id) else {
                 return;
             };
-            let caret = ed.paint().caret.unwrap_or(Rect {
+            let paint = ed.paint();
+            let caret = paint.caret.unwrap_or(Rect {
                 height: 16.0,
                 ..Rect::default()
             });
-            let (pw, ph) = ed.paint().page_size;
-            let scale = if pw > 0.0 && ph > 0.0 {
-                (page.width / pw).min(page.height / ph)
-            } else {
-                1.0
-            };
+            let m = crate::document::viewport_metrics(viewport, paint.page_size);
             self.outbox.ime_cursor_area = Some(Rect {
-                x: page.x + caret.x * scale,
-                y: page.y + caret.y * scale,
+                x: m.origin_x + caret.x * m.scale,
+                y: m.origin_y + caret.y * m.scale - paint.scroll_y,
                 width: 0.0,
-                height: (caret.height * scale).max(1.0),
+                height: (caret.height * m.scale).max(1.0),
             });
             return;
         }
@@ -3028,6 +3024,10 @@ impl<A: App> Session<A> {
     /// Scroll the innermost scroll container under the pointer by `delta_y`
     /// logical points (positive scrolls content up, like a wheel down).
     pub fn scroll_by(&mut self, delta_y: f32) {
+        #[cfg(feature = "document")]
+        if self.scroll_document(delta_y) {
+            return;
+        }
         self.scroll_along(Axis::Y, delta_y);
     }
 
@@ -3321,6 +3321,31 @@ impl<A: App> Session<A> {
     }
 
     #[cfg(feature = "document")]
+    fn document_at_pointer(&self) -> Option<WidgetId> {
+        self.hover_path.iter().rev().find(|id| self.documents.contains_key(id)).copied()
+    }
+
+    /// Rueda sobre el documento: scroll interno de páginas. `true` si consumió el delta.
+    #[cfg(feature = "document")]
+    fn scroll_document(&mut self, delta_y: f32) -> bool {
+        let Some(id) = self.document_at_pointer() else {
+            return false;
+        };
+        let Some(viewport) = self.layout.text_box(id) else {
+            return false;
+        };
+        let Some(ed) = self.documents.get_mut(&id) else {
+            return false;
+        };
+        if !ed.scroll_by(delta_y, viewport) {
+            return false;
+        }
+        self.update_ime_cursor_area();
+        self.invalidate();
+        true
+    }
+
+    #[cfg(feature = "document")]
     fn sync_documents(&mut self) {
         let focused = *self.ui.focused.get();
         let mut live = Vec::new();
@@ -3345,6 +3370,10 @@ impl<A: App> Session<A> {
                 .entry(id)
                 .or_insert_with(|| DocumentEditor::new(&markdown));
             ed.sync_markdown(&markdown);
+            if let Some(viewport) = self.layout.text_box(id) {
+                ed.last_viewport = viewport;
+                ed.refresh_paint();
+            }
             let tmp = crate::document::DocumentSpec {
                 markdown: markdown.clone(),
                 pending_cmd: pending,
