@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 publish = false
-description = "Herramientas de desarrollo de Kai (13, Pasos 17–18): kai.toml, doctor, test, new, dev."
+description = "Herramientas de desarrollo de Kai (13, Pasos 17–19): kai.toml, doctor, test, new, icons, dev."
 
 [[bin]]
 name = "kai"

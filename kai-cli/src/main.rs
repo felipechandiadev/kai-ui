@@ -1,12 +1,13 @@
 //! `kai`: herramientas de desarrollo de apps Kai (13, Pasos 17–18).
 //!
-//! Lee `kai.toml` cuando existe. Comandos del corte A1: `dev`, `doctor`,
-//! `test`, `new`. Firma/bundle (Paso 20) y `commands`/`mcp` quedan fuera.
+//! Lee `kai.toml` cuando existe. Comandos: `dev`, `doctor`, `test`, `new`,
+//! `icons add` (Paso 19). Firma/bundle (Paso 20) y `commands`/`mcp` quedan fuera.
 
 mod cargo;
 mod dev;
 mod doctor;
 mod manifest;
+mod icons_cmd;
 mod new_cmd;
 mod test_cmd;
 mod watch;
@@ -23,6 +24,9 @@ Comandos:
                           cargo test con features de [dev] en kai.toml
   kai new <nombre> [--template basic|multiwindow]
                           Andamiaje mínimo con kai.toml y tests/
+  kai icons add <nombre> [--from RUTA]
+  kai icons add <archivo.svg> --name <nombre>
+                          Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
   kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]
                           Compila, abre y reinicia conservando estado
 
@@ -36,6 +40,7 @@ enum Comando {
     Doctor,
     Test(test_cmd::Opciones),
     New(new_cmd::Opciones),
+    IconsAdd(icons_cmd::Opciones),
     Ayuda,
     Version,
 }
@@ -54,6 +59,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Comando, String> {
         }
         Some("test") => parse_test(args).map(Comando::Test),
         Some("new") => parse_new(args).map(Comando::New),
+        Some("icons") => parse_icons(args).map(Comando::IconsAdd),
         Some(otro) => Err(format!("comando desconocido: {otro}")),
     }
 }
@@ -132,6 +138,16 @@ fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Opciones
     Ok(new_cmd::Opciones { nombre, template })
 }
 
+fn parse_icons(mut args: impl Iterator<Item = String>) -> Result<icons_cmd::Opciones, String> {
+    match args.next().as_deref() {
+        Some("add") => icons_cmd::parse_args(args),
+        Some(otro) => Err(format!(
+            "subcomando desconocido para kai icons: {otro} (add)"
+        )),
+        None => Err("kai icons necesita un subcomando (add)".into()),
+    }
+}
+
 fn main() -> ExitCode {
     match parse(std::env::args().skip(1)) {
         Ok(Comando::Ayuda) => {
@@ -167,6 +183,13 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai new: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Comando::IconsAdd(opciones)) => match icons_cmd::run(&opciones) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai icons add: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -225,6 +248,13 @@ mod tests {
             Ok(Comando::New(new_cmd::Opciones {
                 nombre: "hola".into(),
                 template: new_cmd::Template::Basic,
+            }))
+        );
+        assert_eq!(
+            parse_str(&["icons", "add", "search"]),
+            Ok(Comando::IconsAdd(icons_cmd::Opciones {
+                nombre: "search".into(),
+                from: None,
             }))
         );
         assert_eq!(

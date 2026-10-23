@@ -37,6 +37,8 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
     let id = format!("dev.kai.{}", sanitize_id(crate_name));
     fs::create_dir_all(dir.join("src")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("tests")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir.join("assets/icons")).map_err(|e| e.to_string())?;
+    fs::write(dir.join("assets/icons/.gitkeep"), "").map_err(|e| e.to_string())?;
 
     fs::write(
         dir.join("kai.toml"),
@@ -136,7 +138,10 @@ const GITIGNORE: &str = "/target/\n/Cargo.lock\n";
 
 fn readme(nombre: &str) -> String {
     format!(
-        "# {nombre}\n\nGenerado con `kai new`. Flujo: `kai doctor` → `kai test` → `kai dev`.\n"
+        "# {nombre}\n\nGenerado con `kai new`. Flujo: `kai doctor` → `kai test` → `kai dev`.\n\n\
+Iconos propios: `kai icons add <nombre>` (Lucide del crate kai) o\n\
+`kai icons add ./mi.svg --name foo`. Quedan en `assets/icons/`; en Rust:\n\
+`kai::element::icon_svg(include_str!(\"../assets/icons/foo.svg\"))`.\n"
     )
 }
 
@@ -163,6 +168,7 @@ mod tests {
         assert!(nombre.join("kai.toml").is_file());
         assert!(nombre.join("Cargo.toml").is_file());
         assert!(nombre.join("src/main.rs").is_file());
+        assert!(nombre.join("assets/icons").is_dir());
         let toml = fs::read_to_string(nombre.join("kai.toml")).unwrap();
         assert!(toml.contains("[app]"));
         assert!(toml.contains("[dev]"));
