@@ -1,6 +1,6 @@
 # 16 — Widget `document`: mini Word dentro de Kai
 
-**Fase:** esqueleto hecho (MSRV 1.95, `Kind::Document`, demo). Tipar / IME / páginas = fase 0+. Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
+**Fase:** fase 0 hecha (MSRV 1.95, tipar / IME / ⌘B / undo / toolbar). Páginas = fase 1+. Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
 
 La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordcraft) (WordCraft, ArtCraft; MIT OR Apache-2.0; clean-room). La información de capas y crates se tomó del README y de [`docs/architecture.md`](https://github.com/storytold/wordcraft/blob/master/docs/architecture.md) el **21-oct-2026**. Fijar un `rev` de Git y volver a leer manifests antes de depender.
 
@@ -136,10 +136,11 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 |---|---|
 | Guía (este documento) | Hecha (21-oct-2026) |
 | Spike §4 / §0 (crate aislado + display list) | **Hecho (23-oct-2026)** — ver §10 |
-| Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in; esqueleto sin tipar) |
-| `Kind::Document`, paint, hit-test | **Hecho** (paint Quad hoja; sin tipar / IME) |
-| Demo sección Documento | **Hecho** (Datos → Documento) |
+| Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in) |
+| `Kind::Document`, paint, hit-test | **Hecho** — Session WordCraft por `WidgetId`; tipar / IME / selección / ⌘B / undo |
+| Demo sección Documento | **Hecho** (Datos → Documento; toolbar Kai; markdown en el modelo) |
 | Subida de MSRV | **Hecho** — 1.95 |
+| Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp; paint bridge `TextStore`→`DrawOp::Text` (deuda atlas WordCraft en fase 1) |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 

@@ -8,6 +8,9 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+
+- **Widget `document` — fase 0 (nota rica):** con `feature = "document"`, una `wordcraft_engine::Session` por `WidgetId` tipa (IME/teclas), selecciona, aplica `format.bold` / `format.italic` / `para.bullets` / `edit.undo` / `edit.redo`, y pinta la display list como `DrawOp::{Text, Quad}`. Demo Datos → Documento con toolbar Kai y persistencia Markdown en el modelo. Comandos públicos `format.bold`, `format.italic`, `para.bullets`, `edit.undo`, `edit.redo`. Bridge temporal de glifos vía `TextStore` (deuda fase 1: atlas WordCraft). Sin egui / vello_cpu / dsp-27.
+
 - **Corte A1 (Etapa 5 / P17–P18):** `kai.toml` parseado por `kai-cli`; comandos `kai doctor`, `kai test`, `kai new`; `kai dev` lee `[dev]` y observa el manifiesto. Ejemplo en `kai-ui-desktop/kai.toml`. Fuera de este corte: `commands`/`mcp` CLI, bundle/firma (P20), runtime leyendo el manifiesto.
 
 - **Frontera pública — `Color`:** `kai::Color` / `kai::color` con `parse_hex` / `hex` / `to_hex`. Las apps no deben usar `kai::render::Color` (módulo `#[doc(hidden)]`). `fixtures/external-app` compila contra la ruta estable. DSP desktop aún importa `kai::render::Color` (sigue compilando mientras `render` sea `pub` oculto); migrar a `kai::Color`.
