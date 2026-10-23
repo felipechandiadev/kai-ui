@@ -17,6 +17,8 @@
 //! from the tables of `docs/dev/11-tema-appkit.md`.
 
 mod appkit;
+#[cfg(test)]
+mod contrast;
 mod generation;
 mod kai_tokens;
 

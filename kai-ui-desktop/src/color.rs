@@ -90,7 +90,56 @@ impl Color {
             f32::from(self.a) / 255.0,
         ]
     }
+
+    /// Source-over composite of this (possibly translucent) color onto an
+    /// opaque `background`, in straight-alpha sRGB. Used before WCAG checks
+    /// for AppKit label colors that carry alpha.
+    pub fn composite_over(self, background: Self) -> Self {
+        let a = f32::from(self.a) / 255.0;
+        let channel = |fg: u8, bg: u8| (f32::from(fg) * a + f32::from(bg) * (1.0 - a)).round() as u8;
+        Self {
+            r: channel(self.r, background.r),
+            g: channel(self.g, background.g),
+            b: channel(self.b, background.b),
+            a: 255,
+        }
+    }
+
+    /// Relative luminance (WCAG 2.x), after compositing onto opaque white if
+    /// this color is translucent and no background was given via
+    /// [`Self::contrast_ratio`].
+    pub fn relative_luminance(self) -> f64 {
+        let opaque = if self.a == 255 {
+            self
+        } else {
+            self.composite_over(Self::rgb(255, 255, 255))
+        };
+        let r = srgb_to_linear(opaque.r) as f64;
+        let g = srgb_to_linear(opaque.g) as f64;
+        let b = srgb_to_linear(opaque.b) as f64;
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// WCAG 2 contrast ratio between this foreground and `background`.
+    /// Translucent foregrounds are composited onto `background` first.
+    pub fn contrast_ratio(self, background: Self) -> f64 {
+        let fg = if self.a == 255 {
+            self
+        } else {
+            self.composite_over(background)
+        };
+        let bg = if background.a == 255 {
+            background
+        } else {
+            background.composite_over(Self::rgb(255, 255, 255))
+        };
+        let l1 = fg.relative_luminance();
+        let l2 = bg.relative_luminance();
+        let (lighter, darker) = if l1 >= l2 { (l1, l2) } else { (l2, l1) };
+        (lighter + 0.05) / (darker + 0.05)
+    }
 }
+
 
 pub fn srgb_to_linear(component: u8) -> f32 {
     let c = f32::from(component) / 255.0;
@@ -138,5 +187,21 @@ mod tests {
         ] {
             assert_eq!(Color::parse_hex(text), None, "{text:?}");
         }
+    }
+
+    #[test]
+    fn black_on_white_is_21_to_1() {
+        let ratio = Color::rgb(0, 0, 0).contrast_ratio(Color::rgb(255, 255, 255));
+        assert!((ratio - 21.0).abs() < 0.01, "{ratio}");
+    }
+
+    #[test]
+    fn translucent_label_composites_before_contrast() {
+        let label = Color::rgba(0, 0, 0, 216);
+        let white = Color::rgb(255, 255, 255);
+        let composed = label.composite_over(white);
+        assert_eq!(composed, Color::rgb(39, 39, 39));
+        let ratio = label.contrast_ratio(white);
+        assert!(ratio > 14.0, "{ratio}");
     }
 }
