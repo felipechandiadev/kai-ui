@@ -72,6 +72,8 @@ Mientras el diálogo está abierto, los clics fuera de él, los atajos y el men�
 
 **Plazo y cancelación:** si la persona no responde en 30 s, el agente recibe «contador.reiniciar no terminó en 30 s (¿esperaba confirmación?)» y el diálogo se cierra sin ejecutar nada. Lo mismo pasa si el cliente cancela la llamada (`notifications/cancelled`). En los dos casos la auditoría la registra como cancelada.
 
+**Comandos async (§7.3 / Paso 15):** una acción puede dejar la invocación abierta marcando el efecto con `.completes(invocation)` (p. ej. `current_invocation()` en `update`). El agente no recibe la respuesta hasta que llega el `Msg` de la tarea y se aplica; entonces corre el `.returns` o responde `null`. `botones.simular_espera` lo hace en la demo. Si se cancela la tarea (`.keyed` + `cancel`), la llamada MCP o vence el plazo de 30 s, el agente recibe un error y la auditoría queda como cancelada — no hay éxito tardío.
+
 **Auditoría:** cada acción pedida por JSON queda registrada en memoria (las últimas 500), con su origen (agente con su cliente, o script), la entrada redactada, el resultado y la duración. Las rechazadas también. Por ahora solo se lee desde los tests (`TestApp::audit_log`).
 
 ## 5. Qué revisar
