@@ -5,7 +5,7 @@
 //! the call waits for «Permitir una vez», «Permitir en esta sesión» or
 //! «Rechazar». Other agent calls wait behind it, in order.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Instant, SystemTime};
 
 use serde_json::Value;
@@ -17,7 +17,7 @@ use crate::commands::{
 use crate::components::{ButtonVariant, Dialog, button, themed};
 use crate::devtools::MsgSource;
 use crate::element::{Element, Role, WidgetId, div, text};
-use crate::runtime::App;
+use crate::runtime::{App, InvocationId, with_current_invocation};
 use crate::ui_engine::Intent;
 
 /// Test id of the confirmation dialog. Its buttons are
@@ -86,6 +86,8 @@ struct AgentStatus {
 pub(super) struct Agents {
     confirmation: Option<Confirmation>,
     waiting: VecDeque<Pending>,
+    /// Action calls waiting for an [`Effects::completes`] task (13 §7.3).
+    deferred: HashMap<InvocationId, Pending>,
     /// Destructive actions the person allowed for the rest of the session.
     allowed: HashSet<String>,
     status: Option<AgentStatus>,
@@ -121,9 +123,21 @@ impl<A: App> Session<A> {
         }
     }
 
-    /// The agent stopped waiting for call `id`: close its dialog or drop it
-    /// from the queue. The model does not change.
+    /// The agent stopped waiting for call `id`: close its dialog, drop it
+    /// from the queue, or fail a deferred async completion. The model does
+    /// not change.
     pub fn cancel_agent_call(&mut self, id: u64) {
+        let invocation = InvocationId(id);
+        if let Some(pending) = self.agents.deferred.get(&invocation) {
+            let command = pending.call.command.clone();
+            self.tasks.forget_completes(invocation);
+            self.fail_deferred(
+                invocation,
+                CommandError::new(format!("{command} se canceló antes de terminar")),
+                Outcome::Cancelled,
+            );
+            return;
+        }
         let open = self.agents.confirmation.as_ref();
         if open.is_some_and(|confirmation| confirmation.pending.call.id == id) {
             if let Some(confirmation) = self.close_confirmation() {
@@ -268,25 +282,164 @@ impl<A: App> Session<A> {
     }
 
     fn run(&mut self, pending: Pending) {
+        let command = pending.call.command.clone();
+        let origin = Origin::Agent {
+            client: pending.call.client.clone(),
+        };
+        let source = MsgSource::Agent(pending.call.client.clone());
+        let invocation = InvocationId(pending.call.id);
+
+        if self.registry.has_query(&command) {
+            let result = self.with_source(source, |session| {
+                session
+                    .registry
+                    .run_query(&session.app, &command, pending.call.input.clone())
+            });
+            (pending.call.reply)(result);
+            return;
+        }
+
+        let input = pending.call.input.clone();
+        let redacted = self.redacted(&command, &input);
+        let started_action = self.with_source(source, |session| {
+            with_current_invocation(Some(invocation), || {
+                session.run_action_message(&command, input)
+            })
+        });
+
+        match started_action {
+            Err(error) => {
+                let outcome = Outcome::Failed(error.message.clone());
+                self.agents.log.push(AuditEntry {
+                    at: pending.at,
+                    origin,
+                    command: command.clone(),
+                    input: redacted,
+                    outcome,
+                    duration: pending.started.elapsed(),
+                });
+                (pending.call.reply)(Err(error));
+            }
+            Ok(()) if self.tasks.completes_pending(invocation) => {
+                if let Some(state) = self.command_state(&command)
+                    && state.kind == CommandKind::Action
+                {
+                    let title = state.title;
+                    if let Some(status) = &mut self.agents.status {
+                        status.last = Some(title);
+                        self.invalidate();
+                    }
+                }
+                self.agents.deferred.insert(invocation, pending);
+            }
+            Ok(()) => {
+                let result = match self.registry.returns(&command) {
+                    Some(query) => self.registry.run_query(
+                        &self.app,
+                        query,
+                        Value::Object(Default::default()),
+                    ),
+                    None => Ok(Value::Null),
+                };
+                let outcome = match &result {
+                    Ok(_) => Outcome::Done,
+                    Err(error) => Outcome::Failed(error.message.clone()),
+                };
+                self.agents.log.push(AuditEntry {
+                    at: pending.at,
+                    origin,
+                    command: command.clone(),
+                    input: redacted,
+                    outcome,
+                    duration: pending.started.elapsed(),
+                });
+                if result.is_ok()
+                    && let Some(state) = self.command_state(&command)
+                    && state.kind == CommandKind::Action
+                {
+                    let title = state.title;
+                    if let Some(status) = &mut self.agents.status {
+                        status.last = Some(title);
+                        self.invalidate();
+                    }
+                }
+                (pending.call.reply)(result);
+            }
+        }
+    }
+
+    /// Send the action's message through `update` without answering the
+    /// agent yet. Used by [`Self::run`] so [`Effects::completes`] can keep
+    /// the call open.
+    fn run_action_message(
+        &mut self,
+        id: &str,
+        input: Value,
+    ) -> Result<(), CommandError> {
+        let msg = self.command_message(id, input)?;
+        let origin = self.command_origin(id);
+        self.with_task_origin(origin, |session| session.send(msg));
+        Ok(())
+    }
+
+    /// Answer a deferred agent call after its completing task's message
+    /// was applied.
+    pub(super) fn finish_deferred(&mut self, invocation: InvocationId) {
+        let Some(pending) = self.agents.deferred.remove(&invocation) else {
+            return;
+        };
         let Pending { call, at, started } = pending;
         let origin = Origin::Agent {
             client: call.client.clone(),
         };
-        let source = MsgSource::Agent(call.client.clone());
-        let result = self.with_source(source, |session| {
-            session.call_as(origin, &call.command, call.input, at, started)
+        let result = match self.registry.returns(&call.command) {
+            Some(query) => self.registry.run_query(
+                &self.app,
+                query,
+                Value::Object(Default::default()),
+            ),
+            None => Ok(Value::Null),
+        };
+        let outcome = match &result {
+            Ok(_) => Outcome::Done,
+            Err(error) => Outcome::Failed(error.message.clone()),
+        };
+        self.agents.log.push(AuditEntry {
+            at,
+            origin,
+            command: call.command.clone(),
+            input: self.redacted(&call.command, &call.input),
+            outcome,
+            duration: started.elapsed(),
         });
-        if result.is_ok()
-            && let Some(state) = self.command_state(&call.command)
-            && state.kind == CommandKind::Action
-        {
-            let title = state.title;
-            if let Some(status) = &mut self.agents.status {
-                status.last = Some(title);
-                self.invalidate();
-            }
-        }
         (call.reply)(result);
+    }
+
+    /// Fail a deferred call whose task was cancelled or panicked.
+    pub(super) fn fail_deferred_task(&mut self, invocation: InvocationId) {
+        let command = self
+            .agents
+            .deferred
+            .get(&invocation)
+            .map(|pending| pending.call.command.clone())
+            .unwrap_or_else(|| "la llamada".into());
+        self.fail_deferred(
+            invocation,
+            CommandError::new(format!("{command} no terminó (tarea cancelada o fallida)")),
+            Outcome::Cancelled,
+        );
+    }
+
+    pub(super) fn fail_deferred(
+        &mut self,
+        invocation: InvocationId,
+        error: CommandError,
+        outcome: Outcome,
+    ) {
+        let Some(pending) = self.agents.deferred.remove(&invocation) else {
+            return;
+        };
+        self.finish(pending, outcome, Err(error));
     }
 
     fn call_as(

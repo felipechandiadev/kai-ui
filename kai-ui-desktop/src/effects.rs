@@ -159,10 +159,12 @@ mod tests {
         assert!(inbox.take().is_empty());
     }
 
+    use crate::commands::{Action, CommandRegistry, Outcome};
     use crate::components::{ButtonVariant, button};
     use crate::element::{Element, Role, div, text};
-    use crate::runtime::{App, Effects, Subscriptions};
+    use crate::runtime::{App, Effects, Subscriptions, current_invocation};
     use crate::testing::{By, TestApp};
+    use serde_json::json;
 
     /// Closed until [`Gate::open`]: tasks that wait on it stay running.
     #[derive(Clone, Default)]
@@ -300,7 +302,7 @@ mod tests {
         assert_eq!(found, [1, 2]);
         assert_eq!(
             format!("{:?}", Effects::perform(|| 1, Msg::Found).keyed("k")),
-            r#"[perform(key: Some("k"))]"#
+            r#"[perform(key: Some("k"), completes: None)]"#
         );
     }
 
@@ -494,5 +496,153 @@ mod tests {
         assert_eq!(app.app().ticks, 1);
         app.advance(Duration::from_millis(1));
         assert_eq!(app.app().ticks, 2);
+    }
+
+    /// App whose exposed action starts a keyed task that completes the
+    /// agent invocation when the result message is applied (13 §7.3).
+    #[derive(Clone, Debug, PartialEq)]
+    enum AgentMsg {
+        Start,
+        Cancel,
+        Done(u32),
+        Sync,
+    }
+
+    #[derive(Default)]
+    struct AgentWork {
+        gate: Gate,
+        done: Vec<u32>,
+        syncs: u32,
+    }
+
+    #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
+    struct Empezar;
+
+    impl Action for Empezar {
+        type App = AgentWork;
+        const ID: &'static str = "trabajo.empezar";
+        const TITLE: &'static str = "Empezar";
+        fn into_msg(self) -> AgentMsg {
+            AgentMsg::Start
+        }
+    }
+
+    #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
+    struct Sincrono;
+
+    impl Action for Sincrono {
+        type App = AgentWork;
+        const ID: &'static str = "trabajo.sincrono";
+        const TITLE: &'static str = "Síncrono";
+        fn into_msg(self) -> AgentMsg {
+            AgentMsg::Sync
+        }
+    }
+
+    impl App for AgentWork {
+        type Msg = AgentMsg;
+
+        fn commands(registry: &mut CommandRegistry<Self>) {
+            registry.action::<Empezar>().expose();
+            registry.action::<Sincrono>().expose();
+        }
+
+        fn title(&self) -> String {
+            "Agente".into()
+        }
+
+        fn update(&mut self, msg: AgentMsg) -> Effects<AgentMsg> {
+            match msg {
+                AgentMsg::Start => {
+                    let gate = self.gate.clone();
+                    let mut effect = Effects::perform(
+                        move || {
+                            gate.pass();
+                            42u32
+                        },
+                        AgentMsg::Done,
+                    )
+                    .keyed("trabajo");
+                    if let Some(invocation) = current_invocation() {
+                        effect = effect.completes(invocation);
+                    }
+                    return effect;
+                }
+                AgentMsg::Cancel => return Effects::cancel("trabajo"),
+                AgentMsg::Done(n) => self.done.push(n),
+                AgentMsg::Sync => self.syncs += 1,
+            }
+            Effects::none()
+        }
+
+        fn view(&self) -> Element<AgentMsg> {
+            div().children([
+                button("Cancelar", ButtonVariant::Secondary).on_click(AgentMsg::Cancel),
+            ])
+        }
+    }
+
+    #[test]
+    fn an_agent_call_with_completes_answers_when_the_task_finishes() {
+        let mut app = TestApp::new(AgentWork::default());
+        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        assert!(reply.result().is_none(), "sigue abierta mientras la tarea corre");
+        assert!(app.tasks_pending());
+        assert!(app.app().done.is_empty());
+        app.app().gate.open();
+        app.run_until_idle();
+        assert_eq!(app.app().done, [42]);
+        let result = reply.result().expect("responde al terminar");
+        assert_eq!(result.unwrap(), json!(null));
+        let last = app.audit_log().last().unwrap();
+        assert_eq!(last.command, "trabajo.empezar");
+        assert_eq!(last.outcome, Outcome::Done);
+    }
+
+    #[test]
+    fn cancelling_a_keyed_completes_task_fails_the_agent_call() {
+        let mut app = TestApp::new(AgentWork::default());
+        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        assert!(reply.result().is_none());
+        press(&mut app, "Cancelar");
+        assert!(!app.tasks_pending());
+        let err = reply.result().expect("falla al cancelar").unwrap_err();
+        assert!(
+            err.message.contains("cancelada") || err.message.contains("fallida"),
+            "{}",
+            err.message
+        );
+        app.app().gate.open();
+        app.run_until_idle();
+        assert!(app.app().done.is_empty());
+        assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Cancelled);
+    }
+
+    #[test]
+    fn cancelling_the_agent_call_fails_a_deferred_invocation() {
+        let mut app = TestApp::new(AgentWork::default());
+        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        assert!(reply.result().is_none());
+        app.cancel_agent_call(reply.id());
+        let err = reply
+            .result()
+            .expect("falla al cancelar la invocación")
+            .unwrap_err();
+        assert!(err.message.contains("canceló"), "{}", err.message);
+        app.app().gate.open();
+        app.run_until_idle();
+        assert!(app.app().done.is_empty(), "el Msg de la tarea no llega");
+        assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Cancelled);
+    }
+
+    #[test]
+    fn a_sync_agent_action_still_answers_immediately() {
+        let mut app = TestApp::new(AgentWork::default());
+        let reply = app.agent_call("Cursor", "trabajo.sincrono", json!({}));
+        let result = reply.result().expect("síncrona responde ya");
+        assert_eq!(result.unwrap(), json!(null));
+        assert_eq!(app.app().syncs, 1);
+        assert!(!app.tasks_pending());
+        assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Done);
     }
 }

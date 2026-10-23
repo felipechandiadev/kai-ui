@@ -113,9 +113,7 @@ fn object(value: &Value) -> JsonObject {
     value.as_object().cloned().unwrap_or_default()
 }
 
-/// Identifies one tool call while the app answers it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct InvocationId(pub u64);
+pub use crate::runtime::InvocationId;
 
 /// A tool call waiting for the app: run `command` with `input` on the UI
 /// thread (as an agent call, so a `Destructive` action asks the person

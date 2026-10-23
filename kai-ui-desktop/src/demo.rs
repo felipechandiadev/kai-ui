@@ -37,7 +37,7 @@ use crate::maps::style::MapStyle;
 use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
-use crate::runtime::{self, App, Effects, PickFile, SaveFile};
+use crate::runtime::{self, App, Effects, PickFile, SaveFile, current_invocation};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -1361,10 +1361,14 @@ impl App for Demo {
                 return self.show_toast(toast);
             }
             Msg::Esperar(name) => {
-                return Effects::perform(
+                let mut effect = Effects::perform(
                     || std::thread::sleep(ESPERA),
                     move |()| Msg::EsperaLista(name),
                 );
+                if let Some(invocation) = current_invocation() {
+                    effect = effect.completes(invocation);
+                }
+                return effect;
             }
             Msg::EsperaLista(name) => self.espera = Some(name),
             Msg::GuardarYRecargar => {
@@ -6107,6 +6111,18 @@ mod tests {
         let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
         assert_eq!(reply.result(), DONE, "allowed for the session");
         assert_eq!(app.app().clicks, 0);
+    }
+
+    #[test]
+    fn an_agent_wait_command_answers_only_after_the_task_finishes() {
+        let mut app = TestApp::new(Demo::at(Seccion::Botones));
+        let reply = app.agent_call("Cursor", "botones.simular_espera", json!({}));
+        assert!(reply.result().is_none(), "queda abierta mientras corre la espera");
+        assert!(app.tasks_pending());
+        app.run_until_idle();
+        assert_eq!(reply.result(), Some(Ok(json!(null))));
+        assert_eq!(app.app().espera.as_deref(), Some("comando"));
+        assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Done);
     }
 
     #[test]

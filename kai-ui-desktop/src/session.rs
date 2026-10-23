@@ -49,8 +49,9 @@ use crate::render::text::TextStore;
 use crate::render::{DrawList, TextId};
 use crate::responder::Action;
 use crate::runtime::{
-    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, PickFile, SaveFile, SubKind, TaskDone,
-    action_message, build_view_with, cursor_for, pointer_target, report_once, selects_on_focus,
+    App, Effect, Effects, FilePicked, HELD_TIMER_RESUME, InvocationId, PickFile, SaveFile, SubKind,
+    TaskDone, action_message, build_view_with, cursor_for, pointer_target, report_once,
+    selects_on_focus,
 };
 use crate::style::Cursor;
 use crate::text_field::{ClipboardPort, TextFieldDecorations, TextFieldState};
@@ -340,6 +341,8 @@ struct WaitingTask<Msg> {
     key: Option<String>,
     origin: Option<TaskOrigin>,
     done: TaskDone<Msg>,
+    /// Agent / MCP call to answer when this task's message is applied.
+    completes: Option<InvocationId>,
 }
 
 /// [`Effects::perform`] tasks on the pool, by id, with what turns each
@@ -368,9 +371,33 @@ impl<Msg> Default for Tasks<Msg> {
 }
 
 impl<Msg> Tasks<Msg> {
-    fn forget(&mut self, key: &str) {
+    /// Drop pending tasks with `key`. Returns the agent calls they would
+    /// have completed, so the session can fail them.
+    fn forget(&mut self, key: &str) -> Vec<InvocationId> {
+        let mut dropped = Vec::new();
+        self.waiting.retain(|_, task| {
+            if task.key.as_deref() == Some(key) {
+                if let Some(id) = task.completes {
+                    dropped.push(id);
+                }
+                false
+            } else {
+                true
+            }
+        });
+        dropped
+    }
+
+    /// Drop pending tasks that would complete `id`.
+    fn forget_completes(&mut self, id: InvocationId) {
         self.waiting
-            .retain(|_, task| task.key.as_deref() != Some(key));
+            .retain(|_, task| task.completes != Some(id));
+    }
+
+    fn completes_pending(&self, id: InvocationId) -> bool {
+        self.waiting
+            .values()
+            .any(|task| task.completes == Some(id))
     }
 
     /// Origins of the tasks still running.
@@ -673,20 +700,35 @@ impl<A: App> Session<A> {
                         held: false,
                     });
                 }
-                Effect::Perform { key, task, done } => {
+                Effect::Perform {
+                    key,
+                    task,
+                    done,
+                    completes,
+                } => {
                     if let Some(key) = &key {
-                        self.tasks.forget(key);
+                        for id in self.tasks.forget(key) {
+                            self.fail_deferred_task(id);
+                        }
                     }
                     let id = self.tasks.spawn(task);
                     let origin = self.task_origin;
-                    self.tasks
-                        .waiting
-                        .insert(id, WaitingTask { key, origin, done });
+                    self.tasks.waiting.insert(
+                        id,
+                        WaitingTask {
+                            key,
+                            origin,
+                            done,
+                            completes,
+                        },
+                    );
                 }
                 Effect::Cancel(key) => {
                     self.timers
                         .retain(|timer| timer.key.as_deref() != Some(key.as_str()));
-                    self.tasks.forget(&key);
+                    for id in self.tasks.forget(&key) {
+                        self.fail_deferred_task(id);
+                    }
                 }
                 Effect::PickFile { request, done } => {
                     self.file_pick = Some(done);
@@ -739,16 +781,29 @@ impl<A: App> Session<A> {
                 ran = true;
                 continue;
             }
-            let Some(WaitingTask { origin, done, .. }) = self.tasks.waiting.remove(&id) else {
+            let Some(WaitingTask {
+                origin,
+                done,
+                completes,
+                ..
+            }) = self.tasks.waiting.remove(&id)
+            else {
                 continue;
             };
             if let Some(output) = output {
                 self.with_source(MsgSource::Task, |session| {
                     session.with_task_origin(origin, |session| session.send(done(output)));
                 });
+                if let Some(invocation) = completes {
+                    self.finish_deferred(invocation);
+                }
                 ran = true;
-            } else if origin.is_some() {
-                self.invalidate();
+            } else {
+                if let Some(invocation) = completes {
+                    self.fail_deferred_task(invocation);
+                } else if origin.is_some() {
+                    self.invalidate();
+                }
                 ran = true;
             }
         }
