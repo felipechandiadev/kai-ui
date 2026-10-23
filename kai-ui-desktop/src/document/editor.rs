@@ -12,7 +12,7 @@ use wordcraft_layout::display::{page_display, DisplayOptions, Draw};
 
 use crate::geometry::{Point, Rect};
 use crate::render::Color;
-use crate::text_field::ClipboardPort;
+use crate::text_field::{ClipboardImage, ClipboardPort};
 use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
 
 use super::{
@@ -354,12 +354,16 @@ impl DocumentEditor {
         changed || is_copy
     }
 
-    /// Copia la selección vía `edit.copy`: texto plano + HTML (runs) al [`ClipboardPort`].
+    /// Copia la selección vía `edit.copy`: texto plano + HTML (runs / tablas / imágenes) al
+    /// [`ClipboardPort`].
     ///
     /// WordCraft no emite RTF en copy; el host puede ofrecer RTF al pegar desde fuera.
+    /// El HTML se re-exporta con media embebida (`data:` URIs) y tablas enteras cuando la
+    /// selección cubre el story o una tabla completa — `edit.copy` solo no basta (fragmento
+    /// sin `doc.media`; selección de celdas aplana a párrafos).
     pub fn clipboard_copy(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         match self.session.run("edit.copy", &json!({})) {
-            Ok(v) => Self::write_copy_to_clipboard(clipboard, &v),
+            Ok(v) => self.write_copy_to_clipboard(clipboard, &v),
             Err(_) => false,
         }
     }
@@ -368,19 +372,25 @@ impl DocumentEditor {
     pub fn clipboard_cut(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         match self.session.run("edit.cut", &json!({})) {
             Ok(v) => {
-                let _ = Self::write_copy_to_clipboard(clipboard, &v);
+                let _ = self.write_copy_to_clipboard(clipboard, &v);
+                self.last_paint_key = None;
                 true
             }
             Err(_) => false,
         }
     }
 
-    /// Pega desde el host: HTML o RTF si hay, si no texto plano (`edit.paste`).
+    /// Pega desde el host: HTML o RTF si hay; si no, imagen RGBA del port; si no, texto plano.
     pub fn clipboard_paste(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         let text = clipboard.get_text().unwrap_or_default();
         let html = clipboard.get_html().ok().flatten().filter(|h| !h.trim().is_empty());
         let rtf = clipboard.get_rtf().ok().flatten().filter(|r| !r.trim().is_empty());
-        if text.is_empty() && html.is_none() && rtf.is_none() {
+        let image = if html.is_none() && rtf.is_none() && text.is_empty() {
+            clipboard.get_image().ok().flatten()
+        } else {
+            None
+        };
+        if text.is_empty() && html.is_none() && rtf.is_none() && image.is_none() {
             return false;
         }
         let mut payload = json!({});
@@ -389,24 +399,39 @@ impl DocumentEditor {
         }
         if let Some(html) = html {
             payload["html"] = json!(html);
+        } else if let Some(img) = image {
+            if let Some(html) = rgba_clipboard_image_to_html_img(&img) {
+                payload["html"] = json!(html);
+            } else {
+                return false;
+            }
         }
         if let Some(rtf) = rtf {
             payload["rtf"] = json!(rtf);
         }
-        self.session.run("edit.paste", &payload).is_ok()
+        let ok = self.session.run("edit.paste", &payload).is_ok();
+        if ok {
+            self.last_paint_key = None;
+        }
+        ok
     }
 
-    fn write_copy_to_clipboard(clipboard: &mut dyn ClipboardPort, v: &serde_json::Value) -> bool {
+    fn write_copy_to_clipboard(
+        &self,
+        clipboard: &mut dyn ClipboardPort,
+        v: &serde_json::Value,
+    ) -> bool {
         let text = v
             .get("text")
             .and_then(|t| t.as_str())
             .unwrap_or("")
             .to_owned();
-        let html = v
+        let engine_html = v
             .get("html")
             .and_then(|t| t.as_str())
             .filter(|h| !h.is_empty())
             .map(str::to_owned);
+        let html = clipboard_html_enriched(&self.session).or(engine_html);
         if let Some(html) = html {
             clipboard.set_html(html, Some(text)).is_ok()
         } else {
@@ -1002,6 +1027,135 @@ fn collect_display_at(
     }
 }
 
+/// HTML de clipboard con tablas e imágenes: re-exporta el fragmento WordCraft
+/// adjuntando `doc.media` (data URIs) y, si la selección cubre el story entero o una
+/// tabla completa, preserva `Block::Table` (el `edit.copy` de celdas aplana a párrafos).
+fn clipboard_html_enriched(session: &Session) -> Option<String> {
+    let frag = if session.selects_whole_story() {
+        session.doc.body_fragment()
+    } else if let Some(f) = fully_selected_table_fragment(session) {
+        f
+    } else if let Some(f) = session.clipboard.clone() {
+        f
+    } else {
+        return None;
+    };
+
+    let mut doc = frag.to_document();
+    attach_referenced_media(&session.doc, &mut doc);
+    let html = wordcraft_formats::html::export_fragment(&doc);
+    if html_looks_empty(&html) {
+        None
+    } else {
+        Some(html)
+    }
+}
+
+fn html_looks_empty(html: &str) -> bool {
+    let t = html
+        .replace("<meta charset=\"utf-8\">", "")
+        .replace("&nbsp;", "")
+        .replace("<p></p>", "")
+        .replace("<br>", "")
+        .replace("<br/>", "");
+    t.chars().all(|c| c.is_whitespace() || c == '<' || c == '>' || c == '/')
+        && !html.to_ascii_lowercase().contains("<table")
+        && !html.contains("<img")
+        && !html.contains("data:image")
+}
+
+fn fully_selected_table_fragment(session: &Session) -> Option<wordcraft_doc::edit::Fragment> {
+    use wordcraft_doc::edit::Fragment;
+    use wordcraft_doc::Block;
+
+    let cr = session.cell_range()?;
+    let block = session.doc.block(cr.story, &cr.table)?;
+    let table = block.as_table()?;
+    let last_row = table.rows.len().saturating_sub(1);
+    if cr.rows != (0, last_row) {
+        return None;
+    }
+    // Toda columna de la grilla: cols cubre 0..last_grid inclusive.
+    let last_col = table
+        .rows
+        .iter()
+        .map(|r| r.cells.len().saturating_sub(1))
+        .max()
+        .unwrap_or(0);
+    // CellRange.cols is grid span; require it covers the table width when possible.
+    if cr.cols.0 != 0 {
+        return None;
+    }
+    // Accept full-table select.all growth (rows+cols span the table).
+    let cols_span = cr.cols.1.saturating_sub(cr.cols.0);
+    if cols_span < last_col && cr.cols.1 < last_col {
+        return None;
+    }
+    Some(Fragment {
+        blocks: vec![Block::Table(table.clone())],
+        parts: Default::default(),
+    })
+}
+
+fn attach_referenced_media(src: &Document, dst: &mut Document) {
+    use wordcraft_doc::{Block, InlineObject};
+
+    let mut keys = std::collections::BTreeSet::new();
+    fn walk(blocks: &[std::sync::Arc<Block>], keys: &mut std::collections::BTreeSet<String>) {
+        for b in blocks {
+            match &**b {
+                Block::Para(p) => {
+                    for o in &p.objects {
+                        if let InlineObject::Image { media, .. } = o {
+                            keys.insert(media.clone());
+                        }
+                    }
+                }
+                Block::Table(t) => {
+                    for row in &t.rows {
+                        for cell in &row.cells {
+                            walk(&cell.blocks, keys);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    walk(&dst.body, &mut keys);
+    if keys.is_empty() {
+        // Objetos imagen sin media en el fragmento plano: copiar todo por si acaso
+        // (docs de clipboard son pequeños).
+        dst.media = src.media.clone();
+        return;
+    }
+    for k in keys {
+        if let Some(bytes) = src.media.get(&k) {
+            dst.media.insert(k, bytes.clone());
+        }
+    }
+}
+
+/// RGBA del port → `<img src="data:image/png;base64,…">` para `edit.paste` HTML.
+fn rgba_clipboard_image_to_html_img(img: &ClipboardImage) -> Option<String> {
+    use image::{ImageBuffer, ImageFormat, Rgba};
+    if img.width == 0
+        || img.height == 0
+        || img.bytes.len() != (img.width as usize) * (img.height as usize) * 4
+    {
+        return None;
+    }
+    let buf = ImageBuffer::<Rgba<u8>, _>::from_raw(img.width, img.height, img.bytes.clone())?;
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(buf)
+        .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)
+        .ok()?;
+    let b64 = base64_encode(&png);
+    Some(format!(
+        r#"<p><img src="data:image/png;base64,{b64}" width="{}" height="{}" alt=""/></p>"#,
+        img.width, img.height
+    ))
+}
+
 /// PNG 48×32 a rayas (demo / TestApp); WordCraft lo acepta vía `insert.picture`.
 fn demo_picture_png() -> Vec<u8> {
     use image::{ImageBuffer, ImageFormat, Rgba};
@@ -1441,6 +1595,7 @@ mod tests {
         text: Option<String>,
         html: Option<String>,
         rtf: Option<String>,
+        image: Option<ClipboardImage>,
     }
 
     impl ClipboardPort for MemClip {
@@ -1452,6 +1607,7 @@ mod tests {
             self.text = Some(text);
             self.html = None;
             self.rtf = None;
+            self.image = None;
             Ok(())
         }
 
@@ -1473,6 +1629,15 @@ mod tests {
 
         fn set_rtf(&mut self, rtf: String) -> Result<(), String> {
             self.rtf = Some(rtf);
+            Ok(())
+        }
+
+        fn get_image(&mut self) -> Result<Option<ClipboardImage>, String> {
+            Ok(self.image.clone())
+        }
+
+        fn set_image(&mut self, image: ClipboardImage) -> Result<(), String> {
+            self.image = Some(image);
             Ok(())
         }
     }
@@ -1516,6 +1681,7 @@ mod tests {
             text: Some("plain only".into()),
             html: Some("<p><strong>Bold HTML</strong></p>".into()),
             rtf: None,
+            image: None,
         };
         let mut ed = DocumentEditor::new("");
         assert!(ed.clipboard_paste(&mut clip));
@@ -1538,6 +1704,7 @@ mod tests {
             text: Some("Bold RTF".into()),
             html: None,
             rtf: Some(r"{\rtf1\ansi {\b Bold RTF}\par}".into()),
+            image: None,
         };
         let mut ed = DocumentEditor::new("");
         assert!(ed.clipboard_paste(&mut clip));
@@ -1551,6 +1718,169 @@ mod tests {
             "RTF \\b should become bold markdown: {md:?}"
         );
     }
+
+        #[test]
+    fn clipboard_table_html_roundtrip_across_editors() {
+        let mut clip = MemClip::default();
+        let mut src = DocumentEditor::new("");
+        assert!(src.run_cmd(&DocumentCmd::InsertTable));
+        assert_eq!(src.table_count(), 1);
+        assert!(src.apply_text_intent_clipboard(
+            TextIntent::InsertText("CeldaA".into()),
+            &mut clip
+        ));
+        // WordCraft: select.all crece celda → fila → tabla → documento.
+        for _ in 0..4 {
+            assert!(src.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
+        }
+        assert!(src.clipboard_copy(&mut clip));
+        let html = clip.html.clone().unwrap_or_default();
+        assert!(
+            html.to_lowercase().contains("<table"),
+            "copy of a table must publish HTML <table>: {html}"
+        );
+        assert!(
+            html.contains("CeldaA") || clip.text.as_deref().unwrap_or("").contains("CeldaA"),
+            "table cell text should appear in clipboard: html={html:?} text={:?}",
+            clip.text
+        );
+
+        let mut dst = DocumentEditor::new("");
+        assert_eq!(dst.table_count(), 0);
+        assert!(dst.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert_eq!(
+            dst.table_count(),
+            1,
+            "paste HTML table must recreate a table block; plain={:?} md={:?}",
+            dst.plain_text(),
+            dst.markdown()
+        );
+        assert!(
+            dst.plain_text().contains("CeldaA") || dst.markdown().contains("CeldaA"),
+            "cell text must survive: plain={:?} md={:?}",
+            dst.plain_text(),
+            dst.markdown()
+        );
+    }
+
+    #[test]
+    fn clipboard_picture_html_roundtrip_across_editors() {
+        let mut clip = MemClip::default();
+        let mut src = DocumentEditor::new("");
+        assert!(src.run_cmd(&DocumentCmd::InsertPicture));
+        assert!(
+            src.media_count() >= 1,
+            "source should store picture bytes in doc.media"
+        );
+        // Incluir el objeto imagen en la selección (documento vacío + picture).
+        for _ in 0..3 {
+            let _ = src.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip);
+        }
+        assert!(src.clipboard_copy(&mut clip));
+        let html = clip.html.clone().unwrap_or_default();
+        assert!(
+            html.contains("<img") || html.contains("data:image"),
+            "copy of a picture must publish HTML img/data URI: len={} snippet={}",
+            html.len(),
+            &html[..html.len().min(240)]
+        );
+
+        let mut dst = DocumentEditor::new("");
+        assert_eq!(dst.media_count(), 0);
+        assert!(dst.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert!(
+            dst.media_count() >= 1,
+            "paste HTML picture must recreate media; plain={:?} md={:?} html_len={}",
+            dst.plain_text(),
+            dst.markdown(),
+            html.len()
+        );
+        dst.refresh_paint();
+        assert!(
+            !dst.paint().images.is_empty(),
+            "pasted picture should paint"
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_html_table_from_external_markup() {
+        let mut clip = MemClip {
+            text: Some("A\tB\nC\tD".into()),
+            html: Some(
+                "<table border=\"1\"><tr><td>ExtA</td><td>ExtB</td></tr>\
+                 <tr><td>ExtC</td><td>ExtD</td></tr></table>"
+                    .into(),
+            ),
+            rtf: None,
+            image: None,
+        };
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert_eq!(
+            ed.table_count(),
+            1,
+            "external HTML table paste: plain={:?} md={:?}",
+            ed.plain_text(),
+            ed.markdown()
+        );
+        assert!(
+            ed.plain_text().contains("ExtA") || ed.markdown().contains("ExtA"),
+            "expected cell ExtA: {:?}",
+            ed.plain_text()
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_html_img_data_uri() {
+        // 1×1 PNG
+        let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let html = format!(
+            r#"<p>Antes</p><p><img src="data:image/png;base64,{png_b64}" alt="dot" width="48" height="48"/></p>"#
+        );
+        let mut clip = MemClip {
+            text: Some("Antes".into()),
+            html: Some(html),
+            rtf: None,
+            image: None,
+        };
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert!(
+            ed.media_count() >= 1,
+            "data URI img paste must create media; plain={:?} md={:?}",
+            ed.plain_text(),
+            ed.markdown()
+        );
+        ed.refresh_paint();
+        assert!(
+            !ed.paint().images.is_empty(),
+            "pasted data URI should paint as DocumentImage"
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_raw_rgba_image_when_no_html() {
+        let mut clip = MemClip {
+            text: None,
+            html: None,
+            rtf: None,
+            image: Some(ClipboardImage {
+                width: 2,
+                height: 1,
+                bytes: vec![255, 0, 0, 255, 0, 255, 0, 255],
+            }),
+        };
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert!(
+            ed.media_count() >= 1,
+            "raw clipboard image must become media; md={:?}",
+            ed.markdown()
+        );
+        ed.refresh_paint();
+        assert!(!ed.paint().images.is_empty(), "raw image should paint");
+    }
+
 
     #[test]
     fn ime_preedit_shows_glyphs_and_underline_without_committing() {

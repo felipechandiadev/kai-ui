@@ -65,6 +65,26 @@ pub trait ClipboardPort {
     fn set_rtf(&mut self, _rtf: String) -> Result<(), String> {
         Ok(())
     }
+
+    /// Raw image pixels from the host clipboard (`None` = absent / unsupported).
+    /// Bytes are tightly packed RGBA8, row-major; `width * height * 4 == bytes.len()`.
+    /// arboard exposes this; used by Document paste when there is no HTML/RTF/text.
+    fn get_image(&mut self) -> Result<Option<ClipboardImage>, String> {
+        Ok(None)
+    }
+
+    /// Place an RGBA8 image on the host clipboard. Default: no-op success.
+    fn set_image(&mut self, _image: ClipboardImage) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// RGBA8 bitmap for [`ClipboardPort`] image get/set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClipboardImage {
+    pub width: u32,
+    pub height: u32,
+    pub bytes: Vec<u8>,
 }
 
 pub struct SystemClipboard;
@@ -94,6 +114,28 @@ impl ClipboardPort for SystemClipboard {
     fn set_html(&mut self, html: String, alt_text: Option<String>) -> Result<(), String> {
         arboard::Clipboard::new()
             .and_then(|mut clipboard| clipboard.set_html(html, alt_text))
+            .map_err(|error| error.to_string())
+    }
+
+    fn get_image(&mut self) -> Result<Option<ClipboardImage>, String> {
+        match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_image()) {
+            Ok(img) => Ok(Some(ClipboardImage {
+                width: img.width as u32,
+                height: img.height as u32,
+                bytes: img.bytes.into_owned(),
+            })),
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn set_image(&mut self, image: ClipboardImage) -> Result<(), String> {
+        let data = arboard::ImageData {
+            width: image.width as usize,
+            height: image.height as usize,
+            bytes: image.bytes.into(),
+        };
+        arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_image(data))
             .map_err(|error| error.to_string())
     }
 }

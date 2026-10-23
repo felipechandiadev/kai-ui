@@ -32,6 +32,7 @@ document = [
     "dep:wordcraft-engine",
     "dep:wordcraft-docx",
     "dep:wordcraft-pdf",
+    "dep:wordcraft-formats",
     "dep:swash",
 ]
 default = ["net"]
@@ -39,7 +40,7 @@ default = ["net"]
 [dependencies]
 accesskit = "0.25.1"
 accesskit_winit = { version = "0.34.1", default-features = false, features = ["rwh_06"] }
-arboard = { version = "3.7.0", default-features = false }
+arboard = { version = "3.7.0", default-features = false, features = ["image-data"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 # Gzip of PMTiles directories and map tiles (`kai::maps::pmtiles`).
 flate2 = "1.1"
@@ -83,6 +84,7 @@ wordcraft-layout = { git = "https://github.com/storytold/wordcraft", rev = "3a47
 wordcraft-engine = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
 wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
 wordcraft-pdf = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+wordcraft-formats = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
 swash = { version = "0.2.10", optional = true, default-features = false, features = ["std", "scale"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

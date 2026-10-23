@@ -143,12 +143,16 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 - **Cancel / Enabled / Disabled / preedit vacío:** limpia el overlay.
 - WordCraft no modela composition nativa; el techo es overlay en paint/caret. Candidatos IME del SO siguen en el panel del sistema (fuera del cuerpo).
 
-## Clipboard (rich)
+## Clipboard (rich + media)
 
-- **Copy/Cut:** WordCraft `edit.copy` / `edit.cut` → `{ text, html? }`. Kai escribe ambos en `ClipboardPort` (`set_html` + alt text). En macOS, `SystemClipboard` usa arboard `set_html` (`NSPasteboardTypeHTML`).
-- **Paste:** lee `get_html` / `get_rtf` / `get_text` y llama `edit.paste` con lo disponible. HTML gana formato entre apps; RTF solo si el port lo aporta (memoria / host custom) — **arboard no lee/escribe RTF**.
+- **Copy/Cut:** WordCraft `edit.copy` / `edit.cut` → `{ text, html? }`. Kai escribe texto + HTML en `ClipboardPort` (`set_html` + alt text). En macOS, `SystemClipboard` usa arboard `set_html` (`NSPasteboardTypeHTML`).
+- **HTML enriquecido (tablas / imágenes):** el HTML de `edit.copy` aplana celdas a párrafos y `Fragment::to_document` omite `doc.media` (imágenes → alt). Tras el engine, Kai re-exporta con `wordcraft_formats::html::export_fragment` adjuntando media referenciada (data-URI). Si la selección cubre el story entero o una tabla completa (`selects_whole_story` / `cell_range`), preserva `Block::Table` en el HTML.
+- **Paste:** lee `get_html` / `get_rtf` / `get_text`; si no hay ninguno, `get_image` (RGBA) → PNG data-URI HTML → `edit.paste`. HTML externo con `<table>` / `<img src="data:…">` ya entra vía WordCraft. Preferencia: HTML > RTF > imagen cruda > plano.
+- **Imagen en el port:** `ClipboardPort::{get,set}_image` + `ClipboardImage` (RGBA). arboard feature `image-data` en macOS (`NSPasteboard` TIFF/PNG según host). Copy de picture publica HTML (data-URI), no fuerza `set_image` al SO.
+- **RTF:** solo paste si el port lo aporta (MemClip / host custom). **arboard no lee/escribe RTF** — techo SO documentado.
 - **Interno mismo Session:** si el texto del port coincide con el fragmento WordCraft, se reutiliza el fragmento rico sin reimportar.
-- **Fuera de alcance:** export RTF en copy; tablas/imágenes/mathml en el port del SO; Paste Special UI.
+- **Tests:** `clipboard_table_html_roundtrip_across_editors`, `clipboard_picture_html_roundtrip_across_editors`, paste HTML table/img externo, paste RGBA crudo.
+- **Fuera de alcance (deuda):** export RTF en copy; Paste Special UI (paso 6); mathml; copy de subconjunto de celdas como `<table>` (sigue aplanado a párrafos); `set_image` en copy hacia hosts que solo lean bitmap sin HTML.
 
 ## 9. Estado
 
@@ -166,8 +170,8 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Home+Insert+Layout+Review+References+View (`RibbonMode::Full`); ver guía [17](17-document-ribbon.md); Design/keytips/Backstage = deuda |
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
-| Clipboard cuerpo | **Hecho (rich HTML, 23-oct-2026)** — ⌘C/X/V → `edit.copy`/`cut`/`paste` + `ClipboardPort` (texto + HTML; RTF en paste si el port lo trae). Techo: ver § clipboard |
-| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; tablas/imágenes en clipboard; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
+| Clipboard cuerpo | **Hecho (rich HTML + media, 23-oct-2026)** — texto/HTML/tablas/imágenes vía HTML enriquecido + `ClipboardImage`; RTF paste si el port lo trae. Techo: ver § clipboard |
+| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
