@@ -1429,6 +1429,7 @@ impl<Msg: Clone> Element<Msg> {
                 || h.on_view_change.is_some()
                 || h.on_area_click.is_some()
                 || h.on_edit.is_some()
+                || h.on_document_change.is_some()
             {
                 handlers.push((element.id, h.clone()));
             }

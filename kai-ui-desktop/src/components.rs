@@ -2853,6 +2853,7 @@ mod tests {
             text_fields: &[],
             background: Default::default(),
             time: None,
+            documents: &[],
         });
         let rings = list
             .ops

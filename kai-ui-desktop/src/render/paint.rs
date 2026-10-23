@@ -17,6 +17,7 @@ use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
 use crate::style::ObjectFit;
 use crate::text_field::TextFieldDecorations;
 use crate::theme::Theme;
+use crate::document::DocumentPaint;
 
 const SCROLLBAR_WIDTH: f32 = 4.0;
 const SCROLLBAR_INSET: f32 = 2.0;
@@ -38,6 +39,8 @@ pub struct PaintInput<'a> {
     /// Seconds on the session's clock, for [`Motion`](crate::element::Motion);
     /// `None` paints every element where layout put it.
     pub time: Option<f32>,
+    /// Paint snapshot of every document editor (WordCraft display list).
+    pub documents: &'a [(WidgetId, &'a DocumentPaint)],
 }
 
 struct Painter<'a> {
@@ -224,7 +227,22 @@ impl Painter<'_> {
                 crate::charts::paint(&mut self.list, node.padding_box, spec, self.input.theme);
             }
             Content::Document(spec) => {
-                crate::document::paint(&mut self.list, node.padding_box, spec, self.input.theme);
+                let paint = self
+                    .input
+                    .documents
+                    .iter()
+                    .find(|(id, _)| *id == node.id)
+                    .map(|(_, p)| *p);
+                let focused = self.input.focused == Some(node.id);
+                crate::document::paint_document(
+                    &mut self.list,
+                    node.padding_box,
+                    spec,
+                    self.input.theme,
+                    node.id,
+                    paint.unwrap_or(&DocumentPaint::default()),
+                    focused,
+                );
             }
         }
         let mut children = node.children.clone();
@@ -551,6 +569,7 @@ mod tests {
             text_fields: fields,
             background: BackgroundEffect::NONE,
             time: None,
+            documents: &[],
         })
     }
 
@@ -587,6 +606,7 @@ mod tests {
             text_fields: &[],
             background,
             time: None,
+            documents: &[],
         };
         let root = layout.root().unwrap().bounds;
         let root_fill = |list: &DrawList| {

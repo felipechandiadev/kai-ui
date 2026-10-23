@@ -178,7 +178,8 @@ fn render_with_layout<Msg>(
         text_fields: &fields,
         background,
         time: Some(seconds),
-    });
+                documents: &[],
+        });
     let mut list = list;
     list.background = list.background.map(|layer| layer.at(seconds));
     let (width, height) = (

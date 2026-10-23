@@ -43,6 +43,8 @@ use crate::maps::camera::CameraState;
 use crate::maps::editor::PolygonEdit;
 use crate::maps::labels::Labels;
 use crate::maps::tiles::{SourceKey, TileResult, TileStore};
+#[cfg(feature = "document")]
+use crate::document::DocumentEditor;
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
@@ -193,6 +195,9 @@ pub(crate) struct Session<A: App> {
     tooltip_pressed: Option<WidgetId>,
     /// Camera of every map of the last rebuild.
     maps: HashMap<WidgetId, CameraState>,
+    /// WordCraft editor of every document widget (feature `document`).
+    #[cfg(feature = "document")]
+    documents: HashMap<WidgetId, DocumentEditor>,
     /// The map a pointer drag is moving.
     map_drag: Option<WidgetId>,
     /// Where the pointer went down on a map: released close by, it is a
@@ -636,6 +641,8 @@ impl<A: App> Session<A> {
             tooltip: None,
             tooltip_pressed: None,
             maps: HashMap::new(),
+            #[cfg(feature = "document")]
+            documents: HashMap::new(),
             map_drag: None,
             map_press: None,
             chart_press: None,
@@ -1127,7 +1134,14 @@ impl<A: App> Session<A> {
     /// Current contents of input `id`'s editor (what the user typed, even
     /// before the app echoes it back).
     pub fn field_value(&self, id: WidgetId) -> Option<String> {
-        self.text_fields.get(&id).map(TextFieldState::text)
+        if let Some(text) = self.text_fields.get(&id).map(TextFieldState::text) {
+            return Some(text);
+        }
+        #[cfg(feature = "document")]
+        if let Some(ed) = self.documents.get(&id) {
+            return Some(ed.plain_text());
+        }
+        None
     }
 
     /// Start recording every message sent to `update`.
@@ -1287,6 +1301,8 @@ impl<A: App> Session<A> {
         self.mark_busy_widgets();
         self.images.resolve(&mut self.tree);
         self.sync_maps();
+        #[cfg(feature = "document")]
+        self.sync_documents();
         self.tooltips.clear();
         collect_tooltips(&self.tree, &mut self.tooltips);
         if self
@@ -2261,6 +2277,29 @@ impl<A: App> Session<A> {
         let Some(id) = self.focused_text_field() else {
             return;
         };
+        #[cfg(feature = "document")]
+        if let Some(ed) = self.documents.get(&id) {
+            let Some(page) = self.layout.text_box(id) else {
+                return;
+            };
+            let caret = ed.paint().caret.unwrap_or(Rect {
+                height: 16.0,
+                ..Rect::default()
+            });
+            let (pw, ph) = ed.paint().page_size;
+            let scale = if pw > 0.0 && ph > 0.0 {
+                (page.width / pw).min(page.height / ph)
+            } else {
+                1.0
+            };
+            self.outbox.ime_cursor_area = Some(Rect {
+                x: page.x + caret.x * scale,
+                y: page.y + caret.y * scale,
+                width: 0.0,
+                height: (caret.height * scale).max(1.0),
+            });
+            return;
+        }
         let (Some(line), Some(field)) = (self.layout.text_box(id), self.text_fields.get_mut(&id))
         else {
             return;
@@ -2415,6 +2454,11 @@ impl<A: App> Session<A> {
     }
 
     fn apply_text_intent(&mut self, id: WidgetId, intent: TextIntent) {
+        #[cfg(feature = "document")]
+        if self.documents.contains_key(&id) {
+            self.apply_document_intent(id, intent);
+            return;
+        }
         let Some(field) = self.text_fields.get_mut(&id) else {
             return;
         };
@@ -3045,11 +3089,33 @@ impl<A: App> Session<A> {
         }
         if let Some(id) = self.dragging
             && let Some(local) = self.text_field_local(id)
-            && let Some(field) = self.text_fields.get_mut(&id)
         {
-            field.drag(&mut self.text.font_system, local);
-            self.update_ime_cursor_area();
-            redraw = true;
+            #[cfg(feature = "document")]
+            if let Some(ed) = self.documents.get_mut(&id) {
+                if let Some(page) = self.layout.text_box(id) {
+                    let page_local = crate::geometry::Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: page.width,
+                        height: page.height,
+                    };
+                    if ed.drag_to(local, page_local) {
+                        self.report_document_change(id);
+                        self.update_ime_cursor_area();
+                        redraw = true;
+                    }
+                }
+            } else if let Some(field) = self.text_fields.get_mut(&id) {
+                field.drag(&mut self.text.font_system, local);
+                self.update_ime_cursor_area();
+                redraw = true;
+            }
+            #[cfg(not(feature = "document"))]
+            if let Some(field) = self.text_fields.get_mut(&id) {
+                field.drag(&mut self.text.font_system, local);
+                self.update_ime_cursor_area();
+                redraw = true;
+            }
         }
         if redraw {
             self.invalidate();
@@ -3129,10 +3195,29 @@ impl<A: App> Session<A> {
             self.dragging = target.filter(|_| self.is_text_field(target) && !selected_on_focus);
             if let Some(id) = self.dragging
                 && let Some(local) = self.text_field_local(id)
-                && let Some(field) = self.text_fields.get_mut(&id)
             {
-                field.click_count(&mut self.text.font_system, local, clicks);
-                self.update_ime_cursor_area();
+                #[cfg(feature = "document")]
+                if let Some(ed) = self.documents.get_mut(&id) {
+                    if let Some(page) = self.layout.text_box(id) {
+                        let page_local = crate::geometry::Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            width: page.width,
+                            height: page.height,
+                        };
+                        ed.click(local, page_local, clicks);
+                        self.report_document_change(id);
+                        self.update_ime_cursor_area();
+                    }
+                } else if let Some(field) = self.text_fields.get_mut(&id) {
+                    field.click_count(&mut self.text.font_system, local, clicks);
+                    self.update_ime_cursor_area();
+                }
+                #[cfg(not(feature = "document"))]
+                if let Some(field) = self.text_fields.get_mut(&id) {
+                    field.click_count(&mut self.text.font_system, local, clicks);
+                    self.update_ime_cursor_area();
+                }
             }
         } else {
             self.apply_intent(Intent::PointerUp(target));
@@ -3235,6 +3320,124 @@ impl<A: App> Session<A> {
         });
     }
 
+    #[cfg(feature = "document")]
+    fn sync_documents(&mut self) {
+        let focused = *self.ui.focused.get();
+        let mut live = Vec::new();
+        let mut changes: Vec<(WidgetId, crate::document::DocumentChange)> = Vec::new();
+        let mut specs: Vec<(
+            WidgetId,
+            String,
+            Option<crate::document::DocumentCmdRequest>,
+        )> = Vec::new();
+        self.tree.walk(&mut |element| {
+            if let Kind::Document(spec) = &element.kind {
+                specs.push((
+                    element.id,
+                    spec.markdown.clone(),
+                    spec.pending_cmd.clone(),
+                ));
+            }
+        });
+        for (id, markdown, pending) in specs {
+            let ed = self
+                .documents
+                .entry(id)
+                .or_insert_with(|| DocumentEditor::new(&markdown));
+            ed.sync_markdown(&markdown);
+            let tmp = crate::document::DocumentSpec {
+                markdown: markdown.clone(),
+                pending_cmd: pending,
+                ..Default::default()
+            };
+            if ed.apply_pending_cmd(&tmp) {
+                changes.push((id, ed.change()));
+            }
+            live.push(id);
+        }
+        self.documents.retain(|id, _| live.contains(id));
+
+        // TextStore bridge for DrawOp::Text (deuda fase 1: atlas WordCraft).
+        let run_snaps: Vec<(WidgetId, crate::document::DocumentPaint)> = self
+            .documents
+            .iter()
+            .map(|(id, ed)| (*id, ed.paint().clone()))
+            .collect();
+        for (id, paint) in &run_snaps {
+            for (i, run) in paint.runs.iter().enumerate() {
+                let style = crate::document::run_text_style(run);
+                let _ = self.text.sync_text(
+                    crate::render::TextId::document_run(*id, i as u32),
+                    &run.text,
+                    style,
+                );
+            }
+        }
+        let _ = focused;
+        for (id, change) in changes {
+            if let Some(handler) = self
+                .handler(id)
+                .and_then(|h| h.on_document_change.clone())
+            {
+                self.send(handler(change));
+            }
+        }
+    }
+
+    #[cfg(feature = "document")]
+    fn apply_document_intent(&mut self, id: WidgetId, intent: TextIntent) {
+        let (change, paint) = {
+            let Some(ed) = self.documents.get_mut(&id) else {
+                return;
+            };
+            if !ed.apply_text_intent(intent) {
+                return;
+            }
+            (ed.change(), ed.paint().clone())
+        };
+        for (i, run) in paint.runs.iter().enumerate() {
+            let style = crate::document::run_text_style(run);
+            let _ = self.text.sync_text(
+                crate::render::TextId::document_run(id, i as u32),
+                &run.text,
+                style,
+            );
+        }
+        if let Some(handler) = self
+            .handler(id)
+            .and_then(|h| h.on_document_change.clone())
+        {
+            self.send(handler(change));
+        }
+        self.update_ime_cursor_area();
+        self.invalidate();
+    }
+
+    #[cfg(feature = "document")]
+    fn report_document_change(&mut self, id: WidgetId) {
+        let (change, paint) = {
+            let Some(ed) = self.documents.get(&id) else {
+                return;
+            };
+            (ed.change(), ed.paint().clone())
+        };
+        for (i, run) in paint.runs.iter().enumerate() {
+            let style = crate::document::run_text_style(run);
+            let _ = self.text.sync_text(
+                crate::render::TextId::document_run(id, i as u32),
+                &run.text,
+                style,
+            );
+        }
+        if let Some(handler) = self
+            .handler(id)
+            .and_then(|h| h.on_document_change.clone())
+        {
+            self.send(handler(change));
+        }
+        self.invalidate();
+    }
+
     /// Draw list of the last prepared frame; the background layer is not
     /// yet advanced to any point of its animation.
     pub fn paint_list(&self) -> DrawList {
@@ -3243,6 +3446,14 @@ impl<A: App> Session<A> {
             .iter()
             .map(|(id, decorations)| (*id, decorations))
             .collect();
+        #[cfg(feature = "document")]
+        let document_paints: Vec<(WidgetId, &crate::document::DocumentPaint)> = self
+            .documents
+            .iter()
+            .map(|(id, ed)| (*id, ed.paint()))
+            .collect();
+        #[cfg(not(feature = "document"))]
+        let document_paints: Vec<(WidgetId, &crate::document::DocumentPaint)> = Vec::new();
         paint(&PaintInput {
             layout: &self.layout,
             theme: &self.theme,
@@ -3251,6 +3462,7 @@ impl<A: App> Session<A> {
             text_fields: &text_fields,
             background: self.background,
             time: self.motion_time(),
+            documents: &document_paints,
         })
     }
 

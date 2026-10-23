@@ -1019,8 +1019,11 @@ fn place(
             | Content::SvgIcon(_)
             | Content::Image(_)
             | Content::Map(_)
-            | Content::Chart(_)
-            | Content::Document(_) => {}
+            | Content::Chart(_) => {}
+            Content::Document(spec) => {
+                // Página del editor: origen de clics / IME (como text_box de Input).
+                node.text_box = Some(spec.page_rect(node.padding_box));
+            }
             Content::Text(content) => {
                 // Re-wrap at the final width so the buffer is ready to draw.
                 if !node.text.nowrap {

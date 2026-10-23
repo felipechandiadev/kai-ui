@@ -256,13 +256,20 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 node.set_read_only();
             }
         }
+        Content::Document(_) => {
+            let value = snapshot
+                .field_values
+                .iter()
+                .find(|(id, _)| *id == source.id)
+                .map_or("", |(_, value)| *value);
+            node.set_value(value);
+        }
         Content::Icon(_)
         | Content::SvgIcon(_)
         | Content::Image(_)
         | Content::Box
         | Content::Map(_)
-        | Content::Chart(_)
-        | Content::Document(_) => {}
+        | Content::Chart(_) => {}
     }
     if let Some(test_id) = &source.test_id {
         node.set_author_id(test_id.as_str());
