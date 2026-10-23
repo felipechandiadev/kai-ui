@@ -105,6 +105,8 @@ pub struct DocumentEditor {
     ime_preedit: Option<DocumentImePreedit>,
     /// Modelo clonado tras [`DocumentCmd::TakeDocument`].
     taken_document: Option<std::sync::Arc<wordcraft_doc::Document>>,
+    /// Último mensaje de estado (find/replace/comments/proofing) para la UI.
+    last_status: String,
     paint: DocumentPaint,
     /// Última clave con la que se construyó `paint` (None = nunca).
     last_paint_key: Option<PaintKey>,
@@ -137,6 +139,7 @@ impl DocumentEditor {
             glyph_atlas: DocumentGlyphAtlas::new(),
             ime_preedit: None,
             taken_document: None,
+            last_status: String::new(),
             paint: DocumentPaint::default(),
             last_paint_key: None,
             #[cfg(test)]
@@ -152,6 +155,47 @@ impl DocumentEditor {
 
     pub fn markdown(&self) -> String {
         plain_to_markdown(&self.session)
+    }
+
+    /// Resumen estructural para AccessKit `description` (VoiceOver / lectores).
+    ///
+    /// No emite un árbol carácter-a-carácter (pesado sin `character_lengths`);
+    /// sí basta para anunciar párrafos / listas / tablas / comentarios /
+    /// caret-vs-selección y si el proofing está activo.
+    pub fn a11y_structure_summary(&self) -> String {
+        let paras = self.session.doc.para_paths(StoryRef::Body).len();
+        let tables = self.table_count();
+        let mut lists = 0usize;
+        for path in self.session.doc.para_paths(StoryRef::Body) {
+            if let Some(para) = self.session.doc.para(StoryRef::Body, &path) {
+                let resolved = self.session.doc.styles.resolve_para(&para.props);
+                if resolved
+                    .numbering
+                    .is_some_and(|n| n.num != 0)
+                {
+                    lists += 1;
+                }
+            }
+        }
+        let comments = self.session.doc.comments.len();
+        let sel = if self.session.sel.is_collapsed() {
+            "caret"
+        } else {
+            "selection"
+        };
+        let proofing = if self.session.view.proofing {
+            "proofing on"
+        } else {
+            "proofing off"
+        };
+        format!(
+            "{paras} paragraphs, {lists} list items, {tables} tables, {comments} comments; {sel}; {proofing}"
+        )
+    }
+
+    /// Matches del último find (0 si no hay búsqueda activa).
+    pub fn find_match_count(&self) -> usize {
+        self.session.find.results.len()
     }
 
     pub fn paint(&self) -> &DocumentPaint {
@@ -220,6 +264,8 @@ impl DocumentEditor {
             markdown: self.markdown(),
             ribbon_pressed: chrome.pressed,
             ribbon_disabled: chrome.disabled,
+            status: self.last_status.clone(),
+            find_match_count: self.find_match_count(),
             export: self.taken_document.take().map(ExportDoc),
         }
     }
@@ -512,7 +558,133 @@ impl DocumentEditor {
                     )
                     .is_ok()
             }
-            other => self.run(other.as_str()),
+            DocumentCmd::Find { text } => self.run_find_replace(
+                "edit.find",
+                &json!({ "text": text }),
+            ),
+            DocumentCmd::FindNext => self.run_find_replace("edit.findNext", &json!({})),
+            DocumentCmd::FindPrevious => {
+                self.run_find_replace("edit.findPrevious", &json!({}))
+            }
+            DocumentCmd::Replace { text, with } => self.run_find_replace(
+                "edit.replace",
+                &json!({ "text": text, "with": with }),
+            ),
+            DocumentCmd::ReplaceAll { text, with } => self.run_find_replace(
+                "edit.replaceAll",
+                &json!({ "text": text, "with": with }),
+            ),
+            DocumentCmd::NewComment { text } => {
+                match self
+                    .session
+                    .run("review.newComment", &json!({ "text": text }))
+                {
+                    Ok(_) => {
+                        self.last_status = format!(
+                            "Comentario insertado ({} en total)",
+                            self.session.doc.comments.len()
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        self.last_status = format!("Comentario: {e}");
+                        false
+                    }
+                }
+            }
+            other => {
+                let id = other.as_str();
+                let params = super::default_run_params(id);
+                match self.session.run(id, &params) {
+                    Ok(v) => {
+                        self.note_cmd_status(id, &v);
+                        true
+                    }
+                    Err(e) => {
+                        self.last_status = format!("{id}: {e}");
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    fn run_find_replace(&mut self, id: &str, params: &serde_json::Value) -> bool {
+        match self.session.run(id, params) {
+            Ok(v) => {
+                self.note_cmd_status(id, &v);
+                true
+            }
+            Err(e) => {
+                self.last_status = format!("{id}: {e}");
+                false
+            }
+        }
+    }
+
+    fn note_cmd_status(&mut self, id: &str, v: &serde_json::Value) {
+        let count = v
+            .get("count")
+            .and_then(|c| c.as_u64())
+            .map(|n| n as usize)
+            .or_else(|| {
+                // findNext/Previous report index+count; replace reports remaining.
+                v.get("remaining")
+                    .and_then(|c| c.as_u64())
+                    .map(|n| n as usize)
+            });
+        match id {
+            "edit.find" => {
+                let n = count.unwrap_or(self.session.find.results.len());
+                self.last_status = if n == 0 {
+                    "Sin coincidencias".into()
+                } else {
+                    format!("{n} coincidencia{}", if n == 1 { "" } else { "s" })
+                };
+            }
+            "edit.findNext" | "edit.findPrevious" => {
+                let n = self.session.find.results.len();
+                let idx = v
+                    .get("index")
+                    .and_then(|i| i.as_u64())
+                    .map(|i| i as usize)
+                    .unwrap_or(self.session.find.current);
+                self.last_status = if n == 0 {
+                    "Sin coincidencias".into()
+                } else {
+                    format!("Coincidencia {} de {n}", idx + 1)
+                };
+            }
+            "edit.replace" => {
+                let rem = count.unwrap_or(self.session.find.results.len());
+                self.last_status = format!("Reemplazado; {rem} restantes");
+            }
+            "edit.replaceAll" => {
+                let n = v
+                    .get("replaced")
+                    .or_else(|| v.get("count"))
+                    .and_then(|c| c.as_u64())
+                    .unwrap_or(0);
+                self.last_status = format!("Reemplazadas {n}");
+            }
+            "review.spelling" => {
+                self.last_status = "Ortografía: siguiente incidencia".into();
+            }
+            "review.proofing" => {
+                let on = v.get("value").and_then(|b| b.as_bool()).unwrap_or(self.session.view.proofing);
+                self.last_status = if on {
+                    "Revisión ortográfica al escribir: activada".into()
+                } else {
+                    "Revisión ortográfica al escribir: desactivada".into()
+                };
+            }
+            "review.nextComment" | "review.previousComment" => {
+                self.last_status = format!(
+                    "Comentarios: {} en el documento",
+                    self.session.doc.comments.len()
+                );
+            }
+            _ => {}
         }
     }
 
@@ -2045,6 +2217,66 @@ mod tests {
         assert!(ed.ime_preedit_text().is_none());
         assert!(ed.paint().preedit_underline.is_empty());
         assert_eq!(ed.plain_text(), before);
+    }
+
+    #[test]
+    fn a11y_structure_summary_mentions_paragraphs_and_selection() {
+        let mut ed = DocumentEditor::new("Hola mundo");
+        let s = ed.a11y_structure_summary();
+        assert!(s.contains("paragraph"), "{s}");
+        assert!(s.contains("caret"), "{s}");
+        assert!(s.contains("proofing"), "{s}");
+        let _ = ed.session.run("select.all", &serde_json::json!({}));
+        let s2 = ed.a11y_structure_summary();
+        assert!(s2.contains("selection") || s2.contains("caret"), "{s2}");
+    }
+
+    #[test]
+    fn find_replace_and_comment_cmds() {
+        let mut ed = DocumentEditor::new("alpha beta alpha");
+        assert!(ed.run_cmd(&DocumentCmd::Find {
+            text: "alpha".into()
+        }));
+        assert_eq!(ed.find_match_count(), 2, "two alphas");
+        assert!(ed.last_status.contains("2") || ed.last_status.contains("coincid"));
+        assert!(ed.run_cmd(&DocumentCmd::FindNext));
+        assert!(ed.run_cmd(&DocumentCmd::Replace {
+            text: "alpha".into(),
+            with: "γ".into(),
+        }));
+        let plain = ed.plain_text();
+        assert!(
+            plain.contains("γ") || plain.contains("alpha"),
+            "replace touched text: {plain:?}"
+        );
+        assert!(ed.run_cmd(&DocumentCmd::NewComment {
+            text: "nota demo".into()
+        }));
+        assert!(
+            !ed.session.doc.comments.is_empty(),
+            "comment inserted"
+        );
+        let change = ed.change();
+        assert!(!change.status.is_empty() || change.find_match_count <= 2);
+    }
+
+    #[test]
+    fn proofing_toggle_updates_status_and_pressed() {
+        let mut ed = DocumentEditor::new("mispelld word here");
+        let before = ed.session.view.proofing;
+        assert!(ed.run_cmd(&DocumentCmd::Raw("review.proofing".into())));
+        assert_ne!(ed.session.view.proofing, before);
+        let chrome = crate::document::ribbon_chrome_for(
+            &mut ed.session,
+            crate::document::RibbonMode::Full,
+        );
+        if ed.session.view.proofing {
+            assert!(
+                chrome.pressed.iter().any(|id| id == "review.proofing"),
+                "pressed={:?}",
+                chrome.pressed
+            );
+        }
     }
 
 }

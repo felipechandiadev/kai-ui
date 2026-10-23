@@ -108,10 +108,13 @@ const MVP_LAYOUT: &[&str] = &[
     "layout.break",
 ];
 
-/// Review: proofing / tracking / changes sin dialogs de archivo ni texto libre.
-/// Excluye `review.newComment` (exige `text`), compare/combine, restrict, speech UI.
+/// Review: proofing / tracking / changes sin dialogs de archivo.
+/// `review.newComment` exige `text` → barra de comentarios de la demo
+/// ([`DocumentCmd::NewComment`]), no el ribbon. Excluye compare/combine,
+/// restrict, speech UI.
 const MVP_REVIEW: &[&str] = &[
     "review.spelling",
+    "review.proofing",
     "review.wordCount",
     "review.trackChanges",
     "review.markup",
@@ -387,6 +390,10 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
         pressed.push("view.darkMode".into());
     }
 
+    if session.view.proofing {
+        pressed.push("review.proofing".into());
+    }
+
     if session.painter.is_some() {
         pressed.push("edit.formatPainter".into());
     }
@@ -461,6 +468,7 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "layout.break" => Icon::SeparatorHorizontal,
         // Review
         "review.spelling" => Icon::SpellCheck2,
+        "review.proofing" => Icon::SpellCheck2,
         "review.wordCount" => Icon::ScanText,
         "review.trackChanges" => Icon::Highlighter,
         "review.markup" => Icon::Eye,
@@ -591,6 +599,7 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "text.columnBreak" => "Salto de columna",
         "layout.break" => "Salto",
         "review.spelling" => "Ortografía",
+        "review.proofing" => "Revisar al escribir",
         "review.wordCount" => "Contar palabras",
         "review.trackChanges" => "Control de cambios",
         "review.markup" => "Marcas",

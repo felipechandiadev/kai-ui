@@ -152,6 +152,14 @@ struct Demo {
     /// Ribbon cmds disabled (`why_disabled`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_disabled: Vec<String>,
+    /// Find/Replace query (barra bajo el ribbon).
+    doc_find: String,
+    /// Texto de reemplazo.
+    doc_replace: String,
+    /// Draft de comentario (`review.newComment`).
+    doc_comment_draft: String,
+    /// Estado breve del editor (find/comments/proofing).
+    doc_edit_status: String,
     /// Plantilla lista+detalle: índice del cliente seleccionado.
     plantilla_idx: usize,
     /// Catálogo vivo (Fase E): preset de tema, densidad y tamaño.
@@ -236,6 +244,10 @@ impl Default for Demo {
             doc_ribbon_tab: "home".into(),
             doc_ribbon_pressed: Vec::new(),
             doc_ribbon_disabled: Vec::new(),
+            doc_find: String::new(),
+            doc_replace: String::new(),
+            doc_comment_draft: String::new(),
+            doc_edit_status: String::new(),
             plantilla_idx: 0,
             catalog_preset: CatalogPreset::AppKitLight,
             catalog_density: Density::Comfortable,
@@ -924,6 +936,12 @@ enum Msg {
     /// Documento: cambiar pestaña del ribbon.
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     DocRibbonTab(String),
+    /// Documento: query de find.
+    DocFindChanged(String),
+    /// Documento: texto de replace.
+    DocReplaceChanged(String),
+    /// Documento: draft de comentario.
+    DocCommentDraftChanged(String),
     /// Documento: panel Abrir `.docx`.
     DocAbrir,
     /// Ruta elegida al abrir (`None`: cancelado).
@@ -1967,6 +1985,9 @@ impl App for Demo {
                 {
                     self.doc_ribbon_pressed = change.ribbon_pressed;
                     self.doc_ribbon_disabled = change.ribbon_disabled;
+                    if !change.status.is_empty() {
+                        self.doc_edit_status = change.status;
+                    }
                 }
                 #[cfg(feature = "document")]
                 if let Some(export) = change.export
@@ -1994,6 +2015,9 @@ impl App for Demo {
             Msg::DocRibbonTab(id) => {
                 self.doc_ribbon_tab = id;
             }
+            Msg::DocFindChanged(v) => self.doc_find = v,
+            Msg::DocReplaceChanged(v) => self.doc_replace = v,
+            Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
             Msg::DocAbrir => {
                 if self.doc_archivo_busy {
                     return Effects::none();
@@ -4137,6 +4161,11 @@ impl Demo {
             Some(name) => format!("Archivo: {name}"),
             None => "Archivo: (sin guardar — Abrir / Guardar / Exportar PDF en la QAT)".into(),
         };
+        let edit_status = if self.doc_edit_status.is_empty() {
+            "Find / Replace / Comentarios · Ortografía en Revisar".into()
+        } else {
+            self.doc_edit_status.clone()
+        };
         div()
             .class("flex flex-col flex-1 min-h-0 w-full")
             .test_id("documento")
@@ -4150,8 +4179,72 @@ impl Demo {
                         text(archivo_status)
                             .class("text-xs text-muted-foreground px-0.5")
                             .test_id("documento.archivo.status"),
+                        self.documento_find_bar(),
+                        text(edit_status)
+                            .class("text-xs text-muted-foreground px-0.5")
+                            .test_id("documento.edit.status"),
                     ]),
                 editor,
+            ])
+    }
+
+    /// Barra Find/Replace + comentario mínimo (cableada a cmds WordCraft).
+    fn documento_find_bar(&self) -> Element<Msg> {
+        let find = self.doc_find.clone();
+        let replace = self.doc_replace.clone();
+        let comment = self.doc_comment_draft.clone();
+        div()
+            .class("flex flex-col gap-1 px-0.5")
+            .test_id("documento.findbar")
+            .children([
+                div()
+                    .class("flex flex-row flex-wrap items-center gap-1")
+                    .children([
+                        TextField::new("Buscar", &self.doc_find)
+                            .on_input(Msg::DocFindChanged)
+                            .test_id("documento.find.query")
+                            .build(),
+                        TextField::new("Reemplazar", &self.doc_replace)
+                            .on_input(Msg::DocReplaceChanged)
+                            .test_id("documento.find.replace")
+                            .build(),
+                        button("Buscar", ButtonVariant::Secondary)
+                            .on_click(Msg::DocCmd(DocumentCmd::Find {
+                                text: find.clone(),
+                            }))
+                            .test_id("documento.find.run"),
+                        button("Siguiente", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::FindNext))
+                            .test_id("documento.find.next"),
+                        button("Anterior", ButtonVariant::Text)
+                            .on_click(Msg::DocCmd(DocumentCmd::FindPrevious))
+                            .test_id("documento.find.prev"),
+                        button("Reemplazar", ButtonVariant::Secondary)
+                            .on_click(Msg::DocCmd(DocumentCmd::Replace {
+                                text: find.clone(),
+                                with: replace.clone(),
+                            }))
+                            .test_id("documento.find.replace_one"),
+                        button("Reemplazar todo", ButtonVariant::Secondary)
+                            .on_click(Msg::DocCmd(DocumentCmd::ReplaceAll {
+                                text: find,
+                                with: replace,
+                            }))
+                            .test_id("documento.find.replace_all"),
+                    ]),
+                div()
+                    .class("flex flex-row flex-wrap items-center gap-1")
+                    .children([
+                        TextField::new("Comentario", &self.doc_comment_draft)
+                            .on_input(Msg::DocCommentDraftChanged)
+                            .test_id("documento.comment.draft")
+                            .build(),
+                        button("Nuevo comentario", ButtonVariant::Secondary)
+                            .on_click(Msg::DocCmd(DocumentCmd::NewComment {
+                                text: comment,
+                            }))
+                            .test_id("documento.comment.new"),
+                    ]),
             ])
     }
 

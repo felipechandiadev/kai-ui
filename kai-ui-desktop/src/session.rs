@@ -2194,13 +2194,28 @@ impl<A: App> Session<A> {
     }
 
     /// AccessKit tree for the current layout, scaled to physical pixels.
+    ///
+    /// Documents contribute their plain text as the accessible value and a
+    /// short structure summary (paragraphs / lists / tables / comments /
+    /// selection) as the description — enough for VoiceOver to land on the
+    /// editor and announce content without a full character-length tree.
     pub fn a11y_tree(&self, scale_factor: f64) -> TreeUpdate {
-        let values: Vec<(WidgetId, String)> = self
+        let mut values: Vec<(WidgetId, String)> = self
             .text_fields
             .iter()
             .map(|(id, field)| (*id, field.text()))
             .collect();
+        let mut descriptions: Vec<(WidgetId, String)> = Vec::new();
+        #[cfg(feature = "document")]
+        for (id, doc) in &self.documents {
+            values.push((*id, doc.plain_text()));
+            descriptions.push((*id, doc.a11y_structure_summary()));
+        }
         let field_values: Vec<(WidgetId, &str)> = values
+            .iter()
+            .map(|(id, value)| (*id, value.as_str()))
+            .collect();
+        let field_descriptions: Vec<(WidgetId, &str)> = descriptions
             .iter()
             .map(|(id, value)| (*id, value.as_str()))
             .collect();
@@ -2210,6 +2225,7 @@ impl<A: App> Session<A> {
             focused: *self.ui.focused.get(),
             window_title: &self.title,
             field_values: &field_values,
+            field_descriptions: &field_descriptions,
             active_descendant: self.palette.as_ref().and_then(|palette| {
                 let row = palette.rows.get(palette.selected)?.0;
                 Some((palette.search, row))

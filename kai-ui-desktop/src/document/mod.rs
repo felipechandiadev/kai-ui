@@ -68,6 +68,18 @@ pub enum DocumentCmd {
     /// Clona el modelo WordCraft en el próximo [`DocumentChange::export`]
     /// (guardar / exportar PDF off-thread). No es un id de WordCraft.
     TakeDocument,
+    /// `edit.find` con `text` (selecciona el primer match tras el caret).
+    Find { text: String },
+    /// `edit.findNext` (usa la query del último find).
+    FindNext,
+    /// `edit.findPrevious`.
+    FindPrevious,
+    /// `edit.replace` — reemplaza el match seleccionado y salta al siguiente.
+    Replace { text: String, with: String },
+    /// `edit.replaceAll`.
+    ReplaceAll { text: String, with: String },
+    /// `review.newComment` con texto del draft (params obligatorios).
+    NewComment { text: String },
     /// Id crudo de WordCraft (`format.underline`, …).
     Raw(String),
 }
@@ -83,6 +95,12 @@ impl DocumentCmd {
             Self::InsertTable => "insert.table",
             Self::InsertPicture => "insert.picture",
             Self::TakeDocument => "kai.document.take",
+            Self::Find { .. } => "edit.find",
+            Self::FindNext => "edit.findNext",
+            Self::FindPrevious => "edit.findPrevious",
+            Self::Replace { .. } => "edit.replace",
+            Self::ReplaceAll { .. } => "edit.replaceAll",
+            Self::NewComment { .. } => "review.newComment",
             Self::Raw(id) => id.as_str(),
         }
     }
@@ -251,6 +269,13 @@ pub struct DocumentChange {
     /// Cmds del ribbon disabled (`Session::why_disabled`).
     #[cfg(feature = "document")]
     pub ribbon_disabled: Vec<String>,
+    /// Estado breve para barra de find/replace / comments / proofing
+    /// (p. ej. "3 coincidencias", "comentario insertado", "sin errores").
+    #[cfg(feature = "document")]
+    pub status: String,
+    /// Coincidencias del último `edit.find` / findNext (0 si no hay búsqueda).
+    #[cfg(feature = "document")]
+    pub find_match_count: usize,
     /// Tras [`DocumentCmd::TakeDocument`]: modelo para encode off-thread.
     #[cfg(feature = "document")]
     pub(crate) export: Option<ExportDoc>,

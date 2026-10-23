@@ -38,8 +38,10 @@ pub struct A11ySnapshot<'a> {
     pub scale_factor: f64,
     pub focused: Option<WidgetId>,
     pub window_title: &'a str,
-    /// Current value of each input.
+    /// Current value of each input / document (plain text).
     pub field_values: &'a [(WidgetId, &'a str)],
+    /// Optional description (structure summary for documents, helper text, …).
+    pub field_descriptions: &'a [(WidgetId, &'a str)],
     /// A focused input and the row its arrow keys highlight (the command
     /// palette): assistive technology reads the row while focus stays in
     /// the input.
@@ -263,6 +265,13 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
                 .find(|(id, _)| *id == source.id)
                 .map_or("", |(_, value)| *value);
             node.set_value(value);
+            if let Some((_, desc)) = snapshot
+                .field_descriptions
+                .iter()
+                .find(|(id, _)| *id == source.id)
+            {
+                node.set_description(*desc);
+            }
         }
         Content::Icon(_)
         | Content::SvgIcon(_)
@@ -333,7 +342,10 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
         } else {
             node.add_action(Action::Focus);
             node.add_action(Action::Click);
-            if matches!(source.content, Content::Input { .. }) {
+            if matches!(
+                source.content,
+                Content::Input { .. } | Content::Document(_)
+            ) {
                 node.add_action(Action::ReplaceSelectedText);
             }
             if let Some(state) = source.control_state
@@ -468,6 +480,7 @@ mod tests {
             focused,
             window_title: "Kai",
             field_values: &[],
+            field_descriptions: &[],
             active_descendant: None,
         }
     }

@@ -123,7 +123,7 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 ## 7. Pruebas y demo
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
-- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); IME preedit vía unit tests del editor; scroll multi-página + tipar tras scroll; query a11y por `label`.
+- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); IME preedit vía unit tests del editor; scroll multi-página + tipar tras scroll; query a11y por `label`; find/replace/comment/proofing + `a11y_structure_summary`.
 - Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
@@ -171,7 +171,47 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
 | Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
 | Clipboard cuerpo | **Hecho (rich HTML + media, 23-oct-2026)** — texto/HTML/tablas/imágenes vía HTML enriquecido + `ClipboardImage`; RTF paste si el port lo trae. Techo: ver § clipboard |
-| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips Alt; Backstage full; rulers dibujados; Format Painter sticky; wrap flotante avanzado |
+| A11y + depth edición (Paso 5) | **Slice (23-oct-2026)** — ver § a11y / find / comments / proofing abajo |
+| Deuda post-plan | Panel candidatos IME in-body (hoy SO); RTF nativo en copy/SO; Paste Special UI; copy subconjunto celdas como `<table>`; markdown rich tablas/imágenes; keytips Alt; Backstage full; rulers dibujados; Format Painter sticky; wrap flotante avanzado; AccessKit TextRun/TextSelection con `character_lengths`; Wave squiggles nativos (hoy `Draw::Line` sólido); panel comentarios lateral |
+
+
+## A11y + depth de edición (Paso 5, 23-oct-2026)
+
+Slice útil (no AccessKit perfecto). Prioridad: estructura a11y → find/replace → comments → proofing.
+
+### AccessKit / estructura
+
+- `Content::Document` → `Role::MultilineTextInput` (ya existía).
+- `Session::a11y_tree` ahora incluye el **plain text** del documento en `field_values` y un **resumen estructural** en `field_descriptions` (`N paragraphs, L list items, T tables, C comments; caret|selection; proofing on|off`) vía `DocumentEditor::a11y_structure_summary`.
+- `ReplaceSelectedText` también se anuncia en Document (como en Input).
+- **Techo:** no se emite árbol carácter-a-carácter (`TextRun` / `TextSelection` / `character_lengths`) — caro sin métricas por glifo en el snapshot Kai. VoiceOver puede enfocarse en el editor, leer el valor y la descripción.
+
+### Find / Replace
+
+- `DocumentCmd::{Find, FindNext, FindPrevious, Replace, ReplaceAll}` → `edit.find` / `findNext` / `findPrevious` / `replace` / `replaceAll` (params reales WordCraft).
+- Demo: barra bajo el ribbon (`documento.findbar`) con query / replace + botones; estado en `documento.edit.status` desde `DocumentChange::{status, find_match_count}`.
+
+### Comments
+
+- API real: `review.newComment` exige `{"text"}` → `DocumentCmd::NewComment { text }` + draft en la barra.
+- Navegación: `review.nextComment` / `previousComment` ya en ribbon Review (Paso 2/4).
+- **Techo:** sin panel lateral de hilos / reply / resolve UI (cmds existen en WC; no cableados en chrome Kai).
+
+### Proofing
+
+- Layout WordCraft ya emite squiggles (`Draw::Line` Wave/Double) cuando `view.proofing`; Kai los pinta como **líneas sólidas** (estilo Wave ignorado) → subrayado visible de errores.
+- Ribbon Review: `review.spelling` (siguiente incidencia) + **`review.proofing`** (toggle; pressed cuando activo).
+- Estado textual tras spelling/proofing en `DocumentChange::status`.
+- **Techo:** render Wave nativo; panel de sugerencias (`review.suggestions` / `applySuggestion`); diccionario UI.
+
+### Cómo probar en la demo
+
+1. `cargo +1.95 run --example demo --features document`
+2. Datos → **Documento**.
+3. VoiceOver / Accessibility Inspector: foco en el editor → valor = plain text; description = resumen.
+4. Barra Find: buscar una palabra del informe → Siguiente / Reemplazar; ver `documento.edit.status`.
+5. Draft de comentario → **Nuevo comentario**; Revisar → Siguiente/Anterior comentario.
+6. Revisar → **Revisar al escribir** (toggle) y **Ortografía**; tipar un typo y ver subrayado.
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
