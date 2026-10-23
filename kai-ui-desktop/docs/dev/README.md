@@ -25,6 +25,7 @@ Esta documentación describe la implementación gradual de un framework de inter
 19. [Patrones Empty y Loading](18-patterns-empty-loading.md)
 20. [Iconografía de campos](19-iconografia-campos.md)
 21. [Contraste WCAG](20-contraste-wcag.md)
+22. [Page layout (PageGrid 12)](21-page-layout.md)
 
 ## Dónde estamos
 

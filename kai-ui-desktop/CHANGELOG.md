@@ -8,6 +8,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **PageGrid 12 + shell de página (Fase B):** `page` / `PageBody` / `page_grid` / `PageGridItem` (span 1–12; 4/8/12 cols; gutter 16 pt; márgenes responsivos). Utilidad `col-span-N` en el motor. Demo: shell de sección + formularios Inicio/Campos. Docs [`21-page-layout.md`](docs/dev/21-page-layout.md). No es Carbon 16 ni UI Shell web.
+
 - **Design system P0 (Polaris/Carbon/M3 gap):**
   - Matriz de estados en la demo: Campos → «Estados de TextField» (default/focus/disabled/required/helper/error) y Botones → «Estados de Button» (variantes + disabled + loading). Placeholders neutros. `TextField::error` (borde + helper danger AppKit).
   - Patrones `EmptyState` + `loading_placeholder` (lista/tabla); demo en Tabla. Docs [`18-patterns-empty-loading.md`](docs/dev/18-patterns-empty-loading.md).

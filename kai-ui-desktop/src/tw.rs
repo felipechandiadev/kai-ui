@@ -333,6 +333,8 @@ enum Decl {
     Position(Position),
     Z(i32),
     GridColumns(u16),
+    /// `col-span-N` (1…).
+    GridColumnSpan(u16),
     Background(Color),
     /// `bg-current`.
     BackgroundCurrent,
@@ -514,6 +516,7 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::Position(position) => style.position = position,
         Decl::Z(z) => style.z_index = z,
         Decl::GridColumns(columns) => style.grid_columns = columns,
+        Decl::GridColumnSpan(span) => style.grid_column_span = span,
         Decl::Background(color) => {
             style.background = Some(color);
             style.background_current = false;
@@ -626,6 +629,7 @@ impl Parser<'_> {
             "max-h" => vec![Decl::MaxHeight(self.height(value)?)],
             "z" => vec![Decl::Z(value.parse().ok()?)],
             "grid-cols" => vec![Decl::GridColumns(value.parse().ok().filter(|n| *n > 0)?)],
+            "col-span" => vec![Decl::GridColumnSpan(value.parse().ok().filter(|n| *n > 0)?)],
             "grow" => vec![Decl::Grow(
                 arbitrary(value)
                     .unwrap_or(value)
@@ -894,7 +898,7 @@ impl Parser<'_> {
 /// Split `px-4` into (`px`, `4`), keeping multi-word prefixes such as
 /// `min-w`, `gap-x`, `ring-offset` or `border-t` together.
 fn split_value(class: &str) -> Option<(&str, &str)> {
-    const PREFIXES: [&str; 20] = [
+    const PREFIXES: [&str; 21] = [
         "min-w",
         "min-h",
         "max-w",
@@ -904,6 +908,7 @@ fn split_value(class: &str) -> Option<(&str, &str)> {
         "inset-x",
         "inset-y",
         "grid-cols",
+        "col-span",
         "ring-offset",
         "border-x",
         "border-y",
@@ -1604,6 +1609,23 @@ mod tests {
         assert_eq!(style.padding.top, compact.space.space_4);
         assert_eq!(style.gap_x, 10.0);
         assert_eq!(style.height, Length::Px(compact.controls.height_md));
+    }
+
+    #[test]
+    fn col_span_sets_grid_column_span() {
+        let style = parse("col-span-6").resolve(State::default());
+        assert_eq!(style.grid_column_span, 6);
+        let list = parse("col-span-2 md:col-span-6");
+        let narrow = list.resolve(State {
+            viewport_width: 400,
+            ..State::default()
+        });
+        assert_eq!(narrow.grid_column_span, 2);
+        let wide = list.resolve(State {
+            viewport_width: 900,
+            ..State::default()
+        });
+        assert_eq!(wide.grid_column_span, 6);
     }
 
     #[test]

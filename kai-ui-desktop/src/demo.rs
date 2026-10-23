@@ -22,16 +22,16 @@ use crate::components::{
     SidebarItem, SwitchDensity, Table, TableView, Tabs, TextField, Toast, ViewChange, alert,
     avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
     chart, checkbox, checkbox_with_options, color_field, column_menu, dot_progress, group_box,
-    heading, icon_button, icon_button_sized, loading_placeholder, paragraph, search_field,
-    segmented, segmented_with_options, select, select_with_options, stat, switch, switch_labeled,
-    switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar, toolbar_item,
-    toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title, validate_image_file,
-    virtual_list,
+    heading, icon_button, icon_button_sized, loading_placeholder, page, page_body, page_grid,
+    page_grid_item, paragraph, search_field, segmented, segmented_with_options, select,
+    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
+    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
+    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
 };
-use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
-use crate::document::{document, DocumentChange, DocumentCmd};
+use crate::document::{DocumentChange, DocumentCmd, document};
 #[cfg(feature = "document")]
-use crate::document::{document_cmd_for, document_ribbon, RibbonMode};
+use crate::document::{RibbonMode, document_cmd_for, document_ribbon};
+use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
 use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
@@ -1202,7 +1202,6 @@ impl Action for FijarVista {
     }
 }
 
-
 /// Documento: negrita (WordCraft `format.bold`).
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1575,7 +1574,10 @@ impl App for Demo {
         registry.action::<DocImagen>().menu("Documento").expose();
         registry.action::<DocAbrir>().menu("Documento").expose();
         registry.action::<DocGuardar>().menu("Documento").expose();
-        registry.action::<DocExportarPdf>().menu("Documento").expose();
+        registry
+            .action::<DocExportarPdf>()
+            .menu("Documento")
+            .expose();
         registry.action::<DocDeshacer>().menu("Documento").expose();
         registry.action::<DocRehacer>().menu("Documento").expose();
     }
@@ -1878,8 +1880,8 @@ impl App for Demo {
                         return self.show_toast(toast);
                     }
                     Err(error) => {
-                        let toast = Toast::new(0, AlertVariant::Error, "No se abrió")
-                            .message(error);
+                        let toast =
+                            Toast::new(0, AlertVariant::Error, "No se abrió").message(error);
                         return self.show_toast(toast);
                     }
                 }
@@ -1888,8 +1890,7 @@ impl App for Demo {
                 if self.doc_archivo_busy {
                     return Effects::none();
                 }
-                let request =
-                    SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
+                let request = SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
                 return Effects::save_file(request, Msg::DocGuardarEn);
             }
             Msg::DocGuardarEn(None) => {}
@@ -1902,8 +1903,7 @@ impl App for Demo {
                 if self.doc_archivo_busy {
                     return Effects::none();
                 }
-                let request =
-                    SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
+                let request = SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
                 return Effects::save_file(request, Msg::DocExportarPdfEn);
             }
             Msg::DocExportarPdfEn(None) => {}
@@ -1915,8 +1915,7 @@ impl App for Demo {
             Msg::DocArchivoListo(result) => {
                 self.doc_archivo_busy = false;
                 let toast = match result {
-                    Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo")
-                        .message(name),
+                    Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo").message(name),
                     Err(error) => {
                         Toast::new(0, AlertVariant::Error, "No se pudo escribir").message(error)
                     }
@@ -2036,24 +2035,29 @@ impl App for Demo {
                 Some("Cada tecla emite un mensaje con el nuevo valor"),
             ),
             card_content().class("gap-4").children([
-                div()
-                    .class("grid grid-cols-1 sm:grid-cols-2 gap-4")
-                    .children([
-                        // Return here activates «Enviar», the default button.
+                page_grid().children([
+                    // Return here activates «Enviar», the default button.
+                    page_grid_item(6).child(
                         TextField::new("Nombre", &self.name)
                             .test_id("form.nombre")
                             .field_icon(FieldKind::Name)
                             .on_input(Msg::NameChanged)
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Correo", &self.email)
                             .test_id("form.correo")
                             .field_icon(FieldKind::Email)
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         select(&ROLES, self.role, "Elegir rol", Msg::SetRole)
                             .label("Rol")
                             .test_id("form.rol"),
+                    ),
+                    page_grid_item(6).child(
                         checkbox(
                             "Acepto los términos",
                             if self.terms {
@@ -2064,7 +2068,8 @@ impl App for Demo {
                             Msg::ToggleTerms,
                         )
                         .test_id("form.terminos"),
-                    ]),
+                    ),
+                ]),
                 div()
                     .class("flex items-center justify-between pt-1")
                     .children([
@@ -2234,16 +2239,12 @@ impl App for Demo {
                 .test_id("contenido")
                 .children(cards)
         } else {
-            // Keyed by section: each one keeps its own scroll.
-            div()
-                .class("flex-1 overflow-y-auto")
+            // Page shell (Fase B): Page → PageBody as one flex child of the
+            // sidebar row (overflow-hidden on Page forces the body to scroll).
+            page()
                 .key(self.seccion.key())
                 .test_id("contenido")
-                .child(
-                    div()
-                        .class("flex flex-col items-center gap-6 p-6")
-                        .children(cards),
-                )
+                .child(page_body().children(cards))
         };
         let mut layers = vec![
             header,
@@ -2312,14 +2313,12 @@ impl Demo {
     /// Matriz de estados de Button: variantes + disabled + loading.
     fn button_states(&self) -> Element<Msg> {
         let row = |label: &str, children: Vec<Element<Msg>>| {
-            div()
-                .class("flex flex-col gap-2")
-                .children([
-                    caption(label),
-                    div()
-                        .class("flex flex-wrap items-center gap-3")
-                        .children(children),
-                ])
+            div().class("flex flex-col gap-2").children([
+                caption(label),
+                div()
+                    .class("flex flex-wrap items-center gap-3")
+                    .children(children),
+            ])
         };
         card()
             .class("w-full max-w-3xl")
@@ -3248,7 +3247,6 @@ impl Demo {
         ]
     }
 
-
     #[cfg(feature = "document")]
     fn documento_ribbon_chrome(&self) -> Element<Msg> {
         document_ribbon()
@@ -3481,10 +3479,7 @@ impl Demo {
         let cell = |label: &str, field: Element<Msg>| {
             div()
                 .class("flex flex-col gap-1.5 min-w-0")
-                .children([
-                    caption(label).class("text-secondary-label"),
-                    field,
-                ])
+                .children([caption(label).class("text-secondary-label"), field])
         };
         card()
             .class("w-full max-w-3xl")
@@ -3628,14 +3623,15 @@ impl Demo {
                 ),
             ),
             card_content().class("gap-4").children([
-                div()
-                    .class("grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5")
-                    .children([
+                page_grid().children([
+                    page_grid_item(6).child(
                         TextField::new("Buscar", &self.search)
                             .placeholder("Texto de búsqueda")
                             .field_icon(FieldKind::Search)
                             .on_input(edit(Field::Search))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Contraseña", &self.password)
                             .test_id("form.password")
                             .field_icon(FieldKind::Password)
@@ -3644,25 +3640,35 @@ impl Demo {
                             .helper_text("Mínimo 8 caracteres")
                             .on_input(edit(Field::Password))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Monto", &self.amount)
                             .start_symbol("$")
                             .select_on_focus(true)
                             .on_input(edit(Field::Amount))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Descuento", &self.discount)
                             .end_symbol("%")
                             .on_input(edit(Field::Discount))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Comuna", &self.commune)
                             .required(true)
                             .helper_text("Donde despacharemos el pedido")
                             .on_input(edit(Field::Commune))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Código", &self.code)
                             .density(FieldDensity::Compact)
                             .placeholder("Ej: A-12")
                             .on_input(edit(Field::Code))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Cantidad", &self.quantity)
                             .density(FieldDensity::Compact)
                             .label_layout(LabelLayout::Inline)
@@ -3673,15 +3679,20 @@ impl Demo {
                             .placeholder("0")
                             .on_input(edit(Field::Quantity))
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Folio", "F-2026-0042")
                             .read_only(true)
                             .end_icon(Icon::CircleCheckBig)
                             .build(),
+                    ),
+                    page_grid_item(6).child(
                         TextField::new("Sucursal", "Santiago Centro")
                             .disabled(true)
                             .build(),
-                        autocomplete_shell,
-                    ]),
+                    ),
+                    page_grid_item(6).child(autocomplete_shell),
+                ]),
                 contrast_bar,
             ]),
         ])
@@ -3735,9 +3746,7 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 fn demo_theme() -> Theme {
     let forced = |generation, appearance| Theme::appkit_static(generation, appearance);
     let theme = match std::env::var("KAI_THEME").as_deref() {
-        Ok("appkit" | "appkit-light") | Ok("") | Err(_) => {
-            Theme::appkit_current(Appearance::Light)
-        }
+        Ok("appkit" | "appkit-light") | Ok("") | Err(_) => Theme::appkit_current(Appearance::Light),
         Ok("appkit-dark") => Theme::appkit_current(Appearance::Dark),
         Ok("aqua11") => forced(AppKitGeneration::Aqua11, Appearance::Light),
         Ok("aqua11-dark") => forced(AppKitGeneration::Aqua11, Appearance::Dark),
@@ -3854,9 +3863,9 @@ mod tests {
         tree
     }
 
-    /// Two-field rows (`grid-cols-1 sm:grid-cols-2`): side by side from
-    /// 640 pt, one column below, never wider than the window (the fields
-    /// keep their 180 pt minimum).
+    /// Two-field rows on PageGrid span 6: side by side from `md` (and half
+    /// of the 8-col `sm` grid), stacked full-width below 640 pt; never wider
+    /// than the window (the fields keep their 180 pt minimum).
     #[test]
     fn field_rows_stack_in_a_narrow_window() {
         use crate::theme::MixStyle;
@@ -4313,9 +4322,9 @@ mod tests {
                 text_fields: &[],
                 background: Default::default(),
                 time: None,
-                        documents: &[],
-            caret_visible: true,
-        });
+                documents: &[],
+                caret_visible: true,
+            });
             samples.push(start.elapsed());
             ops += list.ops.len();
         }
@@ -4533,7 +4542,6 @@ mod tests {
         }
     }
 
-
     #[cfg(feature = "document")]
     #[test]
     fn document_types_bold_and_undo() {
@@ -4618,7 +4626,7 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_ribbon_layout_review_view_tabs() {
-        use crate::document::{ribbon_catalog, RibbonMode};
+        use crate::document::{RibbonMode, ribbon_catalog};
         let tabs = ribbon_catalog(RibbonMode::Full);
         assert!(tabs.iter().any(|t| t.id == "layout"));
         assert!(tabs.iter().any(|t| t.id == "review"));
@@ -5907,7 +5915,14 @@ mod tests {
         let titles: Vec<_> = model.iter().map(|group| group.title).collect();
         assert_eq!(
             titles,
-            ["Contador", "Formulario", "Ver", "Botones", "Archivo", "Documento"]
+            [
+                "Contador",
+                "Formulario",
+                "Ver",
+                "Botones",
+                "Archivo",
+                "Documento"
+            ]
         );
         assert_eq!(
             model[0].items[1],
@@ -7014,7 +7029,10 @@ mod tests {
     fn an_agent_wait_command_answers_only_after_the_task_finishes() {
         let mut app = TestApp::new(Demo::at(Seccion::Botones));
         let reply = app.agent_call("Cursor", "botones.simular_espera", json!({}));
-        assert!(reply.result().is_none(), "queda abierta mientras corre la espera");
+        assert!(
+            reply.result().is_none(),
+            "queda abierta mientras corre la espera"
+        );
         assert!(app.tasks_pending());
         app.run_until_idle();
         assert_eq!(reply.result(), Some(Ok(json!(null))));

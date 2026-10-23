@@ -13,6 +13,7 @@ mod dialog;
 mod empty_state;
 mod field_icons;
 mod media;
+mod page;
 mod progress;
 mod search;
 mod sidebar;
@@ -29,6 +30,11 @@ pub use dialog::{Dialog, DialogWidth, dialog};
 pub use empty_state::{EmptyState, loading_placeholder};
 pub use field_icons::{FIELD_ICON_MAP, FieldKind, field_icon_for};
 pub use media::{Avatar, AvatarSize, MediaSlot, MediaVariant, avatar, validate_image_file};
+pub use page::{
+    PAGE_BODY_CLASS, PAGE_BODY_MAX_CONTENT_CLASS, PAGE_CLASS, PAGE_GRID_CLASS, PageBody,
+    PageGridItem, col_span_classes, page, page_body, page_grid, page_grid_item, span_at,
+    tokens as page_tokens,
+};
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, SearchVariant, search_field};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
@@ -893,10 +899,7 @@ impl<Msg> TextField<Msg> {
         }
         let helper = self.helper_text.as_ref().map(|helper| {
             let classes = if self.error {
-                themed(
-                    "mt-1 text-xs text-error",
-                    "mt-1 text-xs text-system-red",
-                )
+                themed("mt-1 text-xs text-error", "mt-1 text-xs text-system-red")
             } else {
                 themed(
                     "mt-1 text-xs text-muted-foreground",
@@ -3489,14 +3492,15 @@ mod tests {
         );
         let err_helper = part(&errored, "campo.helper");
         assert!(
-            err_helper.class.contains("text-error")
-                || err_helper.class.contains("text-system-red"),
+            err_helper.class.contains("text-error") || err_helper.class.contains("text-system-red"),
             "{}",
             err_helper.class
         );
         assert!(
             part(&errored, "campo.shell").class.contains("border-error")
-                || part(&errored, "campo.shell").class.contains("border-system-red"),
+                || part(&errored, "campo.shell")
+                    .class
+                    .contains("border-system-red"),
             "{}",
             part(&errored, "campo.shell").class
         );

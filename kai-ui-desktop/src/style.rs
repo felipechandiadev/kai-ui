@@ -179,6 +179,8 @@ pub struct Style {
     pub gap_x: f32,
     pub gap_y: f32,
     pub grid_columns: u16,
+    /// CSS `grid-column: span N` (`col-span-N`). `0` = auto placement.
+    pub grid_column_span: u16,
     pub padding: Edges<f32>,
     pub margin: Edges<Length>,
     pub border_width: Edges<f32>,
@@ -229,6 +231,7 @@ impl Default for Style {
             gap_x: 0.0,
             gap_y: 0.0,
             grid_columns: 0,
+            grid_column_span: 0,
             padding: Edges::all(0.0),
             margin: Edges::all(Length::Px(0.0)),
             border_width: Edges::all(0.0),
@@ -417,6 +420,9 @@ impl Style {
                 self.grid_columns,
                 vec![taffy::prelude::flex(1.0)],
             )];
+        }
+        if self.grid_column_span > 0 {
+            style.grid_column = taffy::prelude::span(self.grid_column_span);
         }
         style
     }
