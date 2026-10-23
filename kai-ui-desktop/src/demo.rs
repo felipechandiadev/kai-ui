@@ -4379,7 +4379,7 @@ mod tests {
             "demo should seed multi-page markdown, got len={}",
             before.len()
         );
-        app.scroll_wheel(editor(), 480.0);
+        app.scroll_wheel(editor(), -480.0);
         app.click(editor());
         app.type_text(editor(), "¶");
         let after = app.value(editor());

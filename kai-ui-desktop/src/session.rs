@@ -3050,7 +3050,8 @@ impl<A: App> Session<A> {
     }
 
     /// Scroll the innermost scroll container under the pointer by `delta_y`
-    /// logical points (positive scrolls content up, like a wheel down).
+    /// logical points (positive moves the content down / toward the start;
+    /// negative toward the end), matching [`Self::wheel`] and layout scrollers.
     pub fn scroll_by(&mut self, delta_y: f32) {
         #[cfg(feature = "document")]
         if self.scroll_document(delta_y) {

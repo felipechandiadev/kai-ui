@@ -136,7 +136,8 @@ impl DocumentEditor {
         self.session.doc.media.len()
     }
 
-    /// Rueda / TestApp: desplaza el canvas. `delta_y` > 0 mueve el contenido hacia arriba.
+    /// Rueda / TestApp: desplaza el canvas. Same sign as [`crate::Session::scroll_by`]:
+    /// positive moves content down (toward the start); negative toward the end.
     ///
     /// No reconstruye la display list si solo cambia el scroll: actualiza
     /// `paint.scroll_y` sobre el snapshot existente.
@@ -145,7 +146,7 @@ impl DocumentEditor {
         self.ensure_paint();
         let before = self.scroll_y;
         let max = self.paint.scroll_max;
-        self.scroll_y = (self.scroll_y + delta_y).clamp(0.0, max);
+        self.scroll_y = (self.scroll_y - delta_y).clamp(0.0, max);
         if (self.scroll_y - before).abs() < 0.01 {
             return false;
         }
@@ -970,10 +971,10 @@ mod tests {
         ed.last_viewport = viewport;
         ed.refresh_paint();
         assert!(ed.paint.scroll_max > 0.0, "multi-page should scroll");
-        assert!(ed.scroll_by(120.0, viewport));
+        assert!(ed.scroll_by(-120.0, viewport));
         assert!(ed.scroll_y() > 0.0);
         let y = ed.scroll_y();
-        assert!(!ed.scroll_by(1_000_000.0, viewport) || ed.scroll_y() >= y);
+        assert!(!ed.scroll_by(-1_000_000.0, viewport) || ed.scroll_y() >= y);
         assert!((ed.scroll_y() - ed.paint.scroll_max).abs() < 1.0);
     }
 
@@ -990,7 +991,7 @@ mod tests {
         let rebuilds = ed.paint_rebuilds();
         let runs = ed.paint.runs.clone();
         assert!(ed.paint.scroll_max > 0.0);
-        assert!(ed.scroll_by(120.0, viewport));
+        assert!(ed.scroll_by(-120.0, viewport));
         assert_eq!(
             ed.paint_rebuilds(),
             rebuilds,
