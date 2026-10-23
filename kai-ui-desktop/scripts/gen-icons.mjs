@@ -60,6 +60,8 @@ const ICONS = [
   "files",
   "calendar-days",
   "mail",
+  "lock",
+  "phone",
   "file-text",
   "wallet",
   "scale",
