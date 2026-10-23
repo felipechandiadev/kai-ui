@@ -28,6 +28,7 @@ use crate::components::{
     toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
 };
 use crate::element::{ControlSize, ControlState, Element, Role, div, icon, image, text};
+use crate::document::document;
 use crate::geo::{LatLon, LatLonBounds, MapView};
 use crate::geometry::Size;
 use crate::icons::Icon;
@@ -596,12 +597,14 @@ enum Seccion {
     Mapa,
     /// Gráficos de barras y sparkline.
     Graficos,
+    /// Mini procesador de texto (esqueleto Document).
+    Documento,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
     Dialogos,
 }
 
 impl Seccion {
-    const ALL: [Seccion; 11] = [
+    const ALL: [Seccion; 12] = [
         Self::Inicio,
         Self::Campos,
         Self::Botones,
@@ -612,6 +615,7 @@ impl Seccion {
         Self::Tabla,
         Self::Mapa,
         Self::Graficos,
+        Self::Documento,
         Self::Dialogos,
     ];
 
@@ -631,6 +635,7 @@ impl Seccion {
             Self::Tabla => "tabla",
             Self::Mapa => "mapa",
             Self::Graficos => "graficos",
+            Self::Documento => "documento",
             Self::Dialogos => "dialogos",
         }
     }
@@ -648,6 +653,7 @@ impl Seccion {
             Self::Tabla => ("Tabla", Icon::Table),
             Self::Mapa => ("Mapa", Icon::Map),
             Self::Graficos => ("Gráficos", Icon::LayoutDashboard),
+            Self::Documento => ("Documento", Icon::FileText),
             Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
         };
         SidebarItem::new(label).icon(glyph)
@@ -1828,6 +1834,7 @@ impl App for Demo {
             Seccion::Tabla => vec![self.client_table(), self.simple_list()],
             Seccion::Mapa => vec![self.mapa()],
             Seccion::Graficos => self.graficos(),
+            Seccion::Documento => vec![self.documento()],
             Seccion::Dialogos => vec![self.dialogs_and_toasts()],
         };
 
@@ -1885,6 +1892,7 @@ impl Demo {
                     Seccion::Tabla.item(),
                     Seccion::Mapa.item(),
                     Seccion::Graficos.item(),
+                    Seccion::Documento.item(),
                 ],
             ),
             SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
@@ -2774,6 +2782,27 @@ impl Demo {
                     ]),
                 ]),
         ]
+    }
+
+    /// Documento: esqueleto del mini Word (página en blanco; fase 0 tipará).
+    fn documento(&self) -> Element<Msg> {
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("documento")
+            .children([
+                card_header(
+                    "Documento",
+                    Some("Esqueleto del editor: hoja en blanco (sin tipar aún)"),
+                ),
+                card_content().children([
+                    document()
+                        .label("Informe de demostración")
+                        .placeholder_text("Escribe aquí…")
+                        .class("h-96 w-full")
+                        .test_id("documento.editor"),
+                    caption("Página placeholder; WordCraft entra con feature = \"document\"."),
+                ]),
+            ])
     }
 
     /// Diálogos y avisos: open a dialog, show toasts, open the palette.
@@ -3862,6 +3891,7 @@ mod tests {
             Seccion::Tabla => "tabla.clientes",
             Seccion::Mapa => "mapa.vista",
             Seccion::Graficos => "graficos.barras",
+            Seccion::Documento => "documento.editor",
             Seccion::Dialogos => "dialogos",
         }
     }
@@ -3924,6 +3954,7 @@ mod tests {
                 "Tabla",
                 "Mapa",
                 "Gráficos",
+                "Documento",
                 "Diálogos y avisos",
             ]
         );
@@ -4027,7 +4058,7 @@ mod tests {
     #[test]
     fn the_demo_shows_every_component() {
         use std::collections::BTreeSet;
-        const SOURCES: [&str; 17] = [
+        const SOURCES: [&str; 18] = [
             include_str!("components.rs"),
             include_str!("components/color.rs"),
             include_str!("components/dialog.rs"),
@@ -4045,8 +4076,9 @@ mod tests {
             include_str!("maps/mod.rs"),
             include_str!("maps/layers.rs"),
             include_str!("maps/editor.rs"),
+            include_str!("document/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 24] = [
+        const NOT_WIDGETS: [&str; 26] = [
             "ChartSpec",
             "ChartSeries",
             "MapSpec",
@@ -4071,6 +4103,8 @@ mod tests {
             "Toast",
             "PaletteItem",
             "MenuFrame",
+            "DocumentSpec",
+            "DocumentChange",
         ];
         use Seccion::*;
         let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
@@ -4288,6 +4322,12 @@ mod tests {
                 Graficos,
                 None,
                 By::role(Role::Image).name("Clics por mes"),
+            ),
+            (
+                &["document"],
+                Documento,
+                None,
+                By::role(Role::TextArea).name("Informe de demostración"),
             ),
             (
                 &["Dialog", "dialog"],
@@ -6121,7 +6161,7 @@ mod tests {
         assert!(app.tasks_pending());
         app.run_until_idle();
         assert_eq!(reply.result(), Some(Ok(json!(null))));
-        assert_eq!(app.app().espera.as_deref(), Some("comando"));
+        assert_eq!(app.app().espera, Some("comando"));
         assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Done);
     }
 

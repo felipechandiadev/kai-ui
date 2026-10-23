@@ -172,6 +172,11 @@
                 "type": "string"
               },
               {
+                "const": "documento",
+                "description": "Mini procesador de texto (esqueleto Document).",
+                "type": "string"
+              },
+              {
                 "const": "dialogos",
                 "description": "Diálogos, avisos (toasts) y la paleta de comandos.",
                 "type": "string"
