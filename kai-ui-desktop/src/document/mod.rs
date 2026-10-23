@@ -39,7 +39,8 @@ pub(crate) use glyph_atlas::DocumentGlyphAtlas;
 #[cfg(feature = "document")]
 pub use ribbon::{
     cmd_disabled, default_run_params, document_cmd_for, document_ribbon, icon_for_cmd, localize_cmd,
-    parse_location, ribbon_catalog, DocumentRibbon, RibbonGroup, RibbonItem, RibbonMode, RibbonTab,
+    parse_location, ribbon_catalog, ribbon_chrome_for, DocumentRibbon, RibbonChrome, RibbonGroup,
+    RibbonItem, RibbonMode, RibbonTab,
 };
 
 /// Márgenes del stack de páginas respecto al padding box (viewport).
@@ -244,6 +245,12 @@ impl DocumentSpec {
 pub struct DocumentChange {
     pub plain_text: String,
     pub markdown: String,
+    /// Cmds del ribbon en estado pressed (bold/italic/align/…).
+    #[cfg(feature = "document")]
+    pub ribbon_pressed: Vec<String>,
+    /// Cmds del ribbon disabled (`Session::why_disabled`).
+    #[cfg(feature = "document")]
+    pub ribbon_disabled: Vec<String>,
     /// Tras [`DocumentCmd::TakeDocument`]: modelo para encode off-thread.
     #[cfg(feature = "document")]
     pub(crate) export: Option<ExportDoc>,

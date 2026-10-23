@@ -214,9 +214,12 @@ impl DocumentEditor {
     }
 
     pub fn change(&mut self) -> DocumentChange {
+        let chrome = super::ribbon_chrome_for(&mut self.session, super::RibbonMode::Full);
         DocumentChange {
             plain_text: self.plain_text(),
             markdown: self.markdown(),
+            ribbon_pressed: chrome.pressed,
+            ribbon_disabled: chrome.disabled,
             export: self.taken_document.take().map(ExportDoc),
         }
     }
@@ -236,6 +239,7 @@ impl DocumentEditor {
         self.last_markdown = self.markdown();
         self.scroll_y = 0.0;
         self.bitmaps.clear();
+        self.ime_preedit = None;
         self.taken_document = None;
         self.refresh_paint();
         Ok(())

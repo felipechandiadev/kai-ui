@@ -1,7 +1,7 @@
 //! Ribbon Kai del documento, alimentado por el catálogo WordCraft (`CommandSpec`).
 //!
 //! No porta `wordcraft-ui-egui`: solo lee `id` / `location` / `shortcut`
-//! (y `Session::why_disabled` cuando hay Session) del engine y pinta UI Kai
+//! (`Session::why_disabled` + `format.state` / párrafo para pressed) del engine y pinta UI Kai
 //! estilo toolbar AppKit: iconos + tooltip en español, labels de grupo
 //! discretos y separadores verticales.
 //!
@@ -313,6 +313,90 @@ pub fn cmd_disabled(session: &Session, id: &str) -> bool {
     session.why_disabled(id).is_some()
 }
 
+/// Estado vivo del ribbon (pressed / disabled) derivado de la Session.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RibbonChrome {
+    pub pressed: Vec<String>,
+    pub disabled: Vec<String>,
+}
+
+
+/// Calcula pressed (desde `format.state` + párrafo/caret + view) y disabled
+/// (`Session::why_disabled`) para el catálogo del `mode`.
+pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrome {
+    let mut pressed: Vec<String> = Vec::new();
+    if let Ok(state) = session.run("format.state", &serde_json::json!({})) {
+        let on = |key: &str| state.get(key).and_then(|v| v.as_bool()) == Some(true);
+        if on("bold") {
+            pressed.push("format.bold".into());
+        }
+        if on("italic") {
+            pressed.push("format.italic".into());
+        }
+        if on("underline") {
+            pressed.push("format.underline".into());
+        }
+        if on("strike") {
+            pressed.push("format.strikethrough".into());
+        }
+        if on("subscript") {
+            pressed.push("format.subscript".into());
+        }
+        if on("superscript") {
+            pressed.push("format.superscript".into());
+        }
+    }
+
+    let focus = session.sel.focus.clone();
+    if let Some(para) = session.doc.para_at(&focus) {
+        let resolved = session.doc.styles.resolve_para(&para.props);
+        let visual = resolved.align.visual(resolved.bidi);
+        match visual {
+            wordcraft_doc::props::Align::Left => pressed.push("para.alignLeft".into()),
+            wordcraft_doc::props::Align::Center => pressed.push("para.alignCenter".into()),
+            wordcraft_doc::props::Align::Right => pressed.push("para.alignRight".into()),
+            wordcraft_doc::props::Align::Justify => pressed.push("para.justify".into()),
+            wordcraft_doc::props::Align::Distribute => {}
+        }
+        if let Some(n) = resolved.numbering.filter(|n| n.num != 0) {
+            if let Some(level) = session.doc.numbering.level(n.num, n.level) {
+                use wordcraft_doc::section::NumFormat;
+                if level.format == NumFormat::Bullet {
+                    pressed.push("para.bullets".into());
+                } else if level.format != NumFormat::None {
+                    pressed.push("para.numbering".into());
+                }
+            }
+        }
+    }
+
+    if session.view.dark_mode {
+        pressed.push("view.darkMode".into());
+    }
+
+    // Solo ids que el catálogo puede mostrar (evita pressed huérfanos).
+    let catalog = ribbon_catalog(mode);
+    let catalog_ids: std::collections::BTreeSet<&str> = catalog
+        .iter()
+        .flat_map(|t| t.groups.iter())
+        .flat_map(|g| g.items.iter())
+        .map(|i| i.cmd_id.as_str())
+        .collect();
+    pressed.retain(|id| catalog_ids.contains(id.as_str()));
+    pressed.sort();
+    pressed.dedup();
+
+    let mut disabled = Vec::new();
+    for id in &catalog_ids {
+        if cmd_disabled(session, id) {
+            disabled.push((*id).to_string());
+        }
+    }
+    disabled.sort();
+    RibbonChrome { pressed, disabled }
+}
+
+
 /// Icono Lucide para un id WordCraft, si hay uno razonable en el catálogo Kai.
 pub fn icon_for_cmd(id: &str) -> Option<Icon> {
     Some(match id {
@@ -530,6 +614,7 @@ pub struct DocumentRibbon<Msg> {
     on_tab: Option<Box<dyn Fn(String) -> Msg>>,
     on_command: Option<Box<dyn Fn(String) -> Msg>>,
     disabled: Vec<String>,
+    pressed: Vec<String>,
     /// Acciones de archivo (QAT) a la izquierda de las pestañas.
     leading: Vec<Element<Msg>>,
     test_id: Option<String>,
@@ -543,6 +628,7 @@ impl<Msg> Default for DocumentRibbon<Msg> {
             on_tab: None,
             on_command: None,
             disabled: Vec::new(),
+            pressed: Vec::new(),
             leading: Vec::new(),
             test_id: None,
         }
@@ -576,6 +662,12 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
 
     pub fn disabled_ids(mut self, ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.disabled = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Toggles activos (bold/italic/align/…) — `Element::pressed`.
+    pub fn pressed_ids(mut self, ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.pressed = ids.into_iter().map(Into::into).collect();
         self
     }
 
@@ -674,11 +766,13 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                 let mut items = div().class("flex flex-row flex-wrap items-center gap-0.5");
                 for item in &group.items {
                     let disabled = self.disabled.iter().any(|d| d == &item.cmd_id);
+                    let pressed = self.pressed.iter().any(|d| d == &item.cmd_id);
                     let tip = item_tooltip(item);
                     let mut btn = if let Some(glyph) = icon_for_cmd(&item.cmd_id) {
                         toolbar_item(glyph, tip)
                             .class("disabled:opacity-40")
                             .disabled(disabled)
+                            .pressed(pressed)
                             .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id))
                     } else {
                         // Fallback: texto corto ES si no hay icono razonable.
@@ -686,6 +780,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                             .tooltip(tip)
                             .class("disabled:opacity-40")
                             .disabled(disabled)
+                            .pressed(pressed)
                             .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id))
                     };
                     if let Some(ref on_cmd) = self.on_command {
@@ -868,4 +963,55 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn ribbon_chrome_bold_pressed_and_cut_disabled_without_selection() {
+        use wordcraft_doc::Document;
+        use wordcraft_engine::Session;
+        let mut s = Session::new(Document::from_text("Hola"));
+        let chrome = ribbon_chrome_for(&mut s, RibbonMode::HomeOnly);
+        assert!(
+            !chrome.pressed.iter().any(|id| id == "format.bold"),
+            "plain text is not bold: {:?}",
+            chrome.pressed
+        );
+        assert!(
+            chrome.disabled.iter().any(|id| id == "edit.cut"),
+            "cut needs a selection: {:?}",
+            chrome.disabled
+        );
+        s.run("select.all", &serde_json::json!({})).unwrap();
+        s.run("format.bold", &serde_json::json!({})).unwrap();
+        let chrome = ribbon_chrome_for(&mut s, RibbonMode::HomeOnly);
+        assert!(
+            chrome.pressed.iter().any(|id| id == "format.bold"),
+            "bold selection must press format.bold: {:?}",
+            chrome.pressed
+        );
+        assert!(
+            !chrome.disabled.iter().any(|id| id == "edit.cut"),
+            "cut enabled with selection: {:?}",
+            chrome.disabled
+        );
+    }
+
+    #[test]
+    fn ribbon_chrome_align_center_pressed() {
+        use wordcraft_doc::Document;
+        use wordcraft_engine::Session;
+        let mut s = Session::new(Document::from_text("Centro"));
+        s.run("para.alignCenter", &serde_json::json!({})).unwrap();
+        let chrome = ribbon_chrome_for(&mut s, RibbonMode::HomeOnly);
+        assert!(
+            chrome.pressed.iter().any(|id| id == "para.alignCenter"),
+            "center align: {:?}",
+            chrome.pressed
+        );
+        assert!(
+            !chrome.pressed.iter().any(|id| id == "para.alignLeft"),
+            "left should not be pressed: {:?}",
+            chrome.pressed
+        );
+    }
+
 }

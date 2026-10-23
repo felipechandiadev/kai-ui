@@ -3,7 +3,9 @@
 **Estado (2026-10-23):** Home + Insert + **Layout + Review + References + View**
 alimentados por el catálogo `wordcraft_engine::CommandSpec` /
 `cmd::registry()`. Chrome **AppKit**: iconos + tooltip en español, labels de
-grupo discretos y QAT Archivo a la izquierda de las tabs. No se porta
+grupo discretos y QAT Archivo a la izquierda de las tabs. **Ribbon vivo:**
+`pressed` / `disabled` cableados a Session (`format.state`, párrafo/caret,
+`view.dark_mode`, `Session::why_disabled`) vía `DocumentChange`. No se porta
 `wordcraft-ui-egui` ni assets ArtCraft.
 
 ## Diseño
@@ -46,9 +48,29 @@ Ribbon botón → Msg::DocCmd(document_cmd_for(id))
             → Session::run
 ```
 
-Disabled: opcional vía `DocumentRibbon::disabled_ids` (p. ej. desde
-`Session::why_disabled`). MVP demo no enruta Session al chrome (el leaf
-posee la Session).
+### Chrome vivo (pressed / disabled)
+
+`ribbon_chrome_for(session, mode)` calcula:
+
+| Estado | Fuente Session (sin inventar) |
+|--------|-------------------------------|
+| **Pressed** | `format.state` → bold/italic/underline/strike/sub/sup; `para_at(focus)` → align visual + bullets/numbering; `view.dark_mode` → `view.darkMode` |
+| **Disabled** | catálogo × `Session::why_disabled` / `cmd_disabled` |
+
+Flujo de sync:
+
+```text
+DocumentEditor::change()
+  → ribbon_chrome_for(session, Full)
+  → DocumentChange { ribbon_pressed, ribbon_disabled, … }
+  → Demo Msg::Documento → doc_ribbon_pressed / doc_ribbon_disabled
+  → DocumentRibbon::pressed_ids / disabled_ids → Element::pressed / ::disabled
+```
+
+Toggles vivos (si están en el catálogo del modo): `format.bold|italic|underline|
+strikethrough|subscript|superscript`, `para.alignLeft|Center|Right|justify`,
+`para.bullets|numbering`, `view.darkMode`. El resto de cmds solo participa en
+**disabled** cuando `why_disabled` lo reporta (p. ej. `edit.cut` sin selección).
 
 ## API
 
@@ -60,6 +82,8 @@ use kai::icons::Icon;
 document_ribbon()
     .mode(RibbonMode::Full)
     .active_tab("home")
+    .pressed_ids(pressed)   // desde DocumentChange.ribbon_pressed
+    .disabled_ids(disabled) // desde DocumentChange.ribbon_disabled
     .on_tab(Msg::RibbonTab)
     .on_command(|id| Msg::Cmd(document_cmd_for(&id)))
     .leading([
@@ -110,13 +134,16 @@ Backstage = fase posterior.
 
 - Keytips Alt, Backstage completo, Styles gallery live, rulers dibujados
 - Design tab, Mailings, contextual Table/Picture Format
-- Atlas glifos WordCraft + clipboard body (stash `wip-atlas-clipboard-debt`)
-- Toggle-on cableado a `Session` (bold/italic pressed state)
+- Pressed para cmds que Session aún no expone como toggle (p. ej. trackChanges /
+  markup / zoom presets) — solo disabled vía `why_disabled` hoy
+- Mixed/indeterminate en selección heterogénea (format.state es booleano)
 
 ## Cómo probar
 
 ```bash
 cargo +1.95 test --features document document::ribbon
 cargo +1.95 test --features document --lib demo::tests::document_ribbon
-# UI: demo → Datos → Documento; tabs Diseño / Revisar / Vista / Referencias
+# UI: demo → Datos → Documento; tipar → seleccionar todo → Negrita:
+#   botón format.bold queda pressed; sin selección edit.cut disabled.
+# Tabs Diseño / Revisar / Vista / Referencias.
 ```

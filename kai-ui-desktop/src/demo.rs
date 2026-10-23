@@ -144,6 +144,12 @@ struct Demo {
     /// Pestaña activa del ribbon Documento (`home` / `insert`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_tab: String,
+    /// Ribbon toggles pressed (desde Session vía DocumentChange).
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    doc_ribbon_pressed: Vec<String>,
+    /// Ribbon cmds disabled (`why_disabled`).
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    doc_ribbon_disabled: Vec<String>,
     /// Plantilla lista+detalle: índice del cliente seleccionado.
     plantilla_idx: usize,
     /// Catálogo vivo (Fase E): preset de tema, densidad y tamaño.
@@ -225,6 +231,8 @@ impl Default for Demo {
             doc_pending_export: None,
             doc_archivo_busy: false,
             doc_ribbon_tab: "home".into(),
+            doc_ribbon_pressed: Vec::new(),
+            doc_ribbon_disabled: Vec::new(),
             plantilla_idx: 0,
             catalog_preset: CatalogPreset::AppKitLight,
             catalog_density: Density::Comfortable,
@@ -1952,6 +1960,11 @@ impl App for Demo {
             Msg::Mes(index) => self.mes = Some(index),
             Msg::Documento(change) => {
                 self.doc_markdown = change.markdown;
+                #[cfg(feature = "document")]
+                {
+                    self.doc_ribbon_pressed = change.ribbon_pressed;
+                    self.doc_ribbon_disabled = change.ribbon_disabled;
+                }
                 #[cfg(feature = "document")]
                 if let Some(export) = change.export
                     && let Some((path, kind)) = self.doc_pending_export.take()
@@ -4046,6 +4059,8 @@ impl Demo {
         document_ribbon()
             .mode(RibbonMode::Full)
             .active_tab(self.doc_ribbon_tab.clone())
+            .pressed_ids(self.doc_ribbon_pressed.clone())
+            .disabled_ids(self.doc_ribbon_disabled.clone())
             .on_tab(Msg::DocRibbonTab)
             .on_command(|id| Msg::DocCmd(document_cmd_for(&id)))
             .leading([
@@ -5500,6 +5515,61 @@ mod tests {
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "!");
         assert!(app.value(editor()).contains('!'));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_ribbon_shows_bold_pressed_and_cut_disabled() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        // Sin selección: cut disabled en chrome.
+        assert!(
+            app.app()
+                .doc_ribbon_disabled
+                .iter()
+                .any(|id| id == "edit.cut")
+                || app.app().doc_ribbon_disabled.is_empty(),
+            // vacío hasta el primer DocumentChange; tipar dispara sync
+            "before edit disabled may be empty"
+        );
+        app.type_text(editor(), "Vivo");
+        assert!(
+            app.app()
+                .doc_ribbon_disabled
+                .iter()
+                .any(|id| id == "edit.cut"),
+            "cut disabled without selection: {:?}",
+            app.app().doc_ribbon_disabled
+        );
+        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.click(By::test_id("documento.ribbon.cmd.format.bold"));
+        assert!(
+            app.app()
+                .doc_ribbon_pressed
+                .iter()
+                .any(|id| id == "format.bold"),
+            "bold must show pressed: {:?}",
+            app.app().doc_ribbon_pressed
+        );
+        assert!(
+            !app.app()
+                .doc_ribbon_disabled
+                .iter()
+                .any(|id| id == "edit.cut"),
+            "cut enabled with selection: {:?}",
+            app.app().doc_ribbon_disabled
+        );
+        // El botón del ribbon queda pressed en el árbol.
+        let tree = build_view(app.app());
+        let mut bold_pressed = false;
+        tree.walk(&mut |el| {
+            if el.test_id.as_deref() == Some("documento.ribbon.cmd.format.bold") {
+                bold_pressed = el.is_pressed();
+            }
+        });
+        assert!(bold_pressed, "ribbon bold button should be pressed");
     }
 
     #[cfg(feature = "document")]
