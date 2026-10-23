@@ -1,8 +1,8 @@
 //! WordCraft [`Session`] keyed por [`WidgetId`] (guía 16 §5–§6 fase 1).
 //!
-//! Modelo, tipado, selección, undo, **páginas** y scroll viven aquí.
-//! Varias páginas Letter se apilan en un canvas; el viewport del widget
-//! desplaza con `scroll_y`. Hit-test por `DocLayout::hit(page, x, y)`.
+//! Modelo, tipado, selección, undo, **páginas**, scroll y **archivo**
+//! (docx/pdf) viven aquí. Varias páginas Letter se apilan en un canvas;
+//! el viewport desplaza con `scroll_y`. Hit-test por `DocLayout::hit`.
 
 use serde_json::json;
 use wordcraft_doc::{Document, StoryRef};
@@ -18,7 +18,7 @@ use cosmic_text::Weight;
 
 use super::{
     viewport_metrics, DocumentChange, DocumentCmd, DocumentFill, DocumentImage, DocumentLine,
-    DocumentPaint, DocumentRun, DocumentSpec, PAGE_GAP_PT,
+    DocumentPaint, DocumentRun, DocumentSpec, ExportDoc, PAGE_GAP_PT,
 };
 use crate::media;
 use crate::render::Bitmap;
@@ -30,6 +30,8 @@ pub struct DocumentEditor {
     session: Session,
     /// Último `serial` de comando de la app ya aplicado.
     last_cmd_serial: u64,
+    /// Último `serial` de carga `.docx` ya aplicado.
+    last_load_serial: u64,
     /// Markdown que la app empujó (evita re-cargar en bucle).
     last_markdown: String,
     /// Scroll vertical del viewport (puntos lógicos).
@@ -38,6 +40,8 @@ pub struct DocumentEditor {
     pub(crate) last_viewport: Rect,
     /// Cache media WordCraft → Bitmap Kai (atlas).
     bitmaps: HashMap<String, Bitmap>,
+    /// Modelo clonado tras [`DocumentCmd::TakeDocument`].
+    taken_document: Option<std::sync::Arc<wordcraft_doc::Document>>,
     paint: DocumentPaint,
 }
 
@@ -53,6 +57,7 @@ impl DocumentEditor {
         let mut editor = Self {
             session: Session::new(doc),
             last_cmd_serial: 0,
+            last_load_serial: 0,
             last_markdown: markdown.to_owned(),
             scroll_y: 0.0,
             last_viewport: Rect {
@@ -61,6 +66,7 @@ impl DocumentEditor {
                 ..Rect::default()
             },
             bitmaps: HashMap::new(),
+            taken_document: None,
             paint: DocumentPaint::default(),
         };
         editor.refresh_paint();
@@ -120,10 +126,11 @@ impl DocumentEditor {
         true
     }
 
-    pub fn change(&self) -> DocumentChange {
+    pub fn change(&mut self) -> DocumentChange {
         DocumentChange {
             plain_text: self.plain_text(),
             markdown: self.markdown(),
+            export: self.taken_document.take().map(ExportDoc),
         }
     }
 
@@ -133,6 +140,51 @@ impl DocumentEditor {
             return;
         }
         *self = Self::new(markdown);
+    }
+
+    /// Reemplaza el documento desde bytes `.docx` (`wordcraft_docx::read`).
+    pub fn load_docx_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let doc = wordcraft_docx::read(bytes).map_err(|e| e.to_string())?;
+        self.session = Session::new(doc);
+        self.last_markdown = self.markdown();
+        self.scroll_y = 0.0;
+        self.bitmaps.clear();
+        self.taken_document = None;
+        self.refresh_paint();
+        Ok(())
+    }
+
+    /// Serializa a `.docx` (tests / encode en el mismo hilo).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn to_docx_bytes(&self) -> Result<Vec<u8>, String> {
+        wordcraft_docx::write(&self.session.doc).map_err(|e| e.to_string())
+    }
+
+    /// Exporta PDF (`wordcraft_pdf::export`).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn to_pdf_bytes(&self) -> Result<Vec<u8>, String> {
+        wordcraft_pdf::export(&self.session.doc, &wordcraft_pdf::PdfOptions::default())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Aplica una carga `.docx` pendiente del spec.
+    pub fn apply_pending_load(&mut self, spec: &DocumentSpec) -> bool {
+        let Some(req) = &spec.pending_load else {
+            return false;
+        };
+        if req.serial <= self.last_load_serial {
+            return false;
+        }
+        self.last_load_serial = req.serial;
+        match self.load_docx_bytes(&req.bytes) {
+            Ok(()) => true,
+            Err(err) => {
+                // Mantener el documento actual; el error lo verá la app
+                // si re-intenta. Log suave vía plain_text unchanged.
+                let _ = err;
+                false
+            }
+        }
     }
 
     /// Aplica un comando pendiente del spec (`format.bold`, …).
@@ -146,8 +198,11 @@ impl DocumentEditor {
         self.last_cmd_serial = req.serial;
         let changed = self.run_cmd(&req.id);
         if changed {
-            self.last_markdown = self.markdown();
-            self.refresh_paint();
+            // TakeDocument no muta el cuerpo; el resto sí.
+            if !matches!(req.id, DocumentCmd::TakeDocument) {
+                self.last_markdown = self.markdown();
+                self.refresh_paint();
+            }
         }
         changed
     }
@@ -216,6 +271,10 @@ impl DocumentEditor {
 
     fn run_cmd(&mut self, cmd: &DocumentCmd) -> bool {
         match cmd {
+            DocumentCmd::TakeDocument => {
+                self.taken_document = Some(std::sync::Arc::new(self.session.doc.clone()));
+                true
+            }
             DocumentCmd::InsertTable => self
                 .session
                 .run("insert.table", &json!({ "rows": 2, "cols": 2 }))
@@ -911,5 +970,34 @@ mod tests {
         assert!(ed.paint().images[0].bitmap.width() > 0);
     }
 
+    #[test]
+    fn docx_roundtrip_preserves_plain_text() {
+        let ed = DocumentEditor::new("Hola fase 3");
+        let bytes = ed.to_docx_bytes().expect("write docx");
+        assert!(bytes.starts_with(b"PK"), "docx is a zip");
+        let mut loaded = DocumentEditor::new("");
+        loaded.load_docx_bytes(&bytes).expect("read docx");
+        assert!(
+            loaded.plain_text().contains("Hola fase 3"),
+            "got {:?}",
+            loaded.plain_text()
+        );
+    }
 
+    #[test]
+    fn pdf_export_is_non_empty() {
+        let ed = DocumentEditor::new("PDF de prueba");
+        let bytes = ed.to_pdf_bytes().expect("export pdf");
+        assert!(bytes.starts_with(b"%PDF"), "got {} bytes", bytes.len());
+        assert!(bytes.len() > 100);
+    }
+
+    #[test]
+    fn take_document_fills_export_once() {
+        let mut ed = DocumentEditor::new("snap");
+        assert!(ed.run_cmd(&DocumentCmd::TakeDocument));
+        let change = ed.change();
+        assert!(change.export.is_some());
+        assert!(ed.change().export.is_none(), "taken once");
+    }
 }

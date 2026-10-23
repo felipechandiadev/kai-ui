@@ -1413,9 +1413,11 @@ dependencies = [
  "wgpu",
  "winit",
  "wordcraft-doc",
+ "wordcraft-docx",
  "wordcraft-engine",
  "wordcraft-fonts",
  "wordcraft-layout",
+ "wordcraft-pdf",
 ]
 
 [[package]]

@@ -1,12 +1,11 @@
 //! Widget [`document`]: mini procesador de texto (guía
 //! [`docs/dev/16-widget-document.md`](../../docs/dev/16-widget-document.md)).
 //!
-//! **Fase 2 — tablas e imágenes:** con `feature = "document"`, una
-//! `wordcraft_engine::Session` por [`WidgetId`] tipa, pagina e inserta
-//! `insert.table` / `insert.picture`. El viewport apila páginas Letter
-//! con `scroll_y`; hit-test WordCraft. Celdas/bordes → quads; bits de
-//! imagen → [`crate::render::ImageDraw`] (atlas Kai). Bridge TextStore
-//! de glifos sigue como deuda de atlas WordCraft.
+//! **Fase 3 — archivo:** abrir/guardar `.docx` (`wordcraft-docx`) y
+//! exportar PDF (`wordcraft-pdf`) vía `Effects::pick_file` /
+//! `save_file` + `perform` (fuera del paint). El modelo WordCraft se
+//! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
+//! Bridge TextStore de glifos / clipboard / markdown rich = deuda post-plan.
 //!
 //! ```ignore
 //! document()
@@ -52,6 +51,9 @@ pub enum DocumentCmd {
     InsertTable,
     /// `insert.picture` con PNG embebido de demo (o bytes vía params en Session).
     InsertPicture,
+    /// Clona el modelo WordCraft en el próximo [`DocumentChange::export`]
+    /// (guardar / exportar PDF off-thread). No es un id de WordCraft.
+    TakeDocument,
     /// Id crudo de WordCraft (`format.underline`, …).
     Raw(String),
 }
@@ -66,6 +68,7 @@ impl DocumentCmd {
             Self::Redo => "edit.redo",
             Self::InsertTable => "insert.table",
             Self::InsertPicture => "insert.picture",
+            Self::TakeDocument => "kai.document.take",
             Self::Raw(id) => id.as_str(),
         }
     }
@@ -76,6 +79,35 @@ impl DocumentCmd {
 pub struct DocumentCmdRequest {
     pub id: DocumentCmd,
     pub serial: u64,
+}
+
+/// Bytes `.docx` a cargar en el editor (serial como [`DocumentCmdRequest`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DocumentLoadRequest {
+    pub serial: u64,
+    pub bytes: std::sync::Arc<[u8]>,
+}
+
+/// Clone del modelo WordCraft listo para encode off-thread (Eq por `Arc`).
+#[cfg(feature = "document")]
+#[derive(Clone)]
+pub(crate) struct ExportDoc(pub(crate) std::sync::Arc<wordcraft_doc::Document>);
+
+#[cfg(feature = "document")]
+impl PartialEq for ExportDoc {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+#[cfg(feature = "document")]
+impl Eq for ExportDoc {}
+
+#[cfg(feature = "document")]
+impl std::fmt::Debug for ExportDoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ExportDoc(..)")
+    }
 }
 
 /// Snapshot de paint que la Session rellena cada frame (como tiles/labels).
@@ -169,6 +201,8 @@ pub struct DocumentSpec {
     pub markdown: String,
     /// Comando pendiente (toolbar / Action); la Session lo aplica una vez.
     pub pending_cmd: Option<DocumentCmdRequest>,
+    /// Carga `.docx` pendiente (Abrir); la Session la aplica una vez.
+    pub(crate) pending_load: Option<DocumentLoadRequest>,
 }
 
 impl DocumentSpec {
@@ -194,6 +228,9 @@ impl DocumentSpec {
 pub struct DocumentChange {
     pub plain_text: String,
     pub markdown: String,
+    /// Tras [`DocumentCmd::TakeDocument`]: modelo para encode off-thread.
+    #[cfg(feature = "document")]
+    pub(crate) export: Option<ExportDoc>,
 }
 
 /// Editor de documento. Dale tamaño con clases y un nombre accesible con
@@ -244,6 +281,14 @@ impl<Msg> Element<Msg> {
     pub fn pending_cmd(mut self, id: DocumentCmd, serial: u64) -> Self {
         if let Kind::Document(spec) = &mut self.kind {
             spec.pending_cmd = Some(DocumentCmdRequest { id, serial });
+        }
+        self
+    }
+
+    /// Documentos: carga bytes `.docx` una vez (`serial` nuevo).
+    pub fn pending_load(mut self, bytes: std::sync::Arc<[u8]>, serial: u64) -> Self {
+        if let Kind::Document(spec) = &mut self.kind {
+            spec.pending_load = Some(DocumentLoadRequest { serial, bytes });
         }
         self
     }

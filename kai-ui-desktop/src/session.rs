@@ -3354,6 +3354,7 @@ impl<A: App> Session<A> {
             WidgetId,
             String,
             Option<crate::document::DocumentCmdRequest>,
+            Option<crate::document::DocumentLoadRequest>,
         )> = Vec::new();
         self.tree.walk(&mut |element| {
             if let Kind::Document(spec) = &element.kind {
@@ -3361,10 +3362,11 @@ impl<A: App> Session<A> {
                     element.id,
                     spec.markdown.clone(),
                     spec.pending_cmd.clone(),
+                    spec.pending_load.clone(),
                 ));
             }
         });
-        for (id, markdown, pending) in specs {
+        for (id, markdown, pending, pending_load) in specs {
             let ed = self
                 .documents
                 .entry(id)
@@ -3377,9 +3379,12 @@ impl<A: App> Session<A> {
             let tmp = crate::document::DocumentSpec {
                 markdown: markdown.clone(),
                 pending_cmd: pending,
+                pending_load,
                 ..Default::default()
             };
-            if ed.apply_pending_cmd(&tmp) {
+            let mut changed = ed.apply_pending_load(&tmp);
+            changed |= ed.apply_pending_cmd(&tmp);
+            if changed {
                 changes.push((id, ed.change()));
             }
             live.push(id);
@@ -3422,7 +3427,8 @@ impl<A: App> Session<A> {
             if !ed.apply_text_intent(intent) {
                 return;
             }
-            (ed.change(), ed.paint().clone())
+            let paint = ed.paint().clone();
+            (ed.change(), paint)
         };
         for (i, run) in paint.runs.iter().enumerate() {
             let style = crate::document::run_text_style(run);
@@ -3445,10 +3451,11 @@ impl<A: App> Session<A> {
     #[cfg(feature = "document")]
     fn report_document_change(&mut self, id: WidgetId) {
         let (change, paint) = {
-            let Some(ed) = self.documents.get(&id) else {
+            let Some(ed) = self.documents.get_mut(&id) else {
                 return;
             };
-            (ed.change(), ed.paint().clone())
+            let paint = ed.paint().clone();
+            (ed.change(), paint)
         };
         for (i, run) in paint.runs.iter().enumerate() {
             let style = crate::document::run_text_style(run);

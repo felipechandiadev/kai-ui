@@ -167,6 +167,12 @@ impl PickFile {
             types: IMAGE_FILE_TYPES,
         }
     }
+
+    /// Extensions without the dot (`docx`, `pdf`, …).
+    pub fn types(mut self, types: &'static [&'static str]) -> Self {
+        self.types = types;
+        self
+    }
 }
 
 /// What the save panel of [`Effects::save_file`] shows.
