@@ -132,7 +132,7 @@ Sin tocar el framework funciona la paginación por botones: una página de 100 f
 - **Offset** (`OFFSET 50000 LIMIT 100`): permite saltar a cualquier punto arrastrando la barra. Con 100 000 filas e índices adecuados anda bien en Postgres.
 - **Cursor o keyset** (`WHERE (monto, id) > ($1, $2)`): más rápido y estable si los datos cambian mientras se navega, pero no permite saltar al medio. Encaja con «cargar más», no con una barra de scroll real.
 - **El total** puede ser caro (`COUNT(*)` con filtros): usar un conteo aproximado o pedirlo una vez por búsqueda, no por página.
-- **Datos que cambian mientras se mira** (otro usuario edita un registro): hace falta una suscripción (websockets) que invalide páginas del caché. Kai todavía no tiene suscripciones (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)).
+- **Datos que cambian mientras se mira** (otro usuario edita un registro): hace falta una suscripción de red (websockets) que invalide páginas del caché. El modelo `App::subscriptions` ya existe (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)); falta el adaptador de websocket encima.
 
 ## Resumen
 

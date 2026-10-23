@@ -18,6 +18,7 @@ Una aplicación implementa `App` o, si no necesita efectos, `SimpleApp`:
 pub trait App: 'static {
     type Msg: Clone + Debug + 'static;
     fn init(&mut self) -> Effects<Self::Msg> { Effects::none() } // una vez, antes del primer view
+    fn subscriptions(&self) -> Subscriptions<Self::Msg> { Subscriptions::none() }
     fn title(&self) -> String;
     fn update(&mut self, msg: Self::Msg) -> Effects<Self::Msg>;
     fn view(&self) -> Element<Self::Msg>;
@@ -33,13 +34,19 @@ runtime::run(Demo::default(), Theme::kai(Density::Comfortable))
 `Effects` es opaco y describe el trabajo que `update` le pide al runtime (Paso 15 de [13](13-hoja-de-ruta-plataforma.md)):
 
 - `Effects::perform(tarea, a_msg)` corre una función bloqueante en un pool de 4 hilos (`effects.rs`); su resultado vuelve por el `EventLoopProxy` y entra a `update` como un `Msg`.
-- `Effects::after(duración, msg)` es un temporizador (los toasts lo usan para cerrarse).
+- `Effects::perform_async(futuro, a_msg)` corre un `Future` en el mismo pool con `pollster::block_on` (sin Tokio en este camino; Tokio sigue opcional con la feature `mcp`). Misma `.keyed` / `cancel` y el mismo busy feedback que `perform`.
+- `Effects::after(duración, msg)` es un temporizador de un solo disparo (los toasts lo usan para cerrarse).
 - `.keyed(key)` reemplaza la tarea o el temporizador pendiente con la misma key, y `Effects::cancel(key)` descarta su resultado.
 - **Temporizadores retenidos.** Si la key de un temporizador es el `test_id` de un elemento, el temporizador espera mientras el puntero (`hover_path`) o el foco estén dentro de ese elemento. Cuando los dos salen, todavía espera al menos `HELD_TIMER_RESUME` (2 s). Así un toast (`toast_key(id)` es también su test id) no se cierra mientras alguien lo lee o llega a sus botones (WCAG 2.2.1). `toast_timer(&toast, close)` no crea temporizador para un error: queda hasta que se cierra.
-- `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS y entrega la ruta o `None`. `Effects::save_file(SaveFile::new(título, nombre).types(&["xlsx"]), a_msg)` abre el panel de guardar (`NSSavePanel`) con un nombre propuesto y entrega la ruta elegida o `None`; la demo lo usa para exportar la tabla a Excel. Hoy los dos paneles son modales dentro del manejador de eventos, y la app aborta si se termina con uno abierto (fallo conocido, ver el Paso 15 de 13).
+- `Effects::pick_file(PickFile::images(título), a_msg)` abre el panel de archivos de macOS como hoja (`beginSheetModalForWindow`) y entrega la ruta o `None`. `Effects::save_file(SaveFile::new(título, nombre).types(&["xlsx"]), a_msg)` abre el panel de guardar con un nombre propuesto; la demo lo usa para exportar la tabla a Excel.
 - `Effects::none()` y `Effects::batch(..)` combinan.
 
-En `TestApp`, `run_until_idle()` espera las tareas, `advance(duración)` mueve el reloj de los temporizadores, y `on_file_pick(ruta)` y `on_file_save(ruta)` responden los paneles de archivos. Faltan futures (`perform` recibe una función, no un `async`) y suscripciones.
+**Suscripciones (`Sub`).** `App::subscriptions(&self) -> Subscriptions<Msg>` se reevalúa tras `init` y cada `update` (como en Elm). El runtime hace diff por key: arranca las nuevas, para las que desaparecen y conserva el calendario si key y periodo coinciden. Hoy:
+
+- `Subscriptions::every(key, duración, msg)` emite `msg` cada `duración` mientras la sub esté activa (origen «Suscripción» en devtools).
+- `Subscriptions::none()` / `batch(..)` combinan. El esqueleto es extensible (p. ej. un observador de archivos); websockets de notificaciones DSP llegan después.
+
+En `TestApp`, `run_until_idle()` espera las tareas (sync y async), `advance(duración)` mueve el reloj de `Effects::after` y de las suscripciones periódicas, y `on_file_pick(ruta)` / `on_file_save(ruta)` responden los paneles de archivos.
 
 **Botón ocupado.** Cada tarea de `Effects::perform` guarda qué la lanzó (`TaskOrigin`): el control clicado (`Widget(id)`) o el comando (`Command(id)`), ya venga de un atajo, del menú, de la paleta, de un botón con `on_command`, de un script o de un agente. Mientras la tarea no entrega su `Msg`, ese origen está ocupado:
 
@@ -167,7 +174,7 @@ Un renderer propio no elimina la integración de plataforma. Validar portapapele
 
 ## Mantener fuera del MVP
 
-- Bus global de señales, suscripciones cruzadas y componentes con estado local oculto hasta que una app los necesite. Los efectos (`Cmd` de Elm) ya existen como `Effects`; las suscripciones (`Sub`) llegarán con los websockets de DSP (Paso 15 de 13).
+- Bus global de señales, suscripciones cruzadas entre widgets y componentes con estado local oculto hasta que una app los necesite. Los efectos (`Cmd` de Elm) son `Effects`; las suscripciones de app (`Sub`) ya existen como `App::subscriptions` / `Subscriptions::every` (Paso 15). Faltan suscripciones de red (websockets) encima de ese modelo.
 - Tokio como propietario del event loop gráfico.
 - Undo/redo de la app (los campos de texto ya deshacen su edición), persistencia de acciones y serialización de cada mensaje.
 - Ejecución de comandos de IA/MCP dentro del núcleo visual. Una app puede añadir un adaptador opcional y controlado fuera del MVP.
