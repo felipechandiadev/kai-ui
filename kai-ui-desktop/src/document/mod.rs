@@ -5,7 +5,7 @@
 //! exportar PDF (`wordcraft-pdf`) vía `Effects::pick_file` /
 //! `save_file` + `perform` (fuera del paint). El modelo WordCraft se
 //! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
-//! Bridge TextStore de glifos / clipboard / markdown rich = deuda post-plan.
+//! Ribbon Kai (catálogo WordCraft) en `ribbon`. Bridge TextStore / clipboard / markdown rich = deuda.
 //!
 //! ```ignore
 //! document()
@@ -27,7 +27,14 @@ use crate::theme::Theme;
 #[cfg(feature = "document")]
 mod editor;
 #[cfg(feature = "document")]
+mod ribbon;
+#[cfg(feature = "document")]
 pub(crate) use editor::{run_text_style, DocumentEditor};
+#[cfg(feature = "document")]
+pub use ribbon::{
+    cmd_disabled, document_cmd_for, document_ribbon, parse_location, ribbon_catalog, DocumentRibbon,
+    RibbonGroup, RibbonItem, RibbonMode, RibbonTab,
+};
 
 /// Márgenes del stack de páginas respecto al padding box (viewport).
 pub(crate) const PAGE_INSET: f32 = 16.0;
