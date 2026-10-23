@@ -3183,6 +3183,17 @@ impl Demo {
             .active_tab(self.doc_ribbon_tab.clone())
             .on_tab(Msg::DocRibbonTab)
             .on_command(|id| Msg::DocCmd(document_cmd_for(&id)))
+            .leading([
+                toolbar_item(Icon::FolderOpen, "Abrir…")
+                    .on_command(DocAbrir)
+                    .test_id("documento.abrir"),
+                toolbar_item(Icon::Save, "Guardar…")
+                    .on_command(DocGuardar)
+                    .test_id("documento.guardar"),
+                toolbar_item(Icon::FileDown, "Exportar PDF…")
+                    .on_command(DocExportarPdf)
+                    .test_id("documento.exportar_pdf"),
+            ])
             .test_id("documento.ribbon")
             .build()
     }
@@ -3190,12 +3201,30 @@ impl Demo {
     #[cfg(not(feature = "document"))]
     fn documento_ribbon_chrome(&self) -> Element<Msg> {
         div()
-            .class("text-sm text-muted-foreground")
+            .class("flex flex-col gap-1")
             .test_id("documento.ribbon")
-            .child(text("Compila con --features document para el ribbon WordCraft."))
+            .children([
+                div()
+                    .class("flex flex-row items-center gap-0.5")
+                    .role(Role::Toolbar)
+                    .test_id("documento.archivo")
+                    .children([
+                        toolbar_item(Icon::FolderOpen, "Abrir…")
+                            .on_command(DocAbrir)
+                            .test_id("documento.abrir"),
+                        toolbar_item(Icon::Save, "Guardar…")
+                            .on_command(DocGuardar)
+                            .test_id("documento.guardar"),
+                        toolbar_item(Icon::FileDown, "Exportar PDF…")
+                            .on_command(DocExportarPdf)
+                            .test_id("documento.exportar_pdf"),
+                    ]),
+                text("Compila con --features document para el ribbon WordCraft.")
+                    .class("text-sm text-muted-foreground"),
+            ])
     }
 
-    /// Documento: metáfora Pages — ribbon + Archivo + canvas a hoja Letter completa.
+    /// Documento: metáfora Pages — ribbon (QAT Archivo + tabs) + canvas Letter.
     fn documento(&self) -> Element<Msg> {
         let mut editor = document()
             .label("Informe de demostración")
@@ -3216,29 +3245,9 @@ impl Demo {
             .children([
                 div()
                     .class(
-                        "flex-none flex flex-col gap-2 px-3 pt-3 pb-2 bg-window border-b border-separator",
+                        "flex-none flex flex-col px-3 pt-2 pb-2 bg-window border-b border-separator",
                     )
-                    .children([
-                        self.documento_ribbon_chrome(),
-                        div()
-                            .class("flex flex-wrap items-center gap-2")
-                            .test_id("documento.archivo")
-                            .children([
-                                button_sized("Abrir…", ButtonVariant::Outlined, ButtonSize::Sm)
-                                    .on_command(DocAbrir)
-                                    .test_id("documento.abrir"),
-                                button_sized("Guardar…", ButtonVariant::Outlined, ButtonSize::Sm)
-                                    .on_command(DocGuardar)
-                                    .test_id("documento.guardar"),
-                                button_sized(
-                                    "Exportar PDF…",
-                                    ButtonVariant::Outlined,
-                                    ButtonSize::Sm,
-                                )
-                                .on_command(DocExportarPdf)
-                                .test_id("documento.exportar_pdf"),
-                            ]),
-                    ]),
+                    .child(self.documento_ribbon_chrome()),
                 editor,
             ])
     }

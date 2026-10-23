@@ -8,6 +8,8 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Added
 
+- **Ribbon Documento AppKit (iconos + ES):** comandos como `toolbar_item` (icono + tooltip ES + atajo); labels de grupo 11px muted y separadores verticales; tabs Inicio/Insertar/Diseño/…; QAT Abrir/Guardar/Exportar PDF a la izquierda de las tabs (`DocumentRibbon::leading`). Catálogo Lucide ampliado (bold/italic/align/undo/…). Docs [`17-document-ribbon.md`](docs/dev/17-document-ribbon.md). Ids de comando siguen en EN.
+
 - **Caret blink (P0):** fase booleana ~530 ms (AppKit) en TextField y Document; `Session::animating` pide frames con foco de texto; reset al tipar/mover caret; `reduce_motion` → caret fijo visible; Document usa `semantic.caret` y oculta si ventana inactiva.
 - **Demo Documento Pages (P0):** shell sin card/`h-96`/`max-w-3xl`; ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`; scale viewport `min(w/pw, h/ph)` para caber una hoja Letter.
 - **Default AppKit (P0):** `demo_theme` / `run_from_env` sin `KAI_THEME` (o vacío/`Err`) → AppKit current light; `KAI_THEME=kai` explícito.
