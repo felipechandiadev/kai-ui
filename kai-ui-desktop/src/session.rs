@@ -2443,14 +2443,49 @@ impl<A: App> Session<A> {
             && let Some(id) = current_focus.filter(|id| self.opens_popup(*id))
         {
             self.open_popup(id);
-        } else if let Some(action) = result.action
-            && let Some(msg) = action_message(&self.tree, current_focus, action)
-        {
-            self.send(msg);
+        } else if let Some(action) = result.action {
+            // Toolbar/ribbon often steals focus; Edit ⌘C/X/V still target the
+            // text field or sole document that owns the selection (AppKit-like).
+            let routed_clipboard = matches!(
+                action,
+                Action::Copy | Action::Cut | Action::Paste
+            ) && self.clipboard_edit_target(current_focus).is_some_and(|id| {
+                let intent = match action {
+                    Action::Copy => TextIntent::Copy,
+                    Action::Cut => TextIntent::Cut,
+                    Action::Paste => TextIntent::Paste,
+                    _ => unreachable!(),
+                };
+                self.apply_text_intent(id, intent);
+                true
+            });
+            if !routed_clipboard
+                && let Some(msg) = action_message(&self.tree, current_focus, action)
+            {
+                self.send(msg);
+            }
         }
         if result.changed || current_focus != previous_focus {
             self.invalidate();
         }
+    }
+
+    /// Widget that should receive Edit clipboard actions for the current focus.
+    fn clipboard_edit_target(&self, focused: Option<WidgetId>) -> Option<WidgetId> {
+        if let Some(id) = focused {
+            if self.text_fields.contains_key(&id) {
+                return Some(id);
+            }
+            #[cfg(feature = "document")]
+            if self.documents.contains_key(&id) {
+                return Some(id);
+            }
+        }
+        #[cfg(feature = "document")]
+        if self.documents.len() == 1 {
+            return self.documents.keys().next().copied();
+        }
+        None
     }
 
     fn apply_text_intent(&mut self, id: WidgetId, intent: TextIntent) {
@@ -3430,22 +3465,6 @@ impl<A: App> Session<A> {
         }
         self.documents.retain(|id, _| live.contains(id));
 
-        // TextStore bridge for DrawOp::Text (deuda fase 1: atlas WordCraft).
-        let run_snaps: Vec<(WidgetId, crate::document::DocumentPaint)> = self
-            .documents
-            .iter()
-            .map(|(id, ed)| (*id, ed.paint().clone()))
-            .collect();
-        for (id, paint) in &run_snaps {
-            for (i, run) in paint.runs.iter().enumerate() {
-                let style = crate::document::run_text_style(run);
-                let _ = self.text.sync_text(
-                    crate::render::TextId::document_run(*id, i as u32),
-                    &run.text,
-                    style,
-                );
-            }
-        }
         let _ = focused;
         for (id, change) in changes {
             if let Some(handler) = self
@@ -3459,24 +3478,15 @@ impl<A: App> Session<A> {
 
     #[cfg(feature = "document")]
     fn apply_document_intent(&mut self, id: WidgetId, intent: TextIntent) {
-        let (change, paint) = {
+        let change = {
             let Some(ed) = self.documents.get_mut(&id) else {
                 return;
             };
-            if !ed.apply_text_intent(intent) {
+            if !ed.apply_text_intent_clipboard(intent, &mut *self.clipboard) {
                 return;
             }
-            let paint = ed.paint().clone();
-            (ed.change(), paint)
+            ed.change()
         };
-        for (i, run) in paint.runs.iter().enumerate() {
-            let style = crate::document::run_text_style(run);
-            let _ = self.text.sync_text(
-                crate::render::TextId::document_run(id, i as u32),
-                &run.text,
-                style,
-            );
-        }
         if let Some(handler) = self
             .handler(id)
             .and_then(|h| h.on_document_change.clone())
@@ -3490,21 +3500,12 @@ impl<A: App> Session<A> {
 
     #[cfg(feature = "document")]
     fn report_document_change(&mut self, id: WidgetId) {
-        let (change, paint) = {
+        let change = {
             let Some(ed) = self.documents.get_mut(&id) else {
                 return;
             };
-            let paint = ed.paint().clone();
-            (ed.change(), paint)
+            ed.change()
         };
-        for (i, run) in paint.runs.iter().enumerate() {
-            let style = crate::document::run_text_style(run);
-            let _ = self.text.sync_text(
-                crate::render::TextId::document_run(id, i as u32),
-                &run.text,
-                style,
-            );
-        }
         if let Some(handler) = self
             .handler(id)
             .and_then(|h| h.on_document_change.clone())

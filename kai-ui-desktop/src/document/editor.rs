@@ -11,14 +11,13 @@ use wordcraft_fonts::FontDb;
 use wordcraft_layout::display::{page_display, DisplayOptions, Draw};
 
 use crate::geometry::{Point, Rect};
-use crate::render::text::TextStyle;
 use crate::render::Color;
+use crate::text_field::ClipboardPort;
 use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
-use cosmic_text::Weight;
 
 use super::{
-    viewport_metrics, DocumentChange, DocumentCmd, DocumentFill, DocumentImage, DocumentLine,
-    DocumentPaint, DocumentRun, DocumentSpec, ExportDoc, PAGE_GAP_PT,
+    viewport_metrics, DocumentChange, DocumentCmd, DocumentFill, DocumentGlyph, DocumentGlyphAtlas,
+    DocumentImage, DocumentLine, DocumentPaint, DocumentSpec, ExportDoc, PAGE_GAP_PT,
 };
 use crate::media;
 use crate::render::Bitmap;
@@ -27,7 +26,7 @@ use std::io::Cursor;
 
 /// Clave de invalidación del snapshot [`DocumentPaint`].
 ///
-/// El scroll (`scroll_y`) **no** entra: el paint reutiliza runs/fills y solo
+/// El scroll (`scroll_y`) **no** entra: el paint reutiliza glyphs/fills y solo
 /// actualiza el offset. Incluye `rev`, selección (caret/highlights; los
 /// comandos `caret.*` no bumpan `rev`), tamaño de viewport (afecta scale /
 /// `scroll_max`) y modo de vista WordCraft.
@@ -39,6 +38,21 @@ struct PaintKey {
     vp_h: u32,
     view_mode: wordcraft_layout::ViewMode,
     read_mode: bool,
+}
+
+/// Clipboard no-op para tests / APIs que no necesitan host clipboard.
+#[cfg_attr(not(test), allow(dead_code))]
+struct DiscardClipboard;
+
+#[cfg_attr(not(test), allow(dead_code))]
+impl ClipboardPort for DiscardClipboard {
+    fn get_text(&mut self) -> Result<String, String> {
+        Ok(String::new())
+    }
+
+    fn set_text(&mut self, _text: String) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Editor vivo: una [`Session`] WordCraft + snapshot de paint + scroll.
@@ -56,6 +70,8 @@ pub struct DocumentEditor {
     pub(crate) last_viewport: Rect,
     /// Cache media WordCraft → Bitmap Kai (atlas).
     bitmaps: HashMap<String, Bitmap>,
+    /// Atlas de glifos WordCraft (swash → Bitmap); sin TextStore.
+    glyph_atlas: DocumentGlyphAtlas,
     /// Modelo clonado tras [`DocumentCmd::TakeDocument`].
     taken_document: Option<std::sync::Arc<wordcraft_doc::Document>>,
     paint: DocumentPaint,
@@ -87,6 +103,7 @@ impl DocumentEditor {
                 ..Rect::default()
             },
             bitmaps: HashMap::new(),
+            glyph_atlas: DocumentGlyphAtlas::new(),
             taken_document: None,
             paint: DocumentPaint::default(),
             last_paint_key: None,
@@ -107,6 +124,11 @@ impl DocumentEditor {
 
     pub fn paint(&self) -> &DocumentPaint {
         &self.paint
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn glyph_atlas_len(&self) -> usize {
+        self.glyph_atlas.len()
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -240,7 +262,18 @@ impl DocumentEditor {
         changed
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn apply_text_intent(&mut self, intent: TextIntent) -> bool {
+        self.apply_text_intent_clipboard(intent, &mut DiscardClipboard)
+    }
+
+    /// Como [`Self::apply_text_intent`], con puerto de clipboard (copy/cut/paste).
+    pub fn apply_text_intent_clipboard(
+        &mut self,
+        intent: TextIntent,
+        clipboard: &mut dyn ClipboardPort,
+    ) -> bool {
+        let is_copy = matches!(intent, TextIntent::Copy);
         let changed = match intent {
             TextIntent::InsertText(text) => {
                 if text.is_empty() {
@@ -266,7 +299,12 @@ impl DocumentEditor {
             TextIntent::Undo => self.run_cmd(&DocumentCmd::Undo),
             TextIntent::Redo => self.run_cmd(&DocumentCmd::Redo),
             TextIntent::SelectAll => self.run("select.all"),
-            TextIntent::Copy | TextIntent::Cut | TextIntent::Paste => false,
+            TextIntent::Copy => {
+                let _ = self.clipboard_copy(clipboard);
+                false
+            }
+            TextIntent::Cut => self.clipboard_cut(clipboard),
+            TextIntent::Paste => self.clipboard_paste(clipboard),
             TextIntent::KeyDown {
                 key,
                 modifiers,
@@ -277,7 +315,52 @@ impl DocumentEditor {
             self.last_markdown = self.markdown();
             self.refresh_paint();
         }
-        changed
+        // Copy also "handles" the intent so the Session can invalidate/IME.
+        changed || is_copy
+    }
+
+    /// Copia la selección al clipboard del host (texto plano) vía `edit.copy`.
+    pub fn clipboard_copy(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
+        match self.session.run("edit.copy", &json!({})) {
+            Ok(v) => {
+                let text = v
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                clipboard.set_text(text).is_ok()
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Corta la selección (`edit.cut`) y escribe texto plano al host.
+    pub fn clipboard_cut(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
+        match self.session.run("edit.cut", &json!({})) {
+            Ok(v) => {
+                let text = v
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let _ = clipboard.set_text(text);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Pega texto plano del host (`edit.paste` con `{"text"}`).
+    pub fn clipboard_paste(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
+        let Ok(text) = clipboard.get_text() else {
+            return false;
+        };
+        if text.is_empty() {
+            return false;
+        }
+        self.session
+            .run("edit.paste", &json!({ "text": text }))
+            .is_ok()
     }
 
     fn insert_str(&mut self, text: &str) -> bool {
@@ -515,7 +598,9 @@ impl DocumentEditor {
             .first()
             .map(|p| (p.w, p.h))
             .unwrap_or((612.0, 792.0));
-        let mut runs = Vec::new();
+        let m_early = viewport_metrics(self.last_viewport, (pw, ph));
+        let paint_scale = m_early.scale.max(0.01);
+        let mut glyphs = Vec::new();
         let mut fills = Vec::new();
         let mut lines = Vec::new();
         let mut images = Vec::new();
@@ -527,9 +612,11 @@ impl DocumentEditor {
             collect_display_at(
                 &draws,
                 page_y,
+                paint_scale,
                 &self.session.doc.media,
                 &mut self.bitmaps,
-                &mut runs,
+                &mut self.glyph_atlas,
+                &mut glyphs,
                 &mut fills,
                 &mut lines,
                 &mut images,
@@ -566,7 +653,7 @@ impl DocumentEditor {
         self.scroll_y = self.scroll_y.clamp(0.0, scroll_max);
         self.paint = DocumentPaint {
             plain_text: self.plain_text(),
-            runs,
+            glyphs,
             fills,
             lines,
             images,
@@ -589,9 +676,11 @@ impl DocumentEditor {
 fn collect_display_at(
     draws: &[Draw],
     page_y: f32,
+    paint_scale: f32,
     media: &std::collections::BTreeMap<String, std::sync::Arc<Vec<u8>>>,
     bitmaps: &mut HashMap<String, Bitmap>,
-    runs: &mut Vec<DocumentRun>,
+    atlas: &mut DocumentGlyphAtlas,
+    glyphs_out: &mut Vec<DocumentGlyph>,
     fills: &mut Vec<DocumentFill>,
     lines: &mut Vec<DocumentLine>,
     images: &mut Vec<DocumentImage>,
@@ -600,7 +689,6 @@ fn collect_display_at(
         match d {
             Draw::Glyphs {
                 face,
-                text,
                 size,
                 glyphs,
                 color,
@@ -608,26 +696,33 @@ fn collect_display_at(
                 synth_bold,
                 ..
             } => {
-                if text.is_empty() || glyphs.is_empty() {
+                if glyphs.is_empty() {
                     continue;
                 }
-                let (gx, gy) = (glyphs[0].1, glyphs[0].2);
+                let c = Color::rgba(
+                    color.0,
+                    color.1,
+                    color.2,
+                    (alpha.clamp(0.0, 1.0) * 255.0) as u8,
+                );
                 let bold = *synth_bold || face.weight >= 600.0;
-                runs.push(DocumentRun {
-                    text: text.clone(),
-                    origin: Point {
-                        x: gx,
-                        y: gy - size + page_y,
-                    },
-                    font_size: *size,
-                    bold,
-                    color: Color::rgba(
-                        color.0,
-                        color.1,
-                        color.2,
-                        (alpha.clamp(0.0, 1.0) * 255.0) as u8,
-                    ),
-                });
+                let px_size = (*size * paint_scale).max(1.0);
+                for &(gid, gx, gy) in glyphs.iter() {
+                    let Some((bmp, left, top)) = atlas.glyph(*face, gid, px_size, c, bold) else {
+                        continue;
+                    };
+                    let w = bmp.width() as f32 / paint_scale;
+                    let h = bmp.height() as f32 / paint_scale;
+                    glyphs_out.push(DocumentGlyph {
+                        rect: Rect {
+                            x: gx + left as f32 / paint_scale,
+                            y: gy - top as f32 / paint_scale + page_y,
+                            width: w.max(0.5),
+                            height: h.max(0.5),
+                        },
+                        bitmap: bmp,
+                    });
+                }
             }
             Draw::Fill {
                 rect,
@@ -710,7 +805,16 @@ fn collect_display_at(
             | Draw::Rotated { items, .. }
             | Draw::Clip { items, .. }
             | Draw::Figure { draws: items, .. } => collect_display_at(
-                items, page_y, media, bitmaps, runs, fills, lines, images,
+                items,
+                page_y,
+                paint_scale,
+                media,
+                bitmaps,
+                atlas,
+                glyphs_out,
+                fills,
+                lines,
+                images,
             ),
             _ => {}
         }
@@ -838,21 +942,6 @@ fn floor_char_boundary(s: &str, i: usize) -> usize {
         i -= 1;
     }
     i
-}
-
-/// Estilo cosmic-text solo para el bridge de paint (fase 0 → deuda atlas).
-pub fn run_text_style(run: &DocumentRun) -> TextStyle {
-    TextStyle {
-        font_size: run.font_size,
-        line_height: run.font_size * 1.35,
-        weight: if run.bold {
-            Weight::BOLD
-        } else {
-            Weight::NORMAL
-        },
-        wrap: false,
-        letter_spacing: 0.0,
-    }
 }
 
 #[cfg(test)]
@@ -989,15 +1078,15 @@ mod tests {
         ed.last_viewport = viewport;
         ed.refresh_paint();
         let rebuilds = ed.paint_rebuilds();
-        let runs = ed.paint.runs.clone();
+        let glyphs = ed.paint.glyphs.clone();
         assert!(ed.paint.scroll_max > 0.0);
         assert!(ed.scroll_by(-120.0, viewport));
         assert_eq!(
             ed.paint_rebuilds(),
             rebuilds,
-            "scroll must not rebuild page_display / glyph runs"
+            "scroll must not rebuild page_display / glyph atlas"
         );
-        assert_eq!(ed.paint.runs, runs);
+        assert_eq!(ed.paint.glyphs, glyphs);
         assert_eq!(ed.paint.scroll_y, ed.scroll_y());
         assert!(ed.scroll_y() > 0.0);
     }
@@ -1125,4 +1214,59 @@ mod tests {
         assert!(change.export.is_some());
         assert!(ed.change().export.is_none(), "taken once");
     }
+
+    #[test]
+    fn glyph_atlas_rasterizes_body_without_textstore_runs() {
+        let ed = DocumentEditor::new("Hola atlas");
+        assert!(
+            !ed.paint().glyphs.is_empty(),
+            "expected rasterized glyphs, got 0"
+        );
+        assert!(ed.glyph_atlas_len() > 0);
+        for g in &ed.paint().glyphs {
+            assert!(g.bitmap.width() > 0 && g.bitmap.height() > 0);
+            assert!(g.rect.width > 0.0 && g.rect.height > 0.0);
+        }
+    }
+
+    #[test]
+    fn clipboard_copy_cut_paste_plain_text() {
+        let mut clip = MemClip::default();
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.apply_text_intent_clipboard(
+            TextIntent::InsertText("Hola mundo".into()),
+            &mut clip
+        ));
+        assert!(ed.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Copy, &mut clip));
+        assert_eq!(clip.0.as_deref(), Some("Hola mundo"));
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Cut, &mut clip));
+        assert!(
+            ed.plain_text().is_empty() || !ed.plain_text().contains("Hola mundo"),
+            "cut should remove selection: {:?}",
+            ed.plain_text()
+        );
+        assert_eq!(clip.0.as_deref(), Some("Hola mundo"));
+        assert!(ed.apply_text_intent_clipboard(TextIntent::Paste, &mut clip));
+        assert!(
+            ed.plain_text().contains("Hola mundo"),
+            "paste plain: {:?}",
+            ed.plain_text()
+        );
+    }
+
+    #[derive(Default)]
+    struct MemClip(Option<String>);
+
+    impl ClipboardPort for MemClip {
+        fn get_text(&mut self) -> Result<String, String> {
+            Ok(self.0.clone().unwrap_or_default())
+        }
+
+        fn set_text(&mut self, text: String) -> Result<(), String> {
+            self.0 = Some(text);
+            Ok(())
+        }
+    }
+
 }

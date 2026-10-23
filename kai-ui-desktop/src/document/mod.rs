@@ -5,7 +5,8 @@
 //! exportar PDF (`wordcraft-pdf`) vía `Effects::pick_file` /
 //! `save_file` + `perform` (fuera del paint). El modelo WordCraft se
 //! clona al snapshot (`DocumentCmd::TakeDocument`) y se encodea off-thread.
-//! Ribbon Kai (catálogo WordCraft) en `ribbon`. Bridge TextStore / clipboard / markdown rich = deuda.
+//! Ribbon Kai (catálogo WordCraft) en `ribbon`. Atlas glifos (`glyph_atlas`) +
+//! clipboard texto plano; markdown rich tablas/imágenes / keytips = deuda.
 //!
 //! ```ignore
 //! document()
@@ -21,7 +22,7 @@ use std::rc::Rc;
 
 use crate::element::{Element, Kind, Role, WidgetId};
 use crate::geometry::{Point, Rect};
-use crate::render::{Color, DrawList, Quad, TextId, TextPart};
+use crate::render::{Color, DrawList, Quad};
 use crate::theme::Theme;
 
 #[cfg(feature = "document")]
@@ -29,7 +30,11 @@ mod editor;
 #[cfg(feature = "document")]
 mod ribbon;
 #[cfg(feature = "document")]
-pub(crate) use editor::{run_text_style, DocumentEditor};
+mod glyph_atlas;
+#[cfg(feature = "document")]
+pub(crate) use editor::DocumentEditor;
+#[cfg(feature = "document")]
+pub(crate) use glyph_atlas::DocumentGlyphAtlas;
 #[cfg(feature = "document")]
 pub use ribbon::{
     cmd_disabled, default_run_params, document_cmd_for, document_ribbon, icon_for_cmd, localize_cmd,
@@ -125,7 +130,8 @@ impl std::fmt::Debug for ExportDoc {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentPaint {
     pub plain_text: String,
-    pub runs: Vec<DocumentRun>,
+    /// Glifos rasterizados (atlas WordCraft → Bitmap), coords canvas.
+    pub glyphs: Vec<DocumentGlyph>,
     /// Fondos de celda / párrafo (coords canvas).
     pub fills: Vec<DocumentFill>,
     /// Bordes de tabla y reglas (coords canvas).
@@ -147,7 +153,7 @@ impl Default for DocumentPaint {
     fn default() -> Self {
         Self {
             plain_text: String::new(),
-            runs: Vec::new(),
+            glyphs: Vec::new(),
             fills: Vec::new(),
             lines: Vec::new(),
             images: Vec::new(),
@@ -161,15 +167,14 @@ impl Default for DocumentPaint {
     }
 }
 
-/// Un run de glifos de la display list, listo para `DrawOp::Text`.
+/// Un glifo rasterizado del cuerpo (atlas WordCraft → [`crate::render::Bitmap`]).
+///
+/// Coordenadas en canvas WordCraft (misma base que fills/images). El paint
+/// escala al viewport y emite [`crate::render::ImageDraw`] — sin `TextStore`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DocumentRun {
-    pub text: String,
-    /// Origen (top-left) en coordenadas de página WordCraft.
-    pub origin: Point,
-    pub font_size: f32,
-    pub bold: bool,
-    pub color: Color,
+pub struct DocumentGlyph {
+    pub rect: Rect,
+    pub bitmap: crate::render::Bitmap,
 }
 
 /// Rectángulo relleno de la display list (celda, sombreado).
@@ -298,16 +303,6 @@ impl<Msg> Element<Msg> {
             spec.pending_load = Some(DocumentLoadRequest { serial, bytes });
         }
         self
-    }
-}
-
-impl TextId {
-    /// Run `index` del cuerpo del documento `widget` (bridge TextStore).
-    pub const fn document_run(widget: WidgetId, index: u32) -> Self {
-        Self {
-            widget,
-            part: TextPart::DocumentRun(index),
-        }
     }
 }
 
@@ -480,7 +475,7 @@ fn canvas_origin(m: &ViewportMetrics, scroll_y: f32) -> Point {
     }
 }
 
-/// Emite fills / imágenes / bordes / `DrawOp::Text` en coords canvas escaladas.
+/// Emite fills / imágenes / bordes / glifos (`ImageDraw`) en coords canvas escaladas.
 pub(crate) fn paint_body_canvas(
     list: &mut DrawList,
     origin: Point,
@@ -552,13 +547,27 @@ pub(crate) fn paint_body_canvas(
             ln.color,
         );
     }
-    for (i, run) in paint.runs.iter().enumerate() {
-        let at = Point {
-            x: origin.x + run.origin.x * scale,
-            y: origin.y + run.origin.y * scale,
+    for g in &paint.glyphs {
+        let rect = Rect {
+            x: origin.x + g.rect.x * scale,
+            y: origin.y + g.rect.y * scale,
+            width: (g.rect.width * scale).max(1.0),
+            height: (g.rect.height * scale).max(1.0),
         };
-        list.text(TextId::document_run(widget, i as u32), at, run.color);
+        list.image(crate::render::ImageDraw {
+            rect,
+            bitmap: g.bitmap.clone(),
+            source: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            radius: 0.0,
+            opacity: 1.0,
+        });
     }
+    let _ = widget;
 }
 
 /// Id estable para session (keyed por widget).

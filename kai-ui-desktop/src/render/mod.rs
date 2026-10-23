@@ -33,8 +33,6 @@ pub enum TextPart {
     Placeholder,
     /// A map label, by a hash of its kind and name.
     MapLabel(u64),
-    /// A WordCraft display-list run inside a document widget (paint bridge).
-    DocumentRun(u32),
 }
 
 /// Text buffer key in the renderer's text store.

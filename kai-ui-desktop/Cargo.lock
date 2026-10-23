@@ -1407,6 +1407,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "swash",
  "taffy",
  "tokio",
  "ureq",

@@ -32,6 +32,7 @@ document = [
     "dep:wordcraft-engine",
     "dep:wordcraft-docx",
     "dep:wordcraft-pdf",
+    "dep:swash",
 ]
 default = ["net"]
 
@@ -82,6 +83,7 @@ wordcraft-layout = { git = "https://github.com/storytold/wordcraft", rev = "3a47
 wordcraft-engine = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
 wordcraft-docx = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
 wordcraft-pdf = { git = "https://github.com/storytold/wordcraft", rev = "3a4770ef8ce037d2650c93e2d5764536549357c7", optional = true }
+swash = { version = "0.2.10", optional = true, default-features = false, features = ["std", "scale"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The native menu bar (`kai::menu`). Kept on 0.19 (shares objc2 0.6 /

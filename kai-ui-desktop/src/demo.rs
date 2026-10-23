@@ -4466,7 +4466,7 @@ mod tests {
     use crate::render::text::TextStore;
     use crate::runtime::App;
     use crate::snapshot::{self, Shot};
-    use crate::testing::{By, Confirm, Key, Modifiers, MsgSource, Screen, TestApp, layout_of};
+    use crate::testing::{By, Confirm, Key, MemoryClipboard, Modifiers, MsgSource, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
 
     /// The demo's tree as the session shows it: built, with its images
@@ -5184,6 +5184,47 @@ mod tests {
 
     #[cfg(feature = "document")]
     #[test]
+    fn document_clipboard_copy_cut_paste_plain() {
+        use crate::render::DrawOp;
+        let clipboard = MemoryClipboard::new();
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::builder(demo).clipboard(clipboard.clone()).build();
+        let editor = || By::test_id("documento.editor");
+        app.type_text(editor(), "ClipDoc");
+        assert_eq!(app.value(editor()), "ClipDoc");
+        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.press(Key::C, CMD);
+        assert_eq!(clipboard.text().as_deref(), Some("ClipDoc"));
+        app.press(Key::X, CMD);
+        assert!(
+            app.value(editor()).is_empty() || !app.value(editor()).contains("ClipDoc"),
+            "cut should clear: {:?}",
+            app.value(editor())
+        );
+        assert_eq!(clipboard.text().as_deref(), Some("ClipDoc"));
+        app.press(Key::V, CMD);
+        assert!(
+            app.value(editor()).contains("ClipDoc"),
+            "paste plain: {:?}",
+            app.value(editor())
+        );
+        // Cuerpo pinta glifos como ImageDraw (atlas), no DrawOp::Text de runs.
+        let list = app.draw_list();
+        let images = list
+            .ops
+            .iter()
+            .filter(|op| matches!(op, DrawOp::Image(_)))
+            .count();
+        assert!(
+            images > 0,
+            "expected glyph/image draws after paste, got {}",
+            images
+        );
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
     fn document_multipage_scrolls_and_keeps_hit_target() {
         let mut app = TestApp::new(Demo::at(Seccion::Documento));
         let editor = || By::test_id("documento.editor");
@@ -5580,7 +5621,7 @@ mod tests {
             "DocumentChange",
             "DocumentCmdRequest",
             "DocumentPaint",
-            "DocumentRun",
+            "DocumentGlyph",
             "DocumentFill",
             "DocumentLine",
             "DocumentImage",

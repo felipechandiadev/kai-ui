@@ -102,7 +102,7 @@ Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-
 
 **Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / `flex-1 min-h-0` en la demo) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala `min(w/pw, h/ph)` para que quepa al menos una hoja (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
 
-**Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto vía hit-test WordCraft; selección arrastrando (multi-página); no se usa cosmic-text para *medir* el cuerpo (el bridge `TextStore`→`DrawOp::Text` en paint es deuda de atlas, no shaping del layout).
+**Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto vía hit-test WordCraft; selección arrastrando (multi-página); no se usa cosmic-text para *medir* ni pintar el cuerpo (atlas de glifos WordCraft → `ImageDraw`).
 
 ### Fase 2 — tablas e imágenes
 
@@ -123,14 +123,14 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 ## 7. Pruebas y demo
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
-- `TestApp`: tipear, ⌘B, undo; scroll multi-página + tipar tras scroll; query a11y por `label`.
+- `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard; scroll multi-página + tipar tras scroll; query a11y por `label`.
 - Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
 ## 8. Criterios de aceptación
 
 - Un solo renderer de UI: Kai. Cero egui en el binario de la demo por esta feature.
-- El layout/hit del cuerpo no usa cosmic-text (solo WordCraft). El paint puede puente `TextStore` hasta atlas propio.
+- El layout/hit/paint del cuerpo no usa cosmic-text ni `TextStore` (WordCraft → atlas propio → `ImageDraw`). Controles Kai/toolbar sí pueden usar TextStore.
 - Dependencia WordCraft fijada por `rev`, feature `document`, NOTICE al día.
 - MSRV documentado: **1.95** (alineado al `rev` de WordCraft).
 - Comandos del editor reutilizan `kai::commands`; MCP no abre un segundo servidor WordCraft.
@@ -148,10 +148,12 @@ Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraf
 | Subida de MSRV | **Hecho** — 1.95 |
 | Fase 0 — nota rica | **Hecho (23-oct-2026)** — gate tipar+⌘B+undo+TestApp |
 | Fase 1 — páginas | **Hecho (23-oct-2026)** — stack Letter + `scroll_y` viewport; hit-test `layout.hit`; selección arrastre; TestApp scroll+caret |
-| Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai); bridge TextStore glifos = deuda atlas WordCraft |
+| Fase 2 — tablas e imágenes | **Hecho (23-oct-2026)** — `insert.table` 2×2 + `insert.picture`; paint fills/lines/ImageDraw (atlas Kai) |
 | Ribbon Kai (catálogo WC) | **Ampliado (23-oct-2026)** — Home+Insert+Layout+Review+References+View (`RibbonMode::Full`); ver guía [17](17-document-ribbon.md); Design/keytips/Backstage = deuda |
 | Fase 3 — archivo | **Hecho (23-oct-2026)** — abrir/guardar `.docx` + export PDF vía Effects; plan Document **0–3 cerrado** a nivel widget demo |
-| Deuda post-plan | Atlas glifos WordCraft (bridge TextStore), clipboard rich, markdown rich de ida y vuelta |
+| Atlas glifos WordCraft | **Hecho (23-oct-2026)** — `DocumentGlyphAtlas` (swash) → `DocumentGlyph` / `ImageDraw`; sin TextStore en el cuerpo |
+| Clipboard cuerpo | **Hecho (texto plano, 23-oct-2026)** — ⌘C/X/V → `edit.copy`/`cut`/`paste` + `ClipboardPort`; rich/RTF = deuda |
+| Deuda post-plan | Clipboard rich/RTF; markdown rich tablas/imágenes; keytips/Backstage; wrap flotante avanzado |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
@@ -185,7 +187,7 @@ Mapeo previsto (fase posterior, no en este corte):
 
 | `wordcraft_layout::display::Draw` | Op Kai probable |
 |---|---|
-| `Glyphs { face, size, glyphs, color, … }` | `DrawOp::Text` / run de glifos (atlas propio del documento, no `TextStore`) |
+| `Glyphs { face, size, glyphs, color, … }` | `DocumentGlyphAtlas` (swash) → `DocumentGlyph` → `DrawOp::Image` |
 | `Fill { rect, color, alpha }` | `DrawOp::Quad` |
 | `Line { … }` | `DrawOp::Quad` fino o geometría |
 | `Image { … }` | `DrawOp::Image` |
