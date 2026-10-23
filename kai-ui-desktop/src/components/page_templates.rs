@@ -34,10 +34,13 @@ impl PageDensity {
     }
 
     /// Vertical rhythm between blocks inside the template body.
-    pub fn stack_gap_class(self) -> &'static str {
+    ///
+    /// Steps come from [`crate::theme::spacing`] (`FORM_STACK_STEPS` /
+    /// `DATA_STACK_STEPS`) so the scale stays one source of truth.
+    pub fn stack_gap_class(self) -> String {
         match self {
-            Self::Comfortable => "gap-5",
-            Self::Compact => "gap-3",
+            Self::Comfortable => crate::theme::form_stack_gap_class(),
+            Self::Compact => crate::theme::data_stack_gap_class(),
         }
     }
 }
@@ -453,6 +456,14 @@ mod tests {
         assert_eq!(PageDensity::Compact.theme_density(), Density::Compact);
         assert_eq!(PageDensity::Comfortable.stack_gap_class(), "gap-5");
         assert_eq!(PageDensity::Compact.stack_gap_class(), "gap-3");
+        assert_eq!(
+            PageDensity::Comfortable.stack_gap_class(),
+            crate::theme::form_stack_gap_class()
+        );
+        assert_eq!(
+            PageDensity::Compact.stack_gap_class(),
+            crate::theme::data_stack_gap_class()
+        );
     }
 
     #[test]
