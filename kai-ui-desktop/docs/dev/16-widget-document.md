@@ -1,6 +1,6 @@
 # 16 — Widget `document`: mini Word dentro de Kai
 
-**Fase:** no implementado. Esta guía fija el contrato antes de escribir código. Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
+**Fase:** esqueleto hecho (MSRV 1.95, `Kind::Document`, demo). Tipar / IME / páginas = fase 0+. Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
 
 La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordcraft) (WordCraft, ArtCraft; MIT OR Apache-2.0; clean-room). La información de capas y crates se tomó del README y de [`docs/architecture.md`](https://github.com/storytold/wordcraft/blob/master/docs/architecture.md) el **21-oct-2026**. Fijar un `rev` de Git y volver a leer manifests antes de depender.
 
@@ -11,7 +11,7 @@ La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordc
 - **WordCraft como motor, no como UI.** Se reutilizan las capas que no dependen de egui (`doc`, `fonts`, `layout`, `engine`, más adelante `docx` / `formats` / `proof`). No se adopta `wordcraft-ui-egui` ni se pinta el frame de UI con `wordcraft-render` (vello_cpu).
 - **Dentro de ese widget, WordCraft de punta a punta.** No híbrido: ni runs de WordCraft medidos con cosmic-text, ni páginas de Kai shapeadas con HarfRust. El híbrido duplica font DB, caret e IME.
 - **Progresivo y opcional.** Feature `document`. DSP no necesita ribbon, mail merge, track changes ni ecuaciones en el primer corte.
-- **No subir el MSRV de Kai “por las dudas”.** El piso sigue en Rust 1.89 ([06](06-calidad-y-distribucion.md)). Se actualiza `rust-version` y el job `desktop-msrv` solo cuando un `rev` concreto de WordCraft lo exija, en el mismo cambio que la feature.
+- **MSRV alineado a WordCraft.** El piso es Rust **1.95** ([06](06-calidad-y-distribucion.md)), el `rust-version` declarado de WordCraft / craft-pdf. Subidas futuras van en el mismo cambio que el `rev` que las exija.
 
 ```mermaid
 flowchart LR
@@ -54,21 +54,21 @@ El widget posee **una** `wordcraft_engine::Session` por editor, como el mapa pos
 
 ## 4. MSRV y supply chain
 
-**MSRV** (*Minimum Supported Rust Version*) es la Rust más vieja con la que Kai promete compilar. Hoy es **1.89** (`rust-version` en `kai-ui-desktop/Cargo.toml` y `kai-cli`; job `desktop-msrv` con `dtolnay/rust-toolchain@1.89`). Lo impuso sobre todo cosmic-text 0.19. El CI diario ya usa Rust *stable*; el MSRV es el piso de quien clona el repo.
+**MSRV** (*Minimum Supported Rust Version*) es la Rust más vieja con la que Kai promete compilar. Hoy es **1.95** (`rust-version` en `kai-ui-desktop/Cargo.toml` y `kai-cli`; job `desktop-msrv` con `dtolnay/rust-toolchain@1.95`), alineado a WordCraft / craft-pdf (spike §10). Antes era 1.89 por cosmic-text 0.19. El CI diario usa Rust *stable*; el MSRV es el piso de quien clona el repo.
 
-WordCraft / craft-libs declaran **Rust 1.95** (`rust-version` del workspace; confirmado en el spike del 23-oct-2026, §10). Antes de depender:
+Al cambiar el `rev` de WordCraft:
 
 1. Fijar `rev` (nunca `branch = "main"` en builds reproducibles).
 2. Leer `rust-version` y `Cargo.toml` de `doc`, `fonts`, `layout` y `engine`.
 3. `cargo tree` y un crate de prueba que solo importe esos cuatro, **sin** `ui-egui`.
-4. Si piden 1.95, subir el MSRV de Kai (`rust-version`, CI, `kai-cli`, fixture, docs) **en el mismo PR** que `feature = "document"`.
+4. Si el nuevo `rev` exige más que 1.95, subir el MSRV de Kai (`rust-version`, CI, `kai-cli`, fixture, docs) **en el mismo cambio**.
 5. Licencia MIT OR Apache-2.0; NOTICE y `ATTRIBUTION.md` de fuentes e iconos embebidos. La marca ArtCraft en `docs/brand/` **no** se copia.
 
-`muda` 0.19 es la última que declara 1.89. Subir MSRV puede exigir actualizar `muda` y vigilar `objc2` frente a `winit`.
+`muda` se mantiene en **0.19** (comparte objc2 0.6 / objc2-app-kit 0.3 con winit). 0.21 compilaría en 1.95; no se sube salvo que los menús lo pidan.
 
 ## 5. Cableado en Kai (el mismo que mapa y chart)
 
-API propuesta (no existe aún):
+API pública (esqueleto; sin tipar aún):
 
 ```rust
 document(&self.doc)
@@ -118,7 +118,7 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
 - `TestApp`: tipear, ⌘B, undo; query a11y por `label`.
-- Nueva sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos) cuando exista el builder. Cobertura en `the_demo_shows_every_component` y `mcp-schema.json` si hay `ui.ir_a` / comandos `doc.*`.
+- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos). Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `doc.*` / schema MCP cuando tipar.
 - Captura `demo-documento` (`#[ignore]`, GPU).
 
 ## 8. Criterios de aceptación
@@ -126,7 +126,7 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 - Un solo renderer de UI: Kai. Cero egui en el binario de la demo por esta feature.
 - El documento no pasa por `TextStore` / cosmic-text.
 - Dependencia WordCraft fijada por `rev`, feature `document`, NOTICE al día.
-- MSRV documentado: 1.89 hasta que el `rev` obligue a cambiarlo.
+- MSRV documentado: **1.95** (alineado al `rev` de WordCraft).
 - Comandos del editor reutilizan `kai::commands`; MCP no abre un segundo servidor WordCraft.
 - Cada fase tiene tests de geometría o de `TestApp` y una entrada en [CHANGELOG](../../CHANGELOG.md).
 
@@ -136,10 +136,10 @@ Ribbon Word, mail merge, track changes, comentarios, ecuaciones, Zotero, web/WAS
 |---|---|
 | Guía (este documento) | Hecha (21-oct-2026) |
 | Spike §4 / §0 (crate aislado + display list) | **Hecho (23-oct-2026)** — ver §10 |
-| Feature `document` y crates WordCraft en Kai | No (bloqueado por MSRV declarado 1.95) |
-| `Kind::Document`, paint, hit-test | No |
-| Demo sección Documento | No |
-| Subida de MSRV | **Pendiente** — no en este corte |
+| Feature `document` y crates WordCraft en Kai | **Hecho** (opt-in; esqueleto sin tipar) |
+| `Kind::Document`, paint, hit-test | **Hecho** (paint Quad hoja; sin tipar / IME) |
+| Demo sección Documento | **Hecho** (Datos → Documento) |
+| Subida de MSRV | **Hecho** — 1.95 |
 
 ## 10. Spike (23-oct-2026) — go / no-go
 
@@ -154,7 +154,7 @@ Fixture: [`fixtures/wordcraft-spike`](../../fixtures/wordcraft-spike/).
 | ¿Display list mínima (un párrafo)? | Sí. 1 página Letter (612×792 pt), 1 `Draw::Glyphs` (~52 glifos, size 12, color negro) |
 | ¿MSRV declarado WordCraft? | **1.95** (`workspace.package.rust-version`; `craft-pdf` también 1.95; fork `krilla` declara 1.92) |
 | ¿MSRV medido (compila+corre)? | Con `--ignore-rust-version`: **1.89** y **1.92** OK. Sin el flag, cargo rechaza en 1.89 (`craft-pdf` exige 1.95) |
-| ¿Kai MSRV hoy? | **1.89** (`kai-ui-desktop`, `kai-cli`, job `desktop-msrv`) |
+| ¿Kai MSRV (al spike)? | **1.89**; **tras este corte: 1.95** |
 
 ### Muestra de display list → paint ops (sin implementar aún)
 
@@ -187,11 +187,11 @@ Mapeo previsto (fase posterior, no en este corte):
 
 ### Veredicto
 
-**Go con subida de MSRV pendiente.**
+**Go ejecutado (esqueleto + MSRV 1.95).**
 
 - El motor de documento (layout + display list + `Session`) es usable sin egui y produce ops mapeables.
-- Integrar `feature = "document"` en `kai-ui-desktop` **exige** alinear el piso de cargo a **1.95** (o vivir con `--ignore-rust-version`, descartado). Impacto al subir: `rust-version` en desktop + `kai-cli` + fixture `external-app`, job `desktop-msrv` (`dtolnay/rust-toolchain@1.89` → `1.95`), y vigilar **`muda` 0.19** (última que declara 1.89) / `objc2` frente a `winit`.
-- **Este corte no sube MSRV** ni añade `Kind::Document` / demo. Siguiente paso cuando se decida la subida: feature `document` + esqueleto + sección Documento en la demo Kai (no DSP).
+- Kai alinea MSRV a **1.95** (`rust-version` desktop + `kai-cli` + fixture `external-app`, job `desktop-msrv` `@1.95`). **`muda` sigue en 0.19** (objc2 alineado con winit); no hace falta 0.21 para compilar.
+- Corte hecho: `feature = "document"`, `Kind::Document` + paint de hoja, sección **Documento** en la demo Kai (Datos). Fuera de alcance: tipar / IME / ⌘B, páginas, docx, PDF, DSP.
 
 ### Cómo reproducir
 

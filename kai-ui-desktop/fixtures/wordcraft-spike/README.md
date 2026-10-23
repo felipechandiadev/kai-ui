@@ -22,7 +22,7 @@ cargo +1.95 test --release
 ```
 
 MSRV declarado de WordCraft / craft-pdf: **1.95**. Compila y corre en **1.89** solo con
-`--ignore-rust-version` (el gate de cargo sigue en 1.95). Kai no sube MSRV en este corte.
+`--ignore-rust-version` (el gate de cargo sigue en 1.95). Kai alinea MSRV a 1.95 al integrar `feature = "document"`.
 
 ## Licencia
 
