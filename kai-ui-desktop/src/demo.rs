@@ -152,6 +152,11 @@ struct Demo {
     /// Ribbon cmds disabled (`why_disabled`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_disabled: Vec<String>,
+    /// Pestañas contextuales visibles (Tabla, Formato de imagen).
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    doc_ribbon_contexts: Vec<String>,
+    /// Barra de comentario abierta («Nuevo comentario» en Revisar).
+    doc_comment_open: bool,
     /// Barra Buscar y reemplazar visible (⌘F / lupa de la QAT).
     doc_find_open: bool,
     /// Find/Replace query (barra bajo el ribbon).
@@ -246,6 +251,8 @@ impl Default for Demo {
             doc_ribbon_tab: "home".into(),
             doc_ribbon_pressed: Vec::new(),
             doc_ribbon_disabled: Vec::new(),
+            doc_ribbon_contexts: Vec::new(),
+            doc_comment_open: false,
             doc_find_open: false,
             doc_find: String::new(),
             doc_replace: String::new(),
@@ -941,6 +948,9 @@ enum Msg {
     DocRibbonTab(String),
     /// Documento: mostrar u ocultar la barra Buscar y reemplazar (⌘F).
     DocAlternarBuscar,
+    /// Documento: mostrar u ocultar la barra de nuevo comentario.
+    #[cfg_attr(not(feature = "document"), allow(dead_code))]
+    DocAlternarComentario,
     /// Documento: query de find.
     DocFindChanged(String),
     /// Documento: texto de replace.
@@ -2011,6 +2021,7 @@ impl App for Demo {
                 {
                     self.doc_ribbon_pressed = change.ribbon_pressed;
                     self.doc_ribbon_disabled = change.ribbon_disabled;
+                    self.doc_ribbon_contexts = change.ribbon_contexts;
                     if !change.status.is_empty() {
                         self.doc_edit_status = change.status;
                     }
@@ -2042,6 +2053,7 @@ impl App for Demo {
                 self.doc_ribbon_tab = id;
             }
             Msg::DocAlternarBuscar => self.doc_find_open = !self.doc_find_open,
+            Msg::DocAlternarComentario => self.doc_comment_open = !self.doc_comment_open,
             Msg::DocFindChanged(v) => self.doc_find = v,
             Msg::DocReplaceChanged(v) => self.doc_replace = v,
             Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
@@ -4108,8 +4120,13 @@ impl Demo {
             .active_tab(self.doc_ribbon_tab.clone())
             .pressed_ids(self.doc_ribbon_pressed.clone())
             .disabled_ids(self.doc_ribbon_disabled.clone())
+            .contexts(self.doc_ribbon_contexts.clone())
             .on_tab(Msg::DocRibbonTab)
-            .on_command(|id| Msg::DocCmd(document_cmd_for(&id)))
+            // Un comentario necesita texto: el botón abre la barra que lo pide.
+            .on_command(|id| match id.as_str() {
+                "review.newComment" => Msg::DocAlternarComentario,
+                _ => Msg::DocCmd(document_cmd_for(&id)),
+            })
             .leading([
                 toolbar_item(Icon::FolderOpen, "Abrir…")
                     .on_command(DocAbrir)
@@ -4170,11 +4187,11 @@ impl Demo {
             editor = editor.pending_load(bytes.clone(), *serial);
         }
         let mut chrome = vec![self.documento_ribbon_chrome()];
-        if let Some(strip) = self.documento_tab_strip() {
-            chrome.push(strip);
-        }
         if self.doc_find_open {
             chrome.push(self.documento_find_bar());
+        }
+        if self.doc_comment_open {
+            chrome.push(self.documento_comment_bar());
         }
         let status = match &self.doc_archivo_name {
             Some(name) => name.clone(),
@@ -4244,98 +4261,29 @@ impl Demo {
             ])
     }
 
-    /// Controles que el catálogo del ribbon aún no cubre, en una fila bajo
-    /// la pestaña a la que pertenecen (Pegado especial en Inicio, Encabezado
-    /// en Insertar, Ajuste en Diseño, estilos en Tabla, comentario en Revisar).
-    fn documento_tab_strip(&self) -> Option<Element<Msg>> {
-        let label = |t: &str| text(t).class("text-xs text-muted-foreground");
-        let cmd = |t: &str, id: &str, c: DocumentCmd| {
-            button(t, ButtonVariant::Text)
-                .on_click(Msg::DocCmd(c))
-                .test_id(id)
-        };
-        let wrap =
-            |t: &str, id: &str, mode: &str| cmd(t, id, DocumentCmd::Wrap { mode: mode.into() });
-        let raw = |t: &str, id: &str, c: &str| cmd(t, id, DocumentCmd::Raw(c.into()));
-        let items: Vec<Element<Msg>> = match self.doc_ribbon_tab.as_str() {
-            "home" => vec![
-                label("Pegado especial:"),
-                cmd(
-                    "Solo texto",
-                    "documento.paste.plain",
-                    DocumentCmd::PastePlain,
-                ),
-                cmd(
-                    "Combinar formato",
-                    "documento.paste.merge",
-                    DocumentCmd::PasteMerge,
-                ),
-                cmd(
-                    "Mantener formato",
-                    "documento.paste.keep",
-                    DocumentCmd::PasteKeepSource,
-                ),
-            ],
-            "insert" => vec![
-                label("Encabezado y pie:"),
-                raw("Encabezado", "documento.hf.header", "insert.header"),
-                raw("Pie de página", "documento.hf.footer", "insert.footer"),
-                raw(
-                    "Editar encabezado",
-                    "documento.hf.edit_header",
-                    "insert.editHeader",
-                ),
-                raw("Cerrar", "documento.hf.close", "insert.closeHeader"),
-            ],
-            "layout" => vec![
-                label("Ajustar imagen:"),
-                wrap("En línea", "documento.wrap.inline", "inline"),
-                wrap("Cuadrado", "documento.wrap.square", "square"),
-                wrap("Estrecho", "documento.wrap.tight", "tight"),
-                wrap("Arriba y abajo", "documento.wrap.topbottom", "topAndBottom"),
-                wrap("Detrás", "documento.wrap.behind", "behindText"),
-                wrap("Delante", "documento.wrap.infront", "inFrontOfText"),
-            ],
-            "table" => vec![
-                label("Estilo de tabla:"),
-                cmd(
-                    "Cuadrícula",
-                    "documento.table.style.grid",
-                    DocumentCmd::TableStyle {
-                        style: "TableGrid".into(),
-                    },
-                ),
-                cmd(
-                    "Cuadrícula clara",
-                    "documento.table.style.gridlight",
-                    DocumentCmd::TableStyle {
-                        style: "GridTable1Light".into(),
-                    },
-                ),
-            ],
-            "review" => vec![
+    /// Texto del nuevo comentario, en una fila bajo el ribbon (como el
+    /// globo de Word): Enter o «Comentar» lo inserta en la selección.
+    fn documento_comment_bar(&self) -> Element<Msg> {
+        let insert = Msg::DocCmd(DocumentCmd::NewComment {
+            text: self.doc_comment_draft.clone(),
+        });
+        div()
+            .class("flex flex-row items-center gap-1 py-1")
+            .test_id("documento.commentbar")
+            .children([
                 search_field(&self.doc_comment_draft, Msg::DocCommentDraftChanged)
                     .placeholder("Escribe un comentario")
                     .label("Comentario")
-                    .on_submit(Msg::DocCmd(DocumentCmd::NewComment {
-                        text: self.doc_comment_draft.clone(),
-                    }))
+                    .on_submit(insert.clone())
                     .test_id("documento.comment.draft")
                     .build(),
-                button("Nuevo comentario", ButtonVariant::Text)
-                    .on_click(Msg::DocCmd(DocumentCmd::NewComment {
-                        text: self.doc_comment_draft.clone(),
-                    }))
+                button("Comentar", ButtonVariant::Text)
+                    .on_click(insert)
                     .test_id("documento.comment.new"),
-            ],
-            _ => return None,
-        };
-        Some(
-            div()
-                .class("flex flex-row flex-wrap items-center gap-1")
-                .test_id("documento.tab_strip")
-                .children(items),
-        )
+                toolbar_item(Icon::X, "Cerrar comentario")
+                    .on_click(Msg::DocAlternarComentario)
+                    .test_id("documento.comment.close"),
+            ])
     }
 
     fn dialogs_and_toasts(&self) -> Element<Msg> {
@@ -5777,6 +5725,50 @@ mod tests {
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "!");
         assert!(app.value(editor()).contains('!'));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_contextual_tabs_follow_table_and_picture() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        let tab = |id: &str| By::test_id(format!("documento.ribbon.tab.{id}"));
+        app.type_text(editor(), "Texto");
+        assert!(app.screen().try_get(tab("table")).is_err());
+        assert!(app.screen().try_get(tab("picture")).is_err());
+
+        app.click(tab("insert"));
+        app.click(By::test_id("documento.ribbon.cmd.insert.table"));
+        assert!(
+            app.screen().try_get(tab("table")).is_ok(),
+            "caret en la tabla"
+        );
+        app.click(tab("table"));
+        app.click(By::test_id("documento.ribbon.cmd.table.style:TableGrid"));
+
+        app.click(tab("insert"));
+        app.click(By::test_id("documento.ribbon.cmd.insert.picture"));
+        assert!(
+            app.screen().try_get(tab("picture")).is_ok(),
+            "imagen seleccionada"
+        );
+        app.click(tab("picture"));
+        app.click(By::test_id("documento.ribbon.cmd.arrange.wrap:square"));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_new_comment_asks_for_its_text() {
+        let mut app = TestApp::new(Demo::at(Seccion::Documento));
+        let bar = || By::test_id("documento.commentbar");
+        assert!(app.screen().try_get(bar()).is_err());
+        app.click(By::test_id("documento.ribbon.tab.review"));
+        app.click(By::test_id("documento.ribbon.cmd.review.newComment"));
+        assert!(app.screen().try_get(bar()).is_ok());
+        app.click(By::test_id("documento.comment.close"));
+        assert!(app.screen().try_get(bar()).is_err());
     }
 
     #[cfg(feature = "document")]

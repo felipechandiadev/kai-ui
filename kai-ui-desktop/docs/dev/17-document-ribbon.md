@@ -41,6 +41,16 @@ grupo discretos y QAT Archivo a la izquierda de las tabs. **Ribbon vivo:**
    son botones grandes con icono y nombre; el resto va en dos filas de iconos
    pequeños. Los estilos de párrafo (`is_style_cmd`) son una galería de
    muestras con su aspecto. Pendiente: colapsar grupos cuando falta ancho.
+8. **Pestañas contextuales**: *Tabla* y *Formato de imagen* solo aparecen
+   con el caret en una tabla o una imagen seleccionada
+   (`active_contexts`: `table.selectTable` / `arrange.wrap` habilitados), en
+   color de acento como en Word. La app las recibe en
+   `DocumentChange::ribbon_contexts` y las pasa a `DocumentRibbon::contexts`.
+9. **Variantes** (`VARIANTS`): ítems `base:valor` que fijan un parámetro
+   (`arrange.wrap:square`, `table.style:TableGrid`); `document_cmd_for` los
+   traduce y `cmd_disabled` consulta el id base. Pegado especial y
+   encabezado/pie ya estaban en Inicio e Insertar. `review.newComment` emite
+   solo el id: la app pide el texto (la demo abre una barra de comentario).
 
 Fuente de verdad de **shortcut / location**: `CommandSpec` en el rev fijado
 en `Cargo.toml` (`wordcraft-engine`). Labels visibles los aporta Kai

@@ -270,6 +270,7 @@ impl DocumentEditor {
             markdown: self.markdown(),
             ribbon_pressed: chrome.pressed,
             ribbon_disabled: chrome.disabled,
+            ribbon_contexts: chrome.contexts,
             status: self.last_status.clone(),
             find_match_count: self.find_match_count(),
             export: self.taken_document.take().map(ExportDoc),

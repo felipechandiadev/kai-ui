@@ -1002,6 +1002,18 @@ impl<A: App> TestApp<A> {
     /// save panel asked for meanwhile gets the answer of
     /// [`Self::on_file_pick`] or [`Self::on_file_save`].
     fn frame(&mut self) {
+        // Un `Msg` enviado mientras se construía la vista (el cambio de un
+        // documento, por ejemplo) deja la sesión sucia; la ventana real
+        // redibuja enseguida, así que aquí también, con un tope.
+        for _ in 0..4 {
+            self.frame_once();
+            if !self.session.is_dirty() {
+                break;
+            }
+        }
+    }
+
+    fn frame_once(&mut self) {
         loop {
             self.session.prepare_frame();
             let outbox = self.session.take_outbox();

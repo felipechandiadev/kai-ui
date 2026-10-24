@@ -38,9 +38,9 @@ pub(crate) use editor::DocumentEditor;
 pub(crate) use glyph_atlas::DocumentGlyphAtlas;
 #[cfg(feature = "document")]
 pub use ribbon::{
-    DocumentRibbon, RibbonChrome, RibbonGroup, RibbonItem, RibbonMode, RibbonTab, cmd_disabled,
-    default_run_params, document_cmd_for, document_ribbon, icon_for_cmd, localize_cmd,
-    parse_location, ribbon_catalog, ribbon_chrome_for,
+    DocumentRibbon, RibbonChrome, RibbonGroup, RibbonItem, RibbonMode, RibbonTab, active_contexts,
+    cmd_disabled, default_run_params, document_cmd_for, document_ribbon, icon_for_cmd,
+    localize_cmd, parse_location, ribbon_catalog, ribbon_chrome_for,
 };
 
 /// Márgenes del stack de páginas respecto al padding box (viewport).
@@ -298,6 +298,9 @@ pub struct DocumentChange {
     /// Cmds del ribbon disabled (`Session::why_disabled`).
     #[cfg(feature = "document")]
     pub ribbon_disabled: Vec<String>,
+    /// Pestañas contextuales visibles (`table`, `picture`).
+    #[cfg(feature = "document")]
+    pub ribbon_contexts: Vec<String>,
     /// Estado breve para barra de find/replace / comments / proofing
     /// (p. ej. "3 coincidencias", "comentario insertado", "sin errores").
     #[cfg(feature = "document")]

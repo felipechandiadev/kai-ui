@@ -55,6 +55,9 @@ pub struct RibbonGroup {
 pub struct RibbonTab {
     pub id: String,
     pub label: String,
+    /// Pestaña contextual (Tabla, Formato de imagen): solo se muestra cuando
+    /// el caret está en una tabla o hay una imagen seleccionada.
+    pub contextual: bool,
     pub groups: Vec<RibbonGroup>,
 }
 
@@ -114,14 +117,25 @@ const MVP_LAYOUT: &[&str] = &[
     "layout.sectionRtl",
     "text.columnBreak",
     "layout.break",
-    "arrange.wrap",
+];
+
+/// Formato de imagen (contextual): ajuste del texto y orden de la imagen
+/// seleccionada. Las variantes `arrange.wrap:<modo>` son [`VARIANTS`].
+const MVP_PICTURE: &[&str] = &[
+    "arrange.wrap:inline",
+    "arrange.wrap:square",
+    "arrange.wrap:tight",
+    "arrange.wrap:topAndBottom",
+    "arrange.wrap:behindText",
+    "arrange.wrap:inFrontOfText",
     "arrange.bringForward",
     "arrange.sendBackward",
 ];
 
 /// Table Design/Layout mínimo (requiere caret en tabla; `why_disabled` greya).
 const MVP_TABLE: &[&str] = &[
-    "table.style",
+    "table.style:TableGrid",
+    "table.style:GridTable1Light",
     "table.look",
     "table.shading",
     "table.borders",
@@ -129,10 +143,11 @@ const MVP_TABLE: &[&str] = &[
 ];
 
 /// Review: proofing / tracking / changes sin dialogs de archivo.
-/// `review.newComment` exige `text` → barra de comentarios de la demo
-/// ([`DocumentCmd::NewComment`]), no el ribbon. Excluye compare/combine,
+/// `review.newComment` exige `text`: el ribbon solo emite el id y la app
+/// pide el texto ([`DocumentCmd::NewComment`]). Excluye compare/combine,
 /// restrict, speech UI.
 const MVP_REVIEW: &[&str] = &[
+    "review.newComment",
     "review.spelling",
     "review.proofing",
     "review.wordCount",
@@ -178,6 +193,48 @@ const MVP_VIEW: &[&str] = &[
     "view.darkMode",
 ];
 
+/// Ítems del ribbon que fijan un parámetro de un comando WordCraft:
+/// `(id del ribbon, id WordCraft, etiqueta)`. El id usa `base:valor`.
+const VARIANTS: &[(&str, &str, &str)] = &[
+    (
+        "arrange.wrap:inline",
+        "arrange.wrap",
+        "En línea con el texto",
+    ),
+    ("arrange.wrap:square", "arrange.wrap", "Cuadrado"),
+    ("arrange.wrap:tight", "arrange.wrap", "Estrecho"),
+    (
+        "arrange.wrap:topAndBottom",
+        "arrange.wrap",
+        "Arriba y abajo",
+    ),
+    (
+        "arrange.wrap:behindText",
+        "arrange.wrap",
+        "Detrás del texto",
+    ),
+    (
+        "arrange.wrap:inFrontOfText",
+        "arrange.wrap",
+        "Delante del texto",
+    ),
+    ("table.style:TableGrid", "table.style", "Cuadrícula"),
+    (
+        "table.style:GridTable1Light",
+        "table.style",
+        "Cuadrícula clara",
+    ),
+];
+
+/// Id WordCraft detrás de un ítem del ribbon (el mismo si no es variante).
+fn base_cmd(id: &str) -> &str {
+    id.split_once(':').map_or(id, |(base, _)| base)
+}
+
+/// Pestañas contextuales y el comando que dice si su contexto está activo.
+const CONTEXT_PROBES: &[(&str, &str)] =
+    &[("table", "table.selectTable"), ("picture", "arrange.wrap")];
+
 fn wc_registry() -> &'static Registry {
     static REG: OnceLock<Registry> = OnceLock::new();
     REG.get_or_init(wordcraft_engine::cmd::registry)
@@ -194,6 +251,7 @@ pub fn ribbon_catalog(mode: RibbonMode) -> Vec<RibbonTab> {
             ("Insert", MVP_INSERT),
             ("Layout", MVP_LAYOUT),
             ("Table", MVP_TABLE),
+            ("Picture", MVP_PICTURE),
             ("Review", MVP_REVIEW),
             ("References", MVP_REFERENCES),
             ("View", MVP_VIEW),
@@ -207,11 +265,19 @@ fn build_tabs(want: &[(&str, &[&str])]) -> Vec<RibbonTab> {
     for &(tab_label, ids) in want {
         let mut groups: BTreeMap<String, Vec<RibbonItem>> = BTreeMap::new();
         for id in ids {
-            let Some(spec) = reg.get(id) else {
+            let Some(spec) = reg.get(base_cmd(id)) else {
                 continue;
             };
             let group = group_for_tab(tab_label, spec);
-            groups.entry(group).or_default().push(item_from_spec(spec));
+            let item = match VARIANTS.iter().find(|(v, ..)| v == id) {
+                Some((v, _, label)) => RibbonItem {
+                    cmd_id: (*v).into(),
+                    label: (*label).into(),
+                    shortcut: String::new(),
+                },
+                None => item_from_spec(spec),
+            };
+            groups.entry(group).or_default().push(item);
         }
         // Orden de grupos preferido en Home.
         let order = preferred_group_order(tab_label);
@@ -233,8 +299,10 @@ fn build_tabs(want: &[(&str, &[&str])]) -> Vec<RibbonTab> {
         if group_list.is_empty() {
             continue;
         }
+        let id = tab_label.to_ascii_lowercase();
         out.push(RibbonTab {
-            id: tab_label.to_ascii_lowercase(),
+            contextual: CONTEXT_PROBES.iter().any(|(tab, _)| *tab == id),
+            id,
             label: localize_tab(tab_label),
             groups: group_list,
         });
@@ -290,6 +358,7 @@ fn preferred_group_order(tab: &str) -> Vec<&'static str> {
             "Page Movement",
         ],
         "Table" => vec!["Table Styles", "Table Style Options", "Borders"],
+        "Picture" => vec!["Arrange"],
         _ => Vec::new(),
     }
 }
@@ -336,7 +405,13 @@ pub fn document_cmd_for(id: &str) -> DocumentCmd {
         "table.style" => DocumentCmd::TableStyle {
             style: "GridTable1Light".into(),
         },
-        other => DocumentCmd::Raw(other.into()),
+        other => match other.split_once(':') {
+            Some(("arrange.wrap", mode)) => DocumentCmd::Wrap { mode: mode.into() },
+            Some(("table.style", style)) => DocumentCmd::TableStyle {
+                style: style.into(),
+            },
+            _ => DocumentCmd::Raw(other.into()),
+        },
     }
 }
 
@@ -366,7 +441,17 @@ pub fn default_run_params(id: &str) -> serde_json::Value {
 /// ¿El comando está greyed-out en esta Session? (`Session::why_disabled`).
 #[allow(dead_code)] // API pública para apps que enrutan Session al chrome.
 pub fn cmd_disabled(session: &Session, id: &str) -> bool {
-    session.why_disabled(id).is_some()
+    session.why_disabled(base_cmd(id)).is_some()
+}
+
+/// Pestañas contextuales cuyo contexto está activo ahora (`table` con el
+/// caret en una tabla, `picture` con una imagen seleccionada).
+pub fn active_contexts(session: &Session) -> Vec<String> {
+    CONTEXT_PROBES
+        .iter()
+        .filter(|(_, probe)| !cmd_disabled(session, probe))
+        .map(|(tab, _)| (*tab).to_string())
+        .collect()
 }
 
 /// Estado vivo del ribbon (pressed / disabled) derivado de la Session.
@@ -374,6 +459,8 @@ pub fn cmd_disabled(session: &Session, id: &str) -> bool {
 pub struct RibbonChrome {
     pub pressed: Vec<String>,
     pub disabled: Vec<String>,
+    /// Pestañas contextuales visibles ([`active_contexts`]).
+    pub contexts: Vec<String>,
 }
 
 /// Calcula pressed (desde `format.state` + párrafo/caret + view) y disabled
@@ -468,7 +555,11 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
         }
     }
     disabled.sort();
-    RibbonChrome { pressed, disabled }
+    RibbonChrome {
+        pressed,
+        disabled,
+        contexts: active_contexts(session),
+    }
 }
 
 /// Icono Lucide para un id WordCraft, si hay uno razonable en el catálogo Kai.
@@ -507,6 +598,7 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "insert.table" => Icon::Table,
         "insert.picture" => Icon::ImagePlus,
         "arrange.wrap" => Icon::Layers,
+        "review.newComment" => Icon::MessageSquare,
         "arrange.bringForward" => Icon::ArrowUp,
         "arrange.sendBackward" => Icon::ArrowDown,
         "table.style" => Icon::Table,
@@ -544,7 +636,7 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "review.reject" => Icon::X,
         "review.acceptAll" => Icon::CheckCheck,
         "review.rejectAll" => Icon::Ban,
-        "review.nextComment" => Icon::MessageSquare,
+        "review.nextComment" => Icon::ChevronRight,
         "review.previousComment" => Icon::Reply,
         // References
         "references.toc" => Icon::ListTodo,
@@ -581,6 +673,7 @@ fn localize_tab(en: &str) -> String {
         "Home" => "Inicio",
         "Insert" => "Insertar",
         "Table" => "Tabla",
+        "Picture" => "Formato de imagen",
         "Layout" => "Diseño",
         "Review" => "Revisar",
         "References" => "Referencias",
@@ -692,6 +785,7 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
         "review.reject" => "Rechazar",
         "review.acceptAll" => "Aceptar todo",
         "review.rejectAll" => "Rechazar todo",
+        "review.newComment" => "Nuevo comentario",
         "review.nextComment" => "Comentario siguiente",
         "review.previousComment" => "Comentario anterior",
         "references.toc" => "Tabla de contenido",
@@ -733,6 +827,7 @@ fn is_large_cmd(id: &str) -> bool {
             | "table.style"
             | "review.spelling"
             | "review.trackChanges"
+            | "review.newComment"
             | "references.toc"
             | "references.footnote"
             | "view.printLayout"
@@ -763,6 +858,8 @@ pub struct DocumentRibbon<Msg> {
     on_command: Option<Box<dyn Fn(String) -> Msg>>,
     disabled: Vec<String>,
     pressed: Vec<String>,
+    /// Pestañas contextuales visibles (`table`, `picture`).
+    contexts: Vec<String>,
     /// Acciones de archivo (QAT) a la izquierda de las pestañas.
     leading: Vec<Element<Msg>>,
     test_id: Option<String>,
@@ -777,6 +874,7 @@ impl<Msg> Default for DocumentRibbon<Msg> {
             on_command: None,
             disabled: Vec::new(),
             pressed: Vec::new(),
+            contexts: Vec::new(),
             leading: Vec::new(),
             test_id: None,
         }
@@ -816,6 +914,13 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
     /// Toggles activos (bold/italic/align/…) — `Element::pressed`.
     pub fn pressed_ids(mut self, ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.pressed = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Pestañas contextuales a mostrar ([`RibbonChrome::contexts`]); las
+    /// demás contextuales quedan ocultas.
+    pub fn contexts(mut self, ids: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.contexts = ids.into_iter().map(Into::into).collect();
         self
     }
 
@@ -941,7 +1046,11 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
     }
 
     pub fn build(mut self) -> Element<Msg> {
-        let tabs = ribbon_catalog(self.mode);
+        let contexts = std::mem::take(&mut self.contexts);
+        let tabs: Vec<RibbonTab> = ribbon_catalog(self.mode)
+            .into_iter()
+            .filter(|t| !t.contextual || contexts.contains(&t.id))
+            .collect();
         if tabs.is_empty() && self.leading.is_empty() {
             return div().class("hidden");
         }
@@ -990,6 +1099,10 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                 .pressed(tab.id == active)
                 .test_id(format!("documento.ribbon.tab.{}", tab.id))
                 .child(text(tab.label.as_str()));
+            if tab.contextual {
+                // Como Word: las contextuales se distinguen por color.
+                t = t.class("text-accent hover:text-accent selected:text-accent");
+            }
             if let Some(ref on_tab) = self.on_tab {
                 t = t.on_click(on_tab(tab.id.clone()));
             }
@@ -1317,8 +1430,9 @@ mod tests {
         for need in [
             "edit.pasteText",
             "edit.pasteMerge",
-            "arrange.wrap",
-            "table.style",
+            "arrange.wrap:square",
+            "table.style:TableGrid",
+            "review.newComment",
             "insert.header",
             "insert.editHeader",
             "insert.closeHeader",
