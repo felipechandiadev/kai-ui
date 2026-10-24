@@ -34,6 +34,14 @@ grupo discretos y QAT Archivo a la izquierda de las tabs. **Ribbon vivo:**
 6. **Estados**: hover / pressed / `selected` (toggle) / disabled ~40 % —
    reutiliza `toolbar_item` + variantes Button existentes.
 
+7. **Forma Word / Pages (24-oct-2026)**: pestañas de texto con subrayado de
+   acento en la activa (no botones rellenos); una sola fila de grupos de alto
+   fijo, con la etiqueta del grupo **abajo** y centrada. Las acciones
+   principales (`is_large_cmd`: Pegar, Tabla, Imagen, Márgenes, Ortografía…)
+   son botones grandes con icono y nombre; el resto va en dos filas de iconos
+   pequeños. Los estilos de párrafo (`is_style_cmd`) son una galería de
+   muestras con su aspecto. Pendiente: colapsar grupos cuando falta ancho.
+
 Fuente de verdad de **shortcut / location**: `CommandSpec` en el rev fijado
 en `Cargo.toml` (`wordcraft-engine`). Labels visibles los aporta Kai
 (`localize_cmd`). La allowlist acota tamaño y excluye cmds que abren dialogs

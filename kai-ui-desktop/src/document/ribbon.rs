@@ -15,7 +15,7 @@ use wordcraft_engine::{CommandSpec, Registry, Session};
 use crate::components::{
     ButtonSize, ButtonVariant, button_sized, themed, toolbar_item, toolbar_separator,
 };
-use crate::element::{Element, Role, div, text};
+use crate::element::{Element, Role, div, icon, text};
 use crate::icons::Icon;
 
 use super::DocumentCmd;
@@ -502,7 +502,7 @@ pub fn icon_for_cmd(id: &str) -> Option<Icon> {
         "para.heading1" => Icon::BookType,
         "para.heading2" => Icon::BookMarked,
         "para.heading3" => Icon::Baseline,
-        "select.all" => Icon::Baseline,
+        "select.all" => Icon::TextCursorInput,
         // Insert
         "insert.table" => Icon::Table,
         "insert.picture" => Icon::ImagePlus,
@@ -580,6 +580,7 @@ fn localize_tab(en: &str) -> String {
     match en {
         "Home" => "Inicio",
         "Insert" => "Insertar",
+        "Table" => "Tabla",
         "Layout" => "Diseño",
         "Review" => "Revisar",
         "References" => "Referencias",
@@ -717,6 +718,35 @@ pub fn localize_cmd(id: &str) -> Option<&'static str> {
     })
 }
 
+/// Comandos que van como botón grande (icono + nombre), como en Word.
+fn is_large_cmd(id: &str) -> bool {
+    matches!(
+        id,
+        "edit.paste"
+            | "insert.table"
+            | "insert.picture"
+            | "insert.pageBreak"
+            | "layout.margins"
+            | "layout.orientation"
+            | "layout.size"
+            | "layout.columns"
+            | "table.style"
+            | "review.spelling"
+            | "review.trackChanges"
+            | "references.toc"
+            | "references.footnote"
+            | "view.printLayout"
+    )
+}
+
+/// Estilos de párrafo: se muestran como galería con su aspecto.
+fn is_style_cmd(id: &str) -> bool {
+    matches!(
+        id,
+        "para.normal" | "para.heading1" | "para.heading2" | "para.heading3"
+    )
+}
+
 fn item_tooltip(item: &RibbonItem) -> String {
     if item.shortcut.is_empty() {
         item.label.clone()
@@ -800,7 +830,117 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         self
     }
 
-    pub fn build(self) -> Element<Msg> {
+    /// Botón del ribbon con estado, atajo y mensaje del comando.
+    fn wire(&self, el: Element<Msg>, item: &RibbonItem) -> Element<Msg> {
+        let disabled = self.disabled.iter().any(|d| d == &item.cmd_id);
+        let pressed = self.pressed.iter().any(|d| d == &item.cmd_id);
+        let mut el = el
+            .class("disabled:opacity-40")
+            .disabled(disabled)
+            .pressed(pressed)
+            .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id));
+        if let Some(ref on_cmd) = self.on_command {
+            el = el.on_click(on_cmd(item.cmd_id.clone()));
+        }
+        el
+    }
+
+    /// Botón grande: icono arriba y nombre abajo (Pegar, Tabla, Imagen…).
+    fn large_button(&self, item: &RibbonItem, glyph: Icon) -> Element<Msg> {
+        let el = div()
+            .class(&themed(
+                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[52px] px-1.5 \
+                 rounded-md border border-transparent text-secondary cursor-pointer \
+                 hover:border-border hover:bg-primary/10 active:bg-primary/20 \
+                 selected:border-choice selected:bg-choice/20",
+                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[48px] px-1.5 \
+                 rounded-md border-[0.5px] border-transparent text-secondary-label cursor-default \
+                 hover:border-separator hover:bg-fill-3 active:bg-fill-2 \
+                 selected:border-choice selected:bg-choice/20",
+            ))
+            .role(Role::Button)
+            .tooltip(item_tooltip(item))
+            .label(item.label.as_str())
+            .children([
+                icon(glyph).class("size-6"),
+                text(item.label.as_str()).class("text-[11px] leading-3 whitespace-nowrap"),
+            ]);
+        self.wire(el, item)
+    }
+
+    /// Muestra de estilo (galería de Estilos): el nombre con su aspecto.
+    fn style_tile(&self, item: &RibbonItem) -> Element<Msg> {
+        let sample = match item.cmd_id.as_str() {
+            "para.heading1" => "text-[13px] font-semibold text-accent",
+            "para.heading2" => "text-xs font-semibold text-accent",
+            "para.heading3" => "text-[11px] font-semibold",
+            _ => "text-[11px]",
+        };
+        let el = div()
+            .class(&themed(
+                "flex items-center justify-center h-[44px] w-[50px] rounded-md border \
+                 border-border bg-background cursor-pointer hover:border-primary \
+                 selected:border-choice selected:bg-choice/20",
+                "flex items-center justify-center h-[44px] w-[50px] rounded-md border-[0.5px] \
+                 border-separator bg-control cursor-default hover:bg-fill-3 \
+                 selected:border-choice selected:bg-choice/20",
+            ))
+            .role(Role::Button)
+            .tooltip(item_tooltip(item))
+            .label(item.label.as_str())
+            .child(text(item.label.as_str()).class(&format!("{sample} whitespace-nowrap")));
+        self.wire(el, item)
+    }
+
+    /// Contenido de un grupo: botones grandes a la izquierda y los pequeños
+    /// apilados en dos filas, como el ribbon de Word.
+    fn group_content(&self, group: &RibbonGroup) -> Element<Msg> {
+        let mut large = Vec::new();
+        let mut styles = Vec::new();
+        let mut small = Vec::new();
+        for item in &group.items {
+            if is_style_cmd(&item.cmd_id) {
+                styles.push(self.style_tile(item));
+            } else if let Some(glyph) = icon_for_cmd(&item.cmd_id)
+                && is_large_cmd(&item.cmd_id)
+            {
+                large.push(self.large_button(item, glyph));
+            } else if let Some(glyph) = icon_for_cmd(&item.cmd_id) {
+                small.push(self.wire(toolbar_item(glyph, item_tooltip(item)), item));
+            } else {
+                let el = button_sized(item.label.clone(), ButtonVariant::Text, ButtonSize::Sm)
+                    .tooltip(item_tooltip(item));
+                small.push(self.wire(el, item));
+            }
+        }
+        let mut row = div()
+            .class("flex flex-row items-center gap-0.5 h-[60px]")
+            .children(large)
+            .children(styles);
+        if !small.is_empty() {
+            let per_row = small.len().div_ceil(2);
+            let mut rows = Vec::new();
+            let mut it = small.into_iter();
+            for _ in 0..2 {
+                let chunk: Vec<_> = it.by_ref().take(per_row).collect();
+                if !chunk.is_empty() {
+                    rows.push(
+                        div()
+                            .class("flex flex-row items-center gap-0.5")
+                            .children(chunk),
+                    );
+                }
+            }
+            row = row.child(
+                div()
+                    .class("flex flex-col justify-center gap-0.5")
+                    .children(rows),
+            );
+        }
+        row
+    }
+
+    pub fn build(mut self) -> Element<Msg> {
         let tabs = ribbon_catalog(self.mode);
         if tabs.is_empty() && self.leading.is_empty() {
             return div().class("hidden");
@@ -815,17 +955,17 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
 
         let mut tab_row = div()
             .class(&themed(
-                "flex flex-row flex-wrap items-center gap-1.5 border-b border-border pb-1",
-                "flex flex-row flex-wrap items-center gap-1.5 border-b border-separator pb-1",
+                "flex flex-row items-end gap-1 border-b border-border",
+                "flex flex-row items-end gap-1 border-b border-separator",
             ))
             .role(Role::TabList);
 
         if !self.leading.is_empty() {
             let mut qat = div()
-                .class("flex flex-row items-center gap-0.5 shrink-0")
+                .class("flex flex-row items-center gap-0.5 shrink-0 pb-1")
                 .role(Role::Toolbar)
                 .test_id("documento.archivo");
-            for item in self.leading {
+            for item in std::mem::take(&mut self.leading) {
                 qat = qat.child(item);
             }
             tab_row = tab_row.child(qat);
@@ -834,22 +974,26 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             }
         }
 
+        // Pestañas como Word / Pages: texto con subrayado de acento en la
+        // activa, no botones rellenos.
         for tab in &tabs {
-            let selected = tab.id == active;
-            let variant = if selected {
-                ButtonVariant::Primary
-            } else {
-                ButtonVariant::Text
-            };
-            let mut btn = button_sized(tab.label.clone(), variant, ButtonSize::Sm)
+            let mut t = div()
+                .class(&themed(
+                    "flex items-center h-8 px-3 border-b-2 border-transparent text-sm \
+                     whitespace-nowrap text-muted-foreground cursor-pointer hover:text-foreground \
+                     selected:border-accent selected:text-foreground selected:font-medium",
+                    "flex items-center h-7 px-2.5 border-b-2 border-transparent text-control \
+                     whitespace-nowrap text-secondary-label cursor-default hover:text-label \
+                     selected:border-control-accent selected:text-label selected:font-medium",
+                ))
                 .role(Role::Tab)
-                .test_id(format!("documento.ribbon.tab.{}", tab.id));
+                .pressed(tab.id == active)
+                .test_id(format!("documento.ribbon.tab.{}", tab.id))
+                .child(text(tab.label.as_str()));
             if let Some(ref on_tab) = self.on_tab {
-                let id = tab.id.clone();
-                let msg = on_tab(id);
-                btn = btn.on_click(msg);
+                t = t.on_click(on_tab(tab.id.clone()));
             }
-            tab_row = tab_row.child(btn);
+            tab_row = tab_row.child(t);
         }
 
         let mut children = vec![tab_row];
@@ -860,54 +1004,33 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             .cloned()
             .or_else(|| tabs.first().cloned())
         {
+            // Una sola fila de alto fijo; el colapso por ancho es un paso aparte.
             let mut groups_row = div()
-                .class(&themed(
-                    "flex flex-row flex-wrap items-stretch gap-2 pt-1.5",
-                    "flex flex-row flex-wrap items-stretch gap-2 pt-1.5",
-                ))
+                .class("flex flex-row flex-nowrap items-stretch gap-1 pt-1 overflow-hidden")
                 .role(Role::Toolbar)
                 .test_id(format!("documento.ribbon.panel.{}", active_tab.id));
 
             for (gi, group) in active_tab.groups.iter().enumerate() {
                 if gi > 0 {
                     groups_row = groups_row.child(div().class(&themed(
-                        "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-border",
-                        "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-separator",
+                        "w-px self-stretch my-1 shrink-0 bg-border",
+                        "w-px self-stretch my-1 shrink-0 bg-separator",
                     )));
                 }
-                let mut g = div().class("flex flex-col gap-0.5 min-w-0 justify-end");
-                g = g.child(text(&group.label).class(&themed(
-                    "text-[11px] leading-none text-muted-foreground px-1",
-                    "text-[11px] leading-none text-secondary-label px-1",
-                )));
-                let mut items = div().class("flex flex-row flex-wrap items-center gap-0.5");
-                for item in &group.items {
-                    let disabled = self.disabled.iter().any(|d| d == &item.cmd_id);
-                    let pressed = self.pressed.iter().any(|d| d == &item.cmd_id);
-                    let tip = item_tooltip(item);
-                    let mut btn = if let Some(glyph) = icon_for_cmd(&item.cmd_id) {
-                        toolbar_item(glyph, tip)
-                            .class("disabled:opacity-40")
-                            .disabled(disabled)
-                            .pressed(pressed)
-                            .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id))
-                    } else {
-                        // Fallback: texto corto ES si no hay icono razonable.
-                        button_sized(item.label.clone(), ButtonVariant::Text, ButtonSize::Sm)
-                            .tooltip(tip)
-                            .class("disabled:opacity-40")
-                            .disabled(disabled)
-                            .pressed(pressed)
-                            .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id))
-                    };
-                    if let Some(ref on_cmd) = self.on_command {
-                        let msg = on_cmd(item.cmd_id.clone());
-                        btn = btn.on_click(msg);
-                    }
-                    items = items.child(btn);
-                }
-                g = g.child(items);
-                groups_row = groups_row.child(g);
+                let content = self.group_content(group);
+                groups_row = groups_row.child(
+                    div()
+                        .class("flex flex-col items-center shrink-0 px-1")
+                        .role(Role::Group)
+                        .label(group.label.as_str())
+                        .children([
+                            content,
+                            text(group.label.as_str()).class(&themed(
+                                "text-[11px] leading-4 text-muted-foreground whitespace-nowrap",
+                                "text-[11px] leading-4 text-secondary-label whitespace-nowrap",
+                            )),
+                        ]),
+                );
             }
             children.push(groups_row);
         }
