@@ -5723,8 +5723,8 @@ mod tests {
 
     #[cfg(feature = "document")]
     #[test]
-    #[ignore = "en desarrollo: drag de selección en editor"]
     fn document_pointer_drag_selects_text() {
+        use crate::geometry::Point;
         let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
@@ -5732,11 +5732,10 @@ mod tests {
         app.type_text(editor(), "Hola mundo seleccionable");
         assert_eq!(app.value(editor()), "Hola mundo seleccionable");
 
-        // Ribbon + findbar leave the editor short (~108pt). The letter page is
-        // scale-fitted into that box, so body text sits near the *top-center*
-        // of the widget (page strip ~60pt wide). Offsets far left/bottom miss
-        // the page and keep the caret collapsed.
-        app.drag_at(editor(), 400.0, 24.0, 30.0, 0.0);
+        // El texto del cuerpo comienza tras el margen superior e izquierdo (72pt).
+        let start = app.document_page_to_local(editor(), Point { x: 72.0, y: 72.0 });
+        let end = app.document_page_to_local(editor(), Point { x: 180.0, y: 72.0 });
+        app.drag_at(editor(), start.x, start.y, end.x - start.x, 0.0);
         assert!(
             !app.document_selection_collapsed(editor()),
             "expected non-empty selection after pointer drag across text"

@@ -1182,6 +1182,27 @@ impl<A: App> Session<A> {
         self.documents.get(&id).map(|ed| ed.selection_collapsed())
     }
 
+    /// Punto local (relativo al text_box del widget) correspondiente a
+    /// una coordenada canónica de la página (en pt del documento).
+    #[cfg(feature = "document")]
+    pub fn document_page_to_local(&self, id: WidgetId, page_point: Point) -> Option<Point> {
+        let ed = self.documents.get(&id)?;
+        let viewport = self.layout.text_box(id)?;
+        let m = crate::document::viewport_metrics(
+            crate::geometry::Rect {
+                x: 0.0,
+                y: 0.0,
+                width: viewport.width,
+                height: viewport.height,
+            },
+            ed.paint().page_size,
+        );
+        Some(Point {
+            x: m.origin_x + page_point.x * m.scale,
+            y: m.origin_y + page_point.y * m.scale - ed.scroll_y(),
+        })
+    }
+
     /// Factor de escala de la ventana (2 en Retina). Solo afecta al raster
     /// de los documentos; el resto de la UI lo resuelve el renderer.
     pub fn set_scale_factor(&mut self, scale: f32) {

@@ -915,6 +915,16 @@ impl<A: App> TestApp<A> {
             .expect("document editor")
     }
 
+    #[track_caller]
+    /// Document: traduce un punto en la página (pt de documento) a coordenadas locales del widget.
+    #[cfg(feature = "document")]
+    pub fn document_page_to_local(&self, by: By, page_point: Point) -> Point {
+        let id = self.id_of(by);
+        self.session
+            .document_page_to_local(id, page_point)
+            .expect("document editor")
+    }
+
     /// Go to the route of `path` through `kai.navigate`, as an agent
     /// would. The app must register [`CommandRegistry::navigation`].
     ///
