@@ -12,6 +12,8 @@ mod calls;
 #[cfg(test)]
 mod map_tests;
 #[cfg(test)]
+mod pages_tests;
+#[cfg(test)]
 mod router_tests;
 #[cfg(test)]
 mod typeahead_tests;

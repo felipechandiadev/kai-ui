@@ -221,6 +221,25 @@ pub const SECTION: SectionMeta = SectionMeta {
 `sections::customers::SECTION`. Si falta o tiene otro tipo, es un error de
 compilación normal, con su línea.
 
+### 4.4 Lo que enseñó la raíz escrita a mano (R3)
+
+La raíz de `session/pages_tests.rs` ocupa ~150 líneas para dos secciones y
+tres páginas: es exactamente lo que `kai-build` debe generar, y confirma que
+nadie debería escribirla a mano. Cambios respecto de §4.1:
+
+- `Page::Params` solo pide `Clone + Eq`: el parseo del path vive en
+  `Route::parse` (el tipo del parámetro lo convierte la raíz), no en la
+  página.
+- La primera página se abre en `App::init`, para que corran sus efectos.
+- Las páginas de sección se crean al primer uso y viven mientras corre la
+  app; las de parámetros se crean al entrar y se descartan al salir de esa
+  ruta, o al cambiar de parámetro.
+- La raíz necesita, por ruta, el índice de su sección (fila elegida de la
+  barra) y, por sección, el path de su página propia (clic en la barra).
+  `kai-build` los saca del árbol de carpetas.
+- `Context` junta pedidos de navegación; la raíz los aplica después del
+  `update` de la página, junto con los efectos de abrir la página nueva.
+
 ## 5. `kai-build`
 
 Crate nuevo del monorepo (`kai-build/`), dependencia de compilación de cada
@@ -303,7 +322,7 @@ leerlo explique la app. No usa macros procedurales.
 | R0 | ✅ **Limpieza de nombres** (24-oct-2026): identificadores del crate, la demo y `kai-cli` en inglés (`Seccion` → `Section`, `actualizar` → `update_model`…), ids de comando (`kai.paleta` → `kai.palette`, `ui.ir_a` → `ui.go_to`), `test_id`, claves JSON de los comandos y `mcp-schema.json`. | Hecho: sin identificadores en español; los textos visibles siguen en español. |
 | R1 | ✅ `Element::map`, `Effects::map` y `Subscriptions::map` (24-oct-2026). | Hecho: tests de los 10 handlers, filas virtuales y una app padre con una parte hija (`session/map_tests.rs`). Costo medido con `bench_element_map` (release, p50 sobre toda la vista de la demo): 10–27 µs por vista de 135–373 nodos, 7–12 % de construirla y ~0,3 % de un frame a 120 Hz. |
 | R2 | ✅ `kai::router` (24-oct-2026): `Route`, `Router<R>`, `Navigate`, `NavState`, trait `Navigable`; `CommandRegistry::navigation()` suma `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑) en el menú «Ir» y `kai.navigate { path }`, expuestos a agentes y deshabilitados cuando no aplican; `App::route()`; la sesión guarda y restaura scroll y foco por ruta; `TestApp::navigate` y `TestApp::route`. | Hecho: `session/router_tests.rs` navega lista ↔ detalle con historial, atajos y agentes, y atrás devuelve scroll y foco. **Pendiente:** anunciar el cambio de vista a VoiceOver (falta un mecanismo de anuncios en `a11y.rs`). |
-| R3 | `Page`, `Context`, `SectionMeta` y una raíz escrita a mano con dos secciones. | El contrato funciona sin generación de código. |
+| R3 | ✅ `Page`, `Context`, `SectionMeta` y `SectionSidebar` en `kai::router` (24-oct-2026). | Hecho: `session/pages_tests.rs` tiene una raíz escrita a mano con dos secciones (Clientes con lista y detalle `[id]`, Ventas que carga datos al abrir): una página navega y cambia el estado compartido, una sección conserva su estado mientras se ve otra, la barra lateral sigue a la ruta y el título a la página. |
 | R4 | `kai-build` genera lo de R3 desde carpetas; `kai new section`; `kai doctor` valida. | Un fixture `fixtures/sections-app` compila desde carpetas y su código generado es igual al escrito a mano de R3. |
 | R5 | La demo pasa a `src/sections/` (hoy un `demo.rs` de 9 600 líneas). | Una carpeta por sección de la demo; las pruebas existentes siguen pasando. |
 
