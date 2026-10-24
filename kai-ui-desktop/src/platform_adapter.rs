@@ -100,8 +100,14 @@ fn map_key(key: KeyCode) -> Key {
     }
 }
 
-/// Remaining letter and digit keys, by physical position.
+/// Remaining letter, digit and bracket keys, by physical position (US
+/// layout, so ⌘[ and ⌘] are the same keys on every layout, as in macOS).
 fn char_key(key: KeyCode) -> Option<char> {
+    match key {
+        KeyCode::BracketLeft => return Some('['),
+        KeyCode::BracketRight => return Some(']'),
+        _ => {}
+    }
     const LETTERS: [(KeyCode, char); 22] = [
         (KeyCode::KeyB, 'b'),
         (KeyCode::KeyD, 'd'),
@@ -160,6 +166,8 @@ mod tests {
         assert_eq!(map_key(KeyCode::Period), Key::Period);
         assert_eq!(map_key(KeyCode::KeyS), Key::Char('s'));
         assert_eq!(map_key(KeyCode::Digit7), Key::Char('7'));
+        assert_eq!(map_key(KeyCode::BracketLeft), Key::Char('['));
+        assert_eq!(map_key(KeyCode::BracketRight), Key::Char(']'));
         assert_eq!(map_key(KeyCode::KeyA), Key::A);
         assert_eq!(map_key(KeyCode::F1), Key::Other);
         // Escape carries "\u{1b}" as text in winit; it must not be inserted.

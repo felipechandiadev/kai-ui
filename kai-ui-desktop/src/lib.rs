@@ -31,6 +31,7 @@ pub mod maps;
 pub mod mcp;
 pub mod media;
 pub mod menu;
+pub mod router;
 pub mod runtime;
 pub mod snapshot;
 pub mod store;

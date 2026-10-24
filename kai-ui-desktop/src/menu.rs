@@ -200,6 +200,11 @@ mod native {
     }
 
     fn char_code(c: char) -> Option<Code> {
+        match c {
+            '[' => return Some(Code::BracketLeft),
+            ']' => return Some(Code::BracketRight),
+            _ => {}
+        }
         const LETTERS: [Code; 26] = [
             Code::KeyA,
             Code::KeyB,

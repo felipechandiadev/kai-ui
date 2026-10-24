@@ -1066,6 +1066,7 @@ Reglas de la pista C:
 - Rutas como enum (`#[derive(Routable)]` o implementación manual al inicio), historial atrás/adelante, `kai.atras`/`kai.adelante` (Cmd+[ / Cmd+]) como comandos, deep links desde `url-schemes`.
 - `TestApp::navigate(ruta)` y aserciones sobre la ruta actual.
 - **Hecho cuando**: la app guía navega lista ↔ detalle con historial y un deep link abre un cliente.
+- **Estado (24-oct-2026)**: 🟡 router tipado, historial, comandos ⌘[ ⌘] ⌘↑ y `kai.navigate`, scroll y foco por ruta y `TestApp::navigate` hechos ([26](26-router-y-kai-build.md), R2). Faltan deep links (`url-schemes`, con el bundle del Paso 20), el anuncio a VoiceOver y que la app guía lo use.
 
 #### Paso 23 — Varias ventanas
 

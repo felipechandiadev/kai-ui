@@ -146,8 +146,12 @@ Con la ruta, el runtime:
 | Persistencia | La última ruta en el `Store` de la app, si la app lo pide. |
 | Tests | `TestApp::navigate(path)` y `TestApp::route()`. |
 
-Los comandos `kai.*` existentes en español (`kai.palette`, `ui.go_to`…) se
-renombran en la limpieza de §6.
+**Implementado (R2):** el contrato quedó así en `src/router.rs`. Diferencias
+con lo de arriba: `Route::section()` se deja para R3 (la barra lateral es de
+las secciones); los comandos son `Action`s genéricas (`GoBack<A>`…) que la
+app activa con `registry.navigation()` e implementando `Navigable`
+(`nav_state()` y `navigate(Navigate) -> Msg`). Un path desconocido en
+`kai.navigate` no cambia nada (no es error). Falta el anuncio a VoiceOver.
 
 ## 4. Páginas y secciones
 
@@ -298,7 +302,7 @@ leerlo explique la app. No usa macros procedurales.
 |---|---|---|
 | R0 | ✅ **Limpieza de nombres** (24-oct-2026): identificadores del crate, la demo y `kai-cli` en inglés (`Seccion` → `Section`, `actualizar` → `update_model`…), ids de comando (`kai.paleta` → `kai.palette`, `ui.ir_a` → `ui.go_to`), `test_id`, claves JSON de los comandos y `mcp-schema.json`. | Hecho: sin identificadores en español; los textos visibles siguen en español. |
 | R1 | ✅ `Element::map`, `Effects::map` y `Subscriptions::map` (24-oct-2026). | Hecho: tests de los 10 handlers, filas virtuales y una app padre con una parte hija (`session/map_tests.rs`). Costo medido con `bench_element_map` (release, p50 sobre toda la vista de la demo): 10–27 µs por vista de 135–373 nodos, 7–12 % de construirla y ~0,3 % de un frame a 120 Hz. |
-| R2 | `Route`, `Router<R>`, `App::route`, comandos `kai.back`/`kai.forward`/`kai.up`/`kai.navigate`, scroll y foco por ruta, `TestApp::navigate`. | Una app escrita a mano navega lista ↔ detalle con historial, y atrás devuelve el scroll. |
+| R2 | ✅ `kai::router` (24-oct-2026): `Route`, `Router<R>`, `Navigate`, `NavState`, trait `Navigable`; `CommandRegistry::navigation()` suma `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑) en el menú «Ir» y `kai.navigate { path }`, expuestos a agentes y deshabilitados cuando no aplican; `App::route()`; la sesión guarda y restaura scroll y foco por ruta; `TestApp::navigate` y `TestApp::route`. | Hecho: `session/router_tests.rs` navega lista ↔ detalle con historial, atajos y agentes, y atrás devuelve scroll y foco. **Pendiente:** anunciar el cambio de vista a VoiceOver (falta un mecanismo de anuncios en `a11y.rs`). |
 | R3 | `Page`, `Context`, `SectionMeta` y una raíz escrita a mano con dos secciones. | El contrato funciona sin generación de código. |
 | R4 | `kai-build` genera lo de R3 desde carpetas; `kai new section`; `kai doctor` valida. | Un fixture `fixtures/sections-app` compila desde carpetas y su código generado es igual al escrito a mano de R3. |
 | R5 | La demo pasa a `src/sections/` (hoy un `demo.rs` de 9 600 líneas). | Una carpeta por sección de la demo; las pruebas existentes siguen pasando. |

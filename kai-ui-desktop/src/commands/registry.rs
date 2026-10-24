@@ -148,6 +148,30 @@ impl<A: App> CommandRegistry<A> {
         registry
     }
 
+    /// The framework's navigation commands for an app with routes:
+    /// `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑) in the «Ir»
+    /// menu, and `kai.navigate` (a path) for scripts and agents. Each is
+    /// disabled when it has nowhere to go.
+    pub fn navigation(&mut self)
+    where
+        A: crate::router::Navigable,
+    {
+        use crate::router::{GoBack, GoForward, GoTo, GoUp};
+        self.action::<GoBack<A>>()
+            .shortcut(KeyEquivalent::cmd(Key::Char('[')))
+            .menu("Ir")
+            .expose();
+        self.action::<GoForward<A>>()
+            .shortcut(KeyEquivalent::cmd(Key::Char(']')))
+            .menu("Ir")
+            .expose();
+        self.action::<GoUp<A>>()
+            .shortcut(KeyEquivalent::cmd(Key::ArrowUp))
+            .menu("Ir")
+            .expose();
+        self.action::<GoTo<A>>().expose();
+    }
+
     fn push(&mut self, entry: Entry<A>) -> CommandBuilder<'_, A> {
         self.entries.push(entry);
         let entry = self.entries.last_mut().expect("just pushed");

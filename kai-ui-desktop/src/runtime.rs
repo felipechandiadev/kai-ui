@@ -549,6 +549,14 @@ pub trait App: 'static {
     /// what does not fit.
     fn restore_dev_state(&mut self, _state: serde_json::Value) {}
 
+    /// The current route as a path (see [`crate::router`]), read after
+    /// every `update`. When it changes the session keeps the scroll and
+    /// focus of the route left and restores them on coming back. Default:
+    /// none, the app has no routes.
+    fn route(&self) -> Option<String> {
+        None
+    }
+
     /// Disk cache for images loaded by URL, read once when the window
     /// opens (see [`crate::cache::DiskCache`]). Default: none, so every run
     /// downloads them again.

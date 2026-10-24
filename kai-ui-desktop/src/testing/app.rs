@@ -915,6 +915,23 @@ impl<A: App> TestApp<A> {
             .expect("document editor")
     }
 
+    /// Go to the route of `path` through `kai.navigate`, as an agent
+    /// would. The app must register [`CommandRegistry::navigation`].
+    ///
+    /// [`CommandRegistry::navigation`]: crate::commands::CommandRegistry::navigation
+    #[track_caller]
+    pub fn navigate(&mut self, path: &str) {
+        if let Err(error) = self.call("kai.navigate", serde_json::json!({ "path": path })) {
+            panic!("kai.navigate {path}: {}", error.message);
+        }
+    }
+
+    /// The app's current route ([`App::route`]), as the session read it
+    /// after the last `update`.
+    pub fn route(&self) -> Option<&str> {
+        self.session.route()
+    }
+
     pub fn is_focused(&self, by: By) -> bool {
         let screen = self.screen();
         self.session.focused() == Some(self.control_of(screen.get(by)).id())

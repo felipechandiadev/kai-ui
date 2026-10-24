@@ -12,6 +12,8 @@ mod calls;
 #[cfg(test)]
 mod map_tests;
 #[cfg(test)]
+mod router_tests;
+#[cfg(test)]
 mod typeahead_tests;
 
 use std::any::Any;
@@ -106,6 +108,15 @@ pub(crate) struct Outbox {
     pub save_file: Option<SaveFile>,
 }
 
+/// Scroll and focus of a route left ([`Session::follow_route`]).
+struct RouteMemory {
+    scroll: ScrollOffsets,
+    focus: Option<WidgetId>,
+}
+
+/// Routes whose scroll and focus are kept; past this the memory starts over.
+const ROUTE_MEMORY: usize = 64;
+
 pub(crate) struct Session<A: App> {
     app: A,
     theme: Theme,
@@ -167,6 +178,12 @@ pub(crate) struct Session<A: App> {
     /// Focus to set once the frame's tree is laid out (a modal appeared or
     /// left).
     modal_focus: Option<ModalFocus>,
+    /// The app's route ([`App::route`]) as of the last `update`.
+    route: Option<String>,
+    /// Scroll and focus of routes left, to restore on coming back.
+    route_memory: HashMap<String, RouteMemory>,
+    /// Focus to restore after the next rebuild, on entering a route.
+    route_focus: Option<WidgetId>,
     /// Pending [`Effects::after`] timers, in the order they were asked for.
     timers: Vec<Timer<A::Msg>>,
     /// Active [`App::subscriptions`], diffed after `init` and each `update`.
@@ -632,6 +649,9 @@ impl<A: App> Session<A> {
             agents: calls::Agents::default(),
             modal: None,
             modal_focus: None,
+            route: None,
+            route_memory: HashMap::new(),
+            route_focus: None,
             timers: Vec::new(),
             subs: Vec::new(),
             tasks: Tasks::default(),
@@ -664,6 +684,7 @@ impl<A: App> Session<A> {
             modifiers: Modifiers::NONE,
             context_press: false,
         };
+        session.route = session.app.route();
         session.apply_effects(effects);
         session.sync_subscriptions();
         session.notify_resized();
@@ -1714,7 +1735,48 @@ impl<A: App> Session<A> {
             self.apply_effects(effects);
         }
         self.sync_subscriptions();
+        self.follow_route();
         self.invalidate();
+    }
+
+    /// Keep the scroll and focus of the route the app left and bring back
+    /// those of the one it entered, if it was there before.
+    fn follow_route(&mut self) {
+        let route = self.app.route();
+        if route == self.route {
+            return;
+        }
+        if let Some(left) = self.route.take() {
+            if self.route_memory.len() >= ROUTE_MEMORY {
+                self.route_memory.clear();
+            }
+            self.route_memory.insert(
+                left,
+                RouteMemory {
+                    scroll: std::mem::take(&mut self.scroll),
+                    focus: *self.ui.focused.get(),
+                },
+            );
+        }
+        let memory = route
+            .as_ref()
+            .and_then(|path| self.route_memory.remove(path));
+        match memory {
+            Some(memory) => {
+                self.scroll = memory.scroll;
+                self.route_focus = memory.focus;
+            }
+            None => {
+                self.scroll.clear();
+                self.route_focus = None;
+            }
+        }
+        self.route = route;
+    }
+
+    /// The app's route as the session last read it.
+    pub fn route(&self) -> Option<&str> {
+        self.route.as_deref()
     }
 
     /// Run command `id` as a shortcut, the menu bar or the palette do: an
@@ -3387,6 +3449,13 @@ impl<A: App> Session<A> {
         let started = Instant::now();
         self.step_maps();
         self.rebuild();
+        if let Some(focus) = self.route_focus.take()
+            && self.tree.find(focus).is_some()
+        {
+            self.relayout();
+            self.apply_intent(Intent::SetFocus(Some(focus)));
+            self.rebuild();
+        }
         if let Some(focus) = self.modal_focus.take() {
             self.relayout();
             let target = match focus {
