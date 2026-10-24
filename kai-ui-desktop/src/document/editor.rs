@@ -97,6 +97,9 @@ pub struct DocumentEditor {
     scroll_y: f32,
     /// Último viewport visto (para clamp / ensure_caret).
     pub(crate) last_viewport: Rect,
+    /// Píxeles físicos por punto lógico de la pantalla (2 en Retina): los
+    /// glifos se rasterizan a esa densidad para que no se vean pixelados.
+    device_scale: f32,
     /// Cache media WordCraft → Bitmap Kai (atlas).
     bitmaps: HashMap<String, Bitmap>,
     /// Atlas de glifos WordCraft (swash → Bitmap); sin TextStore.
@@ -135,6 +138,7 @@ impl DocumentEditor {
                 height: 384.0,
                 ..Rect::default()
             },
+            device_scale: 1.0,
             bitmaps: HashMap::new(),
             glyph_atlas: DocumentGlyphAtlas::new(),
             ime_preedit: None,
@@ -1159,6 +1163,20 @@ impl DocumentEditor {
         });
     }
 
+    /// Densidad de la pantalla (factor de escala de la ventana). Si cambia,
+    /// vuelve a rasterizar los glifos.
+    pub fn set_device_scale(&mut self, scale: f32) {
+        let scale = if scale.is_finite() {
+            scale.max(1.0)
+        } else {
+            1.0
+        };
+        if (scale - self.device_scale).abs() > f32::EPSILON {
+            self.device_scale = scale;
+            self.refresh_paint();
+        }
+    }
+
     pub fn refresh_paint(&mut self) {
         let layout = self.session.layout();
         let page_count = layout.pages.len().max(1);
@@ -1168,7 +1186,8 @@ impl DocumentEditor {
             .map(|p| (p.w, p.h))
             .unwrap_or((612.0, 792.0));
         let m_early = viewport_metrics(self.last_viewport, (pw, ph));
-        let paint_scale = m_early.scale.max(0.01);
+        // Píxeles de raster por punto de página: zoom de la hoja × pantalla.
+        let paint_scale = m_early.scale.max(0.01) * self.device_scale;
         let mut glyphs = Vec::new();
         let mut fills = Vec::new();
         let mut lines = Vec::new();
@@ -1648,6 +1667,18 @@ fn floor_char_boundary(s: &str, i: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glyphs_rasterize_at_screen_density() {
+        let mut ed = DocumentEditor::new("Hola mundo");
+        ed.refresh_paint();
+        let at_1x = ed.paint().glyphs[0].clone();
+        ed.set_device_scale(2.0);
+        let at_2x = &ed.paint().glyphs[0];
+        // Mismo tamaño en pantalla, el doble de píxeles por lado.
+        assert!((at_2x.rect.width - at_1x.rect.width).abs() < 1.0);
+        assert!(at_2x.bitmap.width() >= at_1x.bitmap.width() * 2 - 2);
+    }
 
     #[test]
     fn type_bold_undo_roundtrip() {

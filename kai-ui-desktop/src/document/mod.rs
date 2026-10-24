@@ -317,7 +317,7 @@ pub fn document<Msg>() -> Element<Msg> {
         .role(Role::TextArea)
         .parts_root()
         .class(
-            "relative overflow-hidden rounded-md bg-muted/40 \
+            "relative overflow-hidden rounded-md bg-muted/40 cursor-text \
              border border-border/60 appkit:border-separator",
         )
 }
@@ -500,8 +500,9 @@ pub(crate) fn paint_document(
     list.pop_clip();
 }
 
-/// Métricas del viewport: scale para que quepa al menos una página
-/// (`min(w/pw, h/ph)`), inset constante, hoja centrada en X.
+/// Métricas del viewport: la hoja se ajusta al ancho disponible sin pasar
+/// del 100 % (`min(w/pw, 1)`, como Word / Pages), inset constante, hoja
+/// centrada en X. El alto no limita la escala: se recorre con `scroll_y`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ViewportMetrics {
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
@@ -516,12 +517,11 @@ pub(crate) struct ViewportMetrics {
 pub(crate) fn viewport_metrics(area: Rect, page_size: (f32, f32)) -> ViewportMetrics {
     let inset = PAGE_INSET.min(area.width / 4.0).min(area.height / 4.0);
     let avail_w = (area.width - inset * 2.0).max(0.0);
-    let avail_h = (area.height - inset * 2.0).max(0.0);
-    let (pw, ph) = page_size;
-    let scale = match (pw > 0.0, ph > 0.0, avail_w > 0.0, avail_h > 0.0) {
-        (true, true, true, true) => (avail_w / pw).min(avail_h / ph),
-        (true, _, true, _) => avail_w / pw,
-        _ => 1.0,
+    let (pw, _) = page_size;
+    let scale = if pw > 0.0 && avail_w > 0.0 {
+        (avail_w / pw).min(1.0)
+    } else {
+        1.0
     };
     let page_w = pw * scale;
     let origin_x = area.x + (area.width - page_w) * 0.5;
@@ -750,20 +750,23 @@ mod metrics_tests {
     use crate::geometry::Rect;
 
     #[test]
-    fn viewport_metrics_fits_one_letter_page() {
-        let area = Rect {
+    fn viewport_metrics_fits_page_width_up_to_100_percent() {
+        let wide = Rect {
             width: 900.0,
             height: 500.0,
             ..Rect::default()
         };
-        let m = viewport_metrics(area, (612.0, 792.0));
-        let page_h = 792.0 * m.scale;
-        assert!(
-            page_h + m.inset * 2.0 <= area.height + 0.5,
-            "scaled page {page_h} + insets must fit height {}",
-            area.height
-        );
-        assert!(m.inner_w <= area.width);
+        let m = viewport_metrics(wide, (612.0, 792.0));
+        assert_eq!(m.scale, 1.0, "a wide viewport shows the page at 100 %");
+
+        let narrow = Rect {
+            width: 400.0,
+            height: 900.0,
+            ..Rect::default()
+        };
+        let m = viewport_metrics(narrow, (612.0, 792.0));
+        assert!(m.scale < 1.0);
+        assert!((m.inner_w + m.inset * 2.0 - narrow.width).abs() < 0.5);
         assert!(m.scale > 0.0);
         assert!(m.inset <= PAGE_INSET);
     }

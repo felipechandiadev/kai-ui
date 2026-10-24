@@ -200,6 +200,10 @@ pub(crate) struct Session<A: App> {
     /// WordCraft editor of every document widget (feature `document`).
     #[cfg(feature = "document")]
     documents: HashMap<WidgetId, DocumentEditor>,
+    /// Factor de escala de la ventana, para rasterizar el cuerpo de los
+    /// documentos a la densidad de la pantalla.
+    #[cfg(feature = "document")]
+    scale_factor: f32,
     /// The map a pointer drag is moving.
     map_drag: Option<WidgetId>,
     /// Where the pointer went down on a map: released close by, it is a
@@ -643,6 +647,8 @@ impl<A: App> Session<A> {
             maps: HashMap::new(),
             #[cfg(feature = "document")]
             documents: HashMap::new(),
+            #[cfg(feature = "document")]
+            scale_factor: 1.0,
             map_drag: None,
             map_press: None,
             chart_press: None,
@@ -1149,6 +1155,20 @@ impl<A: App> Session<A> {
     #[cfg(feature = "document")]
     pub fn document_selection_collapsed(&self, id: WidgetId) -> Option<bool> {
         self.documents.get(&id).map(|ed| ed.selection_collapsed())
+    }
+
+    /// Factor de escala de la ventana (2 en Retina). Solo afecta al raster
+    /// de los documentos; el resto de la UI lo resuelve el renderer.
+    pub fn set_scale_factor(&mut self, scale: f32) {
+        #[cfg(feature = "document")]
+        {
+            self.scale_factor = scale;
+            for ed in self.documents.values_mut() {
+                ed.set_device_scale(scale);
+            }
+        }
+        #[cfg(not(feature = "document"))]
+        let _ = scale;
     }
 
     /// Start recording every message sent to `update`.
@@ -3481,6 +3501,7 @@ impl<A: App> Session<A> {
                 .documents
                 .entry(id)
                 .or_insert_with(|| DocumentEditor::new(&markdown));
+            ed.set_device_scale(self.scale_factor);
             ed.sync_markdown(&markdown);
             if let Some(viewport) = self.layout.text_box(id) {
                 ed.last_viewport = viewport;

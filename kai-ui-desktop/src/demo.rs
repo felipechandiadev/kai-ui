@@ -152,6 +152,8 @@ struct Demo {
     /// Ribbon cmds disabled (`why_disabled`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_disabled: Vec<String>,
+    /// Barra Buscar y reemplazar visible (⌘F / lupa de la QAT).
+    doc_find_open: bool,
     /// Find/Replace query (barra bajo el ribbon).
     doc_find: String,
     /// Texto de reemplazo.
@@ -244,6 +246,7 @@ impl Default for Demo {
             doc_ribbon_tab: "home".into(),
             doc_ribbon_pressed: Vec::new(),
             doc_ribbon_disabled: Vec::new(),
+            doc_find_open: false,
             doc_find: String::new(),
             doc_replace: String::new(),
             doc_comment_draft: String::new(),
@@ -936,6 +939,8 @@ enum Msg {
     /// Documento: cambiar pestaña del ribbon.
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     DocRibbonTab(String),
+    /// Documento: mostrar u ocultar la barra Buscar y reemplazar (⌘F).
+    DocAlternarBuscar,
     /// Documento: query de find.
     DocFindChanged(String),
     /// Documento: texto de replace.
@@ -1501,6 +1506,22 @@ impl Action for DocExportarPdf {
     }
 }
 
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocBuscar;
+
+impl Action for DocBuscar {
+    type App = Demo;
+    const ID: &'static str = "documento.buscar";
+    const TITLE: &'static str = "Buscar y reemplazar";
+    fn description() -> &'static str {
+        "Muestra u oculta la barra Buscar y reemplazar del documento"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::DocAlternarBuscar
+    }
+}
+
 /// Frames a box on the map of «Mapa».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1693,6 +1714,11 @@ impl App for Demo {
         registry.action::<DocGuardar>().menu("Documento").expose();
         registry
             .action::<DocExportarPdf>()
+            .menu("Documento")
+            .expose();
+        registry
+            .action::<DocBuscar>()
+            .shortcut(Shortcut::cmd(Key::Char('f')))
             .menu("Documento")
             .expose();
         registry.action::<DocDeshacer>().menu("Documento").expose();
@@ -2015,6 +2041,7 @@ impl App for Demo {
             Msg::DocRibbonTab(id) => {
                 self.doc_ribbon_tab = id;
             }
+            Msg::DocAlternarBuscar => self.doc_find_open = !self.doc_find_open,
             Msg::DocFindChanged(v) => self.doc_find = v,
             Msg::DocReplaceChanged(v) => self.doc_replace = v,
             Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
@@ -4093,6 +4120,9 @@ impl Demo {
                 toolbar_item(Icon::FileDown, "Exportar PDF…")
                     .on_command(DocExportarPdf)
                     .test_id("documento.exportar_pdf"),
+                toolbar_item(Icon::Search, "Buscar y reemplazar")
+                    .on_command(DocBuscar)
+                    .test_id("documento.buscar"),
             ])
             .test_id("documento.ribbon")
             .build()
@@ -4139,162 +4169,173 @@ impl Demo {
         if let Some((serial, bytes)) = &self.doc_load {
             editor = editor.pending_load(bytes.clone(), *serial);
         }
-        let archivo_status = match &self.doc_archivo_name {
-            Some(name) => format!("Archivo: {name}"),
-            None => "Archivo: (sin guardar — Abrir / Guardar / Exportar PDF en la QAT)".into(),
+        let mut chrome = vec![self.documento_ribbon_chrome()];
+        if let Some(strip) = self.documento_tab_strip() {
+            chrome.push(strip);
+        }
+        if self.doc_find_open {
+            chrome.push(self.documento_find_bar());
+        }
+        let status = match &self.doc_archivo_name {
+            Some(name) => name.clone(),
+            None => "Sin guardar".into(),
         };
-        let edit_status = if self.doc_edit_status.is_empty() {
-            "Find / Replace / Comentarios · Ortografía en Revisar".into()
+        let status = if self.doc_edit_status.is_empty() {
+            status
         } else {
-            self.doc_edit_status.clone()
+            format!("{status} · {}", self.doc_edit_status)
         };
         div()
             .class("flex flex-col flex-1 min-h-0 w-full")
             .test_id("documento")
             .children([
                 div()
-                    .class(
-                        "flex-none flex flex-col px-3 pt-2 pb-1 bg-window border-b border-separator gap-1",
-                    )
-                    .children([
-                        self.documento_ribbon_chrome(),
-                        text(archivo_status)
-                            .class("text-xs text-muted-foreground px-0.5")
-                            .test_id("documento.archivo.status"),
-                        self.documento_find_bar(),
-                        text(edit_status)
-                            .class("text-xs text-muted-foreground px-0.5")
-                            .test_id("documento.edit.status"),
-                    ]),
+                    .class("flex-none flex flex-col px-3 pt-2 pb-1 bg-window border-b border-separator gap-1")
+                    .children(chrome),
                 editor,
+                // Barra de estado (como la de Word): archivo y resultado de buscar/revisar.
+                div()
+                    .class("flex-none flex flex-row items-center px-3 py-1 bg-window border-t border-separator")
+                    .children([text(status)
+                        .class("text-xs text-muted-foreground")
+                        .test_id("documento.status")]),
             ])
     }
 
-    /// Barra Find/Replace + comentario mínimo (cableada a cmds WordCraft).
+    /// Buscar y reemplazar en una sola fila, oculta hasta ⌘F (como Pages).
     fn documento_find_bar(&self) -> Element<Msg> {
         let find = self.doc_find.clone();
         let replace = self.doc_replace.clone();
-        let comment = self.doc_comment_draft.clone();
         div()
-            .class("flex flex-col gap-1 px-0.5")
+            .class("flex flex-row items-center gap-1 py-1")
             .test_id("documento.findbar")
             .children([
-                div()
-                    .class("flex flex-row flex-wrap items-center gap-1")
-                    .children([
-                        TextField::new("Buscar", &self.doc_find)
-                            .on_input(Msg::DocFindChanged)
-                            .test_id("documento.find.query")
-                            .build(),
-                        TextField::new("Reemplazar", &self.doc_replace)
-                            .on_input(Msg::DocReplaceChanged)
-                            .test_id("documento.find.replace")
-                            .build(),
-                        button("Buscar", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::Find { text: find.clone() }))
-                            .test_id("documento.find.run"),
-                        button("Siguiente", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::FindNext))
-                            .test_id("documento.find.next"),
-                        button("Anterior", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::FindPrevious))
-                            .test_id("documento.find.prev"),
-                        button("Reemplazar", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::Replace {
-                                text: find.clone(),
-                                with: replace.clone(),
-                            }))
-                            .test_id("documento.find.replace_one"),
-                        button("Reemplazar todo", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::ReplaceAll {
-                                text: find,
-                                with: replace,
-                            }))
-                            .test_id("documento.find.replace_all"),
-                    ]),
-                div()
-                    .class("flex flex-row flex-wrap items-center gap-1")
-                    .children([
-                        TextField::new("Comentario", &self.doc_comment_draft)
-                            .on_input(Msg::DocCommentDraftChanged)
-                            .test_id("documento.comment.draft")
-                            .build(),
-                        button("Nuevo comentario", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::NewComment { text: comment }))
-                            .test_id("documento.comment.new"),
-                    ]),
-                // Paso 6: Paste Special / wrap / table style / HF (mínimo).
-                div()
-                    .class("flex flex-row flex-wrap items-center gap-1")
-                    .test_id("documento.paso6")
-                    .children([
-                        text("Pegado especial:").class("text-xs text-muted-foreground"),
-                        button("Texto", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::PastePlain))
-                            .test_id("documento.paste.plain"),
-                        button("Combinar", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::PasteMerge))
-                            .test_id("documento.paste.merge"),
-                        button("Mantener", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::PasteKeepSource))
-                            .test_id("documento.paste.keep"),
-                        text("· Ajuste:").class("text-xs text-muted-foreground"),
-                        button("Cuadrado", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "square".into(),
-                            }))
-                            .test_id("documento.wrap.square"),
-                        button("Estrecho", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "tight".into(),
-                            }))
-                            .test_id("documento.wrap.tight"),
-                        button("Arriba/abajo", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "topAndBottom".into(),
-                            }))
-                            .test_id("documento.wrap.topbottom"),
-                        button("Detrás", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "behindText".into(),
-                            }))
-                            .test_id("documento.wrap.behind"),
-                        button("Delante", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "inFrontOfText".into(),
-                            }))
-                            .test_id("documento.wrap.infront"),
-                        button("En línea", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Wrap {
-                                mode: "inline".into(),
-                            }))
-                            .test_id("documento.wrap.inline"),
-                        text("· Tabla:").class("text-xs text-muted-foreground"),
-                        button("GridLight", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::TableStyle {
-                                style: "GridTable1Light".into(),
-                            }))
-                            .test_id("documento.table.style.gridlight"),
-                        button("TableGrid", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::TableStyle {
-                                style: "TableGrid".into(),
-                            }))
-                            .test_id("documento.table.style.grid"),
-                        text("· Encab/pie:").class("text-xs text-muted-foreground"),
-                        button("Encabezado", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.header".into())))
-                            .test_id("documento.hf.header"),
-                        button("Pie", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.footer".into())))
-                            .test_id("documento.hf.footer"),
-                        button("Editar encab.", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.editHeader".into())))
-                            .test_id("documento.hf.edit_header"),
-                        button("Cerrar HF", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.closeHeader".into())))
-                            .test_id("documento.hf.close"),
-                    ]),
+                search_field(&self.doc_find, Msg::DocFindChanged)
+                    .label("Buscar en el documento")
+                    .on_submit(Msg::DocCmd(DocumentCmd::Find { text: find.clone() }))
+                    .test_id("documento.find.query")
+                    .build(),
+                search_field(&self.doc_replace, Msg::DocReplaceChanged)
+                    .placeholder("Reemplazar con")
+                    .label("Reemplazar con")
+                    .test_id("documento.find.replace")
+                    .build(),
+                toolbar_item(Icon::ChevronUp, "Anterior")
+                    .on_click(Msg::DocCmd(DocumentCmd::FindPrevious))
+                    .test_id("documento.find.prev"),
+                toolbar_item(Icon::ChevronDown, "Siguiente")
+                    .on_click(Msg::DocCmd(DocumentCmd::FindNext))
+                    .test_id("documento.find.next"),
+                button("Reemplazar", ButtonVariant::Text)
+                    .on_click(Msg::DocCmd(DocumentCmd::Replace {
+                        text: find.clone(),
+                        with: replace.clone(),
+                    }))
+                    .test_id("documento.find.replace_one"),
+                button("Todo", ButtonVariant::Text)
+                    .on_click(Msg::DocCmd(DocumentCmd::ReplaceAll {
+                        text: find,
+                        with: replace,
+                    }))
+                    .test_id("documento.find.replace_all"),
+                toolbar_item(Icon::X, "Cerrar búsqueda")
+                    .on_click(Msg::DocAlternarBuscar)
+                    .test_id("documento.find.close"),
             ])
+    }
+
+    /// Controles que el catálogo del ribbon aún no cubre, en una fila bajo
+    /// la pestaña a la que pertenecen (Pegado especial en Inicio, Encabezado
+    /// en Insertar, Ajuste en Diseño, estilos en Tabla, comentario en Revisar).
+    fn documento_tab_strip(&self) -> Option<Element<Msg>> {
+        let label = |t: &str| text(t).class("text-xs text-muted-foreground");
+        let cmd = |t: &str, id: &str, c: DocumentCmd| {
+            button(t, ButtonVariant::Text)
+                .on_click(Msg::DocCmd(c))
+                .test_id(id)
+        };
+        let wrap =
+            |t: &str, id: &str, mode: &str| cmd(t, id, DocumentCmd::Wrap { mode: mode.into() });
+        let raw = |t: &str, id: &str, c: &str| cmd(t, id, DocumentCmd::Raw(c.into()));
+        let items: Vec<Element<Msg>> = match self.doc_ribbon_tab.as_str() {
+            "home" => vec![
+                label("Pegado especial:"),
+                cmd(
+                    "Solo texto",
+                    "documento.paste.plain",
+                    DocumentCmd::PastePlain,
+                ),
+                cmd(
+                    "Combinar formato",
+                    "documento.paste.merge",
+                    DocumentCmd::PasteMerge,
+                ),
+                cmd(
+                    "Mantener formato",
+                    "documento.paste.keep",
+                    DocumentCmd::PasteKeepSource,
+                ),
+            ],
+            "insert" => vec![
+                label("Encabezado y pie:"),
+                raw("Encabezado", "documento.hf.header", "insert.header"),
+                raw("Pie de página", "documento.hf.footer", "insert.footer"),
+                raw(
+                    "Editar encabezado",
+                    "documento.hf.edit_header",
+                    "insert.editHeader",
+                ),
+                raw("Cerrar", "documento.hf.close", "insert.closeHeader"),
+            ],
+            "layout" => vec![
+                label("Ajustar imagen:"),
+                wrap("En línea", "documento.wrap.inline", "inline"),
+                wrap("Cuadrado", "documento.wrap.square", "square"),
+                wrap("Estrecho", "documento.wrap.tight", "tight"),
+                wrap("Arriba y abajo", "documento.wrap.topbottom", "topAndBottom"),
+                wrap("Detrás", "documento.wrap.behind", "behindText"),
+                wrap("Delante", "documento.wrap.infront", "inFrontOfText"),
+            ],
+            "table" => vec![
+                label("Estilo de tabla:"),
+                cmd(
+                    "Cuadrícula",
+                    "documento.table.style.grid",
+                    DocumentCmd::TableStyle {
+                        style: "TableGrid".into(),
+                    },
+                ),
+                cmd(
+                    "Cuadrícula clara",
+                    "documento.table.style.gridlight",
+                    DocumentCmd::TableStyle {
+                        style: "GridTable1Light".into(),
+                    },
+                ),
+            ],
+            "review" => vec![
+                search_field(&self.doc_comment_draft, Msg::DocCommentDraftChanged)
+                    .placeholder("Escribe un comentario")
+                    .label("Comentario")
+                    .on_submit(Msg::DocCmd(DocumentCmd::NewComment {
+                        text: self.doc_comment_draft.clone(),
+                    }))
+                    .test_id("documento.comment.draft")
+                    .build(),
+                button("Nuevo comentario", ButtonVariant::Text)
+                    .on_click(Msg::DocCmd(DocumentCmd::NewComment {
+                        text: self.doc_comment_draft.clone(),
+                    }))
+                    .test_id("documento.comment.new"),
+            ],
+            _ => return None,
+        };
+        Some(
+            div()
+                .class("flex flex-row flex-wrap items-center gap-1")
+                .test_id("documento.tab_strip")
+                .children(items),
+        )
     }
 
     fn dialogs_and_toasts(&self) -> Element<Msg> {
@@ -7091,6 +7132,7 @@ mod tests {
                 "documento.abrir",
                 "documento.guardar",
                 "documento.exportar_pdf",
+                "documento.buscar",
                 "edit.undo",
                 "edit.redo",
                 "kai.paleta",
@@ -7261,7 +7303,7 @@ mod tests {
         };
         assert_eq!(
             rows(&app).len(),
-            18,
+            19,
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
@@ -7712,6 +7754,7 @@ mod tests {
                 "documento.abrir",
                 "documento.guardar",
                 "documento.exportar_pdf",
+                "documento.buscar",
                 "edit.undo",
                 "edit.redo",
             ]

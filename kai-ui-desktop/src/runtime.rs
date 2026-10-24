@@ -941,6 +941,7 @@ impl<A: App> WindowState<A> {
             Box::new(SystemClipboard),
         );
         session.set_system_prefs(crate::platform::prefs::read());
+        session.set_scale_factor(scale_factor.as_f32());
         let unknown = session.unknown_classes();
         if !unknown.is_empty() {
             eprintln!("Clases no reconocidas: {}", unknown.join(" "));
@@ -1304,6 +1305,7 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(scale) = ScaleFactor::new(scale_factor) {
                     state.scale_factor = scale;
+                    state.session.set_scale_factor(scale.as_f32());
                     state.resize();
                 }
             }

@@ -606,6 +606,19 @@
       "title": "Exportar PDF"
     },
     {
+      "description": "Muestra u oculta la barra Buscar y reemplazar del documento",
+      "exposed": true,
+      "id": "documento.buscar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Buscar y reemplazar"
+    },
+    {
       "description": "Deshace el último cambio del documento",
       "exposed": true,
       "id": "edit.undo",

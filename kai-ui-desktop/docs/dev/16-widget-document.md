@@ -100,7 +100,7 @@ Un cuerpo, párrafos y runs: negrita, cursiva, tamaño, color. Toolbar Kai con 6
 
 Viewport, márgenes, hit-test, selección arrastrando, scroll. Aquí `wordcraft-layout` deja de ser opcional.
 
-**Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / `flex-1 min-h-0` en la demo) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala `min(w/pw, h/ph)` para que quepa al menos una hoja (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
+**Modelo de scroll (decisión):** viewport fijo del widget (`padding_box` / `flex-1 min-h-0` en la demo) + stack vertical de páginas Letter en un canvas WordCraft + `scroll_y` interno (rueda / `TestApp::scroll_wheel`). **No** se crece el leaf con overflow-auto del árbol: el documento se comporta como el mapa (contenido propio + pan/scroll interno). Escala `min(w/pw, 1)`: la hoja se ajusta al ancho sin pasar del 100 %, como Word / Pages, y el alto se recorre con scroll (`PAGE_INSET`); gap `PAGE_GAP_PT` entre hojas. Hit-test: coords locales del viewport → índice de página + punto en página → `DocLayout::hit(page, x, y)`.
 
 **Gate:** un documento de varias páginas se desplaza; el caret cae en el run correcto vía hit-test WordCraft; selección arrastrando (multi-página); no se usa cosmic-text para *medir* ni pintar el cuerpo (atlas de glifos WordCraft → `ImageDraw`).
 
