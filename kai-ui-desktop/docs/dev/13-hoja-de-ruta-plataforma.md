@@ -63,7 +63,7 @@
 - **P14b primitivas** ✅: imágenes, geometría y clip redondeado de contenedores (`rounded-* overflow-hidden`).
 - **P15 efectos** 🟡: pool de tareas, `perform` / `perform_async`, `keyed`/`cancel`, `after`, `App::subscriptions` (`Subscriptions::every`), paneles de abrir y guardar como hoja, archivos arrastrados y comandos MCP async con `.completes(invocation)` (§7.3). Faltan suscripciones de red (websockets) y el test de frame durante una llamada de red.
 - **P15b–P15d mapas** 🟡: mapa vectorial con áreas, edición de polígonos existentes y comandos `mapa.*`. Faltan los modos Punto y Línea, dibujar desde cero y `incidencias.set_ubicacion`.
-- **P16 persistencia** ⬜.
+- **P16 persistencia** 🟡: `kai::store` (`Store`, `Stored` con `KEY`, `VERSION` y `migrate`, guardado atómico, `save_effect` fuera del hilo de UI). La demo recuerda sección, barra lateral, vista del mapa y ajustes del Catálogo vivo. Falta el límite de la caché de teselas en disco.
 
 **Cifras:** 554 tests de la librería (558 con `--features mcp`) más 14 `#[ignore]` de benchmarks y capturas, 4 doctests y 18 tests de `kai-cli`. Clippy sin avisos y CI en macOS para `kai-ui-desktop` y `kai-cli`.
 
@@ -933,6 +933,7 @@ Reglas de la pista C:
 - **Diseño**: `Store` con `KEY`, `VERSION`, `migrate(from, raw)`, guardado atómico en el directorio de datos de la app; lectura en `init`, escritura como efecto. `craft-settings`/`craft-atomic` como candidatos ([07](07-integracion-craft-libs.md)).
 - **Tests**: migración de versión; escritura atómica (archivo temporal + rename); lectura con archivo corrupto devuelve error controlado.
 - **Hecho cuando**: la app guía recuerda densidad, tema, última sección y última vista del mapa; la caché de teselas en disco respeta su límite.
+- **Estado (24-oct-2026)**: 🟡 `src/store.rs` hecho, sin dependencias nuevas (no se adoptó `craft-settings`/`craft-atomic`: el guardado atómico son ~15 líneas). Formato `{"version": N, "data": …}` en `~/Library/Application Support/<id>/<KEY>.json`. Un archivo dañado o de una versión futura es un `StoreError` y la app arranca con valores por defecto. La demo (`PreferenciasDemo`) guarda solo cuando algo cambia. Falta: límite de la caché de teselas en disco y que DSP desktop lo use.
 
 **Hito M3**: DSP desktop aguanta un día de uso real en la DSP, tiene tests de flujo para cada tarea (incluidas las de mapa) y un agente la opera con confirmación en lo destructivo.
 

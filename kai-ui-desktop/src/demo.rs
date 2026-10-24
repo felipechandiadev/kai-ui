@@ -43,6 +43,7 @@ use crate::maps::tiles::TileSource;
 use crate::maps::{Anchor, map, marker};
 use crate::media::{ImageSource, sample_landscape, sample_portrait};
 use crate::runtime::{self, App, Effects, PickFile, SaveFile, current_invocation};
+use crate::store::{Store, StoreError, Stored};
 use crate::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
 };
@@ -75,6 +76,11 @@ struct Demo {
     sidebar_collapsed: bool,
     /// The first window size has set `sidebar_collapsed`.
     sized: bool,
+    /// Dónde se guardan las preferencias entre ejecuciones (`None` en
+    /// tests: nada toca el disco).
+    store: Option<Store>,
+    /// Lo último guardado, para escribir solo cuando algo cambia.
+    preferencias_guardadas: Option<PreferenciasDemo>,
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
@@ -232,6 +238,8 @@ impl Default for Demo {
             next_toast: 1,
             vista: VISTA_INICIAL,
             animar_vista: true,
+            store: None,
+            preferencias_guardadas: None,
             sectores: SECTORES.clone(),
             mostrar_areas: true,
             area: None,
@@ -732,6 +740,33 @@ impl CatalogPreset {
     }
 }
 
+/// Tamaños del Catálogo vivo, en el orden de su control segmentado.
+const CATALOG_SIZES: [ControlSize; 5] = [
+    ControlSize::Mini,
+    ControlSize::Small,
+    ControlSize::Regular,
+    ControlSize::Large,
+    ControlSize::ExtraLarge,
+];
+
+/// Id de la demo (como en `kai.toml`): nombre de su carpeta de datos.
+const APP_ID: &str = "dev.kai.ui-desktop";
+
+/// Lo que la demo recuerda entre ejecuciones (Paso 16).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct PreferenciasDemo {
+    seccion: Seccion,
+    sidebar_collapsed: bool,
+    vista_mapa: MapView,
+    /// Catálogo vivo: índices de tema, densidad y tamaño.
+    catalogo: [usize; 3],
+}
+
+impl Stored for PreferenciasDemo {
+    const KEY: &'static str = "preferencias";
+    const VERSION: u32 = 1;
+}
+
 /// Sections of the sidebar, in its order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -946,6 +981,8 @@ enum Msg {
     /// Documento: cambiar pestaña del ribbon.
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     DocRibbonTab(String),
+    /// Resultado de guardar las preferencias en disco.
+    PreferenciasGuardadas(Result<(), StoreError>),
     /// Documento: mostrar u ocultar la barra Buscar y reemplazar (⌘F).
     DocAlternarBuscar,
     /// Documento: mostrar u ocultar la barra de nuevo comentario.
@@ -1782,395 +1819,8 @@ impl App for Demo {
     }
 
     fn update(&mut self, msg: Msg) -> Effects<Msg> {
-        match msg {
-            Msg::ShowToast(variante) => {
-                let (_, title, message) = variante.texts();
-                let mut toast = Toast::new(0, variante.alert(), title).message(message);
-                if variante == VarianteAviso::Error {
-                    toast = toast.action("Reintentar", Msg::ShowToast(VarianteAviso::Exito));
-                }
-                return self.show_toast(toast);
-            }
-            Msg::CloseToast(id) => {
-                self.toasts.retain(|toast| toast.id != id);
-                return Effects::cancel(toast_key(id));
-            }
-            Msg::ConfirmDialog => {
-                let toast = match self.dialogo.take() {
-                    Some(Dialogo::Guardar) => {
-                        let (_, title, message) = VarianteAviso::Exito.texts();
-                        Toast::new(0, AlertVariant::Success, title).message(message)
-                    }
-                    Some(Dialogo::Eliminar) => {
-                        Toast::new(0, AlertVariant::Info, "Borrador eliminado")
-                            .message("Se movió a la papelera")
-                    }
-                    None => return Effects::none(),
-                };
-                return self.show_toast(toast);
-            }
-            Msg::Esperar(name) => {
-                let mut effect = Effects::perform(
-                    || std::thread::sleep(ESPERA),
-                    move |()| Msg::EsperaLista(name),
-                );
-                if let Some(invocation) = current_invocation() {
-                    effect = effect.completes(invocation);
-                }
-                return effect;
-            }
-            Msg::EsperaLista(name) => self.espera = Some(name),
-            Msg::GuardarYRecargar => {
-                return Effects::perform(|| std::thread::sleep(ESPERA / 2), |()| Msg::Recargar);
-            }
-            Msg::Recargar => {
-                return Effects::perform(
-                    || std::thread::sleep(ESPERA / 2),
-                    |()| Msg::EsperaLista("guardar y recargar"),
-                );
-            }
-            Msg::Sincronizar => {
-                self.sincronizando += 1;
-                return Effects::perform(|| std::thread::sleep(ESPERA), |()| Msg::Sincronizado);
-            }
-            Msg::Sincronizado => self.sincronizando = self.sincronizando.saturating_sub(1),
-            Msg::Increment => self.clicks += 1,
-            Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
-            Msg::Reset => self.clicks = 0,
-            Msg::NameChanged(name) => self.name = name,
-            Msg::EmailChanged(email) => self.email = email,
-            Msg::Submit => {
-                if self.can_submit() {
-                    self.submissions.push(self.name.trim().to_owned());
-                    self.clear_form();
-                }
-            }
-            Msg::Clear => self.clear_form(),
-            Msg::Edit(field, value) => {
-                *match field {
-                    Field::Search => &mut self.search,
-                    Field::Password => &mut self.password,
-                    Field::Amount => &mut self.amount,
-                    Field::Discount => &mut self.discount,
-                    Field::Commune => &mut self.commune,
-                    Field::Code => &mut self.code,
-                    Field::Quantity => &mut self.quantity,
-                    Field::Autocomplete => &mut self.autocomplete,
-                    Field::Pin => &mut self.pin,
-                    Field::Notes => &mut self.notes,
-                    Field::Lookup => &mut self.lookup,
-                    Field::Url => &mut self.url,
-                } = value;
-            }
-            Msg::ElegirImagen(campo) => {
-                let title = match campo {
-                    Campo::Foto => "Elegir foto de perfil",
-                    Campo::Portada => "Elegir portada",
-                    Campo::Logo => "Elegir logo",
-                };
-                return Effects::pick_file(PickFile::images(title), move |path| {
-                    Msg::ImagenElegida(campo, path)
-                });
-            }
-            Msg::ImagenElegida(campo, Some(path)) => match campo {
-                Campo::Foto => self.foto.set(path),
-                Campo::Portada => self.portada.set(path),
-                Campo::Logo => self.logo.set(path),
-            },
-            Msg::ImagenElegida(_, None) => {}
-            Msg::CargarUrl(url) => {
-                let url = url.trim().to_owned();
-                self.avatar_url = (!url.is_empty()).then(|| url.clone());
-                self.url = url;
-            }
-            Msg::TogglePassword => self.show_password = !self.show_password,
-            Msg::ToggleNotifications => self.notifications = !self.notifications,
-            Msg::SetRole(index) => self.role = Some(index),
-            Msg::ToggleTerms => self.terms = !self.terms,
-            Msg::IrA(seccion) => self.seccion = seccion,
-            Msg::PlantillaSelect(index) => self.plantilla_idx = index,
-            Msg::CatalogPreset(index) => {
-                self.catalog_preset = CatalogPreset::ALL
-                    .get(index)
-                    .copied()
-                    .unwrap_or(CatalogPreset::AppKitLight);
-            }
-            Msg::CatalogDensity(index) => {
-                self.catalog_density = if index == 0 {
-                    Density::Comfortable
-                } else {
-                    Density::Compact
-                };
-            }
-            Msg::CatalogSize(index) => {
-                self.catalog_size = [
-                    ControlSize::Mini,
-                    ControlSize::Small,
-                    ControlSize::Regular,
-                    ControlSize::Large,
-                    ControlSize::ExtraLarge,
-                ]
-                .get(index)
-                .copied()
-                .unwrap_or(ControlSize::Regular);
-            }
-            Msg::CatalogSample(value) => self.catalog_sample = value,
-            Msg::CatalogClearFilter => self.catalog_sample.clear(),
-            Msg::CatalogToggleCheck => self.catalog_check = !self.catalog_check,
-            Msg::CatalogToggleSwitch => self.catalog_switch = !self.catalog_switch,
-            Msg::CatalogSelect(index) => self.catalog_select = Some(index),
-            Msg::CatalogTab(index) => self.catalog_tab = index,
-            Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
-            Msg::InitialWidth { narrow } => {
-                self.sidebar_collapsed = narrow;
-                self.sized = true;
-            }
-            Msg::SetBackground(kind) => self.background = kind,
-            Msg::ToggleBackgroundMotion => {
-                self.background_motion = match self.background_motion {
-                    BackgroundMotion::Static => BackgroundMotion::Animated,
-                    BackgroundMotion::Animated => BackgroundMotion::Static,
-                };
-            }
-            Msg::TogglePin => self.show_pin = !self.show_pin,
-            Msg::ToggleWifi => self.wifi = !self.wifi,
-            Msg::TogglePermiso(Some(index)) => self.permisos[index] = !self.permisos[index],
-            Msg::TogglePermiso(None) => {
-                let all = !self.permisos.iter().all(|on| *on);
-                self.permisos = [all; 3];
-            }
-            Msg::SetPais(index) => self.pais = Some(index),
-            Msg::SetAlineacion(index) => self.alineacion = index,
-            Msg::SetPestana(index) => self.pestana = index,
-            Msg::Query(query) => {
-                self.tabla.query.clone_from(&query);
-                self.query = query;
-                self.tabla.refresh(&self.clientes, &columnas());
-            }
-            Msg::Tabla(change) => {
-                let typing = matches!(change, ViewChange::Filter(..));
-                self.tabla.apply(change);
-                if typing {
-                    return Effects::after(PAUSA_FILTRO, Msg::RefrescarTabla).keyed("filtro");
-                }
-                self.tabla.refresh(&self.clientes, &columnas());
-            }
-            Msg::RefrescarTabla => self.tabla.refresh(&self.clientes, &columnas()),
-            Msg::SelectRow(index) => self.cliente = Some(index),
-            Msg::VerCliente(index) => {
-                let Some(cliente) = self.clientes.get(index) else {
-                    return Effects::none();
-                };
-                let toast = Toast::new(0, AlertVariant::Info, cliente.nombre.as_str()).message(
-                    format!("Cliente N.º {} de {}", cliente.numero, cliente.ciudad),
-                );
-                return self.show_toast(toast);
-            }
-            Msg::ExportarTabla => {
-                if self.exportando || self.tabla.is_empty() {
-                    return Effects::none();
-                }
-                let request = SaveFile::new("Exportar a Excel", "clientes.xlsx").types(&["xlsx"]);
-                return Effects::save_file(request, Msg::GuardarExcel);
-            }
-            Msg::GuardarExcel(None) => {}
-            Msg::GuardarExcel(Some(path)) => {
-                self.exportando = true;
-                let sheet = self.tabla.export(&self.clientes, &columnas());
-                return Effects::perform(
-                    move || {
-                        crate::xlsx::write(&sheet, "Clientes", &path)?;
-                        let name = path.file_name().map_or_else(
-                            || path.display().to_string(),
-                            |name| name.to_string_lossy().into_owned(),
-                        );
-                        Ok((name, sheet.rows.len()))
-                    },
-                    Msg::TablaExportada,
-                );
-            }
-            Msg::TablaExportada(result) => {
-                self.exportando = false;
-                let toast = match result {
-                    Ok((name, rows)) => Toast::new(0, AlertVariant::Success, "Excel exportado")
-                        .message(format!("{rows} filas en {name}")),
-                    Err(error) => {
-                        Toast::new(0, AlertVariant::Error, "No se exportó").message(error)
-                    }
-                };
-                return self.show_toast(toast);
-            }
-            Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
-            Msg::CloseDialog => self.dialogo = None,
-            Msg::MapaMovido(vista) => self.vista = vista,
-            Msg::FijarVista { vista, animar } => {
-                self.vista = vista.clamped();
-                self.animar_vista = animar;
-            }
-            Msg::SeleccionarArea(code) => {
-                if self.edicion.is_none() {
-                    self.seleccionar(&code);
-                }
-            }
-            Msg::Encuadrar(bounds) => self.encuadrar(bounds),
-            Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
-            Msg::Mes(index) => self.mes = Some(index),
-            Msg::Documento(change) => {
-                self.doc_markdown = change.markdown;
-                #[cfg(feature = "document")]
-                {
-                    self.doc_ribbon_pressed = change.ribbon_pressed;
-                    self.doc_ribbon_disabled = change.ribbon_disabled;
-                    self.doc_ribbon_contexts = change.ribbon_contexts;
-                    if !change.status.is_empty() {
-                        self.doc_edit_status = change.status;
-                    }
-                }
-                #[cfg(feature = "document")]
-                if let Some(export) = change.export
-                    && let Some((path, kind)) = self.doc_pending_export.take()
-                {
-                    self.doc_archivo_busy = true;
-                    let doc = (*export.0).clone();
-                    return Effects::perform(
-                        move || write_document_file(doc, path, kind),
-                        Msg::DocArchivoListo,
-                    );
-                }
-                #[cfg(not(feature = "document"))]
-                if self.doc_pending_export.take().is_some() {
-                    return Effects::perform(
-                        || Err("Compila con --features document".into()),
-                        Msg::DocArchivoListo,
-                    );
-                }
-            }
-            Msg::DocCmd(cmd) => {
-                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
-                self.doc_cmd = Some((cmd, self.doc_cmd_serial));
-            }
-            Msg::DocRibbonTab(id) => {
-                self.doc_ribbon_tab = id;
-            }
-            Msg::DocAlternarBuscar => self.doc_find_open = !self.doc_find_open,
-            Msg::DocAlternarComentario => self.doc_comment_open = !self.doc_comment_open,
-            Msg::DocFindChanged(v) => self.doc_find = v,
-            Msg::DocReplaceChanged(v) => self.doc_replace = v,
-            Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
-            Msg::DocAbrir => {
-                if self.doc_archivo_busy {
-                    return Effects::none();
-                }
-                let request = PickFile::new("Abrir documento").types(&["docx"]);
-                return Effects::pick_file(request, Msg::DocAbrirElegido);
-            }
-            Msg::DocAbrirElegido(None) => {}
-            Msg::DocAbrirElegido(Some(path)) => {
-                self.doc_archivo_busy = true;
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.display().to_string());
-                self.doc_archivo_name = Some(name);
-                return Effects::perform(
-                    move || std::fs::read(&path).map_err(|e| e.to_string()),
-                    Msg::DocBytesLeidos,
-                );
-            }
-            Msg::DocBytesLeidos(result) => {
-                self.doc_archivo_busy = false;
-                match result {
-                    Ok(bytes) => {
-                        self.doc_load_serial = self.doc_load_serial.saturating_add(1);
-                        self.doc_load = Some((self.doc_load_serial, bytes.into()));
-                        let toast = Toast::new(0, AlertVariant::Success, "Documento abierto")
-                            .message("Se cargó el archivo .docx");
-                        return self.show_toast(toast);
-                    }
-                    Err(error) => {
-                        let toast =
-                            Toast::new(0, AlertVariant::Error, "No se abrió").message(error);
-                        return self.show_toast(toast);
-                    }
-                }
-            }
-            Msg::DocGuardar => {
-                if self.doc_archivo_busy {
-                    return Effects::none();
-                }
-                let request = SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
-                return Effects::save_file(request, Msg::DocGuardarEn);
-            }
-            Msg::DocGuardarEn(None) => {}
-            Msg::DocGuardarEn(Some(path)) => {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.display().to_string());
-                self.doc_archivo_name = Some(name);
-                self.doc_pending_export = Some((path, DocExportKind::Docx));
-                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
-                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
-            }
-            Msg::DocExportarPdf => {
-                if self.doc_archivo_busy {
-                    return Effects::none();
-                }
-                let request = SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
-                return Effects::save_file(request, Msg::DocExportarPdfEn);
-            }
-            Msg::DocExportarPdfEn(None) => {}
-            Msg::DocExportarPdfEn(Some(path)) => {
-                // No cambia el nombre del .docx activo; solo toast al terminar.
-                self.doc_pending_export = Some((path, DocExportKind::Pdf));
-                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
-                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
-            }
-            Msg::DocArchivoListo(result) => {
-                self.doc_archivo_busy = false;
-                let toast = match result {
-                    Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo").message(name),
-                    Err(error) => {
-                        Toast::new(0, AlertVariant::Error, "No se pudo escribir").message(error)
-                    }
-                };
-                return self.show_toast(toast);
-            }
-            Msg::ColorSector(color) => {
-                let code = self.area.clone();
-                if let Some(sector) = self
-                    .sectores
-                    .iter_mut()
-                    .find(|s| Some(&s.code) == code.as_ref())
-                {
-                    sector.color = color;
-                }
-            }
-            Msg::EditarArea(code) => {
-                if self.edicion.is_none()
-                    && let Some(anillo) = self.sector(&code).map(Sector::anillo)
-                    && let Ok(draft) = PolygonDraft::from_ring(anillo)
-                {
-                    self.seleccionar(&code);
-                    self.edicion = Some((code, draft));
-                }
-            }
-            Msg::Edicion(edit) => self.editar(edit),
-            Msg::GuardarGeometria { code, anillo } => {
-                if self
-                    .edicion
-                    .as_ref()
-                    .is_some_and(|(editing, _)| *editing == code)
-                {
-                    self.edicion = None;
-                }
-                self.guardar_anillo(&code, &anillo);
-                if self.edicion.is_none() {
-                    self.seleccionar(&code);
-                }
-            }
-        }
-        Effects::none()
+        let effects = self.actualizar(msg);
+        Effects::batch([effects, self.guardar_preferencias()])
     }
 
     fn background(&self) -> BackgroundEffect {
@@ -2479,6 +2129,454 @@ impl App for Demo {
             .class("relative w-full h-full flex flex-col bg-neutral appkit:bg-window")
             .role(Role::Main)
             .children(layers)
+    }
+}
+
+impl Demo {
+    fn preferencias(&self) -> PreferenciasDemo {
+        PreferenciasDemo {
+            seccion: self.seccion,
+            sidebar_collapsed: self.sidebar_collapsed,
+            vista_mapa: self.vista,
+            catalogo: [
+                self.catalog_preset.index(),
+                usize::from(self.catalog_density == Density::Compact),
+                CATALOG_SIZES
+                    .iter()
+                    .position(|s| *s == self.catalog_size)
+                    .unwrap_or(2),
+            ],
+        }
+    }
+
+    /// Restaura lo guardado. La ventana ya no pliega la barra lateral sola:
+    /// manda lo que la persona dejó.
+    fn aplicar_preferencias(&mut self, p: &PreferenciasDemo) {
+        self.seccion = p.seccion;
+        self.sidebar_collapsed = p.sidebar_collapsed;
+        self.sized = true;
+        self.vista = p.vista_mapa;
+        let [preset, density, size] = p.catalogo;
+        self.catalog_preset = CatalogPreset::ALL
+            .get(preset)
+            .copied()
+            .unwrap_or(self.catalog_preset);
+        self.catalog_density = if density == 1 {
+            Density::Compact
+        } else {
+            Density::Comfortable
+        };
+        self.catalog_size = CATALOG_SIZES
+            .get(size)
+            .copied()
+            .unwrap_or(self.catalog_size);
+        self.preferencias_guardadas = Some(p.clone());
+    }
+
+    /// Guarda las preferencias si cambiaron desde lo último guardado.
+    fn guardar_preferencias(&mut self) -> Effects<Msg> {
+        let Some(store) = &self.store else {
+            return Effects::none();
+        };
+        let actuales = self.preferencias();
+        if self.preferencias_guardadas.as_ref() == Some(&actuales) {
+            return Effects::none();
+        }
+        let effect = store.save_effect(&actuales, Msg::PreferenciasGuardadas);
+        self.preferencias_guardadas = Some(actuales);
+        effect
+    }
+
+    /// Todo el `update` de la demo; [`App::update`] le suma el guardado
+    /// de preferencias.
+    fn actualizar(&mut self, msg: Msg) -> Effects<Msg> {
+        match msg {
+            Msg::ShowToast(variante) => {
+                let (_, title, message) = variante.texts();
+                let mut toast = Toast::new(0, variante.alert(), title).message(message);
+                if variante == VarianteAviso::Error {
+                    toast = toast.action("Reintentar", Msg::ShowToast(VarianteAviso::Exito));
+                }
+                return self.show_toast(toast);
+            }
+            Msg::CloseToast(id) => {
+                self.toasts.retain(|toast| toast.id != id);
+                return Effects::cancel(toast_key(id));
+            }
+            Msg::ConfirmDialog => {
+                let toast = match self.dialogo.take() {
+                    Some(Dialogo::Guardar) => {
+                        let (_, title, message) = VarianteAviso::Exito.texts();
+                        Toast::new(0, AlertVariant::Success, title).message(message)
+                    }
+                    Some(Dialogo::Eliminar) => {
+                        Toast::new(0, AlertVariant::Info, "Borrador eliminado")
+                            .message("Se movió a la papelera")
+                    }
+                    None => return Effects::none(),
+                };
+                return self.show_toast(toast);
+            }
+            Msg::Esperar(name) => {
+                let mut effect = Effects::perform(
+                    || std::thread::sleep(ESPERA),
+                    move |()| Msg::EsperaLista(name),
+                );
+                if let Some(invocation) = current_invocation() {
+                    effect = effect.completes(invocation);
+                }
+                return effect;
+            }
+            Msg::EsperaLista(name) => self.espera = Some(name),
+            Msg::GuardarYRecargar => {
+                return Effects::perform(|| std::thread::sleep(ESPERA / 2), |()| Msg::Recargar);
+            }
+            Msg::Recargar => {
+                return Effects::perform(
+                    || std::thread::sleep(ESPERA / 2),
+                    |()| Msg::EsperaLista("guardar y recargar"),
+                );
+            }
+            Msg::Sincronizar => {
+                self.sincronizando += 1;
+                return Effects::perform(|| std::thread::sleep(ESPERA), |()| Msg::Sincronizado);
+            }
+            Msg::Sincronizado => self.sincronizando = self.sincronizando.saturating_sub(1),
+            Msg::Increment => self.clicks += 1,
+            Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
+            Msg::Reset => self.clicks = 0,
+            Msg::NameChanged(name) => self.name = name,
+            Msg::EmailChanged(email) => self.email = email,
+            Msg::Submit => {
+                if self.can_submit() {
+                    self.submissions.push(self.name.trim().to_owned());
+                    self.clear_form();
+                }
+            }
+            Msg::Clear => self.clear_form(),
+            Msg::Edit(field, value) => {
+                *match field {
+                    Field::Search => &mut self.search,
+                    Field::Password => &mut self.password,
+                    Field::Amount => &mut self.amount,
+                    Field::Discount => &mut self.discount,
+                    Field::Commune => &mut self.commune,
+                    Field::Code => &mut self.code,
+                    Field::Quantity => &mut self.quantity,
+                    Field::Autocomplete => &mut self.autocomplete,
+                    Field::Pin => &mut self.pin,
+                    Field::Notes => &mut self.notes,
+                    Field::Lookup => &mut self.lookup,
+                    Field::Url => &mut self.url,
+                } = value;
+            }
+            Msg::ElegirImagen(campo) => {
+                let title = match campo {
+                    Campo::Foto => "Elegir foto de perfil",
+                    Campo::Portada => "Elegir portada",
+                    Campo::Logo => "Elegir logo",
+                };
+                return Effects::pick_file(PickFile::images(title), move |path| {
+                    Msg::ImagenElegida(campo, path)
+                });
+            }
+            Msg::ImagenElegida(campo, Some(path)) => match campo {
+                Campo::Foto => self.foto.set(path),
+                Campo::Portada => self.portada.set(path),
+                Campo::Logo => self.logo.set(path),
+            },
+            Msg::ImagenElegida(_, None) => {}
+            Msg::CargarUrl(url) => {
+                let url = url.trim().to_owned();
+                self.avatar_url = (!url.is_empty()).then(|| url.clone());
+                self.url = url;
+            }
+            Msg::TogglePassword => self.show_password = !self.show_password,
+            Msg::ToggleNotifications => self.notifications = !self.notifications,
+            Msg::SetRole(index) => self.role = Some(index),
+            Msg::ToggleTerms => self.terms = !self.terms,
+            Msg::IrA(seccion) => self.seccion = seccion,
+            Msg::PlantillaSelect(index) => self.plantilla_idx = index,
+            Msg::CatalogPreset(index) => {
+                self.catalog_preset = CatalogPreset::ALL
+                    .get(index)
+                    .copied()
+                    .unwrap_or(CatalogPreset::AppKitLight);
+            }
+            Msg::CatalogDensity(index) => {
+                self.catalog_density = if index == 0 {
+                    Density::Comfortable
+                } else {
+                    Density::Compact
+                };
+            }
+            Msg::CatalogSize(index) => {
+                self.catalog_size = CATALOG_SIZES
+                    .get(index)
+                    .copied()
+                    .unwrap_or(ControlSize::Regular);
+            }
+            Msg::CatalogSample(value) => self.catalog_sample = value,
+            Msg::CatalogClearFilter => self.catalog_sample.clear(),
+            Msg::CatalogToggleCheck => self.catalog_check = !self.catalog_check,
+            Msg::CatalogToggleSwitch => self.catalog_switch = !self.catalog_switch,
+            Msg::CatalogSelect(index) => self.catalog_select = Some(index),
+            Msg::CatalogTab(index) => self.catalog_tab = index,
+            Msg::ToggleSidebar => self.sidebar_collapsed = !self.sidebar_collapsed,
+            Msg::InitialWidth { narrow } => {
+                self.sidebar_collapsed = narrow;
+                self.sized = true;
+            }
+            Msg::SetBackground(kind) => self.background = kind,
+            Msg::ToggleBackgroundMotion => {
+                self.background_motion = match self.background_motion {
+                    BackgroundMotion::Static => BackgroundMotion::Animated,
+                    BackgroundMotion::Animated => BackgroundMotion::Static,
+                };
+            }
+            Msg::TogglePin => self.show_pin = !self.show_pin,
+            Msg::ToggleWifi => self.wifi = !self.wifi,
+            Msg::TogglePermiso(Some(index)) => self.permisos[index] = !self.permisos[index],
+            Msg::TogglePermiso(None) => {
+                let all = !self.permisos.iter().all(|on| *on);
+                self.permisos = [all; 3];
+            }
+            Msg::SetPais(index) => self.pais = Some(index),
+            Msg::SetAlineacion(index) => self.alineacion = index,
+            Msg::SetPestana(index) => self.pestana = index,
+            Msg::Query(query) => {
+                self.tabla.query.clone_from(&query);
+                self.query = query;
+                self.tabla.refresh(&self.clientes, &columnas());
+            }
+            Msg::Tabla(change) => {
+                let typing = matches!(change, ViewChange::Filter(..));
+                self.tabla.apply(change);
+                if typing {
+                    return Effects::after(PAUSA_FILTRO, Msg::RefrescarTabla).keyed("filtro");
+                }
+                self.tabla.refresh(&self.clientes, &columnas());
+            }
+            Msg::RefrescarTabla => self.tabla.refresh(&self.clientes, &columnas()),
+            Msg::SelectRow(index) => self.cliente = Some(index),
+            Msg::VerCliente(index) => {
+                let Some(cliente) = self.clientes.get(index) else {
+                    return Effects::none();
+                };
+                let toast = Toast::new(0, AlertVariant::Info, cliente.nombre.as_str()).message(
+                    format!("Cliente N.º {} de {}", cliente.numero, cliente.ciudad),
+                );
+                return self.show_toast(toast);
+            }
+            Msg::ExportarTabla => {
+                if self.exportando || self.tabla.is_empty() {
+                    return Effects::none();
+                }
+                let request = SaveFile::new("Exportar a Excel", "clientes.xlsx").types(&["xlsx"]);
+                return Effects::save_file(request, Msg::GuardarExcel);
+            }
+            Msg::GuardarExcel(None) => {}
+            Msg::GuardarExcel(Some(path)) => {
+                self.exportando = true;
+                let sheet = self.tabla.export(&self.clientes, &columnas());
+                return Effects::perform(
+                    move || {
+                        crate::xlsx::write(&sheet, "Clientes", &path)?;
+                        let name = path.file_name().map_or_else(
+                            || path.display().to_string(),
+                            |name| name.to_string_lossy().into_owned(),
+                        );
+                        Ok((name, sheet.rows.len()))
+                    },
+                    Msg::TablaExportada,
+                );
+            }
+            Msg::TablaExportada(result) => {
+                self.exportando = false;
+                let toast = match result {
+                    Ok((name, rows)) => Toast::new(0, AlertVariant::Success, "Excel exportado")
+                        .message(format!("{rows} filas en {name}")),
+                    Err(error) => {
+                        Toast::new(0, AlertVariant::Error, "No se exportó").message(error)
+                    }
+                };
+                return self.show_toast(toast);
+            }
+            Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
+            Msg::CloseDialog => self.dialogo = None,
+            Msg::MapaMovido(vista) => self.vista = vista,
+            Msg::FijarVista { vista, animar } => {
+                self.vista = vista.clamped();
+                self.animar_vista = animar;
+            }
+            Msg::SeleccionarArea(code) => {
+                if self.edicion.is_none() {
+                    self.seleccionar(&code);
+                }
+            }
+            Msg::Encuadrar(bounds) => self.encuadrar(bounds),
+            Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
+            Msg::Mes(index) => self.mes = Some(index),
+            Msg::Documento(change) => {
+                self.doc_markdown = change.markdown;
+                #[cfg(feature = "document")]
+                {
+                    self.doc_ribbon_pressed = change.ribbon_pressed;
+                    self.doc_ribbon_disabled = change.ribbon_disabled;
+                    self.doc_ribbon_contexts = change.ribbon_contexts;
+                    if !change.status.is_empty() {
+                        self.doc_edit_status = change.status;
+                    }
+                }
+                #[cfg(feature = "document")]
+                if let Some(export) = change.export
+                    && let Some((path, kind)) = self.doc_pending_export.take()
+                {
+                    self.doc_archivo_busy = true;
+                    let doc = (*export.0).clone();
+                    return Effects::perform(
+                        move || write_document_file(doc, path, kind),
+                        Msg::DocArchivoListo,
+                    );
+                }
+                #[cfg(not(feature = "document"))]
+                if self.doc_pending_export.take().is_some() {
+                    return Effects::perform(
+                        || Err("Compila con --features document".into()),
+                        Msg::DocArchivoListo,
+                    );
+                }
+            }
+            Msg::DocCmd(cmd) => {
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((cmd, self.doc_cmd_serial));
+            }
+            Msg::DocRibbonTab(id) => {
+                self.doc_ribbon_tab = id;
+            }
+            Msg::DocAlternarBuscar => self.doc_find_open = !self.doc_find_open,
+            Msg::PreferenciasGuardadas(Ok(())) => {}
+            Msg::PreferenciasGuardadas(Err(e)) => {
+                eprintln!("No se guardaron las preferencias: {e}");
+            }
+            Msg::DocAlternarComentario => self.doc_comment_open = !self.doc_comment_open,
+            Msg::DocFindChanged(v) => self.doc_find = v,
+            Msg::DocReplaceChanged(v) => self.doc_replace = v,
+            Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
+            Msg::DocAbrir => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request = PickFile::new("Abrir documento").types(&["docx"]);
+                return Effects::pick_file(request, Msg::DocAbrirElegido);
+            }
+            Msg::DocAbrirElegido(None) => {}
+            Msg::DocAbrirElegido(Some(path)) => {
+                self.doc_archivo_busy = true;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                self.doc_archivo_name = Some(name);
+                return Effects::perform(
+                    move || std::fs::read(&path).map_err(|e| e.to_string()),
+                    Msg::DocBytesLeidos,
+                );
+            }
+            Msg::DocBytesLeidos(result) => {
+                self.doc_archivo_busy = false;
+                match result {
+                    Ok(bytes) => {
+                        self.doc_load_serial = self.doc_load_serial.saturating_add(1);
+                        self.doc_load = Some((self.doc_load_serial, bytes.into()));
+                        let toast = Toast::new(0, AlertVariant::Success, "Documento abierto")
+                            .message("Se cargó el archivo .docx");
+                        return self.show_toast(toast);
+                    }
+                    Err(error) => {
+                        let toast =
+                            Toast::new(0, AlertVariant::Error, "No se abrió").message(error);
+                        return self.show_toast(toast);
+                    }
+                }
+            }
+            Msg::DocGuardar => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request = SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
+                return Effects::save_file(request, Msg::DocGuardarEn);
+            }
+            Msg::DocGuardarEn(None) => {}
+            Msg::DocGuardarEn(Some(path)) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                self.doc_archivo_name = Some(name);
+                self.doc_pending_export = Some((path, DocExportKind::Docx));
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
+            }
+            Msg::DocExportarPdf => {
+                if self.doc_archivo_busy {
+                    return Effects::none();
+                }
+                let request = SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
+                return Effects::save_file(request, Msg::DocExportarPdfEn);
+            }
+            Msg::DocExportarPdfEn(None) => {}
+            Msg::DocExportarPdfEn(Some(path)) => {
+                // No cambia el nombre del .docx activo; solo toast al terminar.
+                self.doc_pending_export = Some((path, DocExportKind::Pdf));
+                self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
+                self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
+            }
+            Msg::DocArchivoListo(result) => {
+                self.doc_archivo_busy = false;
+                let toast = match result {
+                    Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo").message(name),
+                    Err(error) => {
+                        Toast::new(0, AlertVariant::Error, "No se pudo escribir").message(error)
+                    }
+                };
+                return self.show_toast(toast);
+            }
+            Msg::ColorSector(color) => {
+                let code = self.area.clone();
+                if let Some(sector) = self
+                    .sectores
+                    .iter_mut()
+                    .find(|s| Some(&s.code) == code.as_ref())
+                {
+                    sector.color = color;
+                }
+            }
+            Msg::EditarArea(code) => {
+                if self.edicion.is_none()
+                    && let Some(anillo) = self.sector(&code).map(Sector::anillo)
+                    && let Ok(draft) = PolygonDraft::from_ring(anillo)
+                {
+                    self.seleccionar(&code);
+                    self.edicion = Some((code, draft));
+                }
+            }
+            Msg::Edicion(edit) => self.editar(edit),
+            Msg::GuardarGeometria { code, anillo } => {
+                if self
+                    .edicion
+                    .as_ref()
+                    .is_some_and(|(editing, _)| *editing == code)
+                {
+                    self.edicion = None;
+                }
+                self.guardar_anillo(&code, &anillo);
+                if self.edicion.is_none() {
+                    self.seleccionar(&code);
+                }
+            }
+        }
+        Effects::none()
     }
 }
 
@@ -4697,11 +4795,23 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
     for warning in warnings {
         eprintln!("{warning}");
     }
-    let demo = Demo {
+    let mut demo = Demo {
         background,
         background_motion,
         ..Demo::default()
     };
+    // Preferencias de la ejecución anterior; un problema solo se avisa.
+    match Store::for_app(APP_ID) {
+        Ok(store) => {
+            match store.load::<PreferenciasDemo>() {
+                Ok(Some(prefs)) => demo.aplicar_preferencias(&prefs),
+                Ok(None) => {}
+                Err(e) => eprintln!("Preferencias ignoradas ({}): {e}", store.dir().display()),
+            }
+            demo.store = Some(store);
+        }
+        Err(e) => eprintln!("Sin preferencias: {e}"),
+    }
     #[cfg(feature = "mcp")]
     if mcp {
         return runtime::run_with_mcp(demo, demo_theme());
@@ -5732,6 +5842,33 @@ mod tests {
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "!");
         assert!(app.value(editor()).contains('!'));
+    }
+
+    #[test]
+    fn preferences_survive_a_restart() {
+        use crate::store::Store;
+
+        let dir = std::env::temp_dir().join(format!("kai-demo-prefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let demo = Demo {
+            store: Some(Store::at(&dir)),
+            ..Demo::default()
+        };
+        let mut app = TestApp::new(demo);
+        app.call("ui.ir_a", serde_json::json!({ "seccion": "mapa" }))
+            .expect("ui.ir_a");
+        app.run_until_idle();
+        let guardadas: super::PreferenciasDemo = Store::at(&dir)
+            .load()
+            .expect("archivo legible")
+            .expect("preferencias guardadas");
+        assert_eq!(guardadas.seccion, Seccion::Mapa);
+
+        // Una ejecución nueva arranca donde quedó la anterior.
+        let mut otra = Demo::default();
+        otra.aplicar_preferencias(&guardadas);
+        assert_eq!(otra.seccion, Seccion::Mapa);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(feature = "document")]

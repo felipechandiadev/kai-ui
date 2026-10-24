@@ -32,6 +32,7 @@ pub mod media;
 pub mod menu;
 pub mod runtime;
 pub mod snapshot;
+pub mod store;
 pub mod testing;
 pub mod theme;
 pub mod version;
