@@ -52,6 +52,24 @@ jobs:
           RUSTDOCFLAGS: -D warnings
       # An app outside the crate that only uses the public API.
       - run: cargo check --locked --manifest-path fixtures/external-app/Cargo.toml --target-dir target
+      # An app built from src/sections by kai-build (docs/dev/26, R4).
+      - run: cargo clippy --locked --all-targets --manifest-path fixtures/sections-app/Cargo.toml --target-dir target -- -D warnings
+      - run: cargo test --locked --manifest-path fixtures/sections-app/Cargo.toml --target-dir target
+
+  # Root of an app from its folders (docs/dev/26, R4).
+  kai-build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: kai-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
 
   # `kai dev` and the rest of the CLI (13, Paso 18).
   kai-cli:

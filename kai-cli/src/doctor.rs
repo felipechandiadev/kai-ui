@@ -59,6 +59,8 @@ pub fn run() -> Result<(), String> {
         }
     }
 
+    check_sections(&mut failures);
+
     if failures == 0 && warnings_found == 0 {
         eprintln!("kai doctor: todo bien");
         Ok(())
@@ -162,6 +164,29 @@ fn xcode_clt() -> Result<String, String> {
         return Err("no hay Xcode Command Line Tools; instala con `xcode-select --install`".into());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// An app made of `src/sections/`: the same checks as its build.
+fn check_sections(failures: &mut u32) {
+    let root = std::path::Path::new(".");
+    if !root.join("src/sections").exists() {
+        return;
+    }
+    match kai_build::scan::scan(root) {
+        Ok(tree) => {
+            let pages: usize = tree.sections.iter().map(|s| s.pages.len()).sum();
+            eprintln!(
+                "  ok  src/sections: {} sección(es), {pages} página(s)",
+                tree.sections.len()
+            );
+        }
+        Err(errors) => {
+            for error in errors {
+                eprintln!("  ERR {error}");
+                *failures += 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ cargo install --path kai-cli
 | `kai doctor` | Rust ≥ MSRV 1.95, Xcode CLT (macOS), coherencia de `kai.toml` |
 | `kai test [--snapshots] [-- …]` | `cargo test` con `[dev].features`; `--snapshots` añade la feature y tests `#[ignore]` |
 | `kai new <nombre> [--template basic\|multiwindow]` | Andamiaje con `kai.toml`, `Cargo.toml`, `src/`, `assets/icons/`, `tests/` |
+| `kai new section <nombre>` | Crea `src/sections/<nombre>/` con `section.rs` y `page.rs` (y `src/state.rs` si falta); ver [26](../kai-ui-desktop/docs/dev/26-router-y-kai-build.md) |
 | `kai icons add <nombre> [--from RUTA]` | Copia SVG a `assets/icons/` desde el catálogo Lucide del crate `kai`, o un archivo (`--from` / `archivo.svg --name`) |
 | `kai dev [--bin] [--watch]…` | Compila, abre y reinicia conservando ventana/`App::dev_state`; lee `[dev].bin` / features |
 

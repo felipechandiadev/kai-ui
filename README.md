@@ -6,6 +6,7 @@ Monorepo del design system Kai: librería web, framework desktop nativo y su CLI
 |---------|-------------|
 | [`kai-ui-web/`](kai-ui-web/) | Paquete npm `@felipechandiadev/ui` (React, tokens, componentes). |
 | [`kai-ui-desktop/`](kai-ui-desktop/) | Framework Rust/macOS (crate `kai`) con renderer propio: arquitectura Elm, componentes, comandos, MCP, imágenes y mapas. Versión preliminar. |
+| [`kai-build/`](kai-build/) | Genera la raíz de una app Kai desde `src/sections/` en su `build.rs` (rutas, barra lateral, páginas). Ver [26](kai-ui-desktop/docs/dev/26-router-y-kai-build.md). |
 | [`kai-cli/`](kai-cli/) | Binario `kai` para desarrollar apps Kai. Por ahora solo `kai dev` (recompila al guardar y reinicia conservando la ventana). |
 
 ## Desarrollo

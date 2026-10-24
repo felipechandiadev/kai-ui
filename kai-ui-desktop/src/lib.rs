@@ -42,6 +42,17 @@ pub mod xlsx;
 
 pub use color::Color;
 
+/// The root that `kai-build` generated from `src/sections/` (in the app's
+/// `build.rs`): modules `state`, `sections` and `app` (`app::run`,
+/// `app::app`, `app::Route`). Call it once, at the top of `main.rs`. See
+/// `docs/dev/26-router-y-kai-build.md`.
+#[macro_export]
+macro_rules! include_app {
+    () => {
+        include!(concat!(env!("OUT_DIR"), "/kai_app.rs"));
+    };
+}
+
 // --- Hidden internals ----------------------------------------------------
 // TODO(frontera): pass each of these to `pub(crate)` once captures/tests
 // only touch them through `kai::testing` (or a dedicated feature). Apps

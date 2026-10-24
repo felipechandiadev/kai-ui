@@ -1,0 +1,58 @@
+//! The generated root behaves like the one written by hand in
+//! kai-ui-desktop/src/session/pages_tests.rs.
+
+use kai::router::Route as _;
+use kai::testing::{By, TestApp};
+use kai_sections_app::app::{self, Route};
+use kai_sections_app::state::State;
+
+fn crm() -> TestApp<app::AppRoot> {
+    TestApp::new(app::app(State::sample()))
+}
+
+#[test]
+fn every_route_round_trips_and_fixed_paths_win_over_parameters() {
+    for route in [
+        Route::Customers,
+        Route::CustomersId { id: 4 },
+        Route::CustomersNew,
+        Route::Sales,
+    ] {
+        assert_eq!(Route::parse(&route.path()), Some(route));
+    }
+    assert_eq!(Route::parse("/customers/new"), Some(Route::CustomersNew));
+    assert_eq!(Route::parse("/customers/ana"), None);
+    assert_eq!(Route::CustomersId { id: 4 }.parent(), Some(Route::Customers));
+}
+
+#[test]
+fn a_page_navigates_and_changes_the_shared_state() {
+    let mut app = crm();
+    assert_eq!(app.route(), Some("/customers"));
+    app.click(By::test_id("customers.row.1"));
+    assert_eq!(app.route(), Some("/customers/1"));
+    app.type_text(By::test_id("customer.name"), " Rojas");
+    app.click(By::test_id("customer.save"));
+    assert_eq!(app.route(), Some("/customers"));
+    app.screen().get(By::text("Bruno Díaz Rojas"));
+
+    app.click(By::test_id("customers.new"));
+    app.screen().get(By::test_id("customers.new.form"));
+    assert!(app.perform("kai.up"));
+    assert_eq!(app.route(), Some("/customers"));
+}
+
+#[test]
+fn a_section_keeps_its_state_and_the_sidebar_switches_sections() {
+    let mut app = crm();
+    app.type_text(By::test_id("customers.find"), "car");
+    app.click(By::test_id("sections.1"));
+    assert_eq!(app.route(), Some("/sales"));
+    app.run_until_idle();
+    assert_eq!(
+        app.screen().get(By::test_id("sales.total")).name().as_deref(),
+        Some("Total 1250")
+    );
+    assert!(app.perform("kai.back"));
+    assert_eq!(app.value(By::test_id("customers.find")), "car");
+}

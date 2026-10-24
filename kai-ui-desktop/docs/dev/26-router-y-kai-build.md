@@ -315,6 +315,26 @@ leerlo explique la app. No usa macros procedurales.
   módulo de escaneo: `kai-build` lo expone como `kai_build::scan`).
 - `kai dev` ya observa `src/`: un cambio en el árbol regenera al compilar.
 
+### 5.5 Convenciones fijadas al implementar (R4)
+
+- Cada `page.rs` define **`pub struct Screen`** que implementa
+  `kai::router::Page` (no `Page`: chocaría con el nombre del trait).
+- Cada `section.rs` define **`pub const SECTION: SectionMeta`**.
+- **Un parámetro por ruta** (`[id]`); su página declara `Params` con
+  `FromStr + Display` (el código generado lo lee y lo escribe en el path).
+  Varios parámetros (`/customers/[id]/invoices/[invoice]`) quedan para
+  después (pregunta 3 de §7).
+- Una ruta fija gana a un parámetro hermano: `/customers/new` no se lee
+  como `[id] = "new"`.
+- `kai::include_app!()` va en la raíz del crate (`main.rs` o `lib.rs`) y
+  declara `state`, `sections` y `app`. `app::run(state, theme)` abre la
+  ventana; `app::app(state)` da la app para `TestApp`.
+- La app arranca en la primera sección de la barra (menor `order`).
+- Sin `prettyplease` ni `syn`: el generador escribe el código ya
+  formateado, y `kai-build` no tiene dependencias.
+- Los módulos usan `#[path]` absoluto: el código generado vive en
+  `OUT_DIR`. Un `mod helpers;` dentro de un `page.rs` se busca junto a él.
+
 ## 6. Plan por pasos
 
 | Paso | Qué | Hecho cuando |
@@ -323,7 +343,7 @@ leerlo explique la app. No usa macros procedurales.
 | R1 | ✅ `Element::map`, `Effects::map` y `Subscriptions::map` (24-oct-2026). | Hecho: tests de los 10 handlers, filas virtuales y una app padre con una parte hija (`session/map_tests.rs`). Costo medido con `bench_element_map` (release, p50 sobre toda la vista de la demo): 10–27 µs por vista de 135–373 nodos, 7–12 % de construirla y ~0,3 % de un frame a 120 Hz. |
 | R2 | ✅ `kai::router` (24-oct-2026): `Route`, `Router<R>`, `Navigate`, `NavState`, trait `Navigable`; `CommandRegistry::navigation()` suma `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑) en el menú «Ir» y `kai.navigate { path }`, expuestos a agentes y deshabilitados cuando no aplican; `App::route()`; la sesión guarda y restaura scroll y foco por ruta; `TestApp::navigate` y `TestApp::route`. | Hecho: `session/router_tests.rs` navega lista ↔ detalle con historial, atajos y agentes, y atrás devuelve scroll y foco. **Pendiente:** anunciar el cambio de vista a VoiceOver (falta un mecanismo de anuncios en `a11y.rs`). |
 | R3 | ✅ `Page`, `Context`, `SectionMeta` y `SectionSidebar` en `kai::router` (24-oct-2026). | Hecho: `session/pages_tests.rs` tiene una raíz escrita a mano con dos secciones (Clientes con lista y detalle `[id]`, Ventas que carga datos al abrir): una página navega y cambia el estado compartido, una sección conserva su estado mientras se ve otra, la barra lateral sigue a la ruta y el título a la página. |
-| R4 | `kai-build` genera lo de R3 desde carpetas; `kai new section`; `kai doctor` valida. | Un fixture `fixtures/sections-app` compila desde carpetas y su código generado es igual al escrito a mano de R3. |
+| R4 | ✅ Crate `kai-build` (escaneo, validación y generación, solo `std`), `kai::include_app!()`, `kai new section <nombre>` y la validación en `kai doctor` (24-oct-2026). | Hecho: `fixtures/sections-app` compila desde carpetas (Clientes con `[id]` y `new`, Ventas) sin avisos de clippy, y sus tests repiten los de la raíz a mano de R3; CI compila, pasa clippy y prueba el fixture, y prueba `kai-build`. |
 | R5 | La demo pasa a `src/sections/` (hoy un `demo.rs` de 9 600 líneas). | Una carpeta por sección de la demo; las pruebas existentes siguen pasando. |
 
 R0 primero porque R1–R5 tocan justo esos nombres; hacerlo después duplica el

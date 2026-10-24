@@ -24,6 +24,8 @@ Comandos:
                           cargo test con features de [dev] en kai.toml
   kai new <nombre> [--template basic|multiwindow]
                           Andamiaje mínimo con kai.toml y tests/
+  kai new section <nombre>
+                          Crea src/sections/<nombre>/ con section.rs y page.rs
   kai icons add <nombre> [--from RUTA]
   kai icons add <archivo.svg> --name <nombre>
                           Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
@@ -40,6 +42,7 @@ enum Command {
     Doctor,
     Test(test_cmd::Options),
     New(new_cmd::Options),
+    NewSection(String),
     IconsAdd(icons_cmd::Options),
     Help,
     Version,
@@ -58,7 +61,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
             Ok(Command::Doctor)
         }
         Some("test") => parse_test(args).map(Command::Test),
-        Some("new") => parse_new(args).map(Command::New),
+        Some("new") => parse_new(args),
         Some("icons") => parse_icons(args).map(Command::IconsAdd),
         Some(other) => Err(format!("comando desconocido: {other}")),
     }
@@ -109,10 +112,21 @@ fn parse_test(mut args: impl Iterator<Item = String>) -> Result<test_cmd::Option
     Ok(options)
 }
 
-fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Options, String> {
+fn parse_new(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
     let name = args
         .next()
         .ok_or_else(|| "kai new necesita un nombre de proyecto".to_string())?;
+    if name == "section" {
+        let section = args
+            .next()
+            .ok_or("kai new section necesita un nombre (snake_case en inglés)")?;
+        if let Some(extra) = args.next() {
+            return Err(format!(
+                "argumento desconocido para kai new section: {extra}"
+            ));
+        }
+        return Ok(Command::NewSection(section));
+    }
     if name.starts_with('-') {
         return Err(format!("nombre inválido: {name}"));
     }
@@ -137,7 +151,7 @@ fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Options,
             other => return Err(format!("argumento desconocido para kai new: {other}")),
         }
     }
-    Ok(new_cmd::Options { name, template })
+    Ok(Command::New(new_cmd::Options { name, template }))
 }
 
 fn parse_icons(mut args: impl Iterator<Item = String>) -> Result<icons_cmd::Options, String> {
@@ -185,6 +199,13 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai new: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Command::NewSection(name)) => match new_cmd::section(std::path::Path::new("."), &name) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai new section: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -252,6 +273,11 @@ mod tests {
                 template: new_cmd::Template::Basic,
             }))
         );
+        assert_eq!(
+            parse_str(&["new", "section", "customers"]),
+            Ok(Command::NewSection("customers".into()))
+        );
+        assert!(parse_str(&["new", "section"]).is_err());
         assert_eq!(
             parse_str(&["icons", "add", "search"]),
             Ok(Command::IconsAdd(icons_cmd::Options {

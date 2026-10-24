@@ -1,0 +1,14 @@
+[package]
+name = "kai-sections-app"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+# An app built from folders: kai-build reads src/sections and generates the
+# root (docs/dev/26, R4). CI builds and tests it.
+[dependencies]
+kai = { package = "kai-ui-desktop-prototype", path = "../.." }
+
+[build-dependencies]
+kai-build = { path = "../../../kai-build" }

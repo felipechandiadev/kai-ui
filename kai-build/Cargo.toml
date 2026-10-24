@@ -1,0 +1,10 @@
+[package]
+name = "kai-build"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Genera la raíz de una app Kai desde src/sections (docs/dev/26, R4)."
+
+# Solo la biblioteca estándar: corre en el build.rs de cada app.
+[dependencies]

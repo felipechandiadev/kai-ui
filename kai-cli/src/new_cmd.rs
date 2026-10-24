@@ -147,8 +147,128 @@ Iconos propios: `kai icons add <nombre>` (Lucide del crate kai) o\n\
     )
 }
 
+/// `kai new section <name>`: `src/sections/<name>/section.rs` and
+/// `page.rs` in the app at `root`, plus `src/state.rs` if it is missing.
+pub fn section(root: &std::path::Path, name: &str) -> Result<(), String> {
+    if !kai_build::scan::is_valid_name(name) {
+        return Err(format!(
+            "nombre inválido: {name} (snake_case en inglés, como customers o sales_report)"
+        ));
+    }
+    let dir = root.join("src/sections").join(name);
+    if dir.exists() {
+        return Err(format!("{} ya existe", dir.display()));
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let title = title_of(name);
+    fs::write(dir.join("section.rs"), section_rs(&title)).map_err(|e| e.to_string())?;
+    fs::write(dir.join("page.rs"), page_rs(&title)).map_err(|e| e.to_string())?;
+    let state = root.join("src/state.rs");
+    if !state.exists() {
+        fs::write(&state, STATE_RS).map_err(|e| e.to_string())?;
+        eprintln!("kai new section: creado {}", state.display());
+    }
+    eprintln!("kai new section: creado {}", dir.display());
+    if !root.join("build.rs").exists() {
+        eprintln!(
+            "  falta build.rs con kai_build::app().generate() y kai::include_app!() en src/main.rs \
+             (ver docs/dev/26-router-y-kai-build.md)"
+        );
+    }
+    Ok(())
+}
+
+/// `sales_report` → `Sales report`: the visible title until someone writes
+/// the real one.
+fn title_of(name: &str) -> String {
+    let text = name.replace('_', " ");
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => text,
+    }
+}
+
+fn section_rs(title: &str) -> String {
+    format!(
+        r#"use kai::icons::Icon;
+use kai::router::SectionMeta;
+
+/// How this section shows in the sidebar (title and group are visible text).
+pub const SECTION: SectionMeta = SectionMeta {{
+    title: "{title}",
+    icon: Icon::LayoutGrid,
+    order: 100,
+    group: None,
+}};
+"#
+    )
+}
+
+fn page_rs(title: &str) -> String {
+    format!(
+        r#"use kai::element::{{Element, text}};
+use kai::router::{{Context, Page}};
+use kai::runtime::Effects;
+
+use crate::state::State;
+
+pub struct Screen;
+
+#[derive(Clone, Debug)]
+pub enum Msg {{}}
+
+impl Page for Screen {{
+    type Msg = Msg;
+    type Params = ();
+    type State = State;
+
+    fn init(_: &(), _: &State) -> (Self, Effects<Msg>) {{
+        (Self, Effects::none())
+    }}
+
+    fn update(&mut self, msg: Msg, _: &mut Context<'_, State>) -> Effects<Msg> {{
+        match msg {{}}
+    }}
+
+    fn view(&self, _: &State) -> Element<Msg> {{
+        text("{title}")
+    }}
+
+    fn title(&self, _: &State) -> String {{
+        "{title}".into()
+    }}
+}}
+"#
+    )
+}
+
+const STATE_RS: &str =
+    "/// What every page shares (session, loaded data).\n#[derive(Default)]\npub struct State {}\n";
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_new_section_follows_the_folder_conventions() {
+        let root = std::env::temp_dir().join(format!("kai-new-section-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        super::section(&root, "sales_report").unwrap();
+        let tree = kai_build::scan::scan(&root).expect("valid folders");
+        assert_eq!(tree.sections[0].name, "sales_report");
+        let meta =
+            std::fs::read_to_string(root.join("src/sections/sales_report/section.rs")).unwrap();
+        assert!(meta.contains("title: \"Sales report\""));
+        assert!(
+            super::section(&root, "sales_report").is_err(),
+            "it already exists"
+        );
+        assert!(
+            super::section(&root, "Ventas").is_err(),
+            "not snake_case English"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
     use super::*;
 
     #[test]
