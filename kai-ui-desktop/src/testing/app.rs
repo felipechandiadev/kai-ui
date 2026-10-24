@@ -761,6 +761,35 @@ impl<A: App> TestApp<A> {
         }
     }
 
+    /// Press at `(x, y)` from the element's top-left, drag by `(dx, dy)`, release.
+    #[track_caller]
+    pub fn drag_at(&mut self, by: By, x: f32, y: f32, dx: f32, dy: f32) {
+        let id = self.id_of(by);
+        if self.session.reveal(id) {
+            self.frame();
+        }
+        let bounds = self.session.layout().bounds(id).unwrap_or_default();
+        let start = Point {
+            x: bounds.x + x,
+            y: bounds.y + y,
+        };
+        self.session.pointer_moved(Some(start));
+        self.frame();
+        self.session.pointer_clicks(true, 1);
+        self.frame();
+        for step in 1..=DRAG_STEPS {
+            let t = step as f32 / DRAG_STEPS as f32;
+            self.advance(DRAG_STEP);
+            self.session.pointer_moved(Some(Point {
+                x: start.x + dx * t,
+                y: start.y + dy * t,
+            }));
+            self.frame();
+        }
+        self.session.pointer_button(false);
+        self.frame();
+    }
+
     /// Click at `(x, y)` points from the element's top left corner.
     #[track_caller]
     pub fn click_at(&mut self, by: By, x: f32, y: f32) {
@@ -877,6 +906,15 @@ impl<A: App> TestApp<A> {
     }
 
     #[track_caller]
+    /// Document: ¿la selección está colapsada (solo caret)?
+    #[cfg(feature = "document")]
+    pub fn document_selection_collapsed(&self, by: By) -> bool {
+        let id = self.id_of(by);
+        self.session
+            .document_selection_collapsed(id)
+            .expect("document editor")
+    }
+
     pub fn is_focused(&self, by: By) -> bool {
         let screen = self.screen();
         self.session.focused() == Some(self.control_of(screen.get(by)).id())

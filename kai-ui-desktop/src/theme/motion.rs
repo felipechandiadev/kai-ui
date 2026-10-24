@@ -8,7 +8,7 @@
 //!
 //! When adding motion, respect [`crate::theme::SystemPrefs::reduce_motion`].
 //!
-//! See [`docs/dev/23-spacing-density.md`] § Motion.
+//! See `docs/dev/23-spacing-density.md` § Motion.
 
 use std::time::Duration;
 

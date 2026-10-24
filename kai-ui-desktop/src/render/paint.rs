@@ -11,13 +11,13 @@
 use super::{DrawList, ImageDraw, Mask, Quad, TRANSPARENT, TextId};
 use crate::background::{BackgroundEffect, BackgroundLayer};
 use crate::color::Color;
+use crate::document::DocumentPaint;
 use crate::element::WidgetId;
 use crate::geometry::{ClipRect, Point, Rect};
 use crate::layout::{Content, Layout, LayoutNode, WindowActivity};
 use crate::style::ObjectFit;
 use crate::text_field::TextFieldDecorations;
 use crate::theme::Theme;
-use crate::document::DocumentPaint;
 
 const SCROLLBAR_WIDTH: f32 = 4.0;
 const SCROLLBAR_INSET: f32 = 2.0;

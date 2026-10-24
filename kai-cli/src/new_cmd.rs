@@ -24,9 +24,7 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
         return Err(format!("{} ya existe", dir.display()));
     }
     if opciones.template == Template::Multiwindow {
-        eprintln!(
-            "kai new: plantilla multiwindow aún no tiene varias ventanas; se genera basic"
-        );
+        eprintln!("kai new: plantilla multiwindow aún no tiene varias ventanas; se genera basic");
     }
 
     let crate_name = dir
@@ -46,8 +44,7 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    fs::write(dir.join("Cargo.toml"), cargo_toml(crate_name))
-        .map_err(|e| e.to_string())?;
+    fs::write(dir.join("Cargo.toml"), cargo_toml(crate_name)).map_err(|e| e.to_string())?;
     fs::write(dir.join("src/main.rs"), MAIN_RS).map_err(|e| e.to_string())?;
     fs::write(dir.join("tests/smoke.rs"), SMOKE_RS).map_err(|e| e.to_string())?;
     fs::write(dir.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
@@ -64,7 +61,13 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
 fn sanitize_id(nombre: &str) -> String {
     nombre
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()

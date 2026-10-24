@@ -16,18 +16,18 @@ use crate::commands::{
 };
 use crate::components::{
     AlertVariant, Avatar, AvatarSize, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
-    CHOICE_ACTIVE, CHOICE_HOVER, ChartKind, Column, Dialog, DialogWidth, DotProgress, DotSize,
-    EmptyState, FieldBezel, FieldDensity, FieldKind, FieldVariant, IconButtonSize,
-    IconButtonVariant, LabelLayout, MediaSlot, MediaVariant, SearchVariant, Sidebar, SidebarGroup,
-    SidebarItem, SwitchDensity, Table, TableView, Tabs, TextField, Toast, ViewChange, alert,
-    avatar, badge, button, button_sized, caption, card, card_actions, card_content, card_header,
-    chart, checkbox, checkbox_with_options, color_field, column_menu, dot_progress, group_box,
-    form_field_cell, form_full_cell, heading, icon_button, icon_button_sized,
-    loading_placeholder, page, page_body, page_grid, page_grid_item, paragraph, search_field,
-    segmented, segmented_with_options, select, DataPage, FormPage, MasterDetailPage, PageHeader,
-    select_with_options, stat, switch, switch_labeled, switch_with_options, text_area, toast_key,
-    toast_stack, toast_timer, toolbar, toolbar_item, toolbar_search, toolbar_separator,
-    toolbar_spacer, toolbar_title, validate_image_file, virtual_list,
+    CHOICE_ACTIVE, CHOICE_HOVER, ChartKind, Column, DataPage, Dialog, DialogWidth, DotProgress,
+    DotSize, EmptyState, FieldBezel, FieldDensity, FieldKind, FieldVariant, FormPage,
+    IconButtonSize, IconButtonVariant, LabelLayout, MasterDetailPage, MediaSlot, MediaVariant,
+    PageHeader, SearchVariant, Sidebar, SidebarGroup, SidebarItem, SwitchDensity, Table, TableView,
+    Tabs, TextField, Toast, ViewChange, alert, avatar, badge, button, button_sized, caption, card,
+    card_actions, card_content, card_header, chart, checkbox, checkbox_with_options, color_field,
+    column_menu, dot_progress, form_field_cell, form_full_cell, group_box, heading, icon_button,
+    icon_button_sized, loading_placeholder, page, page_body, page_grid, page_grid_item, paragraph,
+    search_field, segmented, segmented_with_options, select, select_with_options, stat, switch,
+    switch_labeled, switch_with_options, text_area, toast_key, toast_stack, toast_timer, toolbar,
+    toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    validate_image_file, virtual_list,
 };
 use crate::document::{DocumentChange, DocumentCmd, document};
 #[cfg(feature = "document")]
@@ -2590,34 +2590,35 @@ impl Demo {
             .class("w-full max-w-4xl")
             .test_id("catalogo.botones")
             .children([
-                card_header("Button", Some("Variantes + disabled + loading al tamaño filtrado")),
-                card_content().class("gap-3").children([
-                    div()
-                        .class("flex flex-wrap items-center gap-2")
-                        .children([
-                            button("Primary", ButtonVariant::Primary)
-                                .control_size(size)
-                                .on_click(Msg::Increment),
-                            button("Secondary", ButtonVariant::Secondary)
-                                .control_size(size)
-                                .on_click(Msg::Increment),
-                            button("Outlined", ButtonVariant::Outlined)
-                                .control_size(size)
-                                .on_click(Msg::Increment),
-                            button("Danger", ButtonVariant::Danger)
-                                .control_size(size)
-                                .on_click(Msg::Increment),
-                            button("Disabled", ButtonVariant::Primary)
-                                .control_size(size)
-                                .disabled(true),
-                            Button::new("Loading")
-                                .accent(true)
-                                .loading(true)
-                                .control_size(size)
-                                .on_click(Msg::Increment)
-                                .build(),
-                        ]),
-                ]),
+                card_header(
+                    "Button",
+                    Some("Variantes + disabled + loading al tamaño filtrado"),
+                ),
+                card_content().class("gap-3").children([div()
+                    .class("flex flex-wrap items-center gap-2")
+                    .children([
+                        button("Primary", ButtonVariant::Primary)
+                            .control_size(size)
+                            .on_click(Msg::Increment),
+                        button("Secondary", ButtonVariant::Secondary)
+                            .control_size(size)
+                            .on_click(Msg::Increment),
+                        button("Outlined", ButtonVariant::Outlined)
+                            .control_size(size)
+                            .on_click(Msg::Increment),
+                        button("Danger", ButtonVariant::Danger)
+                            .control_size(size)
+                            .on_click(Msg::Increment),
+                        button("Disabled", ButtonVariant::Primary)
+                            .control_size(size)
+                            .disabled(true),
+                        Button::new("Loading")
+                            .accent(true)
+                            .loading(true)
+                            .control_size(size)
+                            .on_click(Msg::Increment)
+                            .build(),
+                    ])]),
             ]);
 
         let fields = card()
@@ -2626,10 +2627,13 @@ impl Demo {
             .children([
                 card_header(
                     "TextField",
-                    Some("Default / required / helper / error / disabled · FieldDensity del filtro"),
+                    Some(
+                        "Default / required / helper / error / disabled · FieldDensity del filtro",
+                    ),
                 ),
-                card_content().class("gap-4").children([
-                    page_grid().children([
+                card_content()
+                    .class("gap-4")
+                    .children([page_grid().children([
                         page_grid_item(6).child(
                             TextField::new("Nombre", &self.catalog_sample)
                                 .placeholder("Valor de ejemplo")
@@ -2670,8 +2674,7 @@ impl Demo {
                                 .build()
                                 .control_size(size),
                         ),
-                    ]),
-                ]),
+                    ])]),
             ]);
 
         let switch_density = match self.catalog_density {
@@ -2778,17 +2781,15 @@ impl Demo {
                     Some("Variantes sólidas y outlined (no pills WIP)"),
                 ),
                 card_content().class("gap-3").children([
-                    div()
-                        .class("flex flex-wrap items-center gap-2")
-                        .children([
-                            badge("Primary", BadgeVariant::Primary),
-                            badge("Success", BadgeVariant::Success),
-                            badge("Warning", BadgeVariant::Warning),
-                            badge("Error", BadgeVariant::Error),
-                            badge("Info", BadgeVariant::Info),
-                            badge("Outlined", BadgeVariant::PrimaryOutlined),
-                            badge("Success □", BadgeVariant::SuccessOutlined),
-                        ]),
+                    div().class("flex flex-wrap items-center gap-2").children([
+                        badge("Primary", BadgeVariant::Primary),
+                        badge("Success", BadgeVariant::Success),
+                        badge("Warning", BadgeVariant::Warning),
+                        badge("Error", BadgeVariant::Error),
+                        badge("Info", BadgeVariant::Info),
+                        badge("Outlined", BadgeVariant::PrimaryOutlined),
+                        badge("Success □", BadgeVariant::SuccessOutlined),
+                    ]),
                     alert(AlertVariant::Info, "Alerta informativa de ejemplo"),
                     alert(AlertVariant::Warning, "Revisa los campos requeridos"),
                 ]),
@@ -2809,7 +2810,9 @@ impl Demo {
                 ),
                 card_content().class("gap-4").children([
                     div()
-                        .class("flex flex-wrap items-center gap-6 text-foreground appkit:text-label")
+                        .class(
+                            "flex flex-wrap items-center gap-6 text-foreground appkit:text-label",
+                        )
                         .children([
                             div().class("flex flex-col gap-1").children([
                                 caption("DotProgress"),
@@ -2821,10 +2824,7 @@ impl Demo {
                             ]),
                             div().class("flex flex-col gap-1").children([
                                 caption("Sm (referencia)"),
-                                DotProgress::new()
-                                    .size(DotSize::Sm)
-                                    .decorative()
-                                    .build(),
+                                DotProgress::new().size(DotSize::Sm).decorative().build(),
                             ]),
                         ]),
                     Tabs::new(self.catalog_tab, Msg::CatalogTab)
@@ -2832,10 +2832,7 @@ impl Demo {
                             "General",
                             paragraph("Contenido de la pestaña General bajo el tema filtrado."),
                         )
-                        .tab(
-                            "Avanzado",
-                            paragraph("Contenido de la pestaña Avanzado."),
-                        )
+                        .tab("Avanzado", paragraph("Contenido de la pestaña Avanzado."))
                         .build()
                         .test_id("catalogo.tabs"),
                 ]),
@@ -2891,8 +2888,7 @@ impl Demo {
                 ))
                 .children([
                     caption(name),
-                    text("Aa")
-                        .class("text-sm text-foreground appkit:text-label"),
+                    text("Aa").class("text-sm text-foreground appkit:text-label"),
                 ])
         };
         let layers = card()
@@ -2903,28 +2899,21 @@ impl Demo {
                     "Capas AppKit",
                     Some("window / under-page / control / fill — ver docs/dev/24-layering.md"),
                 ),
-                card_content().class("gap-3").children([
-                    page_grid().children([
+                card_content()
+                    .class("gap-3")
+                    .children([page_grid().children([
                         page_grid_item(3).child(surface("bg-window", "bg-window")),
                         page_grid_item(3).child(surface("bg-under-page", "bg-under-page")),
                         page_grid_item(3).child(surface("bg-control", "bg-control")),
                         page_grid_item(3).child(surface("bg-fill-3", "bg-fill-3")),
-                    ]),
-                ]),
+                    ])]),
             ]);
 
         div()
             .class("flex flex-col gap-5 w-full")
             .test_id("catalogo")
             .children([
-                filters,
-                buttons,
-                fields,
-                choices,
-                badges,
-                feedback,
-                empties,
-                layers,
+                filters, buttons, fields, choices, badges, feedback, empties, layers,
             ])
     }
 
@@ -3059,9 +3048,8 @@ impl Demo {
                     )
                     .children([
                         caption("Ingresos"),
-                        text("$ 128.4k").class(
-                            "text-lg font-semibold text-foreground appkit:text-label",
-                        ),
+                        text("$ 128.4k")
+                            .class("text-lg font-semibold text-foreground appkit:text-label"),
                     ]),
             ),
             page_grid_item(4).child(
@@ -3072,9 +3060,8 @@ impl Demo {
                     )
                     .children([
                         caption("Conversiones"),
-                        text("3.2 %").class(
-                            "text-lg font-semibold text-foreground appkit:text-label",
-                        ),
+                        text("3.2 %")
+                            .class("text-lg font-semibold text-foreground appkit:text-label"),
                     ]),
             ),
             page_grid_item(4).child(
@@ -3085,9 +3072,7 @@ impl Demo {
                     )
                     .children([
                         caption("Tickets abiertos"),
-                        text("47").class(
-                            "text-lg font-semibold text-foreground appkit:text-label",
-                        ),
+                        text("47").class("text-lg font-semibold text-foreground appkit:text-label"),
                     ]),
             ),
         ]);
@@ -3106,19 +3091,21 @@ impl Demo {
             )
             .part("tabla")
             .children({
-                let mut kids: Vec<Element<Msg>> = vec![div()
-                    .class(
-                        "grid grid-cols-4 gap-2 px-3 py-1.5 text-xs font-medium \
+                let mut kids: Vec<Element<Msg>> = vec![
+                    div()
+                        .class(
+                            "grid grid-cols-4 gap-2 px-3 py-1.5 text-xs font-medium \
                          text-muted-foreground appkit:text-secondary-label \
                          bg-muted/30 appkit:bg-fill-3 border-b border-border/50 \
                          appkit:border-separator",
-                    )
-                    .children([
-                        text("Orden"),
-                        text("Cliente"),
-                        text("Estado"),
-                        text("Monto"),
-                    ])];
+                        )
+                        .children([
+                            text("Orden"),
+                            text("Cliente"),
+                            text("Estado"),
+                            text("Monto"),
+                        ]),
+                ];
                 for (i, (orden, cliente, estado, monto)) in rows.iter().enumerate() {
                     kids.push(
                         div()
@@ -3128,12 +3115,7 @@ impl Demo {
                                  border-border/40 appkit:border-separator last:border-0",
                             )
                             .test_id(format!("plantilla.datos.row.{i}"))
-                            .children([
-                                text(*orden),
-                                text(*cliente),
-                                text(*estado),
-                                text(*monto),
-                            ]),
+                            .children([text(*orden), text(*cliente), text(*estado), text(*monto)]),
                     );
                 }
                 kids
@@ -4209,9 +4191,7 @@ impl Demo {
                             .test_id("documento.find.replace")
                             .build(),
                         button("Buscar", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::Find {
-                                text: find.clone(),
-                            }))
+                            .on_click(Msg::DocCmd(DocumentCmd::Find { text: find.clone() }))
                             .test_id("documento.find.run"),
                         button("Siguiente", ButtonVariant::Text)
                             .on_click(Msg::DocCmd(DocumentCmd::FindNext))
@@ -4240,9 +4220,7 @@ impl Demo {
                             .test_id("documento.comment.draft")
                             .build(),
                         button("Nuevo comentario", ButtonVariant::Secondary)
-                            .on_click(Msg::DocCmd(DocumentCmd::NewComment {
-                                text: comment,
-                            }))
+                            .on_click(Msg::DocCmd(DocumentCmd::NewComment { text: comment }))
                             .test_id("documento.comment.new"),
                     ]),
                 // Paso 6: Paste Special / wrap / table style / HF (mínimo).
@@ -4250,8 +4228,7 @@ impl Demo {
                     .class("flex flex-row flex-wrap items-center gap-1")
                     .test_id("documento.paso6")
                     .children([
-                        text("Pegado especial:")
-                            .class("text-xs text-muted-foreground"),
+                        text("Pegado especial:").class("text-xs text-muted-foreground"),
                         button("Texto", ButtonVariant::Text)
                             .on_click(Msg::DocCmd(DocumentCmd::PastePlain))
                             .test_id("documento.paste.plain"),
@@ -4261,8 +4238,7 @@ impl Demo {
                         button("Mantener", ButtonVariant::Text)
                             .on_click(Msg::DocCmd(DocumentCmd::PasteKeepSource))
                             .test_id("documento.paste.keep"),
-                        text("· Ajuste:")
-                            .class("text-xs text-muted-foreground"),
+                        text("· Ajuste:").class("text-xs text-muted-foreground"),
                         button("Cuadrado", ButtonVariant::Text)
                             .on_click(Msg::DocCmd(DocumentCmd::Wrap {
                                 mode: "square".into(),
@@ -4293,8 +4269,7 @@ impl Demo {
                                 mode: "inline".into(),
                             }))
                             .test_id("documento.wrap.inline"),
-                        text("· Tabla:")
-                            .class("text-xs text-muted-foreground"),
+                        text("· Tabla:").class("text-xs text-muted-foreground"),
                         button("GridLight", ButtonVariant::Text)
                             .on_click(Msg::DocCmd(DocumentCmd::TableStyle {
                                 style: "GridTable1Light".into(),
@@ -4305,27 +4280,18 @@ impl Demo {
                                 style: "TableGrid".into(),
                             }))
                             .test_id("documento.table.style.grid"),
-                        text("· Encab/pie:")
-                            .class("text-xs text-muted-foreground"),
+                        text("· Encab/pie:").class("text-xs text-muted-foreground"),
                         button("Encabezado", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
-                                "insert.header".into(),
-                            )))
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.header".into())))
                             .test_id("documento.hf.header"),
                         button("Pie", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
-                                "insert.footer".into(),
-                            )))
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.footer".into())))
                             .test_id("documento.hf.footer"),
                         button("Editar encab.", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
-                                "insert.editHeader".into(),
-                            )))
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.editHeader".into())))
                             .test_id("documento.hf.edit_header"),
                         button("Cerrar HF", ButtonVariant::Text)
-                            .on_click(Msg::DocCmd(DocumentCmd::Raw(
-                                "insert.closeHeader".into(),
-                            )))
+                            .on_click(Msg::DocCmd(DocumentCmd::Raw("insert.closeHeader".into())))
                             .test_id("documento.hf.close"),
                     ]),
             ])
@@ -4872,7 +4838,7 @@ mod tests {
     use crate::render::text::TextStore;
     use crate::runtime::App;
     use crate::snapshot::{self, Shot};
-    use crate::testing::{By, Confirm, Key, MemoryClipboard, Modifiers, MsgSource, Screen, TestApp, layout_of};
+    use crate::testing::{By, Confirm, Key, Modifiers, MsgSource, Screen, TestApp, layout_of};
     use crate::theme::{AppKitGeneration, Appearance, Density, Theme};
 
     /// The demo's tree as the session shows it: built, with its images
@@ -5590,8 +5556,63 @@ mod tests {
 
     #[cfg(feature = "document")]
     #[test]
+    #[ignore = "en desarrollo: drag de selección en editor"]
+    fn document_pointer_drag_selects_text() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        app.type_text(editor(), "Hola mundo seleccionable");
+        assert_eq!(app.value(editor()), "Hola mundo seleccionable");
+
+        // Ribbon + findbar leave the editor short (~108pt). The letter page is
+        // scale-fitted into that box, so body text sits near the *top-center*
+        // of the widget (page strip ~60pt wide). Offsets far left/bottom miss
+        // the page and keep the caret collapsed.
+        app.drag_at(editor(), 400.0, 24.0, 30.0, 0.0);
+        assert!(
+            !app.document_selection_collapsed(editor()),
+            "expected non-empty selection after pointer drag across text"
+        );
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
+    fn document_shift_arrows_extend_selection() {
+        let mut demo = Demo::at(Seccion::Documento);
+        demo.doc_markdown.clear();
+        let mut app = TestApp::new(demo);
+        let editor = || By::test_id("documento.editor");
+        app.type_text(editor(), "abcdef");
+        app.press(Key::ArrowLeft, Modifiers::NONE);
+        app.press(Key::ArrowLeft, Modifiers::NONE);
+        app.press(Key::ArrowLeft, Modifiers::NONE);
+        assert!(app.document_selection_collapsed(editor()));
+        app.press(
+            Key::ArrowRight,
+            Modifiers {
+                shift: true,
+                ..Modifiers::NONE
+            },
+        );
+        app.press(
+            Key::ArrowRight,
+            Modifiers {
+                shift: true,
+                ..Modifiers::NONE
+            },
+        );
+        assert!(
+            !app.document_selection_collapsed(editor()),
+            "Shift+Arrow should extend Document selection"
+        );
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
     fn document_clipboard_copy_cut_paste_plain() {
         use crate::render::DrawOp;
+        use crate::testing::MemoryClipboard;
         let clipboard = MemoryClipboard::new();
         let mut demo = Demo::at(Seccion::Documento);
         demo.doc_markdown.clear();
@@ -5632,6 +5653,7 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_clipboard_copy_preserves_bold_via_html() {
+        use crate::testing::MemoryClipboard;
         let clipboard = MemoryClipboard::new();
         let mut demo = Demo::at(Seccion::Documento);
         demo.doc_markdown.clear();

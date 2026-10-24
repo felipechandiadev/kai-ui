@@ -14,7 +14,6 @@ use crate::icons::Icon;
 use super::progress::{DotProgress, DotSize};
 use super::{ButtonVariant, button, caption, paragraph};
 
-
 /// Why the surface is empty — drives recommended copy and icons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EmptyKind {
@@ -104,14 +103,10 @@ impl<Msg> EmptyState<Msg> {
     {
         let mut children: Vec<Element<Msg>> = vec![
             icon(self.icon)
-                .class(
-                    "size-10 text-muted-foreground appkit:text-secondary-label shrink-0",
-                )
+                .class("size-10 text-muted-foreground appkit:text-secondary-label shrink-0")
                 .part("icon"),
             text(self.title.clone())
-                .class(
-                    "text-base font-semibold text-foreground appkit:text-label text-center",
-                )
+                .class("text-base font-semibold text-foreground appkit:text-label text-center")
                 .part("title"),
         ];
         if let Some(description) = self.description {
@@ -132,9 +127,7 @@ impl<Msg> EmptyState<Msg> {
             );
         }
         let mut root = div()
-            .class(
-                "flex flex-col items-center justify-center gap-3 w-full min-h-[160px] px-6 py-8",
-            )
+            .class("flex flex-col items-center justify-center gap-3 w-full min-h-[160px] px-6 py-8")
             .role(Role::Status)
             .label(self.title)
             .parts_root()

@@ -130,7 +130,13 @@ fn parse_toolchain_version(line: &str) -> Option<String> {
 fn version_gte(have: &str, need: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {
         s.split('.')
-            .filter_map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok())
+            .filter_map(|p| {
+                p.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse()
+                    .ok()
+            })
             .collect()
     };
     let a = parse(have);
@@ -153,9 +159,7 @@ fn xcode_clt() -> Result<String, String> {
         .output()
         .map_err(|error| format!("no se pudo ejecutar xcode-select: {error}"))?;
     if !output.status.success() {
-        return Err(
-            "no hay Xcode Command Line Tools; instala con `xcode-select --install`".into(),
-        );
+        return Err("no hay Xcode Command Line Tools; instala con `xcode-select --install`".into());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

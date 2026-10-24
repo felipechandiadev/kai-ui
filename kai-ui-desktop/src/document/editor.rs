@@ -7,8 +7,8 @@
 use serde_json::json;
 use wordcraft_doc::{Document, StoryRef};
 use wordcraft_engine::Session;
-use wordcraft_fonts::{shape, FaceRef, FontDb, DEFAULT_FAMILY};
-use wordcraft_layout::display::{page_display, DisplayOptions, Draw};
+use wordcraft_fonts::{DEFAULT_FAMILY, FaceRef, FontDb, shape};
+use wordcraft_layout::display::{DisplayOptions, Draw, page_display};
 
 use crate::geometry::{Point, Rect};
 use crate::render::Color;
@@ -16,8 +16,8 @@ use crate::text_field::{ClipboardImage, ClipboardPort};
 use crate::ui_engine::{ImeIntent, Key, Modifiers, TextIntent};
 
 use super::{
-    viewport_metrics, DocumentChange, DocumentCmd, DocumentFill, DocumentGlyph, DocumentGlyphAtlas,
-    DocumentImage, DocumentLine, DocumentPaint, DocumentSpec, ExportDoc, PAGE_GAP_PT,
+    DocumentChange, DocumentCmd, DocumentFill, DocumentGlyph, DocumentGlyphAtlas, DocumentImage,
+    DocumentLine, DocumentPaint, DocumentSpec, ExportDoc, PAGE_GAP_PT, viewport_metrics,
 };
 use crate::media;
 use crate::render::Bitmap;
@@ -153,6 +153,11 @@ impl DocumentEditor {
         self.session.doc.plain_text(StoryRef::Body)
     }
 
+    /// ¿Caret colapsado (sin rango)? Tests / a11y.
+    pub fn selection_collapsed(&self) -> bool {
+        self.session.sel.is_collapsed()
+    }
+
     pub fn markdown(&self) -> String {
         plain_to_markdown(&self.session)
     }
@@ -169,10 +174,7 @@ impl DocumentEditor {
         for path in self.session.doc.para_paths(StoryRef::Body) {
             if let Some(para) = self.session.doc.para(StoryRef::Body, &path) {
                 let resolved = self.session.doc.styles.resolve_para(&para.props);
-                if resolved
-                    .numbering
-                    .is_some_and(|n| n.num != 0)
-                {
+                if resolved.numbering.is_some_and(|n| n.num != 0) {
                     lists += 1;
                 }
             }
@@ -348,9 +350,7 @@ impl DocumentEditor {
         self.last_cmd_serial = req.serial;
         let changed = match (&req.id, clipboard) {
             (
-                DocumentCmd::PastePlain
-                | DocumentCmd::PasteMerge
-                | DocumentCmd::PasteKeepSource,
+                DocumentCmd::PastePlain | DocumentCmd::PasteMerge | DocumentCmd::PasteKeepSource,
                 Some(clip),
             ) => self.clipboard_paste_special(clip, &req.id),
             _ => self.run_cmd(&req.id),
@@ -450,8 +450,16 @@ impl DocumentEditor {
     /// Pega desde el host: HTML o RTF si hay; si no, imagen RGBA del port; si no, texto plano.
     pub fn clipboard_paste(&mut self, clipboard: &mut dyn ClipboardPort) -> bool {
         let text = clipboard.get_text().unwrap_or_default();
-        let html = clipboard.get_html().ok().flatten().filter(|h| !h.trim().is_empty());
-        let rtf = clipboard.get_rtf().ok().flatten().filter(|r| !r.trim().is_empty());
+        let html = clipboard
+            .get_html()
+            .ok()
+            .flatten()
+            .filter(|h| !h.trim().is_empty());
+        let rtf = clipboard
+            .get_rtf()
+            .ok()
+            .flatten()
+            .filter(|r| !r.trim().is_empty());
         let image = if html.is_none() && rtf.is_none() && text.is_empty() {
             clipboard.get_image().ok().flatten()
         } else {
@@ -482,7 +490,6 @@ impl DocumentEditor {
         }
         ok
     }
-
 
     /// Paste Special desde el host clipboard.
     ///
@@ -649,25 +656,18 @@ impl DocumentEditor {
                     )
                     .is_ok()
             }
-            DocumentCmd::Find { text } => self.run_find_replace(
-                "edit.find",
-                &json!({ "text": text }),
-            ),
-            DocumentCmd::FindNext => self.run_find_replace("edit.findNext", &json!({})),
-            DocumentCmd::FindPrevious => {
-                self.run_find_replace("edit.findPrevious", &json!({}))
+            DocumentCmd::Find { text } => {
+                self.run_find_replace("edit.find", &json!({ "text": text }))
             }
-            DocumentCmd::Replace { text, with } => self.run_find_replace(
-                "edit.replace",
-                &json!({ "text": text, "with": with }),
-            ),
-            DocumentCmd::ReplaceAll { text, with } => self.run_find_replace(
-                "edit.replaceAll",
-                &json!({ "text": text, "with": with }),
-            ),
-            DocumentCmd::PastePlain
-            | DocumentCmd::PasteMerge
-            | DocumentCmd::PasteKeepSource => {
+            DocumentCmd::FindNext => self.run_find_replace("edit.findNext", &json!({})),
+            DocumentCmd::FindPrevious => self.run_find_replace("edit.findPrevious", &json!({})),
+            DocumentCmd::Replace { text, with } => {
+                self.run_find_replace("edit.replace", &json!({ "text": text, "with": with }))
+            }
+            DocumentCmd::ReplaceAll { text, with } => {
+                self.run_find_replace("edit.replaceAll", &json!({ "text": text, "with": with }))
+            }
+            DocumentCmd::PastePlain | DocumentCmd::PasteMerge | DocumentCmd::PasteKeepSource => {
                 // Sin ClipboardPort aquí: la Session lo aplica vía TextIntent::Paste
                 // o la demo llama `clipboard_paste_special`. Como pending_cmd,
                 // intentamos con el clipboard interno de WordCraft (último copy).
@@ -695,10 +695,7 @@ impl DocumentEditor {
                 }
             }
             DocumentCmd::Wrap { mode } => {
-                match self
-                    .session
-                    .run("arrange.wrap", &json!({ "wrap": mode }))
-                {
+                match self.session.run("arrange.wrap", &json!({ "wrap": mode })) {
                     Ok(_) => {
                         self.last_status = format!("Ajuste de texto: {mode}");
                         true
@@ -710,10 +707,7 @@ impl DocumentEditor {
                 }
             }
             DocumentCmd::TableStyle { style } => {
-                match self
-                    .session
-                    .run("table.style", &json!({ "style": style }))
-                {
+                match self.session.run("table.style", &json!({ "style": style })) {
                     Ok(_) => {
                         self.last_status = format!("Estilo de tabla: {style}");
                         true
@@ -821,7 +815,10 @@ impl DocumentEditor {
                 self.last_status = "Ortografía: siguiente incidencia".into();
             }
             "review.proofing" => {
-                let on = v.get("value").and_then(|b| b.as_bool()).unwrap_or(self.session.view.proofing);
+                let on = v
+                    .get("value")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(self.session.view.proofing);
                 self.last_status = if on {
                     "Revisión ortográfica al escribir: activada".into()
                 } else {
@@ -839,9 +836,7 @@ impl DocumentEditor {
     }
 
     fn run_extend(&mut self, id: &str, extend: bool) -> bool {
-        self.session
-            .run(id, &json!({ "extend": extend }))
-            .is_ok()
+        self.session.run(id, &json!({ "extend": extend })).is_ok()
     }
 
     fn key_down(&mut self, key: Key, modifiers: Modifiers) -> bool {
@@ -925,16 +920,38 @@ impl DocumentEditor {
     }
 
     /// Arrastre de selección (multi-página vía hit por índice).
+    ///
+    /// Usa `caret.set` con `extend: true` (como WordCraft canvas) para
+    /// conservar el ancla del press y extender el foco.
     pub fn drag_to(&mut self, local: Point, viewport: Rect) -> bool {
         self.last_viewport = viewport;
         let Some((page_idx, page_pt)) = self.local_to_page_hit(local, viewport) else {
             return false;
         };
+        // Prefer the story under the caret (HF / text box); Body as fallback.
+        let story = self.session.sel.focus.story;
         let layout = self.session.layout();
-        let Some(pos) = layout.hit(page_idx, page_pt.x, page_pt.y, StoryRef::Body) else {
+        let Some(pos) = layout
+            .hit(page_idx, page_pt.x, page_pt.y, story)
+            .or_else(|| layout.hit(page_idx, page_pt.x, page_pt.y, StoryRef::Body))
+        else {
             return false;
         };
-        self.session.sel.focus = pos;
+        if pos == self.session.sel.focus {
+            return false;
+        }
+        let before = self.session.sel.clone();
+        let pj = serde_json::to_value(&pos).unwrap_or_default();
+        if self
+            .session
+            .run("caret.set", &json!({ "pos": pj, "extend": true }))
+            .is_err()
+        {
+            self.session.sel.focus = pos;
+        }
+        if self.session.sel == before {
+            return false;
+        }
         self.refresh_paint();
         self.ensure_caret_visible();
         true
@@ -1113,8 +1130,9 @@ impl DocumentEditor {
             }
             let gx = pen_x + g.x_offset as f32 * k;
             let gy = baseline - g.y_offset as f32 * k;
-            if let Some((bmp, left, top)) =
-                self.glyph_atlas.glyph(face, g.gid, px_size, color, synth_bold)
+            if let Some((bmp, left, top)) = self
+                .glyph_atlas
+                .glyph(face, g.gid, px_size, color, synth_bold)
             {
                 let w = bmp.width() as f32 / paint_scale;
                 let h = bmp.height() as f32 / paint_scale;
@@ -1202,12 +1220,7 @@ impl DocumentEditor {
             });
         }
         let mut preedit_underline = Vec::new();
-        self.paint_ime_preedit(
-            paint_scale,
-            &mut glyphs,
-            &mut preedit_underline,
-            &mut caret,
-        );
+        self.paint_ime_preedit(paint_scale, &mut glyphs, &mut preedit_underline, &mut caret);
         let m = viewport_metrics(self.last_viewport, (pw, ph));
         let content_h = if page_count == 0 {
             0.0
@@ -1293,10 +1306,7 @@ fn collect_display_at(
                 }
             }
             Draw::Fill {
-                rect,
-                color,
-                alpha,
-                ..
+                rect, color, alpha, ..
             } => {
                 fills.push(DocumentFill {
                     rect: Rect {
@@ -1420,15 +1430,16 @@ fn html_looks_empty(html: &str) -> bool {
         .replace("<p></p>", "")
         .replace("<br>", "")
         .replace("<br/>", "");
-    t.chars().all(|c| c.is_whitespace() || c == '<' || c == '>' || c == '/')
+    t.chars()
+        .all(|c| c.is_whitespace() || c == '<' || c == '>' || c == '/')
         && !html.to_ascii_lowercase().contains("<table")
         && !html.contains("<img")
         && !html.contains("data:image")
 }
 
 fn fully_selected_table_fragment(session: &Session) -> Option<wordcraft_doc::edit::Fragment> {
-    use wordcraft_doc::edit::Fragment;
     use wordcraft_doc::Block;
+    use wordcraft_doc::edit::Fragment;
 
     let cr = session.cell_range()?;
     let block = session.doc.block(cr.story, &cr.table)?;
@@ -1552,7 +1563,6 @@ fn base64_encode(b: &[u8]) -> String {
     }
     out
 }
-
 
 /// Markdown mínimo ↔ texto: párrafos por línea en blanco; quita `*` de
 /// marcas al importar.
@@ -1852,6 +1862,44 @@ mod tests {
         );
     }
 
+    /// Press + horizontal drag on one line must leave a non-collapsed
+    /// selection (caret.set extend). Catches regressions where focus is
+    /// assigned without keeping the press anchor.
+    #[test]
+    fn pointer_drag_same_line_extends_selection() {
+        let mut ed = DocumentEditor::new("Hola mundo seleccionable");
+        let viewport = Rect {
+            width: 640.0,
+            height: 480.0,
+            ..Rect::default()
+        };
+        ed.last_viewport = viewport;
+        ed.refresh_paint();
+        let (pw, _ph) = ed.paint.page_size;
+        let m = viewport_metrics(viewport, (pw, _ph));
+        // First body line sits below the top margin; stay on that band.
+        let y = m.origin_y + 72.0 * m.scale;
+        let a = Point {
+            x: m.origin_x + 72.0 * m.scale,
+            y,
+        };
+        assert!(ed.click(a, viewport, 1), "click on text");
+        assert!(ed.selection_collapsed(), "click alone is a caret");
+        let b = Point {
+            x: m.origin_x + 220.0 * m.scale,
+            y,
+        };
+        assert!(ed.drag_to(b, viewport), "drag_to should move focus");
+        assert!(
+            !ed.selection_collapsed(),
+            "drag must extend selection (anchor kept, focus moved)"
+        );
+        assert!(
+            !ed.paint().selection.is_empty(),
+            "selection highlight rects must be painted"
+        );
+    }
+
     #[test]
     fn format_painter_applies_bold_to_selection_on_release() {
         let mut ed = DocumentEditor::new("uno dos");
@@ -1904,9 +1952,11 @@ mod tests {
             "heading should affect markdown: {md:?}"
         );
         let state = ed.session.run("format.state", &json!({})).unwrap();
-        assert_eq!(state.get("style").and_then(|v| v.as_str()), Some("Heading1"));
+        assert_eq!(
+            state.get("style").and_then(|v| v.as_str()),
+            Some("Heading1")
+        );
     }
-
 
     #[test]
     fn insert_table_2x2() {
@@ -1987,10 +2037,9 @@ mod tests {
     fn clipboard_copy_cut_paste_plain_text() {
         let mut clip = MemClip::default();
         let mut ed = DocumentEditor::new("");
-        assert!(ed.apply_text_intent_clipboard(
-            TextIntent::InsertText("Hola mundo".into()),
-            &mut clip
-        ));
+        assert!(
+            ed.apply_text_intent_clipboard(TextIntent::InsertText("Hola mundo".into()), &mut clip)
+        );
         assert!(ed.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
         assert!(ed.apply_text_intent_clipboard(TextIntent::Copy, &mut clip));
         assert_eq!(clip.text.as_deref(), Some("Hola mundo"));
@@ -2065,10 +2114,9 @@ mod tests {
     fn clipboard_rich_html_roundtrip_across_editors() {
         let mut clip = MemClip::default();
         let mut src = DocumentEditor::new("");
-        assert!(src.apply_text_intent_clipboard(
-            TextIntent::InsertText("Hola rich".into()),
-            &mut clip
-        ));
+        assert!(
+            src.apply_text_intent_clipboard(TextIntent::InsertText("Hola rich".into()), &mut clip)
+        );
         assert!(src.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
         assert!(src.run("format.bold"));
         assert!(
@@ -2079,7 +2127,9 @@ mod tests {
         assert!(src.clipboard_copy(&mut clip));
         assert_eq!(clip.text.as_deref(), Some("Hola rich"));
         assert!(
-            clip.html.as_ref().is_some_and(|h| h.contains("Hola") || h.contains("rich")),
+            clip.html
+                .as_ref()
+                .is_some_and(|h| h.contains("Hola") || h.contains("rich")),
             "copy must put HTML on the port for cross-editor paste: {:?}",
             clip.html
         );
@@ -2128,26 +2178,22 @@ mod tests {
         let mut ed = DocumentEditor::new("");
         assert!(ed.clipboard_paste(&mut clip));
         let md = ed.markdown();
-        assert!(
-            md.contains("Bold RTF"),
-            "RTF text should land: {md:?}"
-        );
+        assert!(md.contains("Bold RTF"), "RTF text should land: {md:?}");
         assert!(
             md.contains("**"),
             "RTF \\b should become bold markdown: {md:?}"
         );
     }
 
-        #[test]
+    #[test]
     fn clipboard_table_html_roundtrip_across_editors() {
         let mut clip = MemClip::default();
         let mut src = DocumentEditor::new("");
         assert!(src.run_cmd(&DocumentCmd::InsertTable));
         assert_eq!(src.table_count(), 1);
-        assert!(src.apply_text_intent_clipboard(
-            TextIntent::InsertText("CeldaA".into()),
-            &mut clip
-        ));
+        assert!(
+            src.apply_text_intent_clipboard(TextIntent::InsertText("CeldaA".into()), &mut clip)
+        );
         // WordCraft: select.all crece celda → fila → tabla → documento.
         for _ in 0..4 {
             assert!(src.apply_text_intent_clipboard(TextIntent::SelectAll, &mut clip));
@@ -2300,7 +2346,6 @@ mod tests {
         assert!(!ed.paint().images.is_empty(), "raw image should paint");
     }
 
-
     #[test]
     fn ime_preedit_shows_glyphs_and_underline_without_committing() {
         let mut ed = DocumentEditor::new("");
@@ -2340,9 +2385,7 @@ mod tests {
             cursor: Some(9..9),
         })));
         assert!(ed.ime_preedit_text().is_some());
-        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Commit(
-            "日本".into()
-        ))));
+        assert!(ed.apply_text_intent(TextIntent::Ime(ImeIntent::Commit("日本".into()))));
         assert!(ed.ime_preedit_text().is_none());
         assert!(
             ed.paint().preedit_underline.is_empty(),
@@ -2407,10 +2450,7 @@ mod tests {
         assert!(ed.run_cmd(&DocumentCmd::NewComment {
             text: "nota demo".into()
         }));
-        assert!(
-            !ed.session.doc.comments.is_empty(),
-            "comment inserted"
-        );
+        assert!(!ed.session.doc.comments.is_empty(), "comment inserted");
         let change = ed.change();
         assert!(!change.status.is_empty() || change.find_match_count <= 2);
     }
@@ -2421,10 +2461,8 @@ mod tests {
         let before = ed.session.view.proofing;
         assert!(ed.run_cmd(&DocumentCmd::Raw("review.proofing".into())));
         assert_ne!(ed.session.view.proofing, before);
-        let chrome = crate::document::ribbon_chrome_for(
-            &mut ed.session,
-            crate::document::RibbonMode::Full,
-        );
+        let chrome =
+            crate::document::ribbon_chrome_for(&mut ed.session, crate::document::RibbonMode::Full);
         if ed.session.view.proofing {
             assert!(
                 chrome.pressed.iter().any(|id| id == "review.proofing"),
@@ -2434,16 +2472,12 @@ mod tests {
         }
     }
 
-
     #[test]
     fn stress_100_pages_paint_is_bounded() {
         // 100 saltos de página → ≥100 páginas Letter. Soft bound: paint < 30s.
         let mut ed = DocumentEditor::new("Escala Paso 6");
         for i in 0..100 {
-            let _ = ed.session.run(
-                "insert.pageBreak",
-                &serde_json::json!({}),
-            );
+            let _ = ed.session.run("insert.pageBreak", &serde_json::json!({}));
             // Un poco de texto por página para forzar layout real.
             let _ = ed.apply_text_intent(TextIntent::InsertText(format!(
                 "Página {i} — relleno de escala.\n"
@@ -2464,9 +2498,7 @@ mod tests {
         let t1 = std::time::Instant::now();
         ed.ensure_paint(); // cache hit
         let ms2 = t1.elapsed().as_millis();
-        println!(
-            "stress_100_pages: pages={pages} paint_cold={ms}ms paint_warm={ms2}ms"
-        );
+        println!("stress_100_pages: pages={pages} paint_cold={ms}ms paint_warm={ms2}ms");
     }
 
     #[test]
@@ -2484,11 +2516,15 @@ mod tests {
             ed.last_status
         );
         // Otros modos que el motor declara.
-        for mode in ["tight", "topAndBottom", "behindText", "inFrontOfText", "inline"] {
+        for mode in [
+            "tight",
+            "topAndBottom",
+            "behindText",
+            "inFrontOfText",
+            "inline",
+        ] {
             assert!(
-                ed.run_cmd(&DocumentCmd::Wrap {
-                    mode: mode.into()
-                }),
+                ed.run_cmd(&DocumentCmd::Wrap { mode: mode.into() }),
                 "wrap {mode} failed: {}",
                 ed.last_status
             );
@@ -2516,10 +2552,7 @@ mod tests {
         let mut clip = MemClip::default();
         clip.text = Some("solo texto plano".into());
         clip.html = Some("<p><b>HTML</b> rico</p>".into());
-        assert!(ed.clipboard_paste_special(
-            &mut clip,
-            &DocumentCmd::PastePlain
-        ));
+        assert!(ed.clipboard_paste_special(&mut clip, &DocumentCmd::PastePlain));
         let plain = ed.plain_text();
         assert!(
             plain.contains("solo texto plano"),
@@ -2527,10 +2560,7 @@ mod tests {
         );
         // Merge: HTML preferido.
         let mut ed2 = DocumentEditor::new("");
-        assert!(ed2.clipboard_paste_special(
-            &mut clip,
-            &DocumentCmd::PasteMerge
-        ));
+        assert!(ed2.clipboard_paste_special(&mut clip, &DocumentCmd::PasteMerge));
         assert!(
             ed2.last_status.to_lowercase().contains("combinar")
                 || ed2.plain_text().contains("HTML")
@@ -2542,10 +2572,7 @@ mod tests {
         );
         // Keep source = edit.paste path.
         let mut ed3 = DocumentEditor::new("");
-        assert!(ed3.clipboard_paste_special(
-            &mut clip,
-            &DocumentCmd::PasteKeepSource
-        ));
+        assert!(ed3.clipboard_paste_special(&mut clip, &DocumentCmd::PasteKeepSource));
     }
 
     #[test]
@@ -2566,9 +2593,7 @@ mod tests {
             "should be in HF after editHeader"
         );
         // Typing goes to header story.
-        assert!(ed.apply_text_intent(TextIntent::InsertText(
-            "ENCABEZADO".into()
-        )));
+        assert!(ed.apply_text_intent(TextIntent::InsertText("ENCABEZADO".into())));
         assert!(
             ed.run_cmd(&DocumentCmd::Raw("insert.closeHeader".into())),
             "closeHeader: {}",
@@ -2582,5 +2607,4 @@ mod tests {
         assert!(ed.run_cmd(&DocumentCmd::Raw("insert.footer".into())));
         assert!(ed.run_cmd(&DocumentCmd::Raw("insert.pageNumber".into())));
     }
-
 }

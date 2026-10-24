@@ -96,7 +96,8 @@ impl Color {
     /// for AppKit label colors that carry alpha.
     pub fn composite_over(self, background: Self) -> Self {
         let a = f32::from(self.a) / 255.0;
-        let channel = |fg: u8, bg: u8| (f32::from(fg) * a + f32::from(bg) * (1.0 - a)).round() as u8;
+        let channel =
+            |fg: u8, bg: u8| (f32::from(fg) * a + f32::from(bg) * (1.0 - a)).round() as u8;
         Self {
             r: channel(self.r, background.r),
             g: channel(self.g, background.g),
@@ -139,7 +140,6 @@ impl Color {
         (lighter + 0.05) / (darker + 0.05)
     }
 }
-
 
 pub fn srgb_to_linear(component: u8) -> f32 {
     let c = f32::from(component) / 255.0;

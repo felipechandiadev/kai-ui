@@ -181,7 +181,11 @@ mod tests {
     fn exceptions_are_documented() {
         assert!(EXCEPTIONS.len() >= 3);
         assert!(EXCEPTIONS.iter().any(|(id, _)| id.contains("on_accent")));
-        assert!(EXCEPTIONS.iter().any(|(id, _)| id.contains("secondary_label")));
+        assert!(
+            EXCEPTIONS
+                .iter()
+                .any(|(id, _)| id.contains("secondary_label"))
+        );
         assert!(EXCEPTIONS.iter().any(|(id, _)| id.contains("error")));
     }
 

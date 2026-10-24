@@ -1385,8 +1385,10 @@ impl<Msg> Element<Msg> {
     /// Clickable or editable, enabled or not: such elements are hit-test
     /// targets and expose semantic roles.
     pub fn is_control(&self) -> bool {
-        matches!(self.kind, Kind::Input { .. } | Kind::Map(_) | Kind::Document(_))
-            || matches!(self.kind, Kind::Chart(_)) && self.handlers.on_select.is_some()
+        matches!(
+            self.kind,
+            Kind::Input { .. } | Kind::Map(_) | Kind::Document(_)
+        ) || matches!(self.kind, Kind::Chart(_)) && self.handlers.on_select.is_some()
             || self.handlers.on_click.is_some()
             || self.picks()
             || self.command.is_some()

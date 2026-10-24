@@ -144,8 +144,8 @@ fn parse_kai_icons_dir(json: &[u8]) -> Result<PathBuf, String> {
         kind: Vec<String>,
     }
 
-    let metadata: Metadata = serde_json::from_slice(json)
-        .map_err(|e| format!("cargo metadata inesperado: {e}"))?;
+    let metadata: Metadata =
+        serde_json::from_slice(json).map_err(|e| format!("cargo metadata inesperado: {e}"))?;
     for package in &metadata.packages {
         let is_kai = package.name == "kai-ui-desktop-prototype"
             || package
@@ -319,22 +319,14 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_args(
-                ["./mi.svg".into(), "--name".into(), "foo".into()]
-                    .into_iter()
-            )
-            .unwrap(),
+            parse_args(["./mi.svg".into(), "--name".into(), "foo".into()].into_iter()).unwrap(),
             Opciones {
                 nombre: "foo".into(),
                 from: Some(PathBuf::from("./mi.svg")),
             }
         );
         assert_eq!(
-            parse_args(
-                ["foo".into(), "--from".into(), "bar.svg".into()]
-                    .into_iter()
-            )
-            .unwrap(),
+            parse_args(["foo".into(), "--from".into(), "bar.svg".into()].into_iter()).unwrap(),
             Opciones {
                 nombre: "foo".into(),
                 from: Some(PathBuf::from("bar.svg")),
@@ -345,7 +337,11 @@ mod tests {
     #[test]
     fn add_from_file_crea_assets_icons() {
         let root = temp_root("from");
-        fs::write(root.join("kai.toml"), "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n").unwrap();
+        fs::write(
+            root.join("kai.toml"),
+            "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n",
+        )
+        .unwrap();
         let src = root.join("custom.svg");
         fs::write(
             &src,
@@ -381,7 +377,11 @@ mod tests {
     #[test]
     fn add_rechaza_nombre_invalido() {
         let root = temp_root("bad-name");
-        fs::write(root.join("kai.toml"), "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n").unwrap();
+        fs::write(
+            root.join("kai.toml"),
+            "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n",
+        )
+        .unwrap();
         let err = add_in_root(
             &root,
             &Opciones {
@@ -405,22 +405,26 @@ mod tests {
         })
         .unwrap_err();
         let _ = std::env::set_current_dir(prev);
-        assert!(
-            err.contains("kai.toml") || err.contains("no hay"),
-            "{err}"
-        );
+        assert!(err.contains("kai.toml") || err.contains("no hay"), "{err}");
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn add_copia_desde_catalogo_local_simulado() {
         let root = temp_root("catalog");
-        fs::write(root.join("kai.toml"), "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n").unwrap();
+        fs::write(
+            root.join("kai.toml"),
+            "[app]\nname=\"t\"\nid=\"dev.kai.t\"\n",
+        )
+        .unwrap();
         // Simular crate kai al lado y resolución vía --from (catálogo real necesita metadata).
         let kai_icons = root.join("fake-kai/assets/icons");
         fs::create_dir_all(&kai_icons).unwrap();
-        fs::write(kai_icons.join("search.svg"), "<circle cx=\"11\" cy=\"11\" r=\"8\"/>\n")
-            .unwrap();
+        fs::write(
+            kai_icons.join("search.svg"),
+            "<circle cx=\"11\" cy=\"11\" r=\"8\"/>\n",
+        )
+        .unwrap();
         add_in_root(
             &root,
             &Opciones {

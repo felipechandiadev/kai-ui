@@ -27,6 +27,8 @@ use crate::commands::{
 use crate::components::themed;
 use crate::components::{MENU, MenuFrame, PaletteItem, command_palette, select_menu};
 use crate::devtools::{Devtools, FrameTimes, MsgSource, describe, dump, format_msg, inspector};
+#[cfg(feature = "document")]
+use crate::document::DocumentEditor;
 use crate::effects::{self, Inbox};
 use crate::element::{
     Element, FocusKind, FocusOrder, Handlers, Kind, Role, TOOLTIP_DELAY, VirtualRows, WidgetId, div,
@@ -43,8 +45,6 @@ use crate::maps::camera::CameraState;
 use crate::maps::editor::PolygonEdit;
 use crate::maps::labels::Labels;
 use crate::maps::tiles::{SourceKey, TileResult, TileStore};
-#[cfg(feature = "document")]
-use crate::document::DocumentEditor;
 use crate::media::{self, ImageLoader, ImageSource, ImageStore, LoadedImage};
 use crate::render::paint::{PaintInput, paint};
 use crate::render::text::TextStore;
@@ -397,14 +397,11 @@ impl<Msg> Tasks<Msg> {
 
     /// Drop pending tasks that would complete `id`.
     fn forget_completes(&mut self, id: InvocationId) {
-        self.waiting
-            .retain(|_, task| task.completes != Some(id));
+        self.waiting.retain(|_, task| task.completes != Some(id));
     }
 
     fn completes_pending(&self, id: InvocationId) -> bool {
-        self.waiting
-            .values()
-            .any(|task| task.completes == Some(id))
+        self.waiting.values().any(|task| task.completes == Some(id))
     }
 
     /// Origins of the tasks still running.
@@ -1147,6 +1144,13 @@ impl<A: App> Session<A> {
         None
     }
 
+    /// Whether the Document at `id` has a collapsed caret (no range selection).
+    /// `None` if it is not a live document editor.
+    #[cfg(feature = "document")]
+    pub fn document_selection_collapsed(&self, id: WidgetId) -> Option<bool> {
+        self.documents.get(&id).map(|ed| ed.selection_collapsed())
+    }
+
     /// Start recording every message sent to `update`.
     pub fn record_messages(&mut self) {
         self.log.get_or_insert_with(Vec::new);
@@ -1388,8 +1392,16 @@ impl<A: App> Session<A> {
             }
         });
         fields.retain(|id, _| live.contains(id));
-        if self.dragging.is_some_and(|id| !live.contains(&id)) {
-            self.dragging = None;
+        // `live` is Input-only. Document editors also use `dragging` for
+        // pointer selection — do not clear them just because they are not
+        // TextFields (regression: every prepare_frame dropped Document drags).
+        if let Some(id) = self.dragging {
+            let keep = live.contains(&id);
+            #[cfg(feature = "document")]
+            let keep = keep || self.documents.contains_key(&id);
+            if !keep {
+                self.dragging = None;
+            }
         }
 
         let title = self.app.title();
@@ -2200,11 +2212,13 @@ impl<A: App> Session<A> {
     /// selection) as the description — enough for VoiceOver to land on the
     /// editor and announce content without a full character-length tree.
     pub fn a11y_tree(&self, scale_factor: f64) -> TreeUpdate {
+        #[allow(unused_mut)]
         let mut values: Vec<(WidgetId, String)> = self
             .text_fields
             .iter()
             .map(|(id, field)| (*id, field.text()))
             .collect();
+        #[allow(unused_mut)]
         let mut descriptions: Vec<(WidgetId, String)> = Vec::new();
         #[cfg(feature = "document")]
         for (id, doc) in &self.documents {
@@ -2462,19 +2476,17 @@ impl<A: App> Session<A> {
         } else if let Some(action) = result.action {
             // Toolbar/ribbon often steals focus; Edit ⌘C/X/V still target the
             // text field or sole document that owns the selection (AppKit-like).
-            let routed_clipboard = matches!(
-                action,
-                Action::Copy | Action::Cut | Action::Paste
-            ) && self.clipboard_edit_target(current_focus).is_some_and(|id| {
-                let intent = match action {
-                    Action::Copy => TextIntent::Copy,
-                    Action::Cut => TextIntent::Cut,
-                    Action::Paste => TextIntent::Paste,
-                    _ => unreachable!(),
-                };
-                self.apply_text_intent(id, intent);
-                true
-            });
+            let routed_clipboard = matches!(action, Action::Copy | Action::Cut | Action::Paste)
+                && self.clipboard_edit_target(current_focus).is_some_and(|id| {
+                    let intent = match action {
+                        Action::Copy => TextIntent::Copy,
+                        Action::Cut => TextIntent::Cut,
+                        Action::Paste => TextIntent::Paste,
+                        _ => unreachable!(),
+                    };
+                    self.apply_text_intent(id, intent);
+                    true
+                });
             if !routed_clipboard
                 && let Some(msg) = action_message(&self.tree, current_focus, action)
             {
@@ -2489,11 +2501,10 @@ impl<A: App> Session<A> {
     /// Widget that should receive Edit clipboard actions for the current focus.
     fn clipboard_edit_target(&self, focused: Option<WidgetId>) -> Option<WidgetId> {
         if let Some(id) = focused {
-            if self.text_fields.contains_key(&id) {
-                return Some(id);
-            }
+            let is_target = self.text_fields.contains_key(&id);
             #[cfg(feature = "document")]
-            if self.documents.contains_key(&id) {
+            let is_target = is_target || self.documents.contains_key(&id);
+            if is_target {
                 return Some(id);
             }
         }
@@ -3179,7 +3190,8 @@ impl<A: App> Session<A> {
                         width: page.width,
                         height: page.height,
                     };
-                    if ed.drag_to(local, page_local) {
+                    let ok = ed.drag_to(local, page_local);
+                    if ok {
                         self.report_document_change(id);
                         self.reset_caret_blink();
                         self.update_ime_cursor_area();
@@ -3417,7 +3429,11 @@ impl<A: App> Session<A> {
 
     #[cfg(feature = "document")]
     fn document_at_pointer(&self) -> Option<WidgetId> {
-        self.hover_path.iter().rev().find(|id| self.documents.contains_key(id)).copied()
+        self.hover_path
+            .iter()
+            .rev()
+            .find(|id| self.documents.contains_key(id))
+            .copied()
     }
 
     /// Rueda sobre el documento: scroll interno de páginas. `true` si consumió el delta.
@@ -3492,10 +3508,7 @@ impl<A: App> Session<A> {
 
         let _ = focused;
         for (id, change) in changes {
-            if let Some(handler) = self
-                .handler(id)
-                .and_then(|h| h.on_document_change.clone())
-            {
+            if let Some(handler) = self.handler(id).and_then(|h| h.on_document_change.clone()) {
                 self.send(handler(change));
             }
         }
@@ -3512,10 +3525,7 @@ impl<A: App> Session<A> {
             }
             ed.change()
         };
-        if let Some(handler) = self
-            .handler(id)
-            .and_then(|h| h.on_document_change.clone())
-        {
+        if let Some(handler) = self.handler(id).and_then(|h| h.on_document_change.clone()) {
             self.send(handler(change));
         }
         self.reset_caret_blink();
@@ -3531,10 +3541,7 @@ impl<A: App> Session<A> {
             };
             ed.change()
         };
-        if let Some(handler) = self
-            .handler(id)
-            .and_then(|h| h.on_document_change.clone())
-        {
+        if let Some(handler) = self.handler(id).and_then(|h| h.on_document_change.clone()) {
             self.send(handler(change));
         }
         self.invalidate();

@@ -444,11 +444,7 @@ mod tests {
             if !self.on {
                 return Subscriptions::none();
             }
-            Subscriptions::every(
-                "tick",
-                Duration::from_millis(self.every_ms),
-                SubMsg::Tick,
-            )
+            Subscriptions::every("tick", Duration::from_millis(self.every_ms), SubMsg::Tick)
         }
 
         fn view(&self) -> Element<SubMsg> {
@@ -576,9 +572,8 @@ mod tests {
         }
 
         fn view(&self) -> Element<AgentMsg> {
-            div().children([
-                button("Cancelar", ButtonVariant::Secondary).on_click(AgentMsg::Cancel),
-            ])
+            div()
+                .children([button("Cancelar", ButtonVariant::Secondary).on_click(AgentMsg::Cancel)])
         }
     }
 
@@ -586,7 +581,10 @@ mod tests {
     fn an_agent_call_with_completes_answers_when_the_task_finishes() {
         let mut app = TestApp::new(AgentWork::default());
         let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
-        assert!(reply.result().is_none(), "sigue abierta mientras la tarea corre");
+        assert!(
+            reply.result().is_none(),
+            "sigue abierta mientras la tarea corre"
+        );
         assert!(app.tasks_pending());
         assert!(app.app().done.is_empty());
         app.app().gate.open();

@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::FontRef;
+use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use wordcraft_fonts::FaceRef;
 
 use crate::render::{Bitmap, Color};

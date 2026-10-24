@@ -37,7 +37,7 @@ pub use page::{
     tokens as page_tokens,
 };
 pub use page_templates::{
-    DataPage, FORM_FIELD_SPAN, FORM_FULL_SPAN, MASTER_LIST_SPAN, FormPage, MasterDetailPage,
+    DataPage, FORM_FIELD_SPAN, FORM_FULL_SPAN, FormPage, MASTER_LIST_SPAN, MasterDetailPage,
     PageDensity, PageHeader, breadcrumb_trail, form_field_cell, form_full_cell,
     master_detail_span_classes, master_list_span_classes,
 };

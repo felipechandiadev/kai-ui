@@ -334,11 +334,10 @@ impl<A: App> Session<A> {
             }
             Ok(()) => {
                 let result = match self.registry.returns(&command) {
-                    Some(query) => self.registry.run_query(
-                        &self.app,
-                        query,
-                        Value::Object(Default::default()),
-                    ),
+                    Some(query) => {
+                        self.registry
+                            .run_query(&self.app, query, Value::Object(Default::default()))
+                    }
                     None => Ok(Value::Null),
                 };
                 let outcome = match &result {
@@ -371,11 +370,7 @@ impl<A: App> Session<A> {
     /// Send the action's message through `update` without answering the
     /// agent yet. Used by [`Self::run`] so [`Effects::completes`] can keep
     /// the call open.
-    fn run_action_message(
-        &mut self,
-        id: &str,
-        input: Value,
-    ) -> Result<(), CommandError> {
+    fn run_action_message(&mut self, id: &str, input: Value) -> Result<(), CommandError> {
         let msg = self.command_message(id, input)?;
         let origin = self.command_origin(id);
         self.with_task_origin(origin, |session| session.send(msg));
@@ -393,11 +388,10 @@ impl<A: App> Session<A> {
             client: call.client.clone(),
         };
         let result = match self.registry.returns(&call.command) {
-            Some(query) => self.registry.run_query(
-                &self.app,
-                query,
-                Value::Object(Default::default()),
-            ),
+            Some(query) => {
+                self.registry
+                    .run_query(&self.app, query, Value::Object(Default::default()))
+            }
             None => Ok(Value::Null),
         };
         let outcome = match &result {

@@ -392,10 +392,18 @@ package = "dsp-desktop"
     fn validate_theme_and_missing_icon() {
         let mut m = parse(MINIMO).unwrap();
         m.theme.kind = "gtk".into();
-        assert!(validate(&m, Path::new("/tmp")).unwrap_err().contains("kind"));
+        assert!(
+            validate(&m, Path::new("/tmp"))
+                .unwrap_err()
+                .contains("kind")
+        );
         m.theme.kind = "system".into();
         m.app.icon = Some("no-existe.png".into());
-        assert!(validate(&m, Path::new("/tmp")).unwrap_err().contains("icon"));
+        assert!(
+            validate(&m, Path::new("/tmp"))
+                .unwrap_err()
+                .contains("icon")
+        );
     }
 
     #[test]

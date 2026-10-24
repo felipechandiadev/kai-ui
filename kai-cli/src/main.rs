@@ -6,8 +6,8 @@
 mod cargo;
 mod dev;
 mod doctor;
-mod manifest;
 mod icons_cmd;
+mod manifest;
 mod new_cmd;
 mod test_cmd;
 mod watch;
@@ -120,14 +120,14 @@ fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Opciones
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--template" => {
-                let t = args.next().ok_or("--template necesita basic o multiwindow")?;
+                let t = args
+                    .next()
+                    .ok_or("--template necesita basic o multiwindow")?;
                 template = match t.as_str() {
                     "basic" => new_cmd::Template::Basic,
                     "multiwindow" => new_cmd::Template::Multiwindow,
                     otro => {
-                        return Err(format!(
-                            "plantilla desconocida: {otro} (basic|multiwindow)"
-                        ));
+                        return Err(format!("plantilla desconocida: {otro} (basic|multiwindow)"));
                     }
                 };
             }

@@ -105,9 +105,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
         | Content::Image(_)
         | Content::Map(_)
         | Content::Chart(_)
-        | Content::Document(_) => {
-            node.label.clone()
-        }
+        | Content::Document(_) => node.label.clone(),
         Content::Box => node.label.clone().or_else(|| {
             matches!(
                 effective_role(node),
@@ -189,8 +187,10 @@ fn role_of(node: &LayoutNode) -> Role {
 /// Hidden nodes and unlabeled (decorative) icons and images are left out
 /// of the tree.
 fn exposed(node: &LayoutNode) -> bool {
-    let decorative =
-        matches!(node.content, Content::Icon(_) | Content::SvgIcon(_) | Content::Image(_)) && node.label.is_none();
+    let decorative = matches!(
+        node.content,
+        Content::Icon(_) | Content::SvgIcon(_) | Content::Image(_)
+    ) && node.label.is_none();
     !node.hidden && !decorative
 }
 
@@ -342,10 +342,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
         } else {
             node.add_action(Action::Focus);
             node.add_action(Action::Click);
-            if matches!(
-                source.content,
-                Content::Input { .. } | Content::Document(_)
-            ) {
+            if matches!(source.content, Content::Input { .. } | Content::Document(_)) {
                 node.add_action(Action::ReplaceSelectedText);
             }
             if let Some(state) = source.control_state

@@ -13,9 +13,9 @@ use std::sync::OnceLock;
 use wordcraft_engine::{CommandSpec, Registry, Session};
 
 use crate::components::{
-    button_sized, themed, toolbar_item, toolbar_separator, ButtonSize, ButtonVariant,
+    ButtonSize, ButtonVariant, button_sized, themed, toolbar_item, toolbar_separator,
 };
-use crate::element::{div, text, Element, Role};
+use crate::element::{Element, Role, div, text};
 use crate::icons::Icon;
 
 use super::DocumentCmd;
@@ -211,10 +211,7 @@ fn build_tabs(want: &[(&str, &[&str])]) -> Vec<RibbonTab> {
                 continue;
             };
             let group = group_for_tab(tab_label, spec);
-            groups
-                .entry(group)
-                .or_default()
-                .push(item_from_spec(spec));
+            groups.entry(group).or_default().push(item_from_spec(spec));
         }
         // Orden de grupos preferido en Home.
         let order = preferred_group_order(tab_label);
@@ -257,8 +254,7 @@ fn group_for_tab(tab_label: &str, spec: &CommandSpec) -> String {
         } else {
             group
         }
-    } else if spec.location.eq_ignore_ascii_case("Quick Access Toolbar") && tab_label == "Home"
-    {
+    } else if spec.location.eq_ignore_ascii_case("Quick Access Toolbar") && tab_label == "Home" {
         "Editing".into()
     } else {
         // Allowlist id pertenece a otra location: aún así muéstralo en General.
@@ -268,18 +264,31 @@ fn group_for_tab(tab_label: &str, spec: &CommandSpec) -> String {
 
 fn preferred_group_order(tab: &str) -> Vec<&'static str> {
     match tab {
-        "Home" => vec![
-            "Clipboard",
-            "Font",
-            "Paragraph",
-            "Editing",
-            "Styles",
+        "Home" => vec!["Clipboard", "Font", "Paragraph", "Editing", "Styles"],
+        "Insert" => vec![
+            "Pages",
+            "Tables",
+            "Illustrations",
+            "Header & Footer",
+            "Text",
+            "Links",
         ],
-        "Insert" => vec!["Pages", "Tables", "Illustrations", "Header & Footer", "Text", "Links"],
         "Layout" => vec!["Page Setup", "Breaks", "Paragraph", "Arrange"],
         "Review" => vec!["Proofing", "Tracking", "Changes", "Comments"],
-        "References" => vec!["Table of Contents", "Footnotes", "Captions", "Citations & Bibliography"],
-        "View" => vec!["Views", "Show", "Zoom", "Dark Mode", "Immersive", "Page Movement"],
+        "References" => vec![
+            "Table of Contents",
+            "Footnotes",
+            "Captions",
+            "Citations & Bibliography",
+        ],
+        "View" => vec![
+            "Views",
+            "Show",
+            "Zoom",
+            "Dark Mode",
+            "Immersive",
+            "Page Movement",
+        ],
         "Table" => vec!["Table Styles", "Table Style Options", "Borders"],
         _ => Vec::new(),
     }
@@ -367,7 +376,6 @@ pub struct RibbonChrome {
     pub disabled: Vec<String>,
 }
 
-
 /// Calcula pressed (desde `format.state` + párrafo/caret + view) y disabled
 /// (`Session::why_disabled`) para el catálogo del `mode`.
 pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrome {
@@ -393,7 +401,11 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
             pressed.push("format.superscript".into());
         }
         // Gallery mínima de estilos de párrafo.
-        match state.get("style").and_then(|v| v.as_str()).unwrap_or("Normal") {
+        match state
+            .get("style")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Normal")
+        {
             "Normal" => pressed.push("para.normal".into()),
             "Heading1" => pressed.push("para.heading1".into()),
             "Heading2" => pressed.push("para.heading2".into()),
@@ -458,7 +470,6 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
     disabled.sort();
     RibbonChrome { pressed, disabled }
 }
-
 
 /// Icono Lucide para un id WordCraft, si hay uno razonable en el catálogo Kai.
 pub fn icon_for_cmd(id: &str) -> Option<Icon> {
@@ -843,7 +854,10 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
 
         let mut children = vec![tab_row];
 
-        if let Some(active_tab) = tabs.iter().find(|t| t.id == active).cloned()
+        if let Some(active_tab) = tabs
+            .iter()
+            .find(|t| t.id == active)
+            .cloned()
             .or_else(|| tabs.first().cloned())
         {
             let mut groups_row = div()
@@ -856,20 +870,16 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
 
             for (gi, group) in active_tab.groups.iter().enumerate() {
                 if gi > 0 {
-                    groups_row = groups_row.child(
-                        div().class(&themed(
-                            "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-border",
-                            "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-separator",
-                        )),
-                    );
+                    groups_row = groups_row.child(div().class(&themed(
+                        "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-border",
+                        "w-px self-stretch min-h-8 mx-0.5 shrink-0 bg-separator",
+                    )));
                 }
                 let mut g = div().class("flex flex-col gap-0.5 min-w-0 justify-end");
-                g = g.child(
-                    text(&group.label).class(&themed(
-                        "text-[11px] leading-none text-muted-foreground px-1",
-                        "text-[11px] leading-none text-secondary-label px-1",
-                    )),
-                );
+                g = g.child(text(&group.label).class(&themed(
+                    "text-[11px] leading-none text-muted-foreground px-1",
+                    "text-[11px] leading-none text-secondary-label px-1",
+                )));
                 let mut items = div().class("flex flex-row flex-wrap items-center gap-0.5");
                 for item in &group.items {
                     let disabled = self.disabled.iter().any(|d| d == &item.cmd_id);
@@ -1005,10 +1015,7 @@ mod tests {
 
     #[test]
     fn default_run_params_cover_layout_presets() {
-        assert_eq!(
-            default_run_params("layout.margins")["preset"],
-            "normal"
-        );
+        assert_eq!(default_run_params("layout.margins")["preset"], "normal");
         assert_eq!(default_run_params("layout.columns")["count"], 2);
         assert_eq!(default_run_params("view.zoomIn"), serde_json::json!({}));
     }
@@ -1016,10 +1023,7 @@ mod tests {
     #[test]
     fn document_cmd_for_maps_known_ids() {
         assert_eq!(document_cmd_for("format.bold"), DocumentCmd::Bold);
-        assert_eq!(
-            document_cmd_for("insert.table"),
-            DocumentCmd::InsertTable
-        );
+        assert_eq!(document_cmd_for("insert.table"), DocumentCmd::InsertTable);
         assert_eq!(
             document_cmd_for("format.underline"),
             DocumentCmd::Raw("format.underline".into())
@@ -1178,7 +1182,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn full_ribbon_includes_paso6_cmds() {
         let tabs = ribbon_catalog(RibbonMode::Full);
@@ -1205,5 +1208,4 @@ mod tests {
             tabs.iter().map(|t| t.id.as_str()).collect::<Vec<_>>()
         );
     }
-
 }

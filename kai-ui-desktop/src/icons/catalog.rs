@@ -481,9 +481,13 @@ impl Icon {
             Icon::Moon => include_str!("../../assets/icons/moon.svg"),
             Icon::Sun => include_str!("../../assets/icons/sun.svg"),
             Icon::Printer => include_str!("../../assets/icons/printer.svg"),
-            Icon::RectangleHorizontal => include_str!("../../assets/icons/rectangle-horizontal.svg"),
+            Icon::RectangleHorizontal => {
+                include_str!("../../assets/icons/rectangle-horizontal.svg")
+            }
             Icon::RectangleVertical => include_str!("../../assets/icons/rectangle-vertical.svg"),
-            Icon::SeparatorHorizontal => include_str!("../../assets/icons/separator-horizontal.svg"),
+            Icon::SeparatorHorizontal => {
+                include_str!("../../assets/icons/separator-horizontal.svg")
+            }
             Icon::FolderOpen => include_str!("../../assets/icons/folder-open.svg"),
             Icon::Save => include_str!("../../assets/icons/save.svg"),
             Icon::FileDown => include_str!("../../assets/icons/file-down.svg"),

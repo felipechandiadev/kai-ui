@@ -157,9 +157,7 @@ pub fn breadcrumb_trail<Msg>(crumbs: &[String]) -> Element<Msg> {
         if index > 0 {
             parts.push(
                 icon(Icon::ChevronRight)
-                    .class(
-                        "size-3.5 text-muted-foreground appkit:text-tertiary-label shrink-0",
-                    )
+                    .class("size-3.5 text-muted-foreground appkit:text-tertiary-label shrink-0")
                     .part(format!("sep.{index}")),
             );
         }
@@ -196,7 +194,7 @@ pub fn master_detail_span_classes(list_span: u8) -> String {
     format!("col-span-4 sm:col-span-8 md:col-span-{detail} min-w-0")
 }
 
-/// Lista + detalle (master/detail) over [`page_grid`].
+/// Lista + detalle (master/detail) over `page_grid`.
 pub struct MasterDetailPage<Msg> {
     header: Option<PageHeader<Msg>>,
     list: Option<Element<Msg>>,
@@ -240,18 +238,16 @@ impl<Msg> MasterDetailPage<Msg> {
         let detail = self.detail.expect("detail");
         // Build the grid without `page_grid()`'s parts_root so list/detail
         // parts inherit this template's test_id.
-        let panes = div()
-            .class(super::page::PAGE_GRID_CLASS)
-            .children([
-                div()
-                    .class(&master_list_span_classes(self.list_span))
-                    .part("list")
-                    .child(list),
-                div()
-                    .class(&master_detail_span_classes(self.list_span))
-                    .part("detail")
-                    .child(detail),
-            ]);
+        let panes = div().class(super::page::PAGE_GRID_CLASS).children([
+            div()
+                .class(&master_list_span_classes(self.list_span))
+                .part("list")
+                .child(list),
+            div()
+                .class(&master_detail_span_classes(self.list_span))
+                .part("detail")
+                .child(detail),
+        ]);
         let mut children: Vec<Element<Msg>> = Vec::new();
         if let Some(header) = self.header {
             children.push(header.build());
@@ -441,11 +437,11 @@ pub fn form_full_cell<Msg>(child: Element<Msg>) -> Element<Msg> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::page::col_span_classes;
     use super::*;
     use crate::element::text;
-    use crate::tw::{ClassList, State};
     use crate::theme::{Density, Theme};
-    use super::super::page::col_span_classes;
+    use crate::tw::{ClassList, State};
 
     #[test]
     fn page_density_maps_to_theme() {

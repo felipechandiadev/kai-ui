@@ -73,6 +73,12 @@ mod tests {
 
     #[test]
     fn default_opciones() {
-        assert_eq!(Opciones::default(), Opciones { snapshots: false, cargo_args: vec![] });
+        assert_eq!(
+            Opciones::default(),
+            Opciones {
+                snapshots: false,
+                cargo_args: vec![]
+            }
+        );
     }
 }

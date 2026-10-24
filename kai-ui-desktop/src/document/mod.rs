@@ -29,18 +29,18 @@ use crate::theme::Theme;
 #[cfg(feature = "document")]
 mod editor;
 #[cfg(feature = "document")]
-mod ribbon;
-#[cfg(feature = "document")]
 mod glyph_atlas;
+#[cfg(feature = "document")]
+mod ribbon;
 #[cfg(feature = "document")]
 pub(crate) use editor::DocumentEditor;
 #[cfg(feature = "document")]
 pub(crate) use glyph_atlas::DocumentGlyphAtlas;
 #[cfg(feature = "document")]
 pub use ribbon::{
-    cmd_disabled, default_run_params, document_cmd_for, document_ribbon, icon_for_cmd, localize_cmd,
-    parse_location, ribbon_catalog, ribbon_chrome_for, DocumentRibbon, RibbonChrome, RibbonGroup,
-    RibbonItem, RibbonMode, RibbonTab,
+    DocumentRibbon, RibbonChrome, RibbonGroup, RibbonItem, RibbonMode, RibbonTab, cmd_disabled,
+    default_run_params, document_cmd_for, document_ribbon, icon_for_cmd, localize_cmd,
+    parse_location, ribbon_catalog, ribbon_chrome_for,
 };
 
 /// Márgenes del stack de páginas respecto al padding box (viewport).
@@ -65,21 +65,31 @@ pub enum DocumentCmd {
     InsertTable,
     /// `insert.picture` con PNG embebido de demo (o bytes vía params en Session).
     InsertPicture,
-    /// Clona el modelo WordCraft en el próximo [`DocumentChange::export`]
+    /// Clona el modelo WordCraft en el próximo `DocumentChange::export`
     /// (guardar / exportar PDF off-thread). No es un id de WordCraft.
     TakeDocument,
     /// `edit.find` con `text` (selecciona el primer match tras el caret).
-    Find { text: String },
+    Find {
+        text: String,
+    },
     /// `edit.findNext` (usa la query del último find).
     FindNext,
     /// `edit.findPrevious`.
     FindPrevious,
     /// `edit.replace` — reemplaza el match seleccionado y salta al siguiente.
-    Replace { text: String, with: String },
+    Replace {
+        text: String,
+        with: String,
+    },
     /// `edit.replaceAll`.
-    ReplaceAll { text: String, with: String },
+    ReplaceAll {
+        text: String,
+        with: String,
+    },
     /// `review.newComment` con texto del draft (params obligatorios).
-    NewComment { text: String },
+    NewComment {
+        text: String,
+    },
     /// Paste Special: texto plano (`edit.pasteText`).
     PastePlain,
     /// Paste Special: combinar formato (`edit.pasteMerge`).
@@ -87,9 +97,13 @@ pub enum DocumentCmd {
     /// Paste Special: mantener origen (`edit.paste` HTML/RTF/texto del host).
     PasteKeepSource,
     /// `arrange.wrap` — modo de ajuste de imagen/objeto seleccionado.
-    Wrap { mode: String },
+    Wrap {
+        mode: String,
+    },
     /// `table.style` — estilo de tabla en el caret.
-    TableStyle { style: String },
+    TableStyle {
+        style: String,
+    },
     /// Id crudo de WordCraft (`format.underline`, …).
     Raw(String),
 }
@@ -373,8 +387,8 @@ pub(crate) fn paint(list: &mut DrawList, area: Rect, spec: &DocumentSpec, theme:
     );
 }
 
-
 /// Paint con id de widget (usado desde `render/paint.rs`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_document(
     list: &mut DrawList,
     area: Rect,
@@ -402,7 +416,9 @@ pub(crate) fn paint_document(
         .color("foreground")
         .unwrap_or(Color::rgb(0, 0, 0))
         .with_alpha(28);
-    let paper = theme.color("background").unwrap_or(Color::rgb(255, 255, 255));
+    let paper = theme
+        .color("background")
+        .unwrap_or(Color::rgb(255, 255, 255));
     let gap = PAGE_GAP_PT * metrics.scale;
     let page_h = ph * metrics.scale;
 
@@ -685,10 +701,7 @@ mod tests {
         };
         assert_eq!(spec.placeholder, "Hola");
         assert_eq!(spec.markdown, "**Hola**");
-        assert_eq!(
-            spec.pending_cmd.as_ref().map(|c| c.serial),
-            Some(1)
-        );
+        assert_eq!(spec.pending_cmd.as_ref().map(|c| c.serial), Some(1));
         assert!(el.handlers.on_document_change.is_some());
     }
 
@@ -713,11 +726,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(
-            quads.len() >= 2,
-            "shadow + page, got {}",
-            quads.len()
-        );
+        assert!(quads.len() >= 2, "shadow + page, got {}", quads.len());
         assert!(
             quads.iter().any(|q| q.blur > 0.0),
             "expected soft shadow quad"
@@ -737,7 +746,7 @@ mod tests {
 
 #[cfg(test)]
 mod metrics_tests {
-    use super::{viewport_metrics, PAGE_INSET};
+    use super::{PAGE_INSET, viewport_metrics};
     use crate::geometry::Rect;
 
     #[test]

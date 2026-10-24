@@ -1,7 +1,7 @@
 //! Kai design tokens for the desktop renderer.
 //!
 //! Values mirror `kai-ui-web/src/theme/tokens.css` with `1rem = 16` logical points.
-//! The Kai bases are generated into [`kai_tokens`] by `scripts/gen-tokens.mjs`
+//! The Kai bases are generated into `kai_tokens` by `scripts/gen-tokens.mjs`
 //! (versioned in git; compile does not need `kai-ui-web`). Components never
 //! read tokens directly: they use Tailwind-like classes (`tw`) that resolve
 //! against [`Theme::color`], [`Theme::spacing_unit`] and the type and control
@@ -35,8 +35,8 @@ pub use generation::{MacVersion, SystemInfo};
 pub use motion::{CARET_BLINK, TOAST, TYPEAHEAD_RESET};
 pub use spacing::{
     CARD_PADDING_STEPS, CONTROL_CLUSTER_STEPS, DATA_STACK_STEPS, FORM_STACK_STEPS,
-    PAGE_GUTTER_STEPS, data_stack_gap_class, form_stack_gap_class, gap_class, p_class, pt,
-    pt_for, px_class, py_class, comfortable_pt as spacing_pt, steps as spacing_steps,
+    PAGE_GUTTER_STEPS, comfortable_pt as spacing_pt, data_stack_gap_class, form_stack_gap_class,
+    gap_class, p_class, pt, pt_for, px_class, py_class, steps as spacing_steps,
 };
 
 pub const REM: f32 = 16.0;

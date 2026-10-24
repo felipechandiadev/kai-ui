@@ -29,7 +29,7 @@ pub fn caret_blink_visible(elapsed: Duration, reduce_motion: bool) -> bool {
     if period == 0 {
         return true;
     }
-    (elapsed.as_nanos() / period) % 2 == 0
+    (elapsed.as_nanos() / period).is_multiple_of(2)
 }
 const PREEDIT_UNDERLINE_HEIGHT: f32 = 1.5;
 const BULLET: char = '•';
@@ -48,7 +48,7 @@ pub trait ClipboardPort {
         Ok(None)
     }
 
-    /// Place HTML plus optional plain alternative. Default: store only `alt_text` via [`set_text`].
+    /// Place HTML plus optional plain alternative. Default: store only `alt_text` via [`Self::set_text`].
     fn set_html(&mut self, _html: String, alt_text: Option<String>) -> Result<(), String> {
         match alt_text {
             Some(text) => self.set_text(text),

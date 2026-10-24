@@ -74,10 +74,7 @@ pub fn current_invocation() -> Option<InvocationId> {
     CURRENT_INVOCATION.with(|slot| slot.get())
 }
 
-pub(crate) fn with_current_invocation<R>(
-    id: Option<InvocationId>,
-    f: impl FnOnce() -> R,
-) -> R {
+pub(crate) fn with_current_invocation<R>(id: Option<InvocationId>, f: impl FnOnce() -> R) -> R {
     CURRENT_INVOCATION.with(|slot| {
         let previous = slot.replace(id);
         let result = f();
@@ -344,7 +341,9 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 Effect::After { key, delay, msg } => {
                     list.entry(&format_args!("after({delay:?}, {msg:?}, key: {key:?})"))
                 }
-                Effect::Perform { key, completes, .. } => list.entry(&format_args!("perform(key: {key:?}, completes: {completes:?})")),
+                Effect::Perform { key, completes, .. } => list.entry(&format_args!(
+                    "perform(key: {key:?}, completes: {completes:?})"
+                )),
                 Effect::Cancel(key) => list.entry(&format_args!("cancel({key:?})")),
                 Effect::PickFile { request, .. } => {
                     list.entry(&format_args!("pick_file({:?})", request.title))
@@ -1248,9 +1247,16 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         );
         window.set_visible(true);
         let theme = self.theme;
-        let state = pollster::block_on(WgpuRenderer::new(Arc::clone(&window)))
-            .and_then(|renderer| {
-                WindowState::new(window, accessibility, renderer, theme, app, self.proxy.clone())
+        let state =
+            pollster::block_on(WgpuRenderer::new(Arc::clone(&window))).and_then(|renderer| {
+                WindowState::new(
+                    window,
+                    accessibility,
+                    renderer,
+                    theme,
+                    app,
+                    self.proxy.clone(),
+                )
             });
         match state {
             #[cfg_attr(not(feature = "mcp"), allow(unused_mut))]
@@ -1442,7 +1448,6 @@ mod tests {
         App, Effects, SimpleApp, Subscriptions, action_message, background_running, cursor_for,
         pointer_target, selects_on_focus,
     };
-    use std::time::Duration;
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
     use crate::element::sample::{self, Msg};
     use crate::element::{Element, div, icon, input};
@@ -1454,6 +1459,7 @@ mod tests {
     use crate::responder::Action;
     use crate::style::Cursor;
     use crate::theme::{Density, Theme};
+    use std::time::Duration;
 
     fn layout() -> Layout {
         compute(&sample::tree())
@@ -1540,13 +1546,9 @@ mod tests {
     #[test]
     fn subscriptions_every_debug_lists_key() {
         let subs = Subscriptions::every("tick", Duration::from_secs(1), Msg::Clicked);
-        assert_eq!(
-            format!("{subs:?}"),
-            r#"[every(1s, Clicked, key: "tick")]"#
-        );
+        assert_eq!(format!("{subs:?}"), r#"[every(1s, Clicked, key: "tick")]"#);
         assert!(Subscriptions::<Msg>::none().is_none());
     }
-
 
     #[test]
     fn pointer_targets_bubble_from_text_to_the_enclosing_control() {

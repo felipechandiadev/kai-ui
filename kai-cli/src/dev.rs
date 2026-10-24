@@ -43,16 +43,14 @@ pub struct Opciones {
 }
 
 pub fn run(opciones: &Opciones) -> Result<(), String> {
-    let loaded = manifest::find(
-        &std::env::current_dir().map_err(|error| format!("cwd: {error}"))?,
-    )
-    .and_then(|path| match manifest::load(&path) {
-        Ok(loaded) => Some(loaded),
-        Err(error) => {
-            eprintln!("kai dev: aviso: {error}");
-            None
-        }
-    });
+    let loaded = manifest::find(&std::env::current_dir().map_err(|error| format!("cwd: {error}"))?)
+        .and_then(|path| match manifest::load(&path) {
+            Ok(loaded) => Some(loaded),
+            Err(error) => {
+                eprintln!("kai dev: aviso: {error}");
+                None
+            }
+        });
 
     let mut bin = opciones.bin.clone();
     let mut features: Vec<String> = Vec::new();

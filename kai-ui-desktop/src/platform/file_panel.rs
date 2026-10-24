@@ -77,12 +77,14 @@ mod mac {
     use block2::RcBlock;
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
-    use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSOpenPanel, NSSavePanel, NSView, NSWindow};
+    use objc2_app_kit::{
+        NSModalResponse, NSModalResponseOK, NSOpenPanel, NSSavePanel, NSView, NSWindow,
+    };
     use objc2_foundation::{NSArray, NSString};
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use winit::window::Window;
 
-    use super::{Done, ActiveSheet};
+    use super::{ActiveSheet, Done};
     use crate::runtime::{PickFile, SaveFile};
 
     pub(super) struct Inner {
@@ -146,17 +148,16 @@ mod mac {
         if types.is_empty() {
             return;
         }
-        let types: Vec<_> = types.iter().map(|extension| NSString::from_str(extension)).collect();
+        let types: Vec<_> = types
+            .iter()
+            .map(|extension| NSString::from_str(extension))
+            .collect();
         // `allowedContentTypes` needs `UTType`s; extensions are enough here.
         #[allow(deprecated)]
         panel.setAllowedFileTypes(Some(&NSArray::from_retained_slice(&types)));
     }
 
-    fn begin_sheet(
-        panel: Retained<NSSavePanel>,
-        ns_window: &NSWindow,
-        done: Done,
-    ) -> ActiveSheet {
+    fn begin_sheet(panel: Retained<NSSavePanel>, ns_window: &NSWindow, done: Done) -> ActiveSheet {
         let live = Arc::new(AtomicBool::new(true));
         let live_handler = Arc::clone(&live);
         let panel_handler = panel.clone();

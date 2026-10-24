@@ -24,7 +24,7 @@
 //! Prefer these named steps in docs and helpers; arbitrary values
 //! (`gap-[18px]`) remain available for one-offs.
 //!
-//! See [`docs/dev/23-spacing-density.md`].
+//! See `docs/dev/23-spacing-density.md`.
 
 use super::Theme;
 
