@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
+use crate::cache::DiskCache;
 use crate::color::Color;
 use crate::commands::{
     Action, Availability, CommandError, CommandRegistry, PALETTE, Query, Safety, Shortcut,
@@ -1780,6 +1781,10 @@ impl App for Demo {
         (!self.sized).then_some(Msg::InitialWidth {
             narrow: size.width < 640.0,
         })
+    }
+
+    fn image_cache(&self) -> Option<DiskCache> {
+        DiskCache::for_app(APP_ID, "imagenes", DiskCache::DEFAULT_LIMIT)
     }
 
     fn dev_state(&self) -> Option<serde_json::Value> {

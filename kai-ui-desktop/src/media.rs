@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::cache::DiskCache;
 use crate::element::{Element, Kind};
 pub use crate::render::images::{Bitmap, MAX_IMAGE_SIDE};
 
@@ -142,6 +143,42 @@ impl ImageLoader for SystemLoader {
             ImageSource::Bytes(bytes) => Ok(bytes.to_vec()),
             ImageSource::Rgba(_) => Err("una imagen RGBA no se lee".to_owned()),
         }
+    }
+}
+
+/// An [`ImageLoader`] that keeps what `inner` downloads in a
+/// [`DiskCache`]: a URL already fetched is read from disk, also on the next
+/// run and without a network. Files, bytes and pixels go straight to
+/// `inner`. A cache that cannot be written only skips the copy.
+#[derive(Clone, Debug)]
+pub struct CachedLoader<L> {
+    inner: L,
+    cache: DiskCache,
+}
+
+impl<L: ImageLoader> CachedLoader<L> {
+    pub fn new(inner: L, cache: DiskCache) -> Self {
+        Self { inner, cache }
+    }
+
+    pub fn cache(&self) -> &DiskCache {
+        &self.cache
+    }
+}
+
+impl<L: ImageLoader> ImageLoader for CachedLoader<L> {
+    fn read(&self, source: &ImageSource) -> Result<Vec<u8>, String> {
+        let ImageSource::Url(url) = source else {
+            return self.inner.read(source);
+        };
+        if let Some(bytes) = self.cache.get(url) {
+            return Ok(bytes);
+        }
+        let bytes = self.inner.read(source)?;
+        if let Err(error) = self.cache.put(url, &bytes) {
+            eprintln!("No se guardó en la caché {url}: {error}");
+        }
+        Ok(bytes)
     }
 }
 
@@ -499,6 +536,30 @@ pub fn sample_landscape() -> ImageSource {
 mod tests {
     use super::*;
     use crate::element::{div, image};
+
+    #[test]
+    fn a_cached_url_is_read_from_disk_the_next_time() {
+        let dir = std::env::temp_dir().join(format!("kai-media-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let url = "https://kai.test/foto.png";
+        let fake = FakeImageLoader::new().with(url, png(2, 2, [1; 4]));
+        let loader = CachedLoader::new(fake.clone(), DiskCache::at(&dir, 1 << 20));
+        let source = ImageSource::Url(url.into());
+
+        let first = loader.read(&source).unwrap();
+        assert_eq!(fake.reads(), 1);
+        // Otra ejecución: un loader nuevo sobre la misma carpeta, sin red.
+        let offline = CachedLoader::new(FakeImageLoader::new(), DiskCache::at(&dir, 1 << 20));
+        assert_eq!(offline.read(&source).unwrap(), first);
+        assert_eq!(loader.read(&source).unwrap(), first);
+        assert_eq!(fake.reads(), 1, "la segunda lectura no descarga");
+
+        // Los errores no se guardan: sin red y sin caché sigue fallando.
+        let missing = ImageSource::Url("https://kai.test/otra.png".into());
+        assert!(offline.read(&missing).is_err());
+        assert_eq!(offline.cache().get("https://kai.test/otra.png"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A `width × height` PNG of one color.
     pub(crate) fn png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {

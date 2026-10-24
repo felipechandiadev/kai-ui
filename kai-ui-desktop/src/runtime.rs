@@ -482,6 +482,13 @@ pub trait App: 'static {
     /// what does not fit.
     fn restore_dev_state(&mut self, _state: serde_json::Value) {}
 
+    /// Disk cache for images loaded by URL, read once when the window
+    /// opens (see [`crate::cache::DiskCache`]). Default: none, so every run
+    /// downloads them again.
+    fn image_cache(&self) -> Option<crate::cache::DiskCache> {
+        None
+    }
+
     /// Declare the app's commands, once at startup (see [`crate::commands`]).
     fn commands(_registry: &mut CommandRegistry<Self>)
     where
@@ -941,6 +948,12 @@ impl<A: App> WindowState<A> {
             Box::new(SystemClipboard),
         );
         session.set_system_prefs(crate::platform::prefs::read());
+        if let Some(cache) = session.app().image_cache() {
+            session.set_image_loader(Arc::new(crate::media::CachedLoader::new(
+                crate::media::SystemLoader,
+                cache,
+            )));
+        }
         session.set_scale_factor(scale_factor.as_f32());
         let unknown = session.unknown_classes();
         if !unknown.is_empty() {

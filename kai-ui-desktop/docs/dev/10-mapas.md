@@ -185,7 +185,7 @@ fn view(&self) -> Element<Msg> {
 |---|---|---|
 | GPU | Capas del `TextureArray` o huecos del atlas | LRU por último frame de uso (256–512 teselas) |
 | RAM | Bytes codificados o RGBA decodificado; mallas vectoriales en fase 2 | LRU por tamaño (por ejemplo 64–128 MB) |
-| Disco | `~/Library/Caches/<bundle-id>/tiles/<fuente>/{z}/{x}/{y}` | Respeta `Cache-Control`, `ETag` y peticiones condicionales; para OSM, mínimo 7 días |
+| Disco | `~/Library/Caches/<bundle-id>/tiles/<fuente>/{z}/{x}/{y}` | Respeta `Cache-Control`, `ETag` y peticiones condicionales; para OSM, mínimo 7 días. Base ya hecha: `kai::cache::DiskCache` (límite en bytes, LRU, escritura atómica), que hoy usan las imágenes por URL |
 
 ```rust
 // API propuesta

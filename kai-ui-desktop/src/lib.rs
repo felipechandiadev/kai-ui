@@ -17,6 +17,7 @@
 //! (see TODOs on each hidden `pub mod`).
 
 pub mod background;
+pub mod cache;
 pub mod charts;
 pub mod color;
 pub mod commands;
