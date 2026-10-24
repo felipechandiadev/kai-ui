@@ -1,6 +1,6 @@
 # 16 — Widget `document`: mini Word dentro de Kai
 
-**Fase:** fases 0–2 hechas (MSRV 1.95; tipar / páginas / tabla 2×2 + imagen). Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). La app guía sigue siendo DSP desktop ([13](13-hoja-de-ruta-plataforma.md)).
+**Fase:** fases 0–2 hechas (MSRV 1.95; tipar / páginas / tabla 2×2 + imagen). Depende del árbol y la `Session` ([03](03-eventos-y-estado.md)), del renderer ([04](04-renderer-y-texto.md)), de los widgets y el tema ([05](05-widgets-y-tema.md)), de la frontera con craft ([07](07-integracion-craft-libs.md)) y del patrón del mapa y el chart ([10](10-mapas.md), [05](05-widgets-y-tema.md#chart)). **Objetivo:** acercarse lo más posible a Word / Pages (paridad funcional y de experiencia), no limitarse a lo que necesite una app concreta. DSP desktop ([13](13-hoja-de-ruta-plataforma.md)) es un consumidor más, no el techo del alcance.
 
 La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordcraft) (WordCraft, ArtCraft; MIT OR Apache-2.0; clean-room). La información de capas y crates se tomó del README y de [`docs/architecture.md`](https://github.com/storytold/wordcraft/blob/master/docs/architecture.md) el **21-oct-2026**. Fijar un `rev` de Git y volver a leer manifests antes de depender.
 
@@ -10,7 +10,7 @@ La base de dominio es [`storytold/wordcraft`](https://github.com/storytold/wordc
 - **Motor de documento independiente.** Cosmic-text + glyphon se quedan en la UI (`TextField`, `TextArea`, labels). El cuerpo del documento no comparte `TextStore` ni shaping con un campo.
 - **WordCraft como motor, no como UI.** Se reutilizan las capas que no dependen de egui (`doc`, `fonts`, `layout`, `engine`, más adelante `docx` / `formats` / `proof`). No se adopta `wordcraft-ui-egui` ni se pinta el frame de UI con `wordcraft-render` (vello_cpu).
 - **Dentro de ese widget, WordCraft de punta a punta.** No híbrido: ni runs de WordCraft medidos con cosmic-text, ni páginas de Kai shapeadas con HarfRust. El híbrido duplica font DB, caret e IME.
-- **Progresivo y opcional.** Feature `document`. DSP no necesita ribbon, mail merge, track changes ni ecuaciones en el primer corte.
+- **Progresivo y opcional.** Feature `document`. Se avanza por fases hacia la paridad con Word / Pages; ribbon, comentarios, track changes, mail merge y ecuaciones entran en la ruta, en ese orden de prioridad aproximado, no según lo que pida una app.
 - **MSRV alineado a WordCraft.** El piso es Rust **1.95** ([06](06-calidad-y-distribucion.md)), el `rust-version` declarado de WordCraft / craft-pdf. Subidas futuras van en el mismo cambio que el `rev` que las exija.
 
 ```mermaid
@@ -116,9 +116,9 @@ Abrir/guardar .docx (`wordcraft-docx`) y exportar PDF (`wordcraft-pdf` / `craft-
 
 **Hecho (23-oct-2026):** `pending_load` + `DocumentCmd::TakeDocument` → clone del modelo → `Effects::perform` encode/write. Demo Datos→Documento fila Archivo (Abrir / Guardar / Exportar PDF); Actions + MCP `documento.abrir` / `documento.guardar` / `documento.exportar_pdf`. TestApp `on_file_pick` / `on_file_save`.
 
-### Fuera de este widget (hasta que DSP lo pida)
+### Pendiente hacia la paridad Word / Pages
 
-Mail merge, track changes, comentarios, ecuaciones, Zotero, web/WASM de WordCraft, segundo event loop egui. Ribbon Kai (Home…View desde catálogo, `RibbonMode::Full`): ver [`17-document-ribbon.md`](17-document-ribbon.md).
+Track changes, mail merge, ecuaciones y citas (Zotero) están en la ruta del widget; comentarios ya tiene un primer corte (Paso 5). Fuera del widget de forma permanente: web/WASM de WordCraft y un segundo event loop egui (Kai es el único renderer). Ribbon Kai (Home…View desde catálogo, `RibbonMode::Full`): ver [`17-document-ribbon.md`](17-document-ribbon.md).
 
 ## 7. Pruebas y demo
 
