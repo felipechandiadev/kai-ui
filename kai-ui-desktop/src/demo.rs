@@ -5760,6 +5760,42 @@ mod tests {
 
     #[cfg(feature = "document")]
     #[test]
+    fn document_ribbon_collapses_with_the_window_width() {
+        let at = |width: f32| {
+            TestApp::builder(Demo::at(Seccion::Documento))
+                .viewport(width, 800.0)
+                .build()
+        };
+        let shown = |app: &TestApp<Demo>, by: By| app.screen().query(by).is_some();
+        let gallery = || By::test_id("documento.ribbon.cmd.para.heading2");
+        let styles = || By::test_id("documento.ribbon.styles");
+        let paste_label = || By::text("Pegar");
+        let group_label = || By::text("Portapapeles");
+
+        let wide = at(1400.0);
+        assert!(shown(&wide, gallery()) && !shown(&wide, styles()));
+        assert!(shown(&wide, paste_label()) && shown(&wide, group_label()));
+
+        // < xl: la galería pasa a un desplegable.
+        let large = at(1100.0);
+        assert!(!shown(&large, gallery()) && shown(&large, styles()));
+        assert!(shown(&large, paste_label()));
+
+        // < lg: los botones grandes quedan solo con icono.
+        let medium = at(900.0);
+        assert!(!shown(&medium, paste_label()) && shown(&medium, group_label()));
+        assert!(shown(
+            &medium,
+            By::test_id("documento.ribbon.cmd.edit.paste")
+        ));
+
+        // < md: sin etiquetas de grupo.
+        let narrow = at(700.0);
+        assert!(!shown(&narrow, group_label()));
+    }
+
+    #[cfg(feature = "document")]
+    #[test]
     fn document_new_comment_asks_for_its_text() {
         let mut app = TestApp::new(Demo::at(Seccion::Documento));
         let bar = || By::test_id("documento.commentbar");

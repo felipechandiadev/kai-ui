@@ -40,7 +40,7 @@ grupo discretos y QAT Archivo a la izquierda de las tabs. **Ribbon vivo:**
    principales (`is_large_cmd`: Pegar, Tabla, Imagen, Márgenes, Ortografía…)
    son botones grandes con icono y nombre; el resto va en dos filas de iconos
    pequeños. Los estilos de párrafo (`is_style_cmd`) son una galería de
-   muestras con su aspecto. Pendiente: colapsar grupos cuando falta ancho.
+   muestras con su aspecto.
 8. **Pestañas contextuales**: *Tabla* y *Formato de imagen* solo aparecen
    con el caret en una tabla o una imagen seleccionada
    (`active_contexts`: `table.selectTable` / `arrange.wrap` habilitados), en
@@ -51,6 +51,13 @@ grupo discretos y QAT Archivo a la izquierda de las tabs. **Ribbon vivo:**
    traduce y `cmd_disabled` consulta el id base. Pegado especial y
    encabezado/pie ya estaban en Inicio e Insertar. `review.newComment` emite
    solo el id: la app pide el texto (la demo abre una barra de comentario).
+10. **Colapso por ancho** (breakpoints de ventana, de lo menos a lo más
+    importante, como Word): bajo `xl` (1280) la galería de Estilos pasa a
+    un `select`; bajo `lg` (1024) los botones grandes quedan solo con
+    icono; bajo `md` (768) se ocultan las etiquetas de grupo (siguen como
+    nombre accesible). Si aun así no cabe, la fila se desplaza en horizontal
+    (`overflow-x-auto`). Usa el ancho de la **ventana**, no el del ribbon:
+    con la barra lateral plegada el ribbon tiene más espacio del que supone.
 
 Fuente de verdad de **shortcut / location**: `CommandSpec` en el rev fijado
 en `Cargo.toml` (`wordcraft-engine`). Labels visibles los aporta Kai

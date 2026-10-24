@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use wordcraft_engine::{CommandSpec, Registry, Session};
 
 use crate::components::{
-    ButtonSize, ButtonVariant, button_sized, themed, toolbar_item, toolbar_separator,
+    ButtonSize, ButtonVariant, button_sized, select, themed, toolbar_item, toolbar_separator,
 };
 use crate::element::{Element, Role, div, icon, text};
 use crate::icons::Icon;
@@ -855,7 +855,7 @@ pub struct DocumentRibbon<Msg> {
     mode: RibbonMode,
     active_tab: String,
     on_tab: Option<Box<dyn Fn(String) -> Msg>>,
-    on_command: Option<Box<dyn Fn(String) -> Msg>>,
+    on_command: Option<std::rc::Rc<dyn Fn(String) -> Msg>>,
     disabled: Vec<String>,
     pressed: Vec<String>,
     /// Pestañas contextuales visibles (`table`, `picture`).
@@ -902,7 +902,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
     }
 
     pub fn on_command(mut self, f: impl Fn(String) -> Msg + 'static) -> Self {
-        self.on_command = Some(Box::new(f));
+        self.on_command = Some(std::rc::Rc::new(f));
         self
     }
 
@@ -954,11 +954,11 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
     fn large_button(&self, item: &RibbonItem, glyph: Icon) -> Element<Msg> {
         let el = div()
             .class(&themed(
-                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[52px] px-1.5 \
+                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[36px] lg:min-w-[52px] px-1.5 \
                  rounded-md border border-transparent text-secondary cursor-pointer \
                  hover:border-border hover:bg-primary/10 active:bg-primary/20 \
                  selected:border-choice selected:bg-choice/20",
-                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[48px] px-1.5 \
+                "flex flex-col items-center justify-center gap-0.5 h-[56px] min-w-[32px] lg:min-w-[48px] px-1.5 \
                  rounded-md border-[0.5px] border-transparent text-secondary-label cursor-default \
                  hover:border-separator hover:bg-fill-3 active:bg-fill-2 \
                  selected:border-choice selected:bg-choice/20",
@@ -968,7 +968,9 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             .label(item.label.as_str())
             .children([
                 icon(glyph).class("size-6"),
-                text(item.label.as_str()).class("text-[11px] leading-3 whitespace-nowrap"),
+                // Con poco ancho (< lg) queda solo el icono, como Word.
+                text(item.label.as_str())
+                    .class("hidden lg:flex text-[11px] leading-3 whitespace-nowrap"),
             ]);
         self.wire(el, item)
     }
@@ -997,6 +999,27 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         self.wire(el, item)
     }
 
+    /// Estilos colapsados: desplegable con el estilo del párrafo actual.
+    fn style_select(&self, group: &RibbonGroup) -> Option<Element<Msg>> {
+        let on_cmd = self.on_command.clone()?;
+        let items: Vec<&RibbonItem> = group
+            .items
+            .iter()
+            .filter(|i| is_style_cmd(&i.cmd_id))
+            .collect();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        let ids: Vec<String> = items.iter().map(|i| i.cmd_id.clone()).collect();
+        let current = ids.iter().position(|id| self.pressed.contains(id));
+        Some(
+            select(&labels, current, "Estilo", move |index| {
+                on_cmd(ids.get(index).cloned().unwrap_or_default())
+            })
+            .class("xl:hidden w-[140px] min-w-[140px]")
+            .label("Estilos")
+            .test_id("documento.ribbon.styles"),
+        )
+    }
+
     /// Contenido de un grupo: botones grandes a la izquierda y los pequeños
     /// apilados en dos filas, como el ribbon de Word.
     fn group_content(&self, group: &RibbonGroup) -> Element<Msg> {
@@ -1020,8 +1043,17 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         }
         let mut row = div()
             .class("flex flex-row items-center gap-0.5 h-[60px]")
-            .children(large)
-            .children(styles);
+            .children(large);
+        if !styles.is_empty() {
+            // Galería con ancho de sobra (xl); si no, un desplegable.
+            row = row
+                .child(
+                    div()
+                        .class("hidden xl:flex flex-row items-center gap-0.5")
+                        .children(styles),
+                )
+                .children(self.style_select(group));
+        }
         if !small.is_empty() {
             let per_row = small.len().div_ceil(2);
             let mut rows = Vec::new();
@@ -1119,7 +1151,8 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         {
             // Una sola fila de alto fijo; el colapso por ancho es un paso aparte.
             let mut groups_row = div()
-                .class("flex flex-row flex-nowrap items-stretch gap-1 pt-1 overflow-hidden")
+                // Si aún no cabe, se desplaza en horizontal: nada queda fuera de alcance.
+                .class("flex flex-row flex-nowrap items-stretch gap-1 pt-1 overflow-x-auto")
                 .role(Role::Toolbar)
                 .test_id(format!("documento.ribbon.panel.{}", active_tab.id));
 
@@ -1138,9 +1171,10 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                         .label(group.label.as_str())
                         .children([
                             content,
+                            // Bajo md se ocultan: el nombre sigue como etiqueta accesible.
                             text(group.label.as_str()).class(&themed(
-                                "text-[11px] leading-4 text-muted-foreground whitespace-nowrap",
-                                "text-[11px] leading-4 text-secondary-label whitespace-nowrap",
+                                "hidden md:flex text-[11px] leading-4 text-muted-foreground whitespace-nowrap",
+                                "hidden md:flex text-[11px] leading-4 text-secondary-label whitespace-nowrap",
                             )),
                         ]),
                 );
