@@ -697,6 +697,147 @@ pub fn input<Msg>(value: impl Into<String>, placeholder: impl Into<String>) -> E
     })
 }
 
+/// Message conversion shared by every node of a mapped tree.
+type MapFn<From, To> = Rc<dyn Fn(From) -> To>;
+
+impl<Msg: 'static> Element<Msg> {
+    /// The same tree sending `f(msg)` instead of each `msg`: a component or
+    /// page with its own message type inside a parent's view. Messages
+    /// stored by value (`on_click`, `on_submit`) are converted now;
+    /// handlers and lazily built rows convert when they fire.
+    ///
+    /// ```ignore
+    /// enum Msg { Customers(customers::Msg) }
+    /// self.customers.view().map(Msg::Customers)
+    /// ```
+    pub fn map<To: 'static>(self, f: impl Fn(Msg) -> To + 'static) -> Element<To> {
+        self.map_with(&(Rc::new(f) as MapFn<Msg, To>))
+    }
+
+    fn map_with<To: 'static>(self, f: &MapFn<Msg, To>) -> Element<To> {
+        let Element {
+            id,
+            key,
+            kind,
+            class,
+            children,
+            role,
+            label,
+            test_id,
+            part,
+            parts_root,
+            derived_test_id,
+            disabled,
+            control,
+            required,
+            description,
+            delegates_focus,
+            focus_on_press,
+            claims_escape,
+            focus_group,
+            own_tab_stops,
+            expanded,
+            options,
+            modal,
+            virtual_rows,
+            row_count,
+            row_index,
+            tooltip,
+            handlers,
+            command,
+            marker,
+            map_control,
+            map_vertex,
+            motion,
+            busy,
+            busy_feedback,
+        } = self;
+        Element {
+            id,
+            key,
+            kind,
+            class,
+            children: children
+                .into_iter()
+                .map(|child| child.map_with(f))
+                .collect(),
+            role,
+            label,
+            test_id,
+            part,
+            parts_root,
+            derived_test_id,
+            disabled,
+            control,
+            required,
+            description,
+            delegates_focus,
+            focus_on_press,
+            claims_escape,
+            focus_group,
+            own_tab_stops,
+            expanded,
+            options,
+            modal,
+            virtual_rows: virtual_rows.map(|rows| rows.map_with(f)),
+            row_count,
+            row_index,
+            tooltip,
+            handlers: handlers.map_with(f),
+            command,
+            marker,
+            map_control,
+            map_vertex,
+            motion,
+            busy,
+            busy_feedback,
+        }
+    }
+}
+
+impl<Msg: 'static> Handlers<Msg> {
+    fn map_with<To: 'static>(self, f: &MapFn<Msg, To>) -> Handlers<To> {
+        /// `handler` followed by `f`.
+        fn then<A: 'static, From: 'static, To: 'static>(
+            handler: Option<Rc<dyn Fn(A) -> From>>,
+            f: &MapFn<From, To>,
+        ) -> Option<Rc<dyn Fn(A) -> To>> {
+            let f = Rc::clone(f);
+            handler.map(|h| Rc::new(move |a| f(h(a))) as Rc<dyn Fn(A) -> To>)
+        }
+        let on_action = self.on_action.map(|h| {
+            let f = Rc::clone(f);
+            Rc::new(move |action| h(action).map(|msg| f(msg))) as Rc<dyn Fn(Action) -> Option<To>>
+        });
+        Handlers {
+            on_click: self.on_click.map(|msg| f(msg)),
+            on_input: then(self.on_input, f),
+            on_submit: self.on_submit.map(|msg| f(msg)),
+            on_action,
+            on_select: then(self.on_select, f),
+            on_drop_files: then(self.on_drop_files, f),
+            on_view_change: then(self.on_view_change, f),
+            on_area_click: then(self.on_area_click, f),
+            on_edit: then(self.on_edit, f),
+            on_document_change: then(self.on_document_change, f),
+        }
+    }
+}
+
+impl<Msg: 'static> VirtualRows<Msg> {
+    fn map_with<To: 'static>(self, f: &MapFn<Msg, To>) -> VirtualRows<To> {
+        let render = self.render;
+        let f = Rc::clone(f);
+        VirtualRows {
+            count: self.count,
+            row_height: self.row_height,
+            render: Rc::new(move |index| render(index).map_with(&f)),
+            selected: self.selected,
+            extras: self.extras,
+        }
+    }
+}
+
 impl<Msg> Element<Msg> {
     pub(crate) fn new(kind: Kind) -> Self {
         Self {

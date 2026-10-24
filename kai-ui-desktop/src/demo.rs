@@ -5392,6 +5392,52 @@ mod tests {
     /// Full layout + paint of the demo view with real cosmic-text
     /// measurement and no cache; widths alternate so text re-wraps every
     /// frame. Run with:
+    /// Cost of [`Element::map`] on whole demo views, against building them:
+    /// `cargo test --release -- --ignored --nocapture bench_element_map`
+    #[test]
+    #[ignore = "benchmark; run explicitly in release mode"]
+    fn bench_element_map() {
+        #[derive(Clone, Debug)]
+        struct Wrapped(#[allow(dead_code)] Msg);
+
+        fn count(element: &crate::element::Element<Wrapped>) -> usize {
+            1 + element.children.iter().map(count).sum::<usize>()
+        }
+        fn percentile(samples: &mut [Duration], p: f64) -> Duration {
+            samples.sort();
+            samples[((samples.len() - 1) as f64 * p) as usize]
+        }
+
+        const ITERATIONS: usize = 300;
+        for section in [
+            Section::Home,
+            Section::Fields,
+            Section::Table,
+            Section::Map,
+            Section::Catalog,
+        ] {
+            let demo = Demo::at(section);
+            let mut build = Vec::with_capacity(ITERATIONS);
+            let mut mapped = Vec::with_capacity(ITERATIONS);
+            let mut nodes = 0;
+            for _ in 0..ITERATIONS {
+                let start = Instant::now();
+                let tree = demo.view();
+                build.push(start.elapsed());
+                let start = Instant::now();
+                let tree = tree.map(Wrapped);
+                mapped.push(start.elapsed());
+                nodes = count(&tree);
+            }
+            let (b50, m50) = (percentile(&mut build, 0.5), percentile(&mut mapped, 0.5));
+            let (b95, m95) = (percentile(&mut build, 0.95), percentile(&mut mapped, 0.95));
+            println!(
+                "{section:?}: {nodes} nodos · view p50 {b50:?} p95 {b95:?} · map p50 {m50:?} p95 {m95:?} ({:.1} % de view)",
+                100.0 * m50.as_secs_f64() / b50.as_secs_f64()
+            );
+        }
+    }
+
     /// `cargo test --release -- --ignored --nocapture bench_layout_and_paint`
     #[test]
     #[ignore = "benchmark; run explicitly in release mode"]

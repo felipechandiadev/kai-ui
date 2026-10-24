@@ -61,8 +61,9 @@ impl<Msg: 'static> Effects<Msg> {
 - `Effects::map` envuelve los `done` de `perform`/`after`; las claves de
   tareas (`keyed`) se prefijan con la ruta de la página para que dos páginas
   no se cancelen entre sí.
-- **Costo:** se paga en cada `view`. Medirlo con el benchmark de frame de la
-  demo antes de aceptar (principio 5 de [00](00-vision-y-arquitectura.md)).
+- **Costo:** se paga en cada `view`. Medido (`bench_element_map`, release):
+  mapear la vista completa de una sección de la demo cuesta 10–27 µs (p50),
+  7–12 % de construirla; una página real solo mapea su subárbol.
 
 Es útil por sí solo (componentes con su propio `Msg`), así que va primero.
 
@@ -296,7 +297,7 @@ leerlo explique la app. No usa macros procedurales.
 | Paso | Qué | Hecho cuando |
 |---|---|---|
 | R0 | ✅ **Limpieza de nombres** (24-oct-2026): identificadores del crate, la demo y `kai-cli` en inglés (`Seccion` → `Section`, `actualizar` → `update_model`…), ids de comando (`kai.paleta` → `kai.palette`, `ui.ir_a` → `ui.go_to`), `test_id`, claves JSON de los comandos y `mcp-schema.json`. | Hecho: sin identificadores en español; los textos visibles siguen en español. |
-| R1 | `Element::map` y `Effects::map`. | Tests de mapeo de todos los handlers; benchmark de frame sin regresión medible. |
+| R1 | ✅ `Element::map`, `Effects::map` y `Subscriptions::map` (24-oct-2026). | Hecho: tests de los 10 handlers, filas virtuales y una app padre con una parte hija (`session/map_tests.rs`). Costo medido con `bench_element_map` (release, p50 sobre toda la vista de la demo): 10–27 µs por vista de 135–373 nodos, 7–12 % de construirla y ~0,3 % de un frame a 120 Hz. |
 | R2 | `Route`, `Router<R>`, `App::route`, comandos `kai.back`/`kai.forward`/`kai.up`/`kai.navigate`, scroll y foco por ruta, `TestApp::navigate`. | Una app escrita a mano navega lista ↔ detalle con historial, y atrás devuelve el scroll. |
 | R3 | `Page`, `Context`, `SectionMeta` y una raíz escrita a mano con dos secciones. | El contrato funciona sin generación de código. |
 | R4 | `kai-build` genera lo de R3 desde carpetas; `kai new section`; `kai doctor` valida. | Un fixture `fixtures/sections-app` compila desde carpetas y su código generado es igual al escrito a mano de R3. |

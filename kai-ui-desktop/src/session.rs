@@ -10,6 +10,8 @@
 mod busy_tests;
 mod calls;
 #[cfg(test)]
+mod map_tests;
+#[cfg(test)]
 mod typeahead_tests;
 
 use std::any::Any;

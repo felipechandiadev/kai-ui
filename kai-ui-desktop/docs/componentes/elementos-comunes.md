@@ -11,6 +11,30 @@ los componentes los usan por dentro. Están en `src/element.rs`.
 - **Builder**: `TextField::new("Nombre", &valor) … .build()` cuando hay
   muchas opciones. Hasta `.build()` no es un `Element`.
 
+## Componer partes con su propio `Msg`
+
+`Element::map(f)` convierte un árbol que envía `ChildMsg` en uno que envía
+`f(ChildMsg)`; `Effects::map` y `Subscriptions::map` hacen lo mismo con lo
+que devuelve su `update` y sus suscripciones:
+
+```rust
+enum Msg { Customers(customers::Msg), Other }
+
+fn view(&self) -> Element<Msg> {
+    self.customers.view().map(Msg::Customers)
+}
+
+fn update(&mut self, msg: Msg) -> Effects<Msg> {
+    match msg {
+        Msg::Customers(msg) => self.customers.update(msg).map(Msg::Customers),
+        Msg::Other => Effects::none(),
+    }
+}
+```
+
+Las claves de `Effects::keyed` no cambian: dos partes que usen la misma clave
+se reemplazan entre sí.
+
 ## Estilo
 
 | Método | Qué hace |

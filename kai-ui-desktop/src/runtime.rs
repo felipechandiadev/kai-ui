@@ -204,6 +204,59 @@ impl<Msg> Effects<Msg> {
         Self(Vec::new())
     }
 
+    /// The same effects delivering `f(msg)`: a page or component with its
+    /// own message type returns them from its parent's `update`. Keys
+    /// ([`Effects::keyed`]) stay as they are, so two parts of an app that
+    /// key their tasks alike still replace each other; give them distinct
+    /// keys.
+    pub fn map<To: 'static>(self, f: impl Fn(Msg) -> To + 'static) -> Effects<To>
+    where
+        Msg: 'static,
+    {
+        let f: std::rc::Rc<dyn Fn(Msg) -> To> = std::rc::Rc::new(f);
+        Effects(
+            self.0
+                .into_iter()
+                .map(|effect| match effect {
+                    Effect::After { key, delay, msg } => Effect::After {
+                        key,
+                        delay,
+                        msg: f(msg),
+                    },
+                    Effect::Perform {
+                        key,
+                        task,
+                        done,
+                        completes,
+                    } => {
+                        let f = std::rc::Rc::clone(&f);
+                        Effect::Perform {
+                            key,
+                            task,
+                            done: Box::new(move |output| f(done(output))),
+                            completes,
+                        }
+                    }
+                    Effect::Cancel(key) => Effect::Cancel(key),
+                    Effect::PickFile { request, done } => {
+                        let f = std::rc::Rc::clone(&f);
+                        Effect::PickFile {
+                            request,
+                            done: Box::new(move |path| f(done(path))),
+                        }
+                    }
+                    Effect::SaveFile { request, done } => {
+                        let f = std::rc::Rc::clone(&f);
+                        Effect::SaveFile {
+                            request,
+                            done: Box::new(move |path| f(done(path))),
+                        }
+                    }
+                })
+                .collect(),
+        )
+    }
+
     pub fn batch(effects: impl IntoIterator<Item = Self>) -> Self {
         Self(effects.into_iter().flat_map(|effects| effects.0).collect())
     }
@@ -377,6 +430,20 @@ pub(crate) enum SubKind {
 impl<Msg> Subscriptions<Msg> {
     pub fn none() -> Self {
         Self(Vec::new())
+    }
+
+    /// The same subscriptions emitting `f(msg)`; see [`Effects::map`].
+    pub fn map<To>(self, f: impl Fn(Msg) -> To) -> Subscriptions<To> {
+        Subscriptions(
+            self.0
+                .into_iter()
+                .map(|sub| Sub {
+                    key: sub.key,
+                    kind: sub.kind,
+                    msg: f(sub.msg),
+                })
+                .collect(),
+        )
     }
 
     pub fn batch(subs: impl IntoIterator<Item = Self>) -> Self {
