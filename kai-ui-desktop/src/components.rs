@@ -3877,4 +3877,60 @@ mod tests {
         });
         assert_eq!(headings, ["Demo", "Componentes"]);
     }
+
+    /// Every public component constructor (a `pub fn name<Msg…>`) appears in
+    /// some page of `docs/componentes`, and every page the index links exists.
+    #[test]
+    fn components_have_docs() {
+        use std::fs;
+        use std::path::Path;
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let docs_dir = root.join("docs/componentes");
+        let docs: String = fs::read_dir(&docs_dir)
+            .expect("docs/componentes")
+            .filter_map(|entry| fs::read_to_string(entry.ok()?.path()).ok())
+            .collect();
+        let mut sources = vec![root.join("src/components.rs")];
+        for dir in ["src/components", "src/charts", "src/maps", "src/document"] {
+            for entry in fs::read_dir(root.join(dir)).unwrap().flatten() {
+                if entry.path().extension().is_some_and(|ext| ext == "rs") {
+                    sources.push(entry.path());
+                }
+            }
+        }
+        let mut missing = Vec::new();
+        for path in sources {
+            let code = fs::read_to_string(&path).unwrap();
+            for line in code.lines() {
+                let Some(rest) = line.strip_prefix("pub fn ") else {
+                    continue;
+                };
+                let Some((name, after)) = rest.split_once('<') else {
+                    continue;
+                };
+                if !after.starts_with("Msg") {
+                    continue;
+                }
+                if !docs.contains(&format!("{name}(")) && !docs.contains(&format!("`{name}`")) {
+                    missing.push(format!("{name} ({})", path.display()));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "componentes sin documentar: {missing:?}"
+        );
+
+        let index = fs::read_to_string(docs_dir.join("README.md")).unwrap();
+        for link in index.split("](").skip(1) {
+            let file = link.split(')').next().unwrap().split('#').next().unwrap();
+            if file.ends_with(".md") {
+                assert!(
+                    docs_dir.join(file).exists(),
+                    "el índice enlaza {file}, que no existe"
+                );
+            }
+        }
+    }
 }

@@ -259,9 +259,9 @@ impl Default for Demo {
             doc_comment_draft: String::new(),
             doc_edit_status: String::new(),
             plantilla_idx: 0,
-            catalog_preset: CatalogPreset::AppKitLight,
+            catalog_preset: CatalogPreset::GlassLight,
             catalog_density: Density::Comfortable,
-            catalog_size: ControlSize::Regular,
+            catalog_size: ControlSize::Large,
             catalog_sample: String::new(),
             catalog_check: true,
             catalog_switch: true,
@@ -4710,7 +4710,8 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Theme of the demo, chosen with `KAI_THEME=kai|appkit|appkit-dark`
-/// (default AppKit current light). `KAI_THEME=kai` keeps the Kai theme.
+/// (default: Glass 27 light, large controls, comfortable density).
+/// `KAI_THEME=kai` keeps the Kai theme.
 /// `KAI_THEME`: `appkit[-dark]` follows this Mac ([`Theme::appkit_current`]);
 /// `aqua11[-dark]` and `glass27[-dark]` force a generation. `KAI_HOVER=0`
 /// turns hover off (strict AppKit). `KAI_MIX=appkit|a|b|c` picks the mixed
@@ -4721,7 +4722,13 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
 fn demo_theme() -> Theme {
     let forced = |generation, appearance| Theme::appkit_static(generation, appearance);
     let theme = match std::env::var("KAI_THEME").as_deref() {
-        Ok("appkit" | "appkit-light") | Ok("") | Err(_) => Theme::appkit_current(Appearance::Light),
+        // Por defecto: Glass claro, controles grandes y densidad cómoda.
+        Ok("") | Err(_) => Theme {
+            control_size: ControlSize::Large,
+            density: Density::Comfortable,
+            ..forced(AppKitGeneration::Glass27, Appearance::Light)
+        },
+        Ok("appkit" | "appkit-light") => Theme::appkit_current(Appearance::Light),
         Ok("appkit-dark") => Theme::appkit_current(Appearance::Dark),
         Ok("aqua11") => forced(AppKitGeneration::Aqua11, Appearance::Light),
         Ok("aqua11-dark") => forced(AppKitGeneration::Aqua11, Appearance::Dark),

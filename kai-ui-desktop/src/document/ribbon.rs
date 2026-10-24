@@ -1097,7 +1097,9 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         let mut tab_row = div()
             .class(&themed(
                 "flex flex-row items-end gap-1 border-b border-border",
-                "flex flex-row items-end gap-1 border-b border-separator",
+                // Glass: sin regla, las pestañas son píldoras.
+                "flex flex-row items-end gap-1 border-b border-separator \
+                 glass:items-center glass:border-b-0 glass:pb-1",
             ))
             .role(Role::TabList);
 
@@ -1125,7 +1127,9 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                      selected:border-accent selected:text-foreground selected:font-medium",
                     "flex items-center h-7 px-2.5 border-b-2 border-transparent text-control \
                      whitespace-nowrap text-secondary-label cursor-default hover:text-label \
-                     selected:border-control-accent selected:text-label selected:font-medium",
+                     selected:border-control-accent selected:text-label selected:font-medium \
+                     glass:border-b-0 glass:rounded-full glass:px-3 glass:hover:bg-fill-3 \
+                     glass:selected:bg-fill-2",
                 ))
                 .role(Role::Tab)
                 .pressed(tab.id == active)
@@ -1185,7 +1189,11 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         let mut root = div()
             .class(&themed(
                 "flex flex-col gap-0 w-full rounded-md border border-border bg-card px-2 py-1.5",
-                "flex flex-col gap-0 w-full rounded-md border border-separator bg-window px-2 py-1.5",
+                // Glass (macOS 26+): panel flotante muy redondeado, sin borde,
+                // con relleno de control y sombra suave en lugar de marco.
+                "flex flex-col gap-0 w-full rounded-md border border-separator bg-window px-2 py-1.5 \
+                 glass:rounded-[18px] glass:border-0 glass:bg-control glass:shadow-md glass:px-3 \
+                 glass:py-2",
             ))
             .role(Role::Group)
             .children(children);

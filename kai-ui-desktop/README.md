@@ -8,6 +8,12 @@ Versión del crate: `Cargo.toml` (sincronizado desde `../version.json`). Histori
 
 La [guía de desarrollo](docs/dev/README.md) contiene la visión arquitectónica y el recorrido paso a paso. El estado del camino hacia una plataforma completa (qué está hecho, qué falta y cuánto costaría) está en una tabla de una página: [hoja de ruta, §1.1](docs/dev/13-hoja-de-ruta-plataforma.md#11-estado-al-20-de-octubre-de-2026).
 
+## Componentes
+
+Una página por componente, con API, ejemplos, teclado, accesibilidad, partes
+para tests y temas: [`docs/componentes/`](docs/componentes/README.md). El test
+`components_have_docs` falla si un componente público queda sin página.
+
 ## Estado actual
 
 Kai abre una ventana con `winit`, dibuja sobre `wgpu` en Metal y presenta texto con `glyphon`/`cosmic-text`. Las apps siguen la arquitectura Elm: un modelo, mensajes, `update` y una `view` que devuelve un árbol tipo DOM (`Element<Msg>`), reconstruido en cada frame.

@@ -112,3 +112,14 @@ png = "0.18.1"
 # al activar `feature = "document"`.
 [patch.crates-io]
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1de657b860b3c8abb44e1f2b32bd8" }
+
+# `target/` llegaba a 30–60 GB con unas pocas compilaciones (debug completo de
+# ~400 dependencias por cada combinación de features). Las dependencias van
+# sin info de depuración y el crate solo con tablas de líneas: los backtraces
+# siguen dando archivo y línea; para depurar paso a paso con lldb, poner
+# `debug = true` aquí temporalmente.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
