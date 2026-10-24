@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn visible_tiles_load_center_first_and_then_draw() {
-        let source = source("centro");
+        let source = source("center");
         let mut store = TileStore::default();
         let view = camera(13.0);
         let (frame, loads) = store.frame(&source, view);
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn new_tiles_are_revealed_a_few_per_frame() {
-        let source = source("revelar");
+        let source = source("reveal");
         let mut store = TileStore::default();
         let view = Camera::new(
             MapView::new(PLAZA, 13.0),
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn an_ancestor_stands_in_while_a_tile_loads() {
-        let source = source("ancestro");
+        let source = source("ancestor");
         let mut store = TileStore::default();
         settle(&mut store, &source, camera(11.0));
         let (frame, loads) = store.frame(&source, camera(13.0));
@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn past_the_deepest_zoom_tiles_scale_up_and_outside_the_data_the_root_shows() {
-        let source = source("sobrezoom");
+        let source = source("overzoom");
         let mut store = TileStore::default();
         let frame = settle(&mut store, &source, camera(18.0));
         assert!(frame.tiles.iter().all(|placed| placed.tile.z == 13));
@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn tiles_that_leave_the_view_stop_loading() {
-        let source = source("cancelar");
+        let source = source("cancel");
         let mut store = TileStore::default();
         let (_, loads) = store.frame(&source, camera(13.0));
         assert!(!store.loading(&source).is_empty());

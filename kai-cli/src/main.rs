@@ -15,7 +15,7 @@ mod watch;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USO: &str = "\
+const USAGE: &str = "\
 Uso: kai <comando> [opciones]
 
 Comandos:
@@ -35,86 +35,86 @@ Comandos:
 Si hay kai.toml, `kai dev` usa [dev].bin y observa el manifiesto.";
 
 #[derive(Debug, PartialEq)]
-enum Comando {
-    Dev(dev::Opciones),
+enum Command {
+    Dev(dev::Options),
     Doctor,
-    Test(test_cmd::Opciones),
-    New(new_cmd::Opciones),
-    IconsAdd(icons_cmd::Opciones),
-    Ayuda,
+    Test(test_cmd::Options),
+    New(new_cmd::Options),
+    IconsAdd(icons_cmd::Options),
+    Help,
     Version,
 }
 
-fn parse(args: impl IntoIterator<Item = String>) -> Result<Comando, String> {
+fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
-        None | Some("-h" | "--help" | "help") => Ok(Comando::Ayuda),
-        Some("-V" | "--version") => Ok(Comando::Version),
-        Some("dev") => parse_dev(args).map(Comando::Dev),
+        None | Some("-h" | "--help" | "help") => Ok(Command::Help),
+        Some("-V" | "--version") => Ok(Command::Version),
+        Some("dev") => parse_dev(args).map(Command::Dev),
         Some("doctor") => {
             if args.next().is_some() {
                 return Err("kai doctor no acepta argumentos".into());
             }
-            Ok(Comando::Doctor)
+            Ok(Command::Doctor)
         }
-        Some("test") => parse_test(args).map(Comando::Test),
-        Some("new") => parse_new(args).map(Comando::New),
-        Some("icons") => parse_icons(args).map(Comando::IconsAdd),
-        Some(otro) => Err(format!("comando desconocido: {otro}")),
+        Some("test") => parse_test(args).map(Command::Test),
+        Some("new") => parse_new(args).map(Command::New),
+        Some("icons") => parse_icons(args).map(Command::IconsAdd),
+        Some(other) => Err(format!("comando desconocido: {other}")),
     }
 }
 
-fn parse_dev(mut args: impl Iterator<Item = String>) -> Result<dev::Opciones, String> {
-    let mut opciones = dev::Opciones::default();
+fn parse_dev(mut args: impl Iterator<Item = String>) -> Result<dev::Options, String> {
+    let mut options = dev::Options::default();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--bin" => {
                 let bin = args.next().ok_or("--bin necesita un nombre")?;
-                opciones.bin = Some(bin);
+                options.bin = Some(bin);
             }
             "--watch" => {
-                let carpeta = args.next().ok_or("--watch necesita una carpeta")?;
-                opciones.watch.push(PathBuf::from(carpeta));
+                let folder = args.next().ok_or("--watch necesita una carpeta")?;
+                options.watch.push(PathBuf::from(folder));
             }
             "--" => {
-                opciones.args = args.collect();
+                options.args = args.collect();
                 break;
             }
             "-h" | "--help" => return Err(String::new()),
-            otro => return Err(format!("argumento desconocido para kai dev: {otro}")),
+            other => return Err(format!("argumento desconocido para kai dev: {other}")),
         }
     }
-    Ok(opciones)
+    Ok(options)
 }
 
-fn parse_test(mut args: impl Iterator<Item = String>) -> Result<test_cmd::Opciones, String> {
-    let mut opciones = test_cmd::Opciones::default();
+fn parse_test(mut args: impl Iterator<Item = String>) -> Result<test_cmd::Options, String> {
+    let mut options = test_cmd::Options::default();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--snapshots" => opciones.snapshots = true,
+            "--snapshots" => options.snapshots = true,
             "--" => {
-                opciones.cargo_args.push("--".into());
-                opciones.cargo_args.extend(args);
+                options.cargo_args.push("--".into());
+                options.cargo_args.extend(args);
                 break;
             }
             "-h" | "--help" => return Err(String::new()),
-            otro => {
+            other => {
                 // Cargo-style passthrough (e.g. --lib, filtro).
-                opciones.cargo_args.push(otro.into());
-                opciones.cargo_args.extend(args);
+                options.cargo_args.push(other.into());
+                options.cargo_args.extend(args);
                 break;
             }
         }
     }
-    Ok(opciones)
+    Ok(options)
 }
 
-fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Opciones, String> {
-    let nombre = args
+fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Options, String> {
+    let name = args
         .next()
         .ok_or_else(|| "kai new necesita un nombre de proyecto".to_string())?;
-    if nombre.starts_with('-') {
-        return Err(format!("nombre inválido: {nombre}"));
+    if name.starts_with('-') {
+        return Err(format!("nombre inválido: {name}"));
     }
     let mut template = new_cmd::Template::Basic;
     while let Some(arg) = args.next() {
@@ -126,23 +126,25 @@ fn parse_new(mut args: impl Iterator<Item = String>) -> Result<new_cmd::Opciones
                 template = match t.as_str() {
                     "basic" => new_cmd::Template::Basic,
                     "multiwindow" => new_cmd::Template::Multiwindow,
-                    otro => {
-                        return Err(format!("plantilla desconocida: {otro} (basic|multiwindow)"));
+                    other => {
+                        return Err(format!(
+                            "plantilla desconocida: {other} (basic|multiwindow)"
+                        ));
                     }
                 };
             }
             "-h" | "--help" => return Err(String::new()),
-            otro => return Err(format!("argumento desconocido para kai new: {otro}")),
+            other => return Err(format!("argumento desconocido para kai new: {other}")),
         }
     }
-    Ok(new_cmd::Opciones { nombre, template })
+    Ok(new_cmd::Options { name, template })
 }
 
-fn parse_icons(mut args: impl Iterator<Item = String>) -> Result<icons_cmd::Opciones, String> {
+fn parse_icons(mut args: impl Iterator<Item = String>) -> Result<icons_cmd::Options, String> {
     match args.next().as_deref() {
         Some("add") => icons_cmd::parse_args(args),
-        Some(otro) => Err(format!(
-            "subcomando desconocido para kai icons: {otro} (add)"
+        Some(other) => Err(format!(
+            "subcomando desconocido para kai icons: {other} (add)"
         )),
         None => Err("kai icons necesita un subcomando (add)".into()),
     }
@@ -150,43 +152,43 @@ fn parse_icons(mut args: impl Iterator<Item = String>) -> Result<icons_cmd::Opci
 
 fn main() -> ExitCode {
     match parse(std::env::args().skip(1)) {
-        Ok(Comando::Ayuda) => {
-            println!("{USO}");
+        Ok(Command::Help) => {
+            println!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Ok(Comando::Version) => {
+        Ok(Command::Version) => {
             println!("kai {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Ok(Comando::Dev(opciones)) => match dev::run(&opciones) {
+        Ok(Command::Dev(options)) => match dev::run(&options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai dev: {error}");
                 ExitCode::FAILURE
             }
         },
-        Ok(Comando::Doctor) => match doctor::run() {
+        Ok(Command::Doctor) => match doctor::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai doctor: {error}");
                 ExitCode::FAILURE
             }
         },
-        Ok(Comando::Test(opciones)) => match test_cmd::run(&opciones) {
+        Ok(Command::Test(options)) => match test_cmd::run(&options) {
             Ok(code) => code,
             Err(error) => {
                 eprintln!("kai test: {error}");
                 ExitCode::FAILURE
             }
         },
-        Ok(Comando::New(opciones)) => match new_cmd::run(&opciones) {
+        Ok(Command::New(options)) => match new_cmd::run(&options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai new: {error}");
                 ExitCode::FAILURE
             }
         },
-        Ok(Comando::IconsAdd(opciones)) => match icons_cmd::run(&opciones) {
+        Ok(Command::IconsAdd(options)) => match icons_cmd::run(&options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai icons add: {error}");
@@ -197,7 +199,7 @@ fn main() -> ExitCode {
             if !error.is_empty() {
                 eprintln!("kai: {error}\n");
             }
-            eprintln!("{USO}");
+            eprintln!("{USAGE}");
             ExitCode::from(2)
         }
     }
@@ -207,7 +209,7 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
-    fn parse_str(args: &[&str]) -> Result<Comando, String> {
+    fn parse_str(args: &[&str]) -> Result<Command, String> {
         parse(args.iter().map(|arg| arg.to_string()))
     }
 
@@ -215,14 +217,14 @@ mod tests {
     fn dev_takes_a_bin_folders_to_watch_and_the_app_arguments() {
         assert_eq!(
             parse_str(&["dev"]),
-            Ok(Comando::Dev(dev::Opciones::default()))
+            Ok(Command::Dev(dev::Options::default()))
         );
         assert_eq!(
             parse_str(&[
                 "dev", "--bin", "demo", "--watch", "../temas", "--watch", "datos", "--", "--mcp",
                 "--bin",
             ]),
-            Ok(Comando::Dev(dev::Opciones {
+            Ok(Command::Dev(dev::Options {
                 bin: Some("demo".into()),
                 watch: vec!["../temas".into(), "datos".into()],
                 args: vec!["--mcp".into(), "--bin".into()],
@@ -232,28 +234,28 @@ mod tests {
 
     #[test]
     fn doctor_test_new_and_help() {
-        assert_eq!(parse_str(&[]), Ok(Comando::Ayuda));
-        assert_eq!(parse_str(&["--help"]), Ok(Comando::Ayuda));
-        assert_eq!(parse_str(&["--version"]), Ok(Comando::Version));
-        assert_eq!(parse_str(&["doctor"]), Ok(Comando::Doctor));
+        assert_eq!(parse_str(&[]), Ok(Command::Help));
+        assert_eq!(parse_str(&["--help"]), Ok(Command::Help));
+        assert_eq!(parse_str(&["--version"]), Ok(Command::Version));
+        assert_eq!(parse_str(&["doctor"]), Ok(Command::Doctor));
         assert_eq!(
             parse_str(&["test", "--snapshots"]),
-            Ok(Comando::Test(test_cmd::Opciones {
+            Ok(Command::Test(test_cmd::Options {
                 snapshots: true,
                 cargo_args: vec![],
             }))
         );
         assert_eq!(
             parse_str(&["new", "hola", "--template", "basic"]),
-            Ok(Comando::New(new_cmd::Opciones {
-                nombre: "hola".into(),
+            Ok(Command::New(new_cmd::Options {
+                name: "hola".into(),
                 template: new_cmd::Template::Basic,
             }))
         );
         assert_eq!(
             parse_str(&["icons", "add", "search"]),
-            Ok(Comando::IconsAdd(icons_cmd::Opciones {
-                nombre: "search".into(),
+            Ok(Command::IconsAdd(icons_cmd::Options {
+                name: "search".into(),
                 from: None,
             }))
         );

@@ -256,10 +256,10 @@ mod tests {
             root = root.children([
                 button("Borrar…", ButtonVariant::Primary)
                     .on_click(Msg::Ask)
-                    .test_id("borrar"),
+                    .test_id("delete"),
                 button("Otro", ButtonVariant::Outlined)
                     .on_click(Msg::Other)
-                    .test_id("otro"),
+                    .test_id("other"),
             ]);
             if self.open {
                 root = root.child(
@@ -268,14 +268,14 @@ mod tests {
                         .content(
                             crate::components::TextField::new("Motivo", self.name.clone())
                                 .on_input(Msg::Name)
-                                .test_id("motivo")
+                                .test_id("reason")
                                 .build(),
                         )
                         .cancel_button("Cancelar", Msg::Cancel)
                         .default_button("Borrar", Msg::Delete)
                         .destructive(true)
                         .width(DialogWidth::Sm)
-                        .test_id("dialogo")
+                        .test_id("dialog")
                         .build(),
                 );
             }
@@ -286,47 +286,47 @@ mod tests {
     #[test]
     fn a_dialog_traps_the_focus_and_gives_it_back() {
         let mut app = TestApp::new(Files::default());
-        app.click(By::test_id("borrar"));
+        app.click(By::test_id("delete"));
         assert!(app.app().open);
         app.screen()
             .get(By::role(Role::Dialog).name("¿Borrar «notas.txt»?"));
-        assert!(app.is_focused(By::test_id("motivo")), "first control");
+        assert!(app.is_focused(By::test_id("reason")), "first control");
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("dialogo.cancel")));
+        assert!(app.is_focused(By::test_id("dialog.cancel")));
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("dialogo.default")));
+        assert!(app.is_focused(By::test_id("dialog.default")));
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("motivo")), "Tab stays inside");
+        assert!(app.is_focused(By::test_id("reason")), "Tab stays inside");
 
-        let other = app.screen().get(By::test_id("otro")).bounds();
+        let other = app.screen().get(By::test_id("other")).bounds();
         app.click_point(crate::geometry::Point {
             x: other.x + other.width / 2.0,
             y: other.y + other.height / 2.0,
         });
         assert!(app.app().open, "clicks outside do nothing");
-        assert!(app.is_focused(By::test_id("motivo")));
+        assert!(app.is_focused(By::test_id("reason")));
         assert!(!app.messages().contains(&Msg::Other));
 
         app.press(Key::Escape, Modifiers::NONE);
         assert_eq!(app.app().dismissed, 1);
         assert!(app.screen().query(By::role(Role::Dialog)).is_none());
-        assert!(app.is_focused(By::test_id("borrar")), "focus comes back");
+        assert!(app.is_focused(By::test_id("delete")), "focus comes back");
     }
 
     #[test]
     fn return_presses_the_default_button() {
         let mut app = TestApp::new(Files::default());
-        app.click(By::test_id("borrar"));
-        app.type_text(By::test_id("motivo"), "viejo");
+        app.click(By::test_id("delete"));
+        app.type_text(By::test_id("reason"), "viejo");
         app.press(Key::Enter, Modifiers::NONE);
         assert_eq!(app.app().deleted, 1);
         assert!(!app.app().open);
         assert!(!app.session().modal_open());
 
-        app.click(By::test_id("borrar"));
+        app.click(By::test_id("delete"));
         assert!(app.session().modal_open());
-        let default = app.screen().get(By::test_id("dialogo.default"));
+        let default = app.screen().get(By::test_id("dialog.default"));
         assert_eq!(default.role(), Role::Button);
         assert!(default.node().is_default);
     }

@@ -120,6 +120,9 @@ krilla = { git = "https://github.com/storytold/craft-libs", rev = "c3487320b2d1d
 # `debug = true` aquí temporalmente.
 [profile.dev]
 debug = "line-tables-only"
+# La caché incremental sumaba ~10 GB por combinación de features; sin ella
+# cada recompilación del crate tarda algo más.
+incremental = false
 
 [profile.dev.package."*"]
 debug = false

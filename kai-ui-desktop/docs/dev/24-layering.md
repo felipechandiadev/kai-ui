@@ -20,7 +20,7 @@ Diálogos y toasts viven como capas encima del shell (`Role::Dialog`, toast stac
 
 ## Demo
 
-**Catálogo** → card «Capas AppKit» (`catalogo.capas`): swatches window / under-page / control / fill-3.
+**Catálogo** → card «Capas AppKit» (`catalog.capas`): swatches window / under-page / control / fill-3.
 
 ## Qué no es
 

@@ -2180,11 +2180,11 @@ impl<A: App> Session<A> {
                 .find_test_id(test_id)
                 .map_or(WidgetId(0), |element| element.id)
         };
-        palette.search = find("kai.paleta.buscar");
-        palette.panel = find("kai.paleta");
+        palette.search = find("kai.palette.find");
+        palette.panel = find("kai.palette");
         palette.rows = items
             .iter()
-            .map(|item| (find(&format!("kai.paleta.{}", item.id)), item.id))
+            .map(|item| (find(&format!("kai.palette.{}", item.id)), item.id))
             .collect();
     }
 

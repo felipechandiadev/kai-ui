@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use crate::manifest;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Opciones {
-    pub nombre: String,
+pub struct Options {
+    pub name: String,
     pub template: Template,
 }
 
@@ -18,12 +18,12 @@ pub enum Template {
     Multiwindow,
 }
 
-pub fn run(opciones: &Opciones) -> Result<(), String> {
-    let dir = PathBuf::from(&opciones.nombre);
+pub fn run(options: &Options) -> Result<(), String> {
+    let dir = PathBuf::from(&options.name);
     if dir.exists() {
         return Err(format!("{} ya existe", dir.display()));
     }
-    if opciones.template == Template::Multiwindow {
+    if options.template == Template::Multiwindow {
         eprintln!("kai new: plantilla multiwindow aún no tiene varias ventanas; se genera basic");
     }
 
@@ -58,9 +58,8 @@ pub fn run(opciones: &Opciones) -> Result<(), String> {
     Ok(())
 }
 
-fn sanitize_id(nombre: &str) -> String {
-    nombre
-        .chars()
+fn sanitize_id(name: &str) -> String {
+    name.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {
                 c.to_ascii_lowercase()
@@ -73,17 +72,17 @@ fn sanitize_id(nombre: &str) -> String {
         .to_string()
 }
 
-fn cargo_toml(nombre: &str) -> String {
+fn cargo_toml(name: &str) -> String {
     format!(
         r#"[package]
-name = "{nombre}"
+name = "{name}"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 publish = false
 
 [[bin]]
-name = "{nombre}"
+name = "{name}"
 path = "src/main.rs"
 
 [dependencies]
@@ -139,9 +138,9 @@ fn placeholder() {
 
 const GITIGNORE: &str = "/target/\n/Cargo.lock\n";
 
-fn readme(nombre: &str) -> String {
+fn readme(name: &str) -> String {
     format!(
-        "# {nombre}\n\nGenerado con `kai new`. Flujo: `kai doctor` → `kai test` → `kai dev`.\n\n\
+        "# {name}\n\nGenerado con `kai new`. Flujo: `kai doctor` → `kai test` → `kai dev`.\n\n\
 Iconos propios: `kai icons add <nombre>` (Lucide del crate kai) o\n\
 `kai icons add ./mi.svg --name foo`. Quedan en `assets/icons/`; en Rust:\n\
 `kai::element::icon_svg(include_str!(\"../assets/icons/foo.svg\"))`.\n"
@@ -162,17 +161,17 @@ mod tests {
         let base = std::env::temp_dir().join(format!("kai-new-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
-        let nombre = base.join("demo-app");
-        run(&Opciones {
-            nombre: nombre.to_str().unwrap().into(),
+        let name = base.join("demo-app");
+        run(&Options {
+            name: name.to_str().unwrap().into(),
             template: Template::Basic,
         })
         .unwrap();
-        assert!(nombre.join("kai.toml").is_file());
-        assert!(nombre.join("Cargo.toml").is_file());
-        assert!(nombre.join("src/main.rs").is_file());
-        assert!(nombre.join("assets/icons").is_dir());
-        let toml = fs::read_to_string(nombre.join("kai.toml")).unwrap();
+        assert!(name.join("kai.toml").is_file());
+        assert!(name.join("Cargo.toml").is_file());
+        assert!(name.join("src/main.rs").is_file());
+        assert!(name.join("assets/icons").is_dir());
+        let toml = fs::read_to_string(name.join("kai.toml")).unwrap();
         assert!(toml.contains("[app]"));
         assert!(toml.contains("[dev]"));
         let _ = fs::remove_dir_all(&base);

@@ -111,11 +111,11 @@ mod tests {
     use crate::ui_engine::{Key, Modifiers};
 
     #[derive(Default)]
-    struct Ajustes {
+    struct Settings {
         tab: usize,
     }
 
-    impl App for Ajustes {
+    impl App for Settings {
         type Msg = usize;
 
         fn title(&self) -> String {
@@ -132,28 +132,28 @@ mod tests {
                 div().child(
                     crate::components::button(name, crate::components::ButtonVariant::Secondary)
                         .on_click(self.tab)
-                        .test_id(format!("boton.{name}")),
+                        .test_id(format!("button.{name}")),
                 )
             };
             div().class("p-4").children([
-                text("Ajustes").test_id("titulo"),
+                text("Ajustes").test_id("title"),
                 Tabs::new(self.tab, |tab| tab)
                     .tab("General", panel("general"))
-                    .tab("Cuenta", panel("cuenta"))
-                    .tab("Avanzado", panel("avanzado"))
+                    .tab("Cuenta", panel("account"))
+                    .tab("Avanzado", panel("advanced"))
                     .build()
-                    .test_id("ajustes"),
+                    .test_id("settings"),
             ])
         }
     }
 
     fn tab(index: usize) -> By {
-        By::test_id(format!("ajustes.tab.{index}"))
+        By::test_id(format!("settings.tab.{index}"))
     }
 
     #[test]
     fn roles_names_and_the_selected_tab_reach_assistive_tech() {
-        let app = TestApp::new(Ajustes { tab: 1 });
+        let app = TestApp::new(Settings { tab: 1 });
         let screen = app.screen();
         let list = screen.get(By::role(Role::TabList));
         let tabs = screen.within(list).all(By::role(Role::Tab));
@@ -178,8 +178,8 @@ mod tests {
         let panels = screen.all(By::role(Role::TabPanel));
         assert_eq!(panels.len(), 1, "only the selected panel");
         assert_eq!(panels[0].name().as_deref(), Some("Cuenta"));
-        assert_eq!(panels[0].test_id(), Some("ajustes.panel"));
-        screen.within(panels[0]).get(By::test_id("boton.cuenta"));
+        assert_eq!(panels[0].test_id(), Some("settings.panel"));
+        screen.within(panels[0]).get(By::test_id("button.account"));
 
         let update = app.session().a11y_tree(1.0);
         let selected = update
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn arrows_select_the_next_tab_and_tab_goes_into_the_panel() {
-        let mut app = TestApp::new(Ajustes::default());
+        let mut app = TestApp::new(Settings::default());
         app.click(tab(0));
         assert!(app.is_focused(tab(0)));
 
@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(app.app().tab, 1);
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("boton.cuenta")));
+        assert!(app.is_focused(By::test_id("button.account")));
         let back = Modifiers {
             shift: true,
             ..Modifiers::NONE

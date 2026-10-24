@@ -38,7 +38,7 @@ lista; los tests de la demo exigen que esté vacía.
 | Método | Qué hace |
 |---|---|
 | `.test_id("seccion.cosa")` | Id estable para `TestApp` (`By::test_id`). |
-| `.part("nombre")` / `.parts_root()` | Partes internas de un componente: con `test_id("x")`, la parte queda `x.nombre`. |
+| `.part("name")` / `.parts_root()` | Partes internas de un componente: con `test_id("x")`, la parte queda `x.name`. |
 | `.role(Role::…)` | Rol de AccessKit. |
 | `.label("…")` | Nombre accesible. |
 | `.description("…")` | Descripción accesible. |

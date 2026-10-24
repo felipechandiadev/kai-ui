@@ -1079,7 +1079,7 @@ mod tests {
             Column::actions(|file: &File| {
                 button("Abrir", ButtonVariant::Text)
                     .on_click(Msg::Open(file.size))
-                    .test_id(format!("abrir.{}", file.name))
+                    .test_id(format!("open.{}", file.name))
             }),
         ]
     }
@@ -1131,7 +1131,7 @@ mod tests {
                 .on_select(Msg::Select)
                 .on_view(Msg::View)
                 .label("Archivos")
-                .test_id("tabla");
+                .test_id("table");
             if self.expandable {
                 table = table.expandable(
                     |file: &File| {
@@ -1139,7 +1139,7 @@ mod tests {
                             text(format!("Detalle de {}", file.name)),
                             button("Abrir", ButtonVariant::Text)
                                 .on_click(Msg::Open(file.size))
-                                .test_id(format!("detalle.{}", file.name)),
+                                .test_id(format!("detail.{}", file.name)),
                         ])
                     },
                     DETAIL,
@@ -1169,8 +1169,8 @@ mod tests {
             let mut files = Files::default();
             files.view.apply(ViewChange::Filtering(true));
             let app = TestApp::builder(files).theme(theme).build();
-            let row = bounds(&app, "tabla.filters");
-            let name = bounds(&app, "tabla.filter.0");
+            let row = bounds(&app, "table.filters");
+            let name = bounds(&app, "table.filter.0");
             assert_eq!(name.height, field);
             assert!(name.y >= row.y && name.y + name.height <= row.y + row.height);
             assert!(row.height - name.height <= 8.0, "a snug row: {row:?}");
@@ -1194,15 +1194,15 @@ mod tests {
             "only the filterable columns"
         );
 
-        app.type_text(By::test_id("tabla.filter.0"), "archivo-1");
+        app.type_text(By::test_id("table.filter.0"), "archivo-1");
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("tabla.filter.0.clear")));
+        assert!(app.is_focused(By::test_id("table.filter.0.clear")));
         app.press(Key::Tab, Modifiers::NONE);
         assert!(
-            app.is_focused(By::test_id("tabla.filter.1")),
+            app.is_focused(By::test_id("table.filter.1")),
             "each field is a Tab stop"
         );
-        app.type_text(By::test_id("tabla.filter.1"), ">=9000");
+        app.type_text(By::test_id("table.filter.1"), ">=9000");
         let expected = app
             .app()
             .data
@@ -1212,7 +1212,7 @@ mod tests {
             })
             .count();
         assert!(expected > 0);
-        let count = |app: &TestApp<Files>| app.screen().get_by_test_id("tabla").node().row_count;
+        let count = |app: &TestApp<Files>| app.screen().get_by_test_id("table").node().row_count;
         assert_eq!(count(&app), Some(expected));
         assert_eq!(
             app.app().view.filters.get(&1).map(String::as_str),
@@ -1237,20 +1237,20 @@ mod tests {
         assert_eq!(table.node().row_count, Some(ROWS));
         let built = rows_built(&app);
         assert!((10..40).contains(&built), "{built} rows built");
-        let row = app.screen().get(By::test_id("tabla.row.3"));
+        let row = app.screen().get(By::test_id("table.row.3"));
         assert_eq!(row.node().row_index, Some(3));
         assert_eq!(
             row.name().as_deref(),
             Some("archivo-3.txt 3743 KB impar Abrir")
         );
-        assert!(app.screen().query(By::test_id("tabla.row.5000")).is_none());
+        assert!(app.screen().query(By::test_id("table.row.5000")).is_none());
     }
 
     #[test]
     fn a_rendered_cell_is_named_by_its_value_and_actions_are_buttons() {
         let mut app = TestApp::new(Files::default());
         let screen = app.screen();
-        let row = screen.within(screen.get_by_test_id("tabla.row.0"));
+        let row = screen.within(screen.get_by_test_id("table.row.0"));
         let names: Vec<_> = row
             .all(By::role(Role::Cell))
             .iter()
@@ -1265,7 +1265,7 @@ mod tests {
             "the actions header shows no title"
         );
 
-        app.click(By::test_id("abrir.archivo-3.txt"));
+        app.click(By::test_id("open.archivo-3.txt"));
         assert_eq!(app.app().opened, Some(3743));
         assert_eq!(
             app.app().selected,
@@ -1277,17 +1277,17 @@ mod tests {
     #[test]
     fn keys_move_the_selection_and_reveal_it() {
         let mut app = TestApp::new(Files::default());
-        app.click(By::test_id("tabla.row.2"));
+        app.click(By::test_id("table.row.2"));
         assert_eq!(app.app().selected, Some(2));
         app.press(Key::ArrowDown, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(3));
-        assert!(app.is_focused(By::test_id("tabla.row.3")));
+        assert!(app.is_focused(By::test_id("table.row.3")));
 
         app.press(Key::End, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(ROWS - 1));
-        assert!(app.is_focused(By::test_id("tabla.row.9999")));
-        let body = app.screen().get(By::test_id("tabla.body")).bounds();
-        let last = app.screen().get(By::test_id("tabla.row.9999")).bounds();
+        assert!(app.is_focused(By::test_id("table.row.9999")));
+        let body = app.screen().get(By::test_id("table.body")).bounds();
+        let last = app.screen().get(By::test_id("table.row.9999")).bounds();
         assert!(last.y + last.height <= body.y + body.height + 0.5);
         assert!(rows_built(&app) < 40);
 
@@ -1296,17 +1296,17 @@ mod tests {
         assert!((ROWS - 14..ROWS - 9).contains(&page), "a page up: {page}");
         app.press(Key::Home, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(0));
-        assert!(app.is_focused(By::test_id("tabla.row.0")));
+        assert!(app.is_focused(By::test_id("table.row.0")));
     }
 
     #[test]
     fn the_selection_follows_its_row_through_sorting() {
         let mut app = TestApp::new(Files::default());
-        app.click(By::test_id("tabla.row.1"));
+        app.click(By::test_id("table.row.1"));
         assert_eq!(app.app().selected, Some(1));
         app.click(By::role(Role::ColumnHeader).name("Tamaño"));
         let shown = app.app().view.position(1).unwrap();
-        let row = app.screen().get(By::test_id(format!("tabla.row.{shown}")));
+        let row = app.screen().get(By::test_id(format!("table.row.{shown}")));
         assert_eq!(row.node().control_state, Some(ControlState::On));
         assert!(row.name().unwrap().starts_with("archivo-1.txt"));
     }
@@ -1314,11 +1314,11 @@ mod tests {
     #[test]
     fn the_focused_row_stays_built_when_it_scrolls_away() {
         let mut app = TestApp::new(Files::default());
-        app.click(By::test_id("tabla.row.1"));
-        app.reveal_row(By::test_id("tabla.body"), 6_000);
-        assert!(app.screen().query(By::test_id("tabla.row.6000")).is_some());
-        assert!(app.is_focused(By::test_id("tabla.row.1")), "pinned");
-        app.click(By::test_id("tabla.row.6000"));
+        app.click(By::test_id("table.row.1"));
+        app.reveal_row(By::test_id("table.body"), 6_000);
+        assert!(app.screen().query(By::test_id("table.row.6000")).is_some());
+        assert!(app.is_focused(By::test_id("table.row.1")), "pinned");
+        app.click(By::test_id("table.row.6000"));
         assert_eq!(app.app().selected, Some(6_000));
         let shift = Modifiers {
             shift: true,
@@ -1327,7 +1327,7 @@ mod tests {
         app.press(Key::Tab, Modifiers::NONE);
         app.press(Key::Tab, shift);
         assert!(
-            app.is_focused(By::test_id("tabla.row.6000")),
+            app.is_focused(By::test_id("table.row.6000")),
             "Tab enters at the selection"
         );
     }
@@ -1381,7 +1381,7 @@ mod tests {
             .filter_map(|header| header.name())
             .collect();
         assert_eq!(headers, ["Nombre", "Tipo", "Acciones"]);
-        assert!(app.screen().query(By::test_id("tabla.column.1")).is_none());
+        assert!(app.screen().query(By::test_id("table.column.1")).is_none());
     }
 
     fn headers(app: &TestApp<Files>) -> Vec<String> {
@@ -1447,7 +1447,7 @@ mod tests {
         app.press(Key::Escape, Modifiers::NONE);
         assert!(app.screen().query(By::test_id("kai.menu")).is_none());
 
-        let header = app.screen().get_by_test_id("tabla.header").id();
+        let header = app.screen().get_by_test_id("table.header").id();
         let update = app.session().a11y_tree(1.0);
         let node = update
             .nodes
@@ -1496,8 +1496,8 @@ mod tests {
         let mut app = TestApp::new(Files::expandable());
         app.screen()
             .get(By::role(Role::ColumnHeader).name("Detalle"));
-        app.click(By::test_id("tabla.row.2.toggle"));
-        app.click(By::test_id("tabla.row.5.toggle"));
+        app.click(By::test_id("table.row.2.toggle"));
+        app.click(By::test_id("table.row.5.toggle"));
         assert_eq!(app.app().view.expanded, BTreeSet::from([2, 5]));
         assert_eq!(app.app().selected, None, "the chevron does not select");
 
@@ -1508,54 +1508,54 @@ mod tests {
             .filter_map(|region| region.name())
             .collect();
         assert_eq!(regions, [detail_name(&app, 2), detail_name(&app, 5)]);
-        let (row, panel) = (bounds(&app, "tabla.row.2"), bounds(&app, "tabla.detail.2"));
+        let (row, panel) = (bounds(&app, "table.row.2"), bounds(&app, "table.detail.2"));
         assert!(
             (panel.y - (row.y + row.height)).abs() < 0.5,
             "under its row"
         );
         assert!((panel.height - DETAIL).abs() < 0.5);
-        assert!((bounds(&app, "tabla.row.3").y - (panel.y + DETAIL)).abs() < 0.5);
-        let gap = bounds(&app, "tabla.row.6").y - bounds(&app, "tabla.row.5").y;
+        assert!((bounds(&app, "table.row.3").y - (panel.y + DETAIL)).abs() < 0.5);
+        let gap = bounds(&app, "table.row.6").y - bounds(&app, "table.row.5").y;
         assert!((gap - (row.height + DETAIL)).abs() < 0.5, "{gap}");
 
-        app.click(By::test_id("detalle.archivo-2.txt"));
+        app.click(By::test_id("detail.archivo-2.txt"));
         assert_eq!(app.app().opened, Some(app.app().data[2].size));
-        app.click(By::test_id("tabla.row.2.toggle"));
+        app.click(By::test_id("table.row.2.toggle"));
         assert_eq!(app.app().view.expanded, BTreeSet::from([5]));
         assert_eq!(app.screen().all(By::role(Role::Region)).len(), 1);
-        assert!(app.screen().query(By::test_id("tabla.detail.2")).is_none());
+        assert!(app.screen().query(By::test_id("table.detail.2")).is_none());
     }
 
     #[test]
     fn arrows_open_and_close_the_focused_row_and_tab_enters_its_panel() {
         let mut app = TestApp::new(Files::expandable());
-        app.click(By::test_id("tabla.row.1"));
+        app.click(By::test_id("table.row.1"));
         app.press(Key::ArrowRight, Modifiers::NONE);
         assert_eq!(app.app().view.expanded, BTreeSet::from([1]));
         assert!(
-            app.is_focused(By::test_id("tabla.row.1")),
+            app.is_focused(By::test_id("table.row.1")),
             "the row keeps the focus"
         );
         app.press(Key::ArrowRight, Modifiers::NONE);
         assert_eq!(app.app().view.expanded, BTreeSet::from([1]));
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("detalle.archivo-1.txt")));
+        assert!(app.is_focused(By::test_id("detail.archivo-1.txt")));
         app.press(Key::ArrowDown, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(1), "the panel keeps its arrows");
-        assert!(app.is_focused(By::test_id("detalle.archivo-1.txt")));
+        assert!(app.is_focused(By::test_id("detail.archivo-1.txt")));
         let shift = Modifiers {
             shift: true,
             ..Modifiers::NONE
         };
         app.press(Key::Tab, shift);
-        assert!(app.is_focused(By::test_id("tabla.row.1")));
+        assert!(app.is_focused(By::test_id("table.row.1")));
 
         app.press(Key::ArrowLeft, Modifiers::NONE);
         assert!(app.app().view.expanded.is_empty());
         app.press(Key::ArrowDown, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(2));
-        assert!(app.is_focused(By::test_id("tabla.row.2")));
+        assert!(app.is_focused(By::test_id("table.row.2")));
     }
 
     #[test]
@@ -1563,27 +1563,27 @@ mod tests {
         let mut files = Files::expandable();
         files.view.expanded = (0..5).collect();
         let mut app = TestApp::new(files);
-        let body = bounds(&app, "tabla.body");
+        let body = bounds(&app, "table.body");
         let in_view = |row: crate::geometry::Rect| {
             row.y >= body.y - 0.5 && row.y + row.height <= body.y + body.height + 0.5
         };
-        app.click(By::test_id("tabla.row.0"));
+        app.click(By::test_id("table.row.0"));
         app.press(Key::PageDown, Modifiers::NONE);
         let page = app.app().selected.unwrap();
         assert!(
             (1..4).contains(&page),
             "the panels make a page shorter: {page}"
         );
-        assert!(in_view(bounds(&app, &format!("tabla.row.{page}"))));
+        assert!(in_view(bounds(&app, &format!("table.row.{page}"))));
 
         app.press(Key::End, Modifiers::NONE);
         assert_eq!(app.app().selected, Some(ROWS - 1));
-        assert!(in_view(bounds(&app, "tabla.row.9999")));
+        assert!(in_view(bounds(&app, "table.row.9999")));
         app.press(Key::Home, Modifiers::NONE);
-        assert!(in_view(bounds(&app, "tabla.row.0")));
+        assert!(in_view(bounds(&app, "table.row.0")));
 
-        app.reveal_row(By::test_id("tabla.body"), 20);
-        let row = bounds(&app, "tabla.row.20");
+        app.reveal_row(By::test_id("table.body"), 20);
+        let row = bounds(&app, "table.row.20");
         assert!(
             (row.y + row.height - (body.y + body.height)).abs() < 0.5,
             "row 20 at the bottom, five panels above it"
@@ -1605,21 +1605,21 @@ mod tests {
                 .map(|(_, node)| node.clone())
                 .unwrap()
         };
-        assert_eq!(node("tabla.row.1").is_expanded(), Some(true));
-        assert_eq!(node("tabla.row.0").is_expanded(), Some(false));
-        assert_eq!(node("tabla.row.1").row_index(), Some(1));
-        let panel = node("tabla.detail.1");
+        assert_eq!(node("table.row.1").is_expanded(), Some(true));
+        assert_eq!(node("table.row.0").is_expanded(), Some(false));
+        assert_eq!(node("table.row.1").row_index(), Some(1));
+        let panel = node("table.detail.1");
         assert_eq!(panel.role(), accesskit::Role::Region);
         assert_eq!(panel.label(), Some(detail_name(&app, 1).as_str()));
-        let toggle = node("tabla.row.1.toggle");
+        let toggle = node("table.row.1.toggle");
         assert_eq!(toggle.role(), accesskit::Role::Button);
         assert_eq!(toggle.label(), Some("Contraer"));
-        assert_eq!(node("tabla.row.0.toggle").label(), Some("Expandir"));
+        assert_eq!(node("table.row.0.toggle").label(), Some("Expandir"));
     }
 
     fn scroller(app: &TestApp<Files>) -> crate::layout::ScrollState {
         app.screen()
-            .get(By::test_id("tabla.scroller"))
+            .get(By::test_id("table.scroller"))
             .node()
             .scroll
             .unwrap()
@@ -1628,23 +1628,23 @@ mod tests {
     #[test]
     fn a_narrow_table_scrolls_its_header_and_rows_across_together() {
         let mut app = TestApp::new(Files::narrow());
-        let over = By::test_id("tabla.scroller");
+        let over = By::test_id("table.scroller");
         let max = scroller(&app).max_x;
         assert!((230.0..=240.0).contains(&max), "496 points in 258: {max}");
-        let header = bounds(&app, "tabla.column.1").x;
-        let button = bounds(&app, "abrir.archivo-0.txt").x;
-        let row = bounds(&app, "tabla.row.0").y;
+        let header = bounds(&app, "table.column.1").x;
+        let button = bounds(&app, "open.archivo-0.txt").x;
+        let row = bounds(&app, "table.row.0").y;
 
         app.scroll_wheel_xy(over.clone(), -60.0, 0.0);
         assert_eq!(scroller(&app).offset_x, 60.0);
-        assert_eq!(bounds(&app, "tabla.column.1").x, header - 60.0);
+        assert_eq!(bounds(&app, "table.column.1").x, header - 60.0);
         assert_eq!(
-            bounds(&app, "abrir.archivo-0.txt").x,
+            bounds(&app, "open.archivo-0.txt").x,
             button,
             "actions are pinned to the end"
         );
-        assert_eq!(bounds(&app, "tabla.row.0").y, row, "only across");
-        app.click(By::test_id("abrir.archivo-0.txt"));
+        assert_eq!(bounds(&app, "table.row.0").y, row, "only across");
+        app.click(By::test_id("open.archivo-0.txt"));
         assert_eq!(
             app.app().opened,
             Some(app.app().data[0].size),
@@ -1654,8 +1654,8 @@ mod tests {
 
         app.scroll_wheel_xy(over.clone(), -10_000.0, 0.0);
         assert_eq!(scroller(&app).offset_x, max, "clamped at the end");
-        let view = bounds(&app, "tabla.scroller");
-        let last = bounds(&app, "tabla.column.3");
+        let view = bounds(&app, "table.scroller");
+        let last = bounds(&app, "table.column.3");
         assert!((last.x + last.width - (view.x + view.width)).abs() < 0.5);
 
         app.hold_modifiers(Modifiers {
@@ -1665,11 +1665,11 @@ mod tests {
         app.scroll_wheel_xy(over.clone(), 0.0, 10_000.0);
         app.hold_modifiers(Modifiers::NONE);
         assert_eq!(scroller(&app).offset_x, 0.0, "Shift turns the wheel across");
-        assert_eq!(bounds(&app, "tabla.row.0").y, row);
+        assert_eq!(bounds(&app, "table.row.0").y, row);
 
         app.scroll_wheel(over, -320.0);
         assert_eq!(scroller(&app).offset_x, 0.0);
-        let body = app.screen().get(By::test_id("tabla.body")).node().scroll;
+        let body = app.screen().get(By::test_id("table.body")).node().scroll;
         assert_eq!(body.map(|scroll| scroll.offset), Some(320.0));
     }
 
@@ -1684,28 +1684,28 @@ mod tests {
             headers(&app),
             ["Detalle", "Tamaño", "Nombre", "Tipo", "Acciones"]
         );
-        let view = bounds(&app, "tabla.scroller");
-        let size = bounds(&app, "tabla.column.1").x;
+        let view = bounds(&app, "table.scroller");
+        let size = bounds(&app, "table.column.1").x;
         assert_eq!(size, view.x + 32.0);
-        let cell = bounds(&app, "tabla.row.0").x;
-        let toggle = bounds(&app, "tabla.row.0.toggle").x;
-        let name = bounds(&app, "tabla.column.0").x;
+        let cell = bounds(&app, "table.row.0").x;
+        let toggle = bounds(&app, "table.row.0.toggle").x;
+        let name = bounds(&app, "table.column.0").x;
 
-        app.scroll_wheel_xy(By::test_id("tabla.scroller"), -100.0, 0.0);
+        app.scroll_wheel_xy(By::test_id("table.scroller"), -100.0, 0.0);
         assert_eq!(scroller(&app).offset_x, 100.0);
         assert_eq!(
-            bounds(&app, "tabla.column.0").x,
+            bounds(&app, "table.column.0").x,
             name - 100.0,
             "the rest moves"
         );
-        assert_eq!(bounds(&app, "tabla.row.0").x, cell - 100.0);
-        assert_eq!(bounds(&app, "tabla.column.1").x, size);
-        assert_eq!(bounds(&app, "tabla.row.0.toggle").x, toggle);
+        assert_eq!(bounds(&app, "table.row.0").x, cell - 100.0);
+        assert_eq!(bounds(&app, "table.column.1").x, size);
+        assert_eq!(bounds(&app, "table.row.0.toggle").x, toggle);
         let rows = app.screen().all(By::role(Role::Row));
         let size_cell = app.screen().within(rows[1]).all(By::role(Role::Cell))[1];
         assert_eq!(size_cell.bounds().x, size, "its cells too");
 
-        app.click(By::test_id("tabla.row.0.toggle"));
+        app.click(By::test_id("table.row.0.toggle"));
         assert!(app.app().view.expanded.contains(&0));
         assert_eq!(scroller(&app).offset_x, 100.0, "already in view");
     }
@@ -1715,24 +1715,24 @@ mod tests {
         let mut files = Files::narrow();
         files.view.apply(ViewChange::Filtering(true));
         let mut app = TestApp::new(files);
-        let view = bounds(&app, "tabla.scroller");
-        let actions = bounds(&app, "tabla.column.3");
+        let view = bounds(&app, "table.scroller");
+        let actions = bounds(&app, "table.column.3");
         // Its start and center clear of the pinned actions column.
         let inside = |rect: crate::geometry::Rect| {
             rect.x >= view.x - 0.5 && rect.x + rect.width / 2.0 <= actions.x
         };
-        assert!(!inside(bounds(&app, "tabla.column.1")));
-        app.click(By::test_id("tabla.column.1"));
+        assert!(!inside(bounds(&app, "table.column.1")));
+        app.click(By::test_id("table.column.1"));
         assert_eq!(
             app.app().view.sort,
             Some((1, SortDirection::Ascending)),
             "the click reached it"
         );
-        assert!(inside(bounds(&app, "tabla.column.1")), "scrolled to it");
+        assert!(inside(bounds(&app, "table.column.1")), "scrolled to it");
         let offset = scroller(&app).offset_x;
         assert!(offset > 0.0);
 
-        app.click(By::test_id("tabla.row.3"));
+        app.click(By::test_id("table.row.3"));
         assert_eq!(app.app().selected, Some(app.app().view.rows()[3]));
         assert_eq!(
             scroller(&app).offset_x,
@@ -1744,12 +1744,12 @@ mod tests {
         assert!(app.is_focused(By::role(Role::ColumnHeader).name("Tamaño")));
         assert_eq!(scroller(&app).offset_x, offset);
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("tabla.filter.0")));
+        assert!(app.is_focused(By::test_id("table.filter.0")));
         assert!(scroller(&app).offset_x < offset, "the focus brings it back");
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("tabla.filter.1")));
+        assert!(app.is_focused(By::test_id("table.filter.1")));
         assert!(scroller(&app).offset_x > 0.0);
-        assert!(inside(bounds(&app, "tabla.filter.1")));
+        assert!(inside(bounds(&app, "table.filter.1")));
     }
 
     /// `cargo test table_capture -- --ignored` writes
@@ -1774,14 +1774,14 @@ mod tests {
                 files.view.apply(ViewChange::Filtering(filtering));
                 let mut app = TestApp::builder(files).theme(theme).build();
                 app.click(By::role(Role::ColumnHeader).name("Tamaño"));
-                app.click(By::test_id("tabla.row.2"));
+                app.click(By::test_id("table.row.2"));
                 let suffix = if filtering {
-                    app.type_text(By::test_id("tabla.filter.0"), "archivo-1");
+                    app.type_text(By::test_id("table.filter.0"), "archivo-1");
                     "-filtros"
                 } else {
                     ""
                 };
-                let image = app.capture(By::test_id("tabla")).unwrap();
+                let image = app.capture(By::test_id("table")).unwrap();
                 let path = dir.join(format!("table-{name}{suffix}.png"));
                 crate::snapshot::write_png(&path, &image).unwrap();
             }
@@ -1813,7 +1813,7 @@ mod tests {
         session.prepare_frame();
         let body = session
             .tree()
-            .find_test_id("tabla.body")
+            .find_test_id("table.body")
             .map(|body| body.id)
             .unwrap();
         let bounds = session.layout().bounds(body).unwrap();
@@ -1841,11 +1841,11 @@ mod tests {
     fn the_wheel_builds_the_rows_it_brings_into_view() {
         let mut app = TestApp::new(Files::default());
         for _ in 0..10 {
-            app.scroll_wheel(By::test_id("tabla.body"), -320.0);
+            app.scroll_wheel(By::test_id("table.body"), -320.0);
         }
-        assert!(app.screen().query(By::test_id("tabla.row.0")).is_none());
-        let row = app.screen().get(By::test_id("tabla.row.100"));
-        let body = app.screen().get(By::test_id("tabla.body")).bounds();
+        assert!(app.screen().query(By::test_id("table.row.0")).is_none());
+        let row = app.screen().get(By::test_id("table.row.100"));
+        let body = app.screen().get(By::test_id("table.body")).bounds();
         assert!((row.bounds().y - body.y).abs() < 0.5, "row 100 at the top");
         assert!(rows_built(&app) < 40);
     }
@@ -1864,7 +1864,7 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(node(By::role(Role::Table)).row_count(), Some(ROWS));
-        assert_eq!(node(By::test_id("tabla.row.4")).row_index(), Some(4));
+        assert_eq!(node(By::test_id("table.row.4")).row_index(), Some(4));
         assert_eq!(
             node(By::role(Role::ColumnHeader).name("Nombre")).sort_direction(),
             Some(accesskit::SortDirection::Ascending)

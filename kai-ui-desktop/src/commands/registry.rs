@@ -423,7 +423,7 @@ impl<A: App> CommandRegistry<A> {
     }
 }
 
-/// `clientes.crear`, `form.alternar_contrasena`: non-empty segments of
+/// `clients.crear`, `form.alternar_contrasena`: non-empty segments of
 /// lowercase ASCII letters, digits and `_`.
 fn well_formed(id: &str) -> bool {
     id.split('.').all(|segment| {
@@ -478,7 +478,7 @@ mod tests {
 
     impl Action for Add {
         type App = Counter;
-        const ID: &'static str = "contador.sumar";
+        const ID: &'static str = "counter.add";
         const TITLE: &'static str = "Sumar";
         fn into_msg(self) -> Msg {
             Msg::Add
@@ -490,7 +490,7 @@ mod tests {
 
     impl Action for Reset {
         type App = Counter;
-        const ID: &'static str = "contador.reiniciar";
+        const ID: &'static str = "counter.reset";
         const TITLE: &'static str = "Reiniciar";
         fn available(app: &Counter) -> Availability {
             if app.0 == 0 {
@@ -510,7 +510,7 @@ mod tests {
 
     impl Action for Twin {
         type App = Counter;
-        const ID: &'static str = "contador.sumar";
+        const ID: &'static str = "counter.add";
         const TITLE: &'static str = "Sumar otra vez";
         fn into_msg(self) -> Msg {
             Msg::Add
@@ -525,7 +525,7 @@ mod tests {
 
     impl Action for AddMany {
         type App = Counter;
-        const ID: &'static str = "contador.sumar_varios";
+        const ID: &'static str = "counter.add_many";
         const TITLE: &'static str = "Sumar varios";
         fn into_msg(self) -> Msg {
             Msg::AddMany(self.amount)
@@ -538,7 +538,7 @@ mod tests {
     impl Query for Total {
         type App = Counter;
         type Output = u32;
-        const ID: &'static str = "contador.total";
+        const ID: &'static str = "counter.total";
         const TITLE: &'static str = "Total";
         fn run(app: &Counter, _: Self) -> Result<u32, super::CommandError> {
             Ok(app.0)
@@ -559,7 +559,7 @@ mod tests {
         });
         let problems = registry.validate();
         assert_eq!(problems.len(), 1, "{problems:?}");
-        assert!(problems[0].contains("\"contador.sumar\" repetido"));
+        assert!(problems[0].contains("\"counter.add\" repetido"));
         assert!(problems[0].contains("::Add") && problems[0].contains("::Twin"));
     }
 
@@ -573,7 +573,7 @@ mod tests {
         let problems = registry.validate();
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(problems[0].contains("atajo ⌘K repetido"));
-        assert!(problems[0].contains("contador.sumar") && problems[0].contains("::Reset"));
+        assert!(problems[0].contains("counter.add") && problems[0].contains("::Reset"));
     }
 
     #[test]
@@ -582,7 +582,7 @@ mod tests {
         struct Intruder;
         impl Action for Intruder {
             type App = Counter;
-            const ID: &'static str = "kai.paleta";
+            const ID: &'static str = "kai.palette";
             const TITLE: &'static str = "Otra paleta";
             fn into_msg(self) -> Msg {
                 Msg::Add
@@ -625,16 +625,13 @@ mod tests {
         let reset = |app: &Counter| registry.states(app)[1].availability.clone();
         assert_eq!(reset(&app), Availability::disabled("Ya está en 0"));
         assert_eq!(
-            registry
-                .message(&app, "contador.reiniciar")
-                .unwrap_err()
-                .message,
+            registry.message(&app, "counter.reset").unwrap_err().message,
             "Ya está en 0"
         );
-        app.update(registry.message(&app, "contador.sumar").unwrap());
+        app.update(registry.message(&app, "counter.add").unwrap());
         assert_eq!(reset(&app), Availability::Enabled);
-        assert_eq!(registry.message(&app, "contador.reiniciar"), Ok(Msg::Reset));
-        assert!(registry.message(&app, "contador.nada").is_err());
+        assert_eq!(registry.message(&app, "counter.reset"), Ok(Msg::Reset));
+        assert!(registry.message(&app, "counter.nothing").is_err());
     }
 
     #[test]
@@ -673,7 +670,7 @@ mod tests {
         );
         assert_eq!(
             registry.message(&app, AddMany::ID).unwrap_err().message,
-            "entrada inválida para contador.sumar_varios: missing field `amount`"
+            "entrada inválida para counter.add_many: missing field `amount`"
         );
         assert_eq!(
             registry.message_from(&app, Add::ID, json!(null)),
@@ -684,7 +681,7 @@ mod tests {
                 .run_query(&app, Add::ID, json!({}))
                 .unwrap_err()
                 .message,
-            "contador.sumar es una acción, no una consulta"
+            "counter.add es una acción, no una consulta"
         );
         let schema = registry.input_schema(AddMany::ID).unwrap();
         assert_eq!(schema["required"], json!(["amount"]));
@@ -711,7 +708,7 @@ mod tests {
         registry.action::<Add>().returns::<Total>();
         let problems = registry.validate();
         assert_eq!(problems.len(), 1, "{problems:?}");
-        assert!(problems[0].contains("\"contador.total\", que no está registrada"));
+        assert!(problems[0].contains("\"counter.total\", que no está registrada"));
 
         registry = super::CommandRegistry::default();
         registry.query::<Total>().returns::<Total>();

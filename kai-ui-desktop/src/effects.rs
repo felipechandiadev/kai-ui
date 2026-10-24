@@ -216,9 +216,9 @@ mod tests {
                         },
                         Msg::Found,
                     )
-                    .keyed("buscar");
+                    .keyed("find");
                 }
-                Msg::Cancel => return Effects::cancel("buscar"),
+                Msg::Cancel => return Effects::cancel("find"),
                 Msg::Found(n) => {
                     self.found.push(n);
                     if n == 10 {
@@ -512,11 +512,11 @@ mod tests {
     }
 
     #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
-    struct Empezar;
+    struct Start;
 
-    impl Action for Empezar {
+    impl Action for Start {
         type App = AgentWork;
-        const ID: &'static str = "trabajo.empezar";
+        const ID: &'static str = "job.empezar";
         const TITLE: &'static str = "Empezar";
         fn into_msg(self) -> AgentMsg {
             AgentMsg::Start
@@ -524,11 +524,11 @@ mod tests {
     }
 
     #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
-    struct Sincrono;
+    struct Blocking;
 
-    impl Action for Sincrono {
+    impl Action for Blocking {
         type App = AgentWork;
-        const ID: &'static str = "trabajo.sincrono";
+        const ID: &'static str = "job.sincrono";
         const TITLE: &'static str = "Síncrono";
         fn into_msg(self) -> AgentMsg {
             AgentMsg::Sync
@@ -539,8 +539,8 @@ mod tests {
         type Msg = AgentMsg;
 
         fn commands(registry: &mut CommandRegistry<Self>) {
-            registry.action::<Empezar>().expose();
-            registry.action::<Sincrono>().expose();
+            registry.action::<Start>().expose();
+            registry.action::<Blocking>().expose();
         }
 
         fn title(&self) -> String {
@@ -558,13 +558,13 @@ mod tests {
                         },
                         AgentMsg::Done,
                     )
-                    .keyed("trabajo");
+                    .keyed("job");
                     if let Some(invocation) = current_invocation() {
                         effect = effect.completes(invocation);
                     }
                     return effect;
                 }
-                AgentMsg::Cancel => return Effects::cancel("trabajo"),
+                AgentMsg::Cancel => return Effects::cancel("job"),
                 AgentMsg::Done(n) => self.done.push(n),
                 AgentMsg::Sync => self.syncs += 1,
             }
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn an_agent_call_with_completes_answers_when_the_task_finishes() {
         let mut app = TestApp::new(AgentWork::default());
-        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        let reply = app.agent_call("Cursor", "job.empezar", json!({}));
         assert!(
             reply.result().is_none(),
             "sigue abierta mientras la tarea corre"
@@ -593,14 +593,14 @@ mod tests {
         let result = reply.result().expect("responde al terminar");
         assert_eq!(result.unwrap(), json!(null));
         let last = app.audit_log().last().unwrap();
-        assert_eq!(last.command, "trabajo.empezar");
+        assert_eq!(last.command, "job.empezar");
         assert_eq!(last.outcome, Outcome::Done);
     }
 
     #[test]
     fn cancelling_a_keyed_completes_task_fails_the_agent_call() {
         let mut app = TestApp::new(AgentWork::default());
-        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        let reply = app.agent_call("Cursor", "job.empezar", json!({}));
         assert!(reply.result().is_none());
         press(&mut app, "Cancelar");
         assert!(!app.tasks_pending());
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn cancelling_the_agent_call_fails_a_deferred_invocation() {
         let mut app = TestApp::new(AgentWork::default());
-        let reply = app.agent_call("Cursor", "trabajo.empezar", json!({}));
+        let reply = app.agent_call("Cursor", "job.empezar", json!({}));
         assert!(reply.result().is_none());
         app.cancel_agent_call(reply.id());
         let err = reply
@@ -636,7 +636,7 @@ mod tests {
     #[test]
     fn a_sync_agent_action_still_answers_immediately() {
         let mut app = TestApp::new(AgentWork::default());
-        let reply = app.agent_call("Cursor", "trabajo.sincrono", json!({}));
+        let reply = app.agent_call("Cursor", "job.sincrono", json!({}));
         let result = reply.result().expect("síncrona responde ya");
         assert_eq!(result.unwrap(), json!(null));
         assert_eq!(app.app().syncs, 1);

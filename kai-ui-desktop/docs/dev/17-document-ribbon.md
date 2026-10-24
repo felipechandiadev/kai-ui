@@ -125,7 +125,7 @@ Backstage = fase posterior.
 
 - **Format Painter** (`edit.formatPainter`): Inicio › Portapapeles. Pressed mientras `Session::painter` está armado. Al soltar un arrastre de selección no colapsada, Kai llama `edit.pasteFormat`. Escape desarma. Atajos ⌘⇧C / ⌘⇧V (`edit.copyFormat` / `edit.pasteFormat`). Sticky (doble clic) = deuda.
 - **Estilos mínimos:** `para.normal` / `para.heading1..3` en Inicio › Estilos; pressed según `format.state.style`.
-- **Archivo:** QAT Abrir/Guardar/Exportar + línea `documento.archivo.status` con el nombre del último archivo. Backstage full-screen = deuda.
+- **Archivo:** QAT Abrir/Guardar/Exportar + línea `document.file.status` con el nombre del último archivo. Backstage full-screen = deuda.
 - **Fuera de este slice:** keytips Alt, reglas de página dibujadas (`view.ruler` solo toggle de flag), pestaña Design.
 
 ## Tabs
@@ -156,11 +156,11 @@ Backstage = fase posterior.
 
 ## test_id
 
-- `documento.ribbon`
-- `documento.archivo` (QAT Abrir / Guardar / Exportar)
-- `documento.ribbon.tab.{home\|insert\|layout\|review\|references\|view\|table}`
-- `documento.ribbon.panel.{…}`
-- `documento.ribbon.cmd.{command.id}` (p. ej. `layout.orientation`)
+- `document.ribbon`
+- `document.file` (QAT Abrir / Guardar / Exportar)
+- `document.ribbon.tab.{home\|insert\|layout\|review\|references\|view\|table}`
+- `document.ribbon.panel.{…}`
+- `document.ribbon.cmd.{command.id}` (p. ej. `layout.orientation`)
 
 ## Fuera de alcance (deuda)
 

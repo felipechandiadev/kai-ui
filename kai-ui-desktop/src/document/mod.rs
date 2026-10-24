@@ -694,11 +694,11 @@ mod tests {
             .pending_cmd(DocumentCmd::Bold, 1)
             .on_change(|_| ())
             .class("h-96")
-            .test_id("documento.editor");
+            .test_id("document.editor");
         assert!(matches!(el.kind, Kind::Document(_)));
         assert_eq!(el.role, Some(Role::TextArea));
         assert_eq!(el.label.as_deref(), Some("Informe"));
-        assert_eq!(el.test_id.as_deref(), Some("documento.editor"));
+        assert_eq!(el.test_id.as_deref(), Some("document.editor"));
         let Kind::Document(spec) = &el.kind else {
             panic!("expected Document");
         };

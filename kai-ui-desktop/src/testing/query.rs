@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn label_text_and_test_id() {
         let mut tree = sample::tree();
-        tree.children[4].test_id = Some("estado".to_owned());
+        tree.children[4].test_id = Some("state".to_owned());
         let layout = layout_of(&tree);
         let screen = Screen::new(&layout);
         assert_eq!(screen.get_by_label("Escribe aquí").id(), sample::field());
@@ -467,9 +467,9 @@ mod tests {
             "labels only name inputs"
         );
         assert_eq!(screen.get_by_text("Listo").id(), sample::status());
-        assert_eq!(screen.get_by_test_id("estado").id(), sample::status());
-        assert_eq!(screen.get_by_test_id("estado").test_id(), Some("estado"));
-        assert!(screen.query(By::test_id("otro")).is_none());
+        assert_eq!(screen.get_by_test_id("state").id(), sample::status());
+        assert_eq!(screen.get_by_test_id("state").test_id(), Some("state"));
+        assert!(screen.query(By::test_id("other")).is_none());
     }
 
     #[test]

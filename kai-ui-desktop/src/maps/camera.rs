@@ -405,8 +405,8 @@ mod tests {
         assert_eq!(camera.take_report(t + ms(400)), None, "still dragging");
         camera.release(t + ms(700));
         assert!(!camera.animating(), "too slow for inertia");
-        let plaza = Camera::new(camera.view, SIZE).to_local(PLAZA);
-        assert!((plaza.x - 220.0).abs() < 1e-3 && (plaza.y - 140.0).abs() < 1e-3);
+        let square = Camera::new(camera.view, SIZE).to_local(PLAZA);
+        assert!((square.x - 220.0).abs() < 1e-3 && (square.y - 140.0).abs() < 1e-3);
         let report = camera.take_report(t + ms(700));
         assert_eq!(report, Some(camera.view));
         assert_eq!(camera.take_report(t + ms(800)), None, "one report");

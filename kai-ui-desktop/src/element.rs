@@ -778,7 +778,7 @@ impl<Msg> Element<Msg> {
     }
 
     /// Stable id for tests and automation, e.g. `"form.enviar"` or
-    /// `"cliente.42.borrar"`: lowercase segments separated by `.`, no
+    /// `"client.42.borrar"`: lowercase segments separated by `.`, no
     /// personal data (assistive tools can read it), `kai.*` reserved.
     pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
         self.test_id = Some(test_id.into());
@@ -2030,13 +2030,13 @@ mod tests {
     #[test]
     fn duplicate_test_ids_are_reported() {
         let tree: Element<Msg> = div().children([
-            div().test_id("form.enviar"),
-            div().child(div().test_id("form.enviar")),
-            div().test_id("form.limpiar"),
+            div().test_id("form.submit"),
+            div().child(div().test_id("form.submit")),
+            div().test_id("form.clear"),
         ]);
         assert_eq!(
             tree.validate_ids(),
-            vec!["test_id \"form.enviar\" repetido: root > 0 y root > 1 > 0".to_owned()]
+            vec!["test_id \"form.submit\" repetido: root > 0 y root > 1 > 0".to_owned()]
         );
     }
 
@@ -2059,18 +2059,18 @@ mod tests {
     #[test]
     fn parts_derive_from_the_nearest_explicit_test_id() {
         let mut tree: Element<Msg> = div()
-            .test_id("pantalla")
-            .children([widget(Some("x")), div().child(text("y").part("nota"))]);
+            .test_id("screen")
+            .children([widget(Some("x")), div().child(text("y").part("note"))]);
         tree.assign_ids();
         assert_eq!(
             test_ids(&tree),
             [
-                "pantalla",
+                "screen",
                 "x",
                 "x.header",
                 "x.title",
                 "x.content",
-                "pantalla.nota"
+                "screen.note"
             ]
         );
         assert_eq!(

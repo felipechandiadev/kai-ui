@@ -35,7 +35,7 @@ Sidebar::new(&grupos, self.seccion, Msg::IrA)
 | `SidebarGroup::titled(title, items)` / `untitled(items)` | Grupos. |
 | `Sidebar::new(groups, selected, on_select)` | `selected` cuenta las filas de todos los grupos, en orden. |
 | `collapsed(bool)` | Riel de 48 pt con iconos centrados. |
-| `on_toggle(msg)` | Botón de plegar al pie (`x.alternar`). |
+| `on_toggle(msg)` | Botón de plegar al pie (`x.toggle`). |
 | `label(text)`, `test_id`, `build()` | — |
 | `sidebar(groups, selected, on_select)` | Versión expandida sin botón de plegar. |
 
@@ -59,4 +59,4 @@ semibold.
 
 ## Partes
 
-Una por fila, por índice: `x.0`, `x.1`…; `x.alternar`.
+Una por fila, por índice: `x.0`, `x.1`…; `x.toggle`.

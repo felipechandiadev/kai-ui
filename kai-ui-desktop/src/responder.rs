@@ -272,11 +272,11 @@ mod tests {
     fn command_shortcuts_come_after_controls() {
         let cmd_i = KeyEquivalent::cmd(Key::Char('i'));
         let cmd_e = KeyEquivalent::cmd(Key::Char('e'));
-        let commands = [("contador.incrementar", cmd_i), ("archivo.exportar", cmd_e)];
+        let commands = [("counter.increment", cmd_i), ("file.export", cmd_e)];
         for focus in [FocusContext::default(), FIELD] {
             assert_eq!(
                 key_equivalent_route(&equivalents(), &commands, cmd_i, focus),
-                KeyRoute::Command("contador.incrementar")
+                KeyRoute::Command("counter.increment")
             );
         }
         assert_eq!(
@@ -288,7 +288,7 @@ mod tests {
             key: Key::Char('i'),
             modifiers: Modifiers::NONE,
         };
-        let typing = [("contador.incrementar", plain)];
+        let typing = [("counter.increment", plain)];
         assert_eq!(
             key_equivalent_route(&[], &typing, plain, FIELD),
             KeyRoute::PassThrough

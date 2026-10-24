@@ -160,7 +160,7 @@ mod tests {
                     .max_length(40)
                     .on_input(Msg::Edit)
                     .on_submit(Msg::Send)
-                    .test_id("notas")
+                    .test_id("notes")
                     .build()])
         }
     }
@@ -175,18 +175,18 @@ mod tests {
         let mut app = TestApp::new(Notes::default());
         app.screen().get(By::role(Role::TextArea).name("Notas"));
         let height =
-            |app: &TestApp<Notes>| app.screen().get(By::test_id("notas.input")).bounds().height;
+            |app: &TestApp<Notes>| app.screen().get(By::test_id("notes.input")).bounds().height;
         let two_rows = height(&app);
 
-        app.type_text(By::test_id("notas"), "uno");
+        app.type_text(By::test_id("notes"), "uno");
         app.press(Key::Enter, Modifiers::NONE);
-        app.type_text(By::test_id("notas"), "dos");
+        app.type_text(By::test_id("notes"), "dos");
         assert_eq!(app.app().text, "uno\ndos");
         assert_eq!(app.app().sent, 0, "Return is a line break");
         assert_eq!(height(&app), two_rows);
 
         app.press(Key::Enter, Modifiers::NONE);
-        app.type_text(By::test_id("notas"), "tres");
+        app.type_text(By::test_id("notes"), "tres");
         assert!(height(&app) > two_rows, "grows with its lines");
         app.press(Key::Enter, Modifiers::NONE);
         app.press(Key::Enter, Modifiers::NONE);
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(app.app().sent, 1);
         assert_eq!(
             app.screen()
-                .get(By::test_id("notas.counter"))
+                .get(By::test_id("notes.counter"))
                 .name()
                 .as_deref(),
             Some("15/40")
@@ -208,12 +208,12 @@ mod tests {
     #[test]
     fn max_length_cuts_what_is_typed() {
         let mut app = TestApp::new(Notes::default());
-        app.type_text(By::test_id("notas"), &"x".repeat(50));
+        app.type_text(By::test_id("notes"), &"x".repeat(50));
         assert_eq!(app.app().text.chars().count(), 40);
-        assert_eq!(app.value(By::test_id("notas")), "x".repeat(40));
+        assert_eq!(app.value(By::test_id("notes")), "x".repeat(40));
         assert_eq!(
             app.screen()
-                .get(By::test_id("notas.counter"))
+                .get(By::test_id("notes.counter"))
                 .name()
                 .as_deref(),
             Some("40/40")

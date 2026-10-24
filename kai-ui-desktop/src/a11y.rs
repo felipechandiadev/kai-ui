@@ -528,17 +528,17 @@ mod tests {
                 false,
                 crate::components::SwitchDensity::Default,
             )
-            .test_id("avisos"),
+            .test_id("toasts"),
         );
         tree.assign_ids();
-        let track = tree.find_test_id("avisos.track").unwrap().id;
+        let track = tree.find_test_id("toasts.track").unwrap().id;
         let layout = layout(&tree, WINDOW, &ScrollOffsets::new());
         let update = a11y_tree(&snapshot(&layout, None));
         let switch = node(&update, node_id(track));
         assert_eq!(switch.role(), Role::Switch);
         assert_eq!(switch.label(), Some("Notificaciones"));
         assert_eq!(switch.toggled(), Some(accesskit::Toggled::True));
-        assert_eq!(switch.author_id(), Some("avisos.track"));
+        assert_eq!(switch.author_id(), Some("toasts.track"));
         assert!(switch.children().is_empty());
     }
 
@@ -550,7 +550,7 @@ mod tests {
             button("Guardar", ButtonVariant::Primary)
                 .on_click(Msg::Clicked)
                 .busy(true)
-                .test_id("guardar"),
+                .test_id("save"),
         );
         tree.assign_ids();
         let id = tree.children[0].id;

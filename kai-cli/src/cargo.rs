@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 /// What the loop needs from `cargo metadata`.
 #[derive(Debug, PartialEq)]
-pub struct Proyecto {
+pub struct Project {
     /// Sources of the package and of its path dependencies.
     pub watch: Vec<PathBuf>,
     pub target_directory: PathBuf,
@@ -32,7 +32,7 @@ struct Package {
 }
 
 /// Run `cargo metadata` in the current folder.
-pub fn proyecto() -> Result<Proyecto, String> {
+pub fn project() -> Result<Project, String> {
     let output = Command::new(cargo())
         .args(["metadata", "--format-version", "1"])
         .stderr(Stdio::inherit())
@@ -44,7 +44,7 @@ pub fn proyecto() -> Result<Proyecto, String> {
     parse_metadata(&output.stdout)
 }
 
-fn parse_metadata(json: &[u8]) -> Result<Proyecto, String> {
+fn parse_metadata(json: &[u8]) -> Result<Project, String> {
     let metadata: Metadata = serde_json::from_slice(json)
         .map_err(|error| format!("cargo metadata devolvió algo inesperado: {error}"))?;
     let mut watch = Vec::new();
@@ -58,21 +58,21 @@ fn parse_metadata(json: &[u8]) -> Result<Proyecto, String> {
     }
     watch.sort();
     watch.dedup();
-    Ok(Proyecto {
+    Ok(Project {
         watch,
         target_directory: metadata.target_directory,
     })
 }
 
-pub enum Fallo {
+pub enum Failure {
     /// The code does not compile; Cargo already printed why.
-    Compilacion,
-    Otro(String),
+    Build,
+    Other(String),
 }
 
 /// Build the package in the current folder and return its binary: `bin`,
 /// or the only one it has. `features` are passed as `--features a,b`.
-pub fn build(bin: Option<&str>, features: &[String]) -> Result<PathBuf, Fallo> {
+pub fn build(bin: Option<&str>, features: &[String]) -> Result<PathBuf, Failure> {
     let mut command = Command::new(cargo());
     command.args(["build", "--message-format=json-render-diagnostics"]);
     if let Some(bin) = bin {
@@ -85,21 +85,21 @@ pub fn build(bin: Option<&str>, features: &[String]) -> Result<PathBuf, Fallo> {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|error| Fallo::Otro(format!("no se pudo ejecutar cargo: {error}")))?;
-    let mut binarios = Vec::new();
+        .map_err(|error| Failure::Other(format!("no se pudo ejecutar cargo: {error}")))?;
+    let mut binaries = Vec::new();
     if let Some(stdout) = child.stdout.take() {
         for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
-            binarios.extend(executable(&line));
+            binaries.extend(executable(&line));
         }
     }
     let status = child
         .wait()
-        .map_err(|error| Fallo::Otro(format!("cargo build: {error}")))?;
+        .map_err(|error| Failure::Other(format!("cargo build: {error}")))?;
     if !status.success() {
-        return Err(Fallo::Compilacion);
+        return Err(Failure::Build);
     }
-    elegir(binarios, bin).map_err(Fallo::Otro)
+    pick(binaries, bin).map_err(Failure::Other)
 }
 
 /// Name and path of the binary in a `compiler-artifact` message.
@@ -122,19 +122,19 @@ fn executable(line: &str) -> Option<(String, PathBuf)> {
     Some((target.name, message.executable?))
 }
 
-fn elegir(binarios: Vec<(String, PathBuf)>, bin: Option<&str>) -> Result<PathBuf, String> {
-    let mut binarios: Vec<_> = binarios
+fn pick(binaries: Vec<(String, PathBuf)>, bin: Option<&str>) -> Result<PathBuf, String> {
+    let mut binaries: Vec<_> = binaries
         .into_iter()
         .filter(|(name, _)| bin.is_none_or(|bin| bin == name))
         .collect();
-    match binarios.len() {
+    match binaries.len() {
         0 => Err("el paquete no tiene un binario que abrir".into()),
-        1 => Ok(binarios.remove(0).1),
+        1 => Ok(binaries.remove(0).1),
         _ => {
-            let nombres: Vec<_> = binarios.iter().map(|(name, _)| name.as_str()).collect();
+            let names: Vec<_> = binaries.iter().map(|(name, _)| name.as_str()).collect();
             Err(format!(
                 "hay varios binarios ({}); elige uno con --bin",
-                nombres.join(", ")
+                names.join(", ")
             ))
         }
     }
@@ -171,8 +171,8 @@ mod tests {
             "target_directory": "/dev/dsp-27/desktop/target",
             "version": 1
         }"#;
-        let proyecto = parse_metadata(json).unwrap();
-        let rutas: Vec<_> = proyecto
+        let project = parse_metadata(json).unwrap();
+        let rutas: Vec<_> = project
             .watch
             .iter()
             .map(|path| path.to_str().unwrap())
@@ -193,7 +193,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            proyecto.target_directory,
+            project.target_directory,
             PathBuf::from("/dev/dsp-27/desktop/target")
         );
         assert!(parse_metadata(b"no es json").is_err());
@@ -217,20 +217,20 @@ mod tests {
 
     #[test]
     fn the_binary_is_the_only_one_or_the_one_asked_for() {
-        let uno = || vec![("app".to_string(), PathBuf::from("/t/app"))];
-        assert_eq!(elegir(uno(), None), Ok(PathBuf::from("/t/app")));
-        assert_eq!(elegir(uno(), Some("app")), Ok(PathBuf::from("/t/app")));
-        assert!(elegir(uno(), Some("otra")).is_err());
-        assert!(elegir(Vec::new(), None).is_err());
+        let one = || vec![("app".to_string(), PathBuf::from("/t/app"))];
+        assert_eq!(pick(one(), None), Ok(PathBuf::from("/t/app")));
+        assert_eq!(pick(one(), Some("app")), Ok(PathBuf::from("/t/app")));
+        assert!(pick(one(), Some("otra")).is_err());
+        assert!(pick(Vec::new(), None).is_err());
 
         let dos = vec![
             ("app".to_string(), PathBuf::from("/t/app")),
             ("demo".to_string(), PathBuf::from("/t/demo")),
         ];
         assert_eq!(
-            elegir(dos.clone(), None),
+            pick(dos.clone(), None),
             Err("hay varios binarios (app, demo); elige uno con --bin".into())
         );
-        assert_eq!(elegir(dos, Some("demo")), Ok(PathBuf::from("/t/demo")));
+        assert_eq!(pick(dos, Some("demo")), Ok(PathBuf::from("/t/demo")));
     }
 }

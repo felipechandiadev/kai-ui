@@ -6,7 +6,7 @@
 //! map(&self.vista)
 //!     .on_view_change(Msg::MapaMovido)
 //!     .label("Mapa")
-//!     .test_id("mapa")
+//!     .test_id("map")
 //!     .children([marker(plaza, Anchor::Bottom, icon(Icon::MapPin))])
 //! ```
 //!

@@ -283,7 +283,7 @@ mod tests {
                 .class("w-[100px] h-[20px]")
                 .role(Role::Heading)
                 .label("Título"),
-            div().class("hidden").test_id("oculto"),
+            div().class("hidden").test_id("hidden"),
         ]);
         tree.assign_ids();
         let layout = layout_of(&tree);
@@ -293,7 +293,7 @@ mod tests {
             format!(
                 "Generic #{root} 0,0 1024×720 \"flex gap-2 p-4\"\n\
                  \x20 Heading #{heading} «Título» 16,16 100×20 \"w-[100px] h-[20px]\"\n\
-                 \x20 Generic #{hidden} [oculto] 0,0 0×0 oculto \"hidden\"\n"
+                 \x20 Generic #{hidden} [hidden] 0,0 0×0 oculto \"hidden\"\n"
             )
         );
     }

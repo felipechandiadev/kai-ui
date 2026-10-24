@@ -353,7 +353,7 @@ mod tests {
                 Avatar::new("Ana López").test_id("ana").build(),
                 Avatar::new("")
                     .size(AvatarSize::Sm)
-                    .test_id("anonimo")
+                    .test_id("anonymous")
                     .build(),
                 avatar(
                     "Bruno Díaz",
@@ -365,7 +365,7 @@ mod tests {
                     .on_drop(Msg::Drop)
                     .error(self.error.clone())
                     .disabled(self.disabled)
-                    .test_id("foto")
+                    .test_id("photo")
                     .build(),
             ])
         }
@@ -421,7 +421,7 @@ mod tests {
     fn the_image_is_the_only_control_named_after_its_action() {
         let app = slots(Slots::default());
         let screen = app.screen();
-        let preview = screen.get(By::test_id("foto.preview"));
+        let preview = screen.get(By::test_id("photo.preview"));
         assert_eq!(preview.role(), Role::Button);
         assert_eq!(preview.name().as_deref(), Some("Agregar imagen"));
         assert_eq!(
@@ -429,12 +429,12 @@ mod tests {
             1,
             "no extra add or camera button"
         );
-        assert!(screen.query(By::test_id("foto.hint")).is_none());
+        assert!(screen.query(By::test_id("photo.hint")).is_none());
 
         let app = slots(with_image());
         app.screen()
             .get(By::role(Role::Button).name("Cambiar imagen"));
-        assert!(app.screen().query(By::test_id("foto.hint")).is_some());
+        assert!(app.screen().query(By::test_id("photo.hint")).is_some());
     }
 
     #[test]
@@ -442,16 +442,17 @@ mod tests {
         let mut app = slots(with_image());
         let tint = |app: &TestApp<Slots>| {
             app.screen()
-                .get(By::test_id("foto.tint"))
+                .get(By::test_id("photo.tint"))
                 .node()
                 .style
                 .background
         };
-        let hint = |app: &TestApp<Slots>| app.screen().get(By::test_id("foto.hint")).node().opacity;
+        let hint =
+            |app: &TestApp<Slots>| app.screen().get(By::test_id("photo.hint")).node().opacity;
         assert_eq!(tint(&app).map(|color| color.a), Some(0), "clear at rest");
         assert_eq!(hint(&app), 0.0);
 
-        app.hover(By::test_id("foto.preview"));
+        app.hover(By::test_id("photo.preview"));
         let choice = app.session().theme().color("choice").unwrap();
         let hovered = tint(&app).expect("tinted");
         assert_eq!(
@@ -462,14 +463,14 @@ mod tests {
         assert_eq!(hint(&app), 1.0, "the camera pill shows");
         let border = app
             .screen()
-            .get(By::test_id("foto.preview"))
+            .get(By::test_id("photo.preview"))
             .node()
             .style
             .border_color;
         assert_eq!(border, Some(choice));
 
         // The tint and the pill let the click through to the preview.
-        let bounds = app.screen().get(By::test_id("foto.preview")).bounds();
+        let bounds = app.screen().get(By::test_id("photo.preview")).bounds();
         app.click_point(crate::geometry::Point {
             x: bounds.x + bounds.width / 2.0,
             y: bounds.y + bounds.height / 2.0,
@@ -481,16 +482,16 @@ mod tests {
     #[test]
     fn clicks_and_drops_pick_but_not_when_disabled() {
         let mut app = slots(Slots::default());
-        app.click(By::test_id("foto.preview"));
-        app.drop_files(By::test_id("foto.preview"), ["/a.png", "/b.png"]);
+        app.click(By::test_id("photo.preview"));
+        app.drop_files(By::test_id("photo.preview"), ["/a.png", "/b.png"]);
         assert_eq!(app.messages(), [Msg::Pick, Msg::Drop("/a.png".into())]);
 
         let mut app = slots(Slots {
             disabled: true,
             ..Slots::default()
         });
-        assert!(app.screen().query(By::test_id("foto.tint")).is_none());
-        app.click(By::test_id("foto.preview"));
+        assert!(app.screen().query(By::test_id("photo.tint")).is_none());
+        app.click(By::test_id("photo.preview"));
         app.hover_files();
         assert!(app.messages().is_empty());
     }
@@ -502,7 +503,7 @@ mod tests {
             ..Slots::default()
         });
         let error = app.screen().get(By::role(Role::Alert));
-        assert_eq!(error.test_id(), Some("foto.error"));
+        assert_eq!(error.test_id(), Some("photo.error"));
         assert!(app.screen().query(By::text("Máximo 9MB")).is_some());
     }
 

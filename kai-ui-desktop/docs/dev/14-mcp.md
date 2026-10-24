@@ -26,7 +26,7 @@ Antes de configurar un cliente se puede probar a mano. Se mandan líneas JSON-RP
 
 La ventana se abre, el contador sube a 5 y, cuando `sleep` termina y se cierra stdin, la app sale con código 0.
 
-Para ver la confirmación, se agrega `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"contador.reiniciar","arguments":{}}}` después de la suma y se alarga el `sleep` a 40 s. El diálogo aparece en la ventana. Si nadie lo responde, a los 30 s llega un error de tiempo agotado y el diálogo se cierra. Con `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":4}}` se cierra antes, sin respuesta.
+Para ver la confirmación, se agrega `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"counter.reset","arguments":{}}}` después de la suma y se alarga el `sleep` a 40 s. El diálogo aparece en la ventana. Si nadie lo responde, a los 30 s llega un error de tiempo agotado y el diálogo se cierra. Con `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":4}}` se cierra antes, sin respuesta.
 
 ## 2. Configurar el cliente
 
@@ -49,36 +49,36 @@ La ruta debe ser absoluta. Las variables de la demo (`KAI_THEME`, `KAI_BG`…) s
 
 | Herramienta | Tipo | Entrada | Respuesta |
 |---|---|---|---|
-| `contador.incrementar` | acción | — | «Hecho» |
-| `contador.sumar` | acción | `{ "cantidad": u32 }` | «Hecho» |
-| `contador.reiniciar` | acción destructiva | — | Pide confirmación; luego «Hecho», o error si la persona rechaza o si el contador ya está en cero |
-| `form.enviar` | acción | — | `{ "result": nombre }`, o error «Falta el nombre» |
-| `form.limpiar` | acción | — | «Hecho» |
-| `form.ultimo_envio` | consulta | — | `{ "result": nombre o null }` |
+| `counter.increment` | acción | — | «Hecho» |
+| `counter.add` | acción | `{ "cantidad": u32 }` | «Hecho» |
+| `counter.reset` | acción destructiva | — | Pide confirmación; luego «Hecho», o error si la persona rechaza o si el contador ya está en cero |
+| `form.submit` | acción | — | `{ "result": nombre }`, o error «Falta el nombre» |
+| `form.clear` | acción | — | «Hecho» |
+| `form.last_submission` | consulta | — | `{ "result": nombre o null }` |
 
-`form.alternar_contrasena` no está expuesta: no se lista, y si un agente la llama igual recibe «Herramienta desconocida». La lista sale del registro (`.expose()`) y coincide con los comandos que tienen `"exposed": true` en `mcp-schema.json`. `contador.reiniciar` es la única acción `Destructive` y lleva `destructiveHint`; las demás son `Mutating`, y las consultas llevan `readOnlyHint`.
+`form.toggle_password` no está expuesta: no se lista, y si un agente la llama igual recibe «Herramienta desconocida». La lista sale del registro (`.expose()`) y coincide con los comandos que tienen `"exposed": true` en `mcp-schema.json`. `counter.reset` es la única acción `Destructive` y lleva `destructiveHint`; las demás son `Mutating`, y las consultas llevan `readOnlyHint`.
 
 ## 4. Confirmación, indicador y plazo
 
-Cuando un agente pide `contador.reiniciar`, la ventana muestra el diálogo «¿Permitir «Reiniciar»?». El diálogo dice qué cliente lo pide, el id, la descripción y los datos (los campos `writeOnly` salen como `•••`). Tiene tres botones:
+Cuando un agente pide `counter.reset`, la ventana muestra el diálogo «¿Permitir «Reiniciar»?». El diálogo dice qué cliente lo pide, el id, la descripción y los datos (los campos `writeOnly` salen como `•••`). Tiene tres botones:
 
 - **Permitir en esta sesión:** corre ahora, y el resto de la sesión ese comando ya no pregunta.
 - **Permitir una vez:** corre esta vez.
 - **Rechazar:** el foco empieza aquí, y Esc hace lo mismo. El agente recibe «La persona rechazó «Reiniciar»» como resultado con error, y el modelo no cambia.
 
-Mientras el diálogo está abierto, los clics fuera de él, los atajos y el menú no hacen nada, y las demás llamadas del agente esperan en cola. Si el contador ya está en cero, `contador.reiniciar` falla sin preguntar. Lo que la persona hace en la ventana (el botón Reiniciar, ⌘0) nunca pregunta.
+Mientras el diálogo está abierto, los clics fuera de él, los atajos y el menú no hacen nada, y las demás llamadas del agente esperan en cola. Si el contador ya está en cero, `counter.reset` falla sin preguntar. Lo que la persona hace en la ventana (el botón Reiniciar, ⌘0) nunca pregunta.
 
 **Indicador:** al conectarse el cliente, en la esquina inferior derecha aparece «Agente: …» con su nombre (el `title` o el `name` que manda en `initialize`; Cursor, por ejemplo, puede presentarse como `cursor-vscode`). Tras cada acción que corre, se agrega su título: «Agente: … · Sumar».
 
 **Plazo y cancelación:** si la persona no responde en 30 s, el agente recibe «contador.reiniciar no terminó en 30 s (¿esperaba confirmación?)» y el diálogo se cierra sin ejecutar nada. Lo mismo pasa si el cliente cancela la llamada (`notifications/cancelled`). En los dos casos la auditoría la registra como cancelada.
 
-**Comandos async (§7.3 / Paso 15):** una acción puede dejar la invocación abierta marcando el efecto con `.completes(invocation)` (p. ej. `current_invocation()` en `update`). El agente no recibe la respuesta hasta que llega el `Msg` de la tarea y se aplica; entonces corre el `.returns` o responde `null`. `botones.simular_espera` lo hace en la demo. Si se cancela la tarea (`.keyed` + `cancel`), la llamada MCP o vence el plazo de 30 s, el agente recibe un error y la auditoría queda como cancelada — no hay éxito tardío.
+**Comandos async (§7.3 / Paso 15):** una acción puede dejar la invocación abierta marcando el efecto con `.completes(invocation)` (p. ej. `current_invocation()` en `update`). El agente no recibe la respuesta hasta que llega el `Msg` de la tarea y se aplica; entonces corre el `.returns` o responde `null`. `buttons.simulate_wait` lo hace en la demo. Si se cancela la tarea (`.keyed` + `cancel`), la llamada MCP o vence el plazo de 30 s, el agente recibe un error y la auditoría queda como cancelada — no hay éxito tardío.
 
 **Auditoría:** cada acción pedida por JSON queda registrada en memoria (las últimas 500), con su origen (agente con su cliente, o script), la entrada redactada, el resultado y la duración. Las rechazadas también. Por ahora solo se lee desde los tests (`TestApp::audit_log`).
 
 ## 5. Qué revisar
 
-- **Lista:** el cliente muestra las seis herramientas con su título; todas menos `form.ultimo_envio` traen descripción.
+- **Lista:** el cliente muestra las seis herramientas con su título; todas menos `form.last_submission` traen descripción.
 - **Acción reflejada:** pedir «suma 3 al contador». La ventana muestra el nuevo valor sin tocarla.
 - **Acción no disponible:** con el contador en cero, pedir que lo reinicie. El agente recibe «El contador ya está en cero» como resultado con error, no como fallo del servidor.
 - **Respuesta estructurada:** escribir un nombre en la ventana y pedir «envía el formulario». El agente recibe el nombre.

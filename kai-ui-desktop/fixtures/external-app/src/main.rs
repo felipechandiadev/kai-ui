@@ -23,9 +23,9 @@ enum Msg {
 
 /// Greets whoever typed their name.
 #[derive(Clone, Deserialize, JsonSchema)]
-struct Saludar;
+struct Greet;
 
-impl Action for Saludar {
+impl Action for Greet {
     type App = Greeter;
     const ID: &'static str = "saludo.saludar";
     const TITLE: &'static str = "Saludar";
@@ -45,7 +45,7 @@ impl App for Greeter {
     type Msg = Msg;
 
     fn commands(registry: &mut CommandRegistry<Self>) {
-        registry.action::<Saludar>().menu("Saludo");
+        registry.action::<Greet>().menu("Saludo");
     }
 
     fn title(&self) -> String {
@@ -76,7 +76,7 @@ impl App for Greeter {
                             .on_input(Msg::NameChanged)
                             .on_submit(Msg::Greet)
                             .build(),
-                        button("Saludar", ButtonVariant::Primary).on_command(Saludar),
+                        button("Saludar", ButtonVariant::Primary).on_command(Greet),
                         paragraph(self.greeting.clone().unwrap_or_default()),
                     ]),
                 ),

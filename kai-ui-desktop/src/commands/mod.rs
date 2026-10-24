@@ -33,7 +33,7 @@ pub use schema::{DIALECT, describe, describe_json};
 pub type Shortcut = KeyEquivalent;
 
 /// Id of the command palette, a command of the framework.
-pub const PALETTE: &str = "kai.paleta";
+pub const PALETTE: &str = "kai.palette";
 
 /// Effect of an action on domain data. Changing a filter, the route or
 /// the selection is UI state: a `Mutating` action of the `ui.*` family.
@@ -132,7 +132,7 @@ impl Error for CommandError {}
 /// ```
 pub trait Action: Clone + DeserializeOwned + JsonSchema + 'static {
     type App: App;
-    /// Lowercase segments separated by `.` (`clientes.crear`); `kai.*` is
+    /// Lowercase segments separated by `.` (`clients.crear`); `kai.*` is
     /// reserved.
     const ID: &'static str;
     const TITLE: &'static str;

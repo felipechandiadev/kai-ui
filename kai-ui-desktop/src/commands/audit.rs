@@ -136,55 +136,55 @@ mod tests {
 
     #[derive(Deserialize, schemars::JsonSchema)]
     #[allow(dead_code)]
-    struct Ingresar {
-        usuario: String,
+    struct Deposit {
+        user: String,
         #[schemars(extend("writeOnly" = true))]
-        clave: String,
+        password: String,
         tokens: Vec<Token>,
         #[serde(default)]
-        pago: Option<Pago>,
+        payment: Option<Payment>,
     }
 
     #[derive(Deserialize, schemars::JsonSchema)]
     #[allow(dead_code)]
     struct Token {
         #[schemars(extend("writeOnly" = true))]
-        valor: String,
-        nombre: String,
+        value: String,
+        name: String,
     }
 
     #[derive(Deserialize, schemars::JsonSchema)]
-    #[serde(tag = "tipo")]
+    #[serde(tag = "kind")]
     #[allow(dead_code)]
-    enum Pago {
-        Tarjeta {
+    enum Payment {
+        Card {
             #[schemars(extend("writeOnly" = true))]
-            numero: String,
+            number: String,
         },
-        Efectivo {
-            monto: u64,
+        Cash {
+            amount: u64,
         },
     }
 
     #[test]
     fn write_only_fields_are_redacted_at_any_depth() {
-        let schema = input_schema::<Ingresar>();
+        let schema = input_schema::<Deposit>();
         let input = json!({
-            "usuario": "ana",
-            "clave": "secreto",
-            "tokens": [{"valor": "abc", "nombre": "api"}],
-            "pago": {"tipo": "Tarjeta", "numero": "4111"},
+            "user": "ana",
+            "password": "secreto",
+            "tokens": [{"value": "abc", "name": "api"}],
+            "payment": {"kind": "Tarjeta", "number": "4111"},
         });
         assert_eq!(
             redact(&input, &schema),
             json!({
-                "usuario": "ana",
-                "clave": REDACTED,
-                "tokens": [{"valor": REDACTED, "nombre": "api"}],
-                "pago": {"tipo": "Tarjeta", "numero": REDACTED},
+                "user": "ana",
+                "password": REDACTED,
+                "tokens": [{"value": REDACTED, "name": "api"}],
+                "payment": {"kind": "Tarjeta", "number": REDACTED},
             })
         );
-        let cash = json!({"pago": {"tipo": "Efectivo", "monto": 1000}});
+        let cash = json!({"payment": {"kind": "Efectivo", "amount": 1000}});
         assert_eq!(redact(&cash, &schema), cash);
     }
 

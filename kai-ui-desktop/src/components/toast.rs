@@ -15,7 +15,7 @@ pub const TOAST_DURATION: Duration = Duration::from_secs(4);
 
 /// Test id of [`toast_stack`]; each toast is `kai.aviso.<id>`, with parts
 /// `title`, `message`, `action` and `close`.
-pub const TOAST_STACK: &str = "kai.avisos";
+pub const TOAST_STACK: &str = "kai.toasts";
 
 /// One notice of a [`toast_stack`]. `id` tells it apart from the others
 /// (keys, test ids, timers).
@@ -53,7 +53,7 @@ impl<Msg> Toast<Msg> {
 
 /// Timer key of toast `id`, to cancel its timer with [`Effects::cancel`].
 pub fn toast_key(id: u64) -> String {
-    format!("kai.aviso.{id}")
+    format!("kai.toast.{id}")
 }
 
 /// Send `close` after [`TOAST_DURATION`]: what `update` returns when it
@@ -228,13 +228,13 @@ mod tests {
             div().class("relative w-full h-full p-4").children([
                 button("Guardar", ButtonVariant::Primary)
                     .on_click(Msg::Show(AlertVariant::Success))
-                    .test_id("guardar"),
+                    .test_id("save"),
                 button("Fallar", ButtonVariant::Outlined)
                     .on_click(Msg::Show(AlertVariant::Error))
-                    .test_id("fallar"),
+                    .test_id("fail"),
                 button("Posponer", ButtonVariant::Outlined)
                     .on_click(Msg::Snooze(self.next))
-                    .test_id("posponer"),
+                    .test_id("snooze"),
                 toast_stack(&self.toasts, Msg::Close),
             ])
         }
@@ -250,38 +250,38 @@ mod tests {
     #[test]
     fn toasts_close_on_their_own_after_four_seconds_but_errors_stay() {
         let mut app = TestApp::new(Notices::default());
-        app.click(By::test_id("guardar"));
+        app.click(By::test_id("save"));
         let saved = app.screen().get(By::role(Role::Status).name("Guardado"));
-        assert_eq!(saved.test_id(), Some("kai.aviso.1"));
+        assert_eq!(saved.test_id(), Some("kai.toast.1"));
 
         app.advance(Duration::from_secs(3));
-        app.click(By::test_id("fallar"));
+        app.click(By::test_id("fail"));
         app.screen()
             .get(By::role(Role::Alert).name("No se pudo guardar"));
 
         app.advance(Duration::from_secs(1));
-        assert!(app.screen().query(By::test_id("kai.aviso.1")).is_none());
-        assert!(app.screen().query(By::test_id("kai.aviso.2")).is_some());
+        assert!(app.screen().query(By::test_id("kai.toast.1")).is_none());
+        assert!(app.screen().query(By::test_id("kai.toast.2")).is_some());
 
         app.advance(TOAST_DURATION * 3);
         assert!(
-            app.screen().query(By::test_id("kai.aviso.2")).is_some(),
+            app.screen().query(By::test_id("kai.toast.2")).is_some(),
             "an error waits to be closed"
         );
         assert_eq!(closes(&app), 1);
-        app.click(By::test_id("kai.aviso.2.close"));
+        app.click(By::test_id("kai.toast.2.close"));
         assert!(app.app().toasts.is_empty());
     }
 
     #[test]
     fn the_pointer_on_a_toast_holds_it_open() {
         let mut app = TestApp::new(Notices::default());
-        app.click(By::test_id("guardar"));
-        app.hover(By::test_id("kai.aviso.1.message"));
+        app.click(By::test_id("save"));
+        app.hover(By::test_id("kai.toast.1.message"));
         app.advance(TOAST_DURATION * 3);
         assert_eq!(app.app().toasts.len(), 1, "held while the pointer is on it");
 
-        app.hover(By::test_id("guardar"));
+        app.hover(By::test_id("save"));
         app.advance(HELD_TIMER_RESUME - Duration::from_millis(1));
         assert_eq!(app.app().toasts.len(), 1, "time to move back to it");
         app.advance(Duration::from_millis(1));
@@ -292,8 +292,8 @@ mod tests {
     #[test]
     fn the_focus_on_a_toast_holds_it_open() {
         let mut app = TestApp::new(Notices::default());
-        app.click(By::test_id("guardar"));
-        let action = By::test_id("kai.aviso.1.action");
+        app.click(By::test_id("save"));
+        let action = By::test_id("kai.toast.1.action");
         for _ in 0..6 {
             if app.is_focused(action.clone()) {
                 break;
@@ -309,7 +309,7 @@ mod tests {
             ..Modifiers::NONE
         };
         app.press(Key::Tab, back);
-        assert!(app.is_focused(By::test_id("posponer")));
+        assert!(app.is_focused(By::test_id("snooze")));
         app.advance(HELD_TIMER_RESUME);
         assert!(app.app().toasts.is_empty(), "closes once the focus leaves");
     }
@@ -317,10 +317,10 @@ mod tests {
     #[test]
     fn the_close_button_cancels_the_timer_and_the_action_runs() {
         let mut app = TestApp::new(Notices::default());
-        app.click(By::test_id("guardar"));
-        app.click(By::test_id("kai.aviso.1.action"));
+        app.click(By::test_id("save"));
+        app.click(By::test_id("kai.toast.1.action"));
         assert_eq!(app.app().undone, 1);
-        app.click(By::test_id("kai.aviso.1.close"));
+        app.click(By::test_id("kai.toast.1.close"));
         assert!(app.app().toasts.is_empty());
         app.advance(TOAST_DURATION * 2);
         assert_eq!(closes(&app), 1, "the timer was cancelled");
@@ -343,8 +343,8 @@ mod tests {
         ];
         for (name, theme) in themes {
             let mut app = TestApp::builder(Notices::default()).theme(theme).build();
-            app.click(By::test_id("guardar"));
-            app.click(By::test_id("fallar"));
+            app.click(By::test_id("save"));
+            app.click(By::test_id("fail"));
             let image = app.capture(By::test_id(super::TOAST_STACK)).unwrap();
             crate::snapshot::write_png(&dir.join(format!("toasts-{name}.png")), &image).unwrap();
         }
@@ -353,9 +353,9 @@ mod tests {
     #[test]
     fn a_keyed_timer_replaces_the_pending_one() {
         let mut app = TestApp::new(Notices::default());
-        app.click(By::test_id("guardar"));
+        app.click(By::test_id("save"));
         app.advance(Duration::from_secs(3));
-        app.click(By::test_id("posponer"));
+        app.click(By::test_id("snooze"));
         app.advance(Duration::from_secs(3));
         assert_eq!(app.app().toasts.len(), 1, "restarted at 3 s");
         app.advance(Duration::from_secs(1));

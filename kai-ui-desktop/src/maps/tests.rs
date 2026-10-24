@@ -124,7 +124,7 @@ impl SimpleApp for Atlas {
             atlas
                 .on_view_change(Msg::Moved)
                 .label("Mapa")
-                .test_id("mapa")
+                .test_id("map")
                 .class("w-[400px] h-[300px]")
                 .children([marker(
                     PIN,
@@ -136,13 +136,13 @@ impl SimpleApp for Atlas {
     }
 }
 
-fn mapa() -> By {
-    By::test_id("mapa")
+fn map_view() -> By {
+    By::test_id("map")
 }
 
 /// Where `at` falls in the window when the map shows `view`.
 fn on_screen(app: &TestApp<Atlas>, view: MapView, at: LatLon) -> Point {
-    let area = app.screen().get(mapa()).bounds();
+    let area = app.screen().get(map_view()).bounds();
     let local = Camera::new(view, SIZE).to_local(at);
     Point {
         x: area.x + local.x,
@@ -189,22 +189,22 @@ fn markers_stay_on_their_coordinate_at_every_zoom() {
 #[test]
 fn the_map_is_a_named_group_with_zoom_buttons_and_credit() {
     let app = TestApp::new(Atlas::at(14.0));
-    let found = app.screen().get(mapa());
+    let found = app.screen().get(map_view());
     assert_eq!(found.role(), Role::Group);
     assert_eq!(found.name().as_deref(), Some("Mapa"));
     let screen = app.screen();
-    let zoom_in = screen.get(By::test_id("mapa.zoom_in"));
+    let zoom_in = screen.get(By::test_id("map.zoom_in"));
     assert_eq!(zoom_in.role(), Role::Button);
     assert_eq!(zoom_in.name().as_deref(), Some("Acercar"));
-    screen.get(By::test_id("mapa.zoom_out"));
-    screen.get(By::test_id("mapa.attribution"));
+    screen.get(By::test_id("map.zoom_out"));
+    screen.get(By::test_id("map.attribution"));
 }
 
 #[test]
 fn a_drag_pans_the_map_and_reports_once_when_released() {
     let mut app = TestApp::new(Atlas::at(14.0));
     let before = pin_tip(&app);
-    app.drag_and_hold(mapa(), 60.0, -40.0);
+    app.drag_and_hold(map_view(), 60.0, -40.0);
     let moved = views(&app);
     assert_eq!(moved.len(), 1, "{moved:?}");
     assert_eq!(app.app().view, moved[0]);
@@ -226,7 +226,7 @@ fn a_drag_pans_the_map_and_reports_once_when_released() {
 fn a_flick_glides_on_and_reports_when_it_stops() {
     let mut app = TestApp::new(Atlas::at(14.0));
     let before = pin_tip(&app);
-    app.drag(mapa(), 120.0, 0.0);
+    app.drag(map_view(), 120.0, 0.0);
     assert!(app.session().animating(), "it glides");
     assert!(views(&app).is_empty(), "no report while gliding");
     let released = pin_tip(&app).x - before.x;
@@ -246,7 +246,7 @@ fn double_clicks_zoom_around_the_pointer() {
     let mut app = TestApp::new(Atlas::at(14.0));
     let pointer = Point { x: 300.0, y: 80.0 };
     let under = Camera::new(app.app().view, SIZE).to_lat_lon(pointer);
-    app.double_click_at(mapa(), pointer.x, pointer.y);
+    app.double_click_at(map_view(), pointer.x, pointer.y);
     assert!(views(&app).is_empty(), "no report while zooming");
     app.advance(ZOOM_DURATION);
     let moved = views(&app);
@@ -258,7 +258,7 @@ fn double_clicks_zoom_around_the_pointer() {
         shift: true,
         ..Modifiers::NONE
     });
-    app.double_click_at(mapa(), pointer.x, pointer.y);
+    app.double_click_at(map_view(), pointer.x, pointer.y);
     app.advance(ZOOM_DURATION);
     let moved = views(&app);
     assert_eq!(moved.len(), 2, "{moved:?}");
@@ -269,8 +269,8 @@ fn double_clicks_zoom_around_the_pointer() {
 fn wheel_scrolls_and_pinches_report_once_per_gesture() {
     let mut app = TestApp::new(Atlas::at(14.0));
     let before = pin_tip(&app);
-    app.scroll_wheel_xy(mapa(), 10.0, 5.0);
-    app.scroll_wheel_xy(mapa(), 10.0, 5.0);
+    app.scroll_wheel_xy(map_view(), 10.0, 5.0);
+    app.scroll_wheel_xy(map_view(), 10.0, 5.0);
     assert!(
         views(&app).is_empty(),
         "a scroll burst reports once it settles"
@@ -291,14 +291,14 @@ fn wheel_scrolls_and_pinches_report_once_per_gesture() {
         y: SIZE.height / 2.0,
     };
     let under = Camera::new(app.app().view, SIZE).to_lat_lon(center);
-    app.wheel_notches(mapa(), 1.0);
+    app.wheel_notches(map_view(), 1.0);
     app.advance(ZOOM_DURATION);
     let moved = views(&app);
     assert_eq!(moved.len(), 2);
     assert_eq!(moved[1].zoom, 15.0);
     assert_near(Camera::new(moved[1], SIZE).to_local(under), center, 1e-3);
 
-    app.pinch(mapa(), 0.5);
+    app.pinch(map_view(), 0.5);
     let moved = views(&app);
     assert_eq!(moved.len(), 3, "a pinch reports when it ends");
     assert!((moved[2].zoom - 14.0).abs() < 1e-9);
@@ -308,13 +308,13 @@ fn wheel_scrolls_and_pinches_report_once_per_gesture() {
 #[test]
 fn zoom_buttons_and_keys_move_a_focused_map() {
     let mut app = TestApp::new(Atlas::at(14.0));
-    app.click(By::test_id("mapa.zoom_in"));
+    app.click(By::test_id("map.zoom_in"));
     app.advance(ZOOM_DURATION);
     assert_eq!(views(&app).last().map(|view| view.zoom), Some(15.0));
-    assert!(!app.is_focused(mapa()), "the buttons leave focus alone");
+    assert!(!app.is_focused(map_view()), "the buttons leave focus alone");
 
-    app.click_at(mapa(), 40.0, 250.0);
-    assert!(app.is_focused(mapa()));
+    app.click_at(map_view(), 40.0, 250.0);
+    assert!(app.is_focused(map_view()));
     let before = pin_tip(&app);
     app.press(Key::ArrowLeft, Modifiers::NONE);
     app.press(Key::ArrowUp, Modifiers::NONE);
@@ -336,7 +336,7 @@ fn zoom_buttons_and_keys_move_a_focused_map() {
 /// The tiles the map draws now: stand-ins (with the tile they cover)
 /// first.
 fn drawn(app: &TestApp<Atlas>) -> Vec<(TileId, Option<TileId>)> {
-    let id = app.screen().get(mapa()).id();
+    let id = app.screen().get(map_view()).id();
     match &app.session().layout().node(id).unwrap().content {
         Content::Map(spec) => spec
             .tiles
@@ -365,7 +365,7 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
     };
     assert_eq!(drawn(&app), exact(app.app().view));
 
-    app.drag_and_hold(mapa(), -250.0, 0.0);
+    app.drag_and_hold(map_view(), -250.0, 0.0);
     let moved = app.app().view;
     let during = drawn(&app);
     assert!(
@@ -375,7 +375,7 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
     app.run_until_idle();
     assert_eq!(drawn(&app), exact(moved));
 
-    app.double_click_at(mapa(), 200.0, 150.0);
+    app.double_click_at(map_view(), 200.0, 150.0);
     app.advance(ZOOM_DURATION);
     let zoomed = drawn(&app);
     assert!(
@@ -393,7 +393,7 @@ fn the_basemap_loads_off_the_ui_thread_and_follows_the_camera() {
 }
 
 fn labels(app: &TestApp<Atlas>) -> Vec<MapLabel> {
-    let id = app.screen().get(mapa()).id();
+    let id = app.screen().get(map_view()).id();
     match &app.session().layout().node(id).unwrap().content {
         Content::Map(spec) => spec.labels.clone(),
         other => panic!("{other:?}"),
@@ -415,7 +415,7 @@ fn labels_fade_in_once_the_map_holds_still_and_ride_along_while_it_moves() {
     assert!(shown.iter().all(|label| label.opacity == 1.0));
     assert!(!app.session().animating());
 
-    app.drag_steps(mapa(), -120.0, 0.0);
+    app.drag_steps(map_view(), -120.0, 0.0);
     assert_eq!(
         labels(&app),
         shown,
@@ -453,7 +453,7 @@ fn a_new_view_from_the_app_glides_there_without_echo() {
 
 /// The id of the layer the map shows under the pointer.
 fn hovered(app: &TestApp<Atlas>) -> Option<String> {
-    let id = app.screen().get(mapa()).id();
+    let id = app.screen().get(map_view()).id();
     match &app.session().layout().node(id).unwrap().content {
         Content::Map(spec) => spec.hovered.clone(),
         other => panic!("{other:?}"),
@@ -465,7 +465,7 @@ fn layers_light_up_under_the_pointer_and_report_clicks() {
     let east = LatLon::new(PLAZA.lat, -71.81);
     let mut app = TestApp::new(Atlas {
         layers: vec![
-            square(PLAZA, 0.008).id("fondo"),
+            square(PLAZA, 0.008).id("background"),
             square(PLAZA, 0.003)
                 .id("plaza")
                 .fill(Color::hex(0xc45c26), 0.12),
@@ -477,13 +477,13 @@ fn layers_light_up_under_the_pointer_and_report_clicks() {
     let at = |app: &TestApp<Atlas>, place: LatLon| on_screen(app, view, place);
     assert_eq!(app.mouse_cursor(), Cursor::Default);
 
-    let plaza = at(&app, PLAZA);
-    app.move_pointer(plaza);
+    let square = at(&app, PLAZA);
+    app.move_pointer(square);
     assert_eq!(hovered(&app).as_deref(), Some("plaza"), "the topmost one");
     assert_eq!(app.mouse_cursor(), Cursor::Pointer);
     let west = at(&app, LatLon::new(PLAZA.lat, PLAZA.lon - 0.006));
     app.move_pointer(west);
-    assert_eq!(hovered(&app).as_deref(), Some("fondo"));
+    assert_eq!(hovered(&app).as_deref(), Some("background"));
     let without_id = at(&app, east);
     app.move_pointer(without_id);
     assert_eq!(
@@ -493,9 +493,9 @@ fn layers_light_up_under_the_pointer_and_report_clicks() {
     );
     assert_eq!(app.mouse_cursor(), Cursor::Default);
 
-    app.click_point(plaza);
+    app.click_point(square);
     assert_eq!(app.messages(), [Msg::Area("plaza".to_owned())]);
-    app.drag_and_hold(mapa(), -40.0, 0.0);
+    app.drag_and_hold(map_view(), -40.0, 0.0);
     assert!(
         matches!(app.messages(), [Msg::Area(_), Msg::Moved(_)]),
         "a drag is not a click: {:?}",
@@ -533,7 +533,7 @@ fn fit_bounds_glides_to_the_box_once_and_reports_it() {
         );
     }
 
-    app.drag_and_hold(mapa(), -100.0, 0.0);
+    app.drag_and_hold(map_view(), -100.0, 0.0);
     let dragged = app.app().view;
     app.advance(FLY_DURATION);
     assert_eq!(
@@ -563,7 +563,7 @@ fn editing(draft: PolygonDraft) -> TestApp<Atlas> {
 }
 
 fn vertex(n: usize) -> By {
-    By::test_id(format!("mapa.vertex.{n}"))
+    By::test_id(format!("map.vertex.{n}"))
 }
 
 fn center(app: &TestApp<Atlas>, by: By) -> Point {
@@ -685,7 +685,7 @@ fn a_midpoint_adds_a_vertex_and_crossing_edges_turn_red() {
     let mut app = editing(draft_around_plaza(0.003));
     let view = app.app().view;
     let middle = app.app().draft.as_ref().unwrap().midpoint(1);
-    let handle = By::test_id("mapa.midpoint.1");
+    let handle = By::test_id("map.midpoint.1");
     assert_near(
         center(&app, handle.clone()),
         on_screen(&app, view, middle),
@@ -704,7 +704,7 @@ fn a_midpoint_adds_a_vertex_and_crossing_edges_turn_red() {
     );
 
     let map_layers = |app: &TestApp<Atlas>| {
-        let id = app.screen().get(mapa()).id();
+        let id = app.screen().get(map_view()).id();
         match &app.session().layout().node(id).unwrap().content {
             Content::Map(spec) => spec.layers.clone(),
             other => panic!("{other:?}"),

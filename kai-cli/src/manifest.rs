@@ -175,9 +175,9 @@ pub fn find(start: &Path) -> Option<PathBuf> {
 
 /// Lee y valida un `kai.toml`.
 pub fn load(path: &Path) -> Result<Loaded, String> {
-    let texto = fs::read_to_string(path)
+    let text_value = fs::read_to_string(path)
         .map_err(|error| format!("no se pudo leer {}: {error}", path.display()))?;
-    let manifest = parse(&texto).map_err(|error| format!("{}: {error}", path.display()))?;
+    let manifest = parse(&text_value).map_err(|error| format!("{}: {error}", path.display()))?;
     let root = path
         .parent()
         .ok_or_else(|| format!("{} no tiene carpeta padre", path.display()))?
@@ -201,15 +201,15 @@ pub fn load_from_cwd() -> Result<Loaded, String> {
     load(&path)
 }
 
-pub fn parse(texto: &str) -> Result<Manifest, String> {
-    toml::from_str(texto).map_err(|error| format_toml_error(texto, error))
+pub fn parse(text_value: &str) -> Result<Manifest, String> {
+    toml::from_str(text_value).map_err(|error| format_toml_error(text_value, error))
 }
 
-fn format_toml_error(texto: &str, error: toml::de::Error) -> String {
+fn format_toml_error(text_value: &str, error: toml::de::Error) -> String {
     let msg = error.message().to_string();
     match error.span() {
         Some(span) => {
-            let line = texto[..span.start.min(texto.len())]
+            let line = text_value[..span.start.min(text_value.len())]
                 .bytes()
                 .filter(|&b| b == b'\n')
                 .count()
@@ -239,25 +239,25 @@ pub fn validate(manifest: &Manifest, root: &Path) -> Result<(), String> {
     }
     match manifest.theme.kind.as_str() {
         "kai" | "appkit" | "system" => {}
-        otro => {
+        other => {
             return Err(format!(
-                "[theme].kind = \"{otro}\" inválido; usa kai, appkit o system"
+                "[theme].kind = \"{other}\" inválido; usa kai, appkit o system"
             ));
         }
     }
     match manifest.theme.appearance.as_str() {
         "light" | "dark" | "system" => {}
-        otro => {
+        other => {
             return Err(format!(
-                "[theme].appearance = \"{otro}\" inválido; usa light, dark o system"
+                "[theme].appearance = \"{other}\" inválido; usa light, dark o system"
             ));
         }
     }
     match manifest.theme.density.as_str() {
         "comfortable" | "compact" => {}
-        otro => {
+        other => {
             return Err(format!(
-                "[theme].density = \"{otro}\" inválido; usa comfortable o compact"
+                "[theme].density = \"{other}\" inválido; usa comfortable o compact"
             ));
         }
     }
@@ -268,9 +268,9 @@ pub fn validate(manifest: &Manifest, root: &Path) -> Result<(), String> {
     }
     match manifest.mcp.expose.as_str() {
         "none" | "allowlist" | "all" => {}
-        otro => {
+        other => {
             return Err(format!(
-                "[mcp].expose = \"{otro}\" inválido; usa none, allowlist o all"
+                "[mcp].expose = \"{other}\" inválido; usa none, allowlist o all"
             ));
         }
     }
@@ -321,7 +321,7 @@ expose = "none"
 mod tests {
     use super::*;
 
-    const MINIMO: &str = r#"
+    const MINIMUM: &str = r#"
 [app]
 name = "Demo"
 id = "dev.kai.demo"
@@ -329,7 +329,7 @@ id = "dev.kai.demo"
 
     #[test]
     fn parses_defaults() {
-        let m = parse(MINIMO).unwrap();
+        let m = parse(MINIMUM).unwrap();
         assert_eq!(m.app.name, "Demo");
         assert_eq!(m.theme.kind, "system");
         assert!(!m.mcp.enabled);
@@ -390,7 +390,7 @@ package = "dsp-desktop"
 
     #[test]
     fn validate_theme_and_missing_icon() {
-        let mut m = parse(MINIMO).unwrap();
+        let mut m = parse(MINIMUM).unwrap();
         m.theme.kind = "gtk".into();
         assert!(
             validate(&m, Path::new("/tmp"))
@@ -411,7 +411,7 @@ package = "dsp-desktop"
         let base = std::env::temp_dir().join(format!("kai-manifest-{}", std::process::id()));
         let nested = base.join("a/b");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(base.join("kai.toml"), MINIMO).unwrap();
+        std::fs::write(base.join("kai.toml"), MINIMUM).unwrap();
         assert_eq!(find(&nested), Some(base.join("kai.toml")));
         let _ = std::fs::remove_dir_all(&base);
     }

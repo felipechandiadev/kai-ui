@@ -211,7 +211,7 @@ impl<Msg> Sidebar<Msg> {
             .on_click(toggle)
             .child(icon(Icon::PanelLeft).class("size-4"));
         if let Some(id) = &self.test_id {
-            button = button.test_id(format!("{id}.alternar"));
+            button = button.test_id(format!("{id}.toggle"));
         }
         list.test_id = self.test_id;
         div()
@@ -387,7 +387,7 @@ mod tests {
             ];
             div()
                 .class("flex w-full h-full")
-                .test_id("ventana")
+                .test_id("window")
                 .children([
                     Sidebar::new(&groups, self.selected, Msg::Select)
                         .collapsed(self.collapsed)
@@ -395,7 +395,7 @@ mod tests {
                         .label("Secciones")
                         .test_id("nav")
                         .build(),
-                    div().class("flex-1 h-full").test_id("contenido"),
+                    div().class("flex-1 h-full").test_id("content"),
                 ])
         }
     }
@@ -428,8 +428,8 @@ mod tests {
         let rows = screen.within(nav).all(By::role(Role::SidebarItem));
         let names: Vec<_> = rows.iter().filter_map(|row| row.name()).collect();
         assert_eq!(names, ["Inicio", "Campos", "Botones"]);
-        let inicio = screen.get(row("Inicio"));
-        assert_eq!(inicio.node().description.as_deref(), Some("3"));
+        let home_view = screen.get(row("Inicio"));
+        assert_eq!(home_view.node().description.as_deref(), Some("3"));
         screen.get_by_test_id("nav.0.punto");
         assert!(
             screen.within(nav).query(By::role(Role::Heading)).is_none(),
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn the_toggle_switches_between_rail_and_list_outside_the_rows_stop() {
         let mut app = TestApp::new(Nav::default());
-        let toggle = By::test_id("nav.alternar");
+        let toggle = By::test_id("nav.toggle");
         assert_eq!(
             app.screen().get(toggle.clone()).name().as_deref(),
             Some("Ocultar barra lateral")
@@ -492,7 +492,7 @@ mod tests {
             Some("Botones"),
             "at once while another one shows"
         );
-        app.hover(By::test_id("contenido"));
+        app.hover(By::test_id("content"));
         assert_eq!(tooltip(&app), None, "hidden on leave");
         app.advance(TOOLTIP_DELAY * 2);
         assert_eq!(tooltip(&app), None);
@@ -510,7 +510,7 @@ mod tests {
         app.advance(TOOLTIP_DELAY * 2);
         assert_eq!(tooltip(&app), None, "not again while it stays");
 
-        app.hover(By::test_id("contenido"));
+        app.hover(By::test_id("content"));
         app.hover(row("Inicio"));
         app.advance(TOOLTIP_DELAY);
         assert_eq!(tooltip(&app).as_deref(), Some("Inicio"));
@@ -545,8 +545,8 @@ mod tests {
                     app.hover(row("Campos"));
                     app.advance(TOOLTIP_DELAY);
                 }
-                let image = app.capture(By::test_id("ventana")).unwrap();
-                let shape = if collapsed { "riel" } else { "expandida" };
+                let image = app.capture(By::test_id("window")).unwrap();
+                let shape = if collapsed { "rail" } else { "expanded" };
                 let path = dir.join(format!("sidebar-{name}-{shape}.png"));
                 crate::snapshot::write_png(&path, &image).unwrap();
             }

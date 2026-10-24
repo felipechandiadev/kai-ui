@@ -393,40 +393,40 @@ mod tests {
     use crate::components::{Column, SortDirection};
     use crate::element::{Element, text};
 
-    struct Cliente {
-        nombre: &'static str,
-        ciudad: &'static str,
+    struct Client {
+        name: &'static str,
+        city: &'static str,
         plan: &'static str,
-        monto: f64,
-        alta: Date,
-        activo: bool,
+        amount: f64,
+        signup: Date,
+        active: bool,
     }
 
-    const fn cliente(
-        nombre: &'static str,
-        ciudad: &'static str,
+    const fn client(
+        name: &'static str,
+        city: &'static str,
         plan: &'static str,
-        monto: f64,
-        alta: (i32, u8, u8),
-        activo: bool,
-    ) -> Cliente {
-        Cliente {
-            nombre,
-            ciudad,
+        amount: f64,
+        signup: (i32, u8, u8),
+        active: bool,
+    ) -> Client {
+        Client {
+            name,
+            city,
             plan,
-            monto,
-            alta: Date {
-                year: alta.0,
-                month: alta.1,
-                day: alta.2,
+            amount,
+            signup: Date {
+                year: signup.0,
+                month: signup.1,
+                day: signup.2,
             },
-            activo,
+            active,
         }
     }
 
-    const DATOS: [Cliente; 6] = [
-        cliente("Ana Rojas", "Temuco", "Pro", 1200.0, (2026, 1, 10), true),
-        cliente(
+    const ROWS: [Client; 6] = [
+        client("Ana Rojas", "Temuco", "Pro", 1200.0, (2026, 1, 10), true),
+        client(
             "Bruno Soto",
             "Valparaíso",
             "Básico",
@@ -434,7 +434,7 @@ mod tests {
             (2025, 11, 2),
             false,
         ),
-        cliente(
+        client(
             "Carla Vega",
             "Temuco",
             "Empresa",
@@ -442,8 +442,8 @@ mod tests {
             (2026, 3, 5),
             true,
         ),
-        cliente("Diego Muñoz", "Arica", "Pro", 450.5, (2026, 10, 1), true),
-        cliente(
+        client("Diego Muñoz", "Arica", "Pro", 450.5, (2026, 10, 1), true),
+        client(
             "Elena Silva",
             "Temuco",
             "Básico",
@@ -451,7 +451,7 @@ mod tests {
             (2024, 6, 30),
             false,
         ),
-        cliente(
+        client(
             "Ángela Pro",
             "Santiago",
             "Básico",
@@ -461,37 +461,37 @@ mod tests {
         ),
     ];
 
-    fn columnas() -> Vec<Column<Cliente, ()>> {
+    fn table_columns() -> Vec<Column<Client, ()>> {
         vec![
-            Column::text("Nombre", |c: &Cliente| c.nombre.to_owned()),
-            Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned())
+            Column::text("Nombre", |c: &Client| c.name.to_owned()),
+            Column::text("Ciudad", |c: &Client| c.city.to_owned())
                 .filterable()
                 .hideable(),
-            Column::text("Plan", |c: &Cliente| c.plan.to_owned())
-                .render(|c: &Cliente| text(format!("[{}]", c.plan)))
+            Column::text("Plan", |c: &Client| c.plan.to_owned())
+                .render(|c: &Client| text(format!("[{}]", c.plan)))
                 .filterable(),
-            Column::number("Monto", |c: &Cliente| c.monto)
+            Column::number("Monto", |c: &Client| c.amount)
                 .format(|value| format!("$ {value}"))
                 .filterable(),
-            Column::date("Alta", |c: &Cliente| c.alta).filterable(),
-            Column::boolean("Activo", |c: &Cliente| c.activo).filterable(),
-            Column::actions(|_: &Cliente| -> Element<()> { text("Ver") }),
+            Column::date("Alta", |c: &Client| c.signup).filterable(),
+            Column::boolean("Activo", |c: &Client| c.active).filterable(),
+            Column::actions(|_: &Client| -> Element<()> { text("Ver") }),
         ]
     }
 
-    fn nombres(view: &TableView) -> Vec<&'static str> {
-        view.rows().iter().map(|&row| DATOS[row].nombre).collect()
+    fn names(view: &TableView) -> Vec<&'static str> {
+        view.rows().iter().map(|&row| ROWS[row].name).collect()
     }
 
     #[test]
     fn a_thousand_rows_export_exactly_what_the_search_filter_and_sort_show() {
-        const NOMBRES: [&str; 4] = ["Ana", "Bruno", "Carla", "Diego"];
-        const CIUDADES: [&str; 3] = ["Temuco", "Arica", "Valdivia"];
-        let datos: Vec<Cliente> = (0..1_000)
+        const FIRST_NAMES: [&str; 4] = ["Ana", "Bruno", "Carla", "Diego"];
+        const CITIES: [&str; 3] = ["Temuco", "Arica", "Valdivia"];
+        let rows_data: Vec<Client> = (0..1_000)
             .map(|i| {
-                cliente(
-                    NOMBRES[i % 4],
-                    CIUDADES[i % 3],
+                client(
+                    FIRST_NAMES[i % 4],
+                    CITIES[i % 3],
                     "Pro",
                     ((i * 37) % 1_000) as f64,
                     (2026, 1 + (i % 12) as u8, 1),
@@ -499,21 +499,26 @@ mod tests {
                 )
             })
             .collect();
-        let columns = columnas();
-        let mut view = TableView::new(&datos, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&rows_data, &columns);
         view.query = "temuco".into();
         view.apply(ViewChange::Filter(3, ">=500".into()));
         view.apply(ViewChange::Sort(3, SortDirection::Descending));
         view.apply(ViewChange::Hide(1, true));
-        view.refresh(&datos, &columns);
+        view.refresh(&rows_data, &columns);
 
-        let mut expected: Vec<usize> = (0..datos.len())
-            .filter(|&i| datos[i].ciudad == "Temuco" && datos[i].monto >= 500.0)
+        let mut expected: Vec<usize> = (0..rows_data.len())
+            .filter(|&i| rows_data[i].city == "Temuco" && rows_data[i].amount >= 500.0)
             .collect();
-        expected.sort_by(|&a, &b| datos[b].monto.total_cmp(&datos[a].monto).then(a.cmp(&b)));
+        expected.sort_by(|&a, &b| {
+            rows_data[b]
+                .amount
+                .total_cmp(&rows_data[a].amount)
+                .then(a.cmp(&b))
+        });
         assert!(expected.len() > 100 && expected.len() < 1_000);
 
-        let sheet = view.export(&datos, &columns);
+        let sheet = view.export(&rows_data, &columns);
         assert_eq!(
             sheet.columns,
             ["Nombre", "Plan", "Monto", "Alta", "Activo"],
@@ -522,13 +527,13 @@ mod tests {
         let rows: Vec<Vec<Value>> = expected
             .iter()
             .map(|&i| {
-                let c = &datos[i];
+                let c = &rows_data[i];
                 vec![
-                    Value::Text(c.nombre.into()),
+                    Value::Text(c.name.into()),
                     Value::Text(c.plan.into()),
-                    Value::Number(c.monto),
-                    Value::Date(c.alta),
-                    Value::Bool(c.activo),
+                    Value::Number(c.amount),
+                    Value::Date(c.signup),
+                    Value::Bool(c.active),
                 ]
             })
             .collect();
@@ -543,39 +548,39 @@ mod tests {
 
     #[test]
     fn search_filters_and_sort_combine() {
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         assert_eq!(view.len(), 6);
 
         view.query = "temuco".into();
         view.apply(ViewChange::Filter(3, ">=300".into()));
         view.apply(ViewChange::Sort(3, SortDirection::Descending));
-        view.refresh(&DATOS, &columns);
-        assert_eq!(nombres(&view), ["Carla Vega", "Ana Rojas", "Elena Silva"]);
+        view.refresh(&ROWS, &columns);
+        assert_eq!(names(&view), ["Carla Vega", "Ana Rojas", "Elena Silva"]);
 
         view.apply(ViewChange::Filter(2, "basico".into()));
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert_eq!(
-            nombres(&view),
+            names(&view),
             ["Elena Silva"],
             "the badge filters by its value"
         );
 
         view.apply(ViewChange::Filtering(false));
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert!(view.filters.is_empty());
         assert_eq!(view.len(), 3, "only the search is left");
     }
 
     #[test]
     fn only_hideable_columns_hide_and_one_is_always_left() {
-        let columns: Vec<Column<Cliente, ()>> = vec![
-            Column::text("Nombre", |c: &Cliente| c.nombre.to_owned()).hideable(),
-            Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned()).hideable(),
-            Column::text("Plan", |c: &Cliente| c.plan.to_owned()),
-            Column::actions(|_: &Cliente| -> Element<()> { text("Ver") }).hideable(),
+        let columns: Vec<Column<Client, ()>> = vec![
+            Column::text("Nombre", |c: &Client| c.name.to_owned()).hideable(),
+            Column::text("Ciudad", |c: &Client| c.city.to_owned()).hideable(),
+            Column::text("Plan", |c: &Client| c.plan.to_owned()),
+            Column::actions(|_: &Client| -> Element<()> { text("Ver") }).hideable(),
         ];
-        let mut view = TableView::new(&DATOS, &columns);
+        let mut view = TableView::new(&ROWS, &columns);
         view.apply(ViewChange::Hide(2, true));
         view.apply(ViewChange::Hide(3, true));
         assert!(view.hidden.is_empty(), "neither Plan nor the actions");
@@ -583,8 +588,8 @@ mod tests {
         view.apply(ViewChange::Hide(1, true));
         assert_eq!(view.hidden, [0, 1].into(), "Plan is still shown");
 
-        let two: Vec<Column<Cliente, ()>> = columns.into_iter().take(2).collect();
-        let mut view = TableView::new(&DATOS, &two);
+        let two: Vec<Column<Client, ()>> = columns.into_iter().take(2).collect();
+        let mut view = TableView::new(&ROWS, &two);
         view.apply(ViewChange::Hide(0, true));
         assert!(!view.can_hide(1));
         view.apply(ViewChange::Hide(1, true));
@@ -595,43 +600,43 @@ mod tests {
 
     #[test]
     fn the_search_ignores_case_and_accents_and_looks_in_hidden_columns() {
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         view.apply(ViewChange::Hide(1, true));
         view.query = "VALPARAISO".into();
-        view.refresh(&DATOS, &columns);
-        assert_eq!(nombres(&view), ["Bruno Soto"]);
+        view.refresh(&ROWS, &columns);
+        assert_eq!(names(&view), ["Bruno Soto"]);
 
         view.query = "angela".into();
-        view.refresh(&DATOS, &columns);
-        assert_eq!(nombres(&view), ["Ángela Pro"]);
+        view.refresh(&ROWS, &columns);
+        assert_eq!(names(&view), ["Ángela Pro"]);
     }
 
     #[test]
     fn the_search_only_looks_in_text_columns() {
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         view.query = "1200".into();
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert!(view.is_empty(), "amounts are not searched by default");
     }
 
     #[test]
     fn sorting_is_stable_and_folds_text() {
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         view.apply(ViewChange::Sort(0, SortDirection::Ascending));
-        view.refresh(&DATOS, &columns);
-        assert_eq!(nombres(&view)[0], "Ana Rojas");
-        assert_eq!(nombres(&view)[1], "Ángela Pro", "Á sorts as A");
+        view.refresh(&ROWS, &columns);
+        assert_eq!(names(&view)[0], "Ana Rojas");
+        assert_eq!(names(&view)[1], "Ángela Pro", "Á sorts as A");
 
         view.apply(ViewChange::Sort(3, SortDirection::Ascending));
-        view.refresh(&DATOS, &columns);
-        assert_eq!(&nombres(&view)[1..3], ["Bruno Soto", "Elena Silva"]);
+        view.refresh(&ROWS, &columns);
+        assert_eq!(&names(&view)[1..3], ["Bruno Soto", "Elena Silva"]);
         view.apply(ViewChange::Sort(3, SortDirection::Descending));
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert_eq!(
-            &nombres(&view)[3..5],
+            &names(&view)[3..5],
             ["Bruno Soto", "Elena Silva"],
             "ties keep the data order both ways"
         );
@@ -639,15 +644,15 @@ mod tests {
 
     #[test]
     fn the_selection_by_data_index_survives_sorting() {
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         let carla = 2;
         assert_eq!(view.position(carla), Some(2));
         view.apply(ViewChange::Sort(3, SortDirection::Descending));
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert_eq!(view.position(carla), Some(0));
         view.query = "arica".into();
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert_eq!(view.position(carla), None);
     }
 
@@ -673,24 +678,24 @@ mod tests {
         assert!(matches(&yes, "Sí", "sí"));
         assert!(!matches(&yes, "Sí", "no"));
 
-        let columns = columnas();
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let mut view = TableView::new(&ROWS, &columns);
         view.apply(ViewChange::Filter(5, "no".into()));
         view.apply(ViewChange::Filter(4, "2024..2025-12-31".into()));
-        view.refresh(&DATOS, &columns);
-        assert_eq!(nombres(&view), ["Bruno Soto", "Elena Silva"]);
+        view.refresh(&ROWS, &columns);
+        assert_eq!(names(&view), ["Bruno Soto", "Elena Silva"]);
     }
 
     #[test]
     fn actions_have_no_value_and_ignore_filters_and_sort() {
-        let columns = columnas();
-        let acciones = &columns[6];
-        assert!(!acciones.has_value());
-        assert_eq!(acciones.value_of(&DATOS[0]), None);
-        let mut view = TableView::new(&DATOS, &columns);
+        let columns = table_columns();
+        let actions_col = &columns[6];
+        assert!(!actions_col.has_value());
+        assert_eq!(actions_col.value_of(&ROWS[0]), None);
+        let mut view = TableView::new(&ROWS, &columns);
         view.apply(ViewChange::Filter(6, "ver".into()));
         view.apply(ViewChange::Sort(6, SortDirection::Descending));
-        view.refresh(&DATOS, &columns);
+        view.refresh(&ROWS, &columns);
         assert_eq!(view.len(), 6);
         assert_eq!(view.rows()[0], 0, "data order");
     }

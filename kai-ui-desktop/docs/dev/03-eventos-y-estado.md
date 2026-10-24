@@ -94,7 +94,7 @@ fn commands(registry: &mut CommandRegistry<Self>) {
 
 - **`Action`** produce un `Msg` (`into_msg`) y dice si está disponible (`available(&App) -> Availability`). **`Query`** lee el modelo y no pasa por `update`.
 - **`Session`** recalcula la disponibilidad tras cada `update`, igual que `view`. Si cambió, la deja en `Outbox.commands` y la ventana actualiza el menú nativo (`kai::menu`, muda).
-- **`Session::perform_command(id)`** es la entrada única de atajos, menú y paleta: envía el `Msg` si la acción está habilitada, y `kai.paleta` abre o cierra la paleta.
+- **`Session::perform_command(id)`** es la entrada única de atajos, menú y paleta: envía el `Msg` si la acción está habilitada, y `kai.palette` abre o cierra la paleta.
 - **Ruta de teclas**: `key_equivalent_route` ofrece la tecla primero a los equivalentes de los controles (botón por defecto, cancelar, atajos propios) y después a los atajos de los comandos habilitados, como AppKit. Con un campo enfocado no se toman teclas sin ⌘ ni ⌃, y el registro reserva ⌘A/C/X/V/Z y ⇧⌘Z para la edición. `KeyRoute::Command(id)` sale del dispatch como `Action::Command(id)`, que la sesión atiende antes de la cadena de responders.
 - **En la ventana**, el menú consume primero los atajos de sus ítems habilitados y llega al bucle como `UserEvent::Menu(id)`; si el ítem está deshabilitado, la ruta de teclas tampoco lo dispara.
 - **Paleta**: mientras está abierta, la sesión arma el `FocusOrder` solo con ella y el único atajo activo es ⇧⌘P. Atiende las flechas y Return de la búsqueda antes del dispatch, cierra con `CancelOperation` (Esc, ⌘.) o con un clic fuera del panel, y devuelve el foco que había.

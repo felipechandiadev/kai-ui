@@ -23,7 +23,7 @@ use crate::ui_engine::Intent;
 /// Test id of the confirmation dialog. Its buttons are
 /// `kai.confirmar.sesion`, `kai.confirmar.una_vez` and
 /// `kai.confirmar.rechazar`.
-pub const CONFIRMATION: &str = "kai.confirmar";
+pub const CONFIRMATION: &str = "kai.confirm";
 
 /// Test id of the «agent connected» indicator.
 pub const AGENT_STATUS: &str = "kai.agente";
@@ -54,10 +54,10 @@ const DECISIONS: [(Decision, &str, &str); 3] = [
     (
         Decision::AllowForSession,
         "Permitir en esta sesión",
-        "sesion",
+        "session",
     ),
-    (Decision::AllowOnce, "Permitir una vez", "una_vez"),
-    (Decision::Deny, "Rechazar", "rechazar"),
+    (Decision::AllowOnce, "Permitir una vez", "once"),
+    (Decision::Deny, "Rechazar", "deny"),
 ];
 
 /// A call and when it arrived.
@@ -605,7 +605,7 @@ fn confirmation_dialog<Msg: Clone + 'static>(
         .build()
 }
 
-/// `campo: valor, ...` of an object input, shortened; `None` without
+/// `image_field: valor, ...` of an object input, shortened; `None` without
 /// fields.
 fn summary(input: &Value) -> Option<String> {
     let fields = input.as_object().filter(|fields| !fields.is_empty())?;

@@ -223,8 +223,8 @@ mod tests {
     #[test]
     fn an_entry_larger_than_the_limit_is_not_kept() {
         let cache = temp_cache("huge", 8);
-        cache.put("grande", &[0; 9]).unwrap();
-        assert_eq!(cache.get("grande"), None);
+        cache.put("large", &[0; 9]).unwrap();
+        assert_eq!(cache.get("large"), None);
         assert_eq!(cache.size(), 0);
     }
 

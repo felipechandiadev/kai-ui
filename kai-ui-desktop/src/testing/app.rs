@@ -542,9 +542,9 @@ impl<A: App> TestApp<A> {
     fn answer_confirmations(&mut self) {
         let part = match self.confirm {
             Confirm::Ask => return,
-            Confirm::AllowOnce => "una_vez",
-            Confirm::AllowForSession => "sesion",
-            Confirm::Deny => "rechazar",
+            Confirm::AllowOnce => "once",
+            Confirm::AllowForSession => "session",
+            Confirm::Deny => "deny",
         };
         while self.session.confirmation_open() {
             let recorded = self.audit_log().len();
@@ -1179,11 +1179,11 @@ mod tests {
                 .class("w-full h-full flex flex-col gap-4 p-4")
                 .children([
                     TextField::new("Nombre", &self.name)
-                        .test_id("nombre")
+                        .test_id("name")
                         .on_input(FormMsg::Name)
                         .build(),
                     button("Enviar", ButtonVariant::Primary)
-                        .test_id("enviar")
+                        .test_id("submit")
                         .on_click(FormMsg::Send)
                         .default_button(true)
                         .disabled(self.name.is_empty()),
@@ -1217,27 +1217,27 @@ mod tests {
     #[test]
     fn typing_sends_one_message_per_character() {
         let mut app = TestApp::new(Form::default());
-        assert!(!app.is_enabled(By::test_id("enviar")));
+        assert!(!app.is_enabled(By::test_id("submit")));
         app.type_text(By::label("Nombre"), "Ana");
-        assert!(app.is_focused(By::test_id("nombre")));
+        assert!(app.is_focused(By::test_id("name")));
         assert_eq!(app.value(By::label("Nombre")), "Ana");
         assert_eq!(
             app.messages(),
             ["A", "An", "Ana"].map(|name| FormMsg::Name(name.to_owned()))
         );
-        assert!(app.is_enabled(By::test_id("enviar")));
+        assert!(app.is_enabled(By::test_id("submit")));
 
-        app.click(By::test_id("enviar"));
+        app.click(By::test_id("submit"));
         assert_eq!(app.messages().last(), Some(&FormMsg::Send));
         assert_eq!(app.app().sent, ["Ana"]);
-        assert_eq!(app.value(By::test_id("nombre")), "");
+        assert_eq!(app.value(By::test_id("name")), "");
         app.screen().get(By::text("Enviados: 1"));
     }
 
     #[test]
     fn return_in_a_field_activates_the_default_button() {
         let mut app = TestApp::new(Form::default());
-        app.type_text(By::test_id("nombre"), "Ana");
+        app.type_text(By::test_id("name"), "Ana");
         app.press(Key::Enter, Modifiers::NONE);
         assert_eq!(app.messages().last(), Some(&FormMsg::Send));
         assert_eq!(app.app().sent, ["Ana"]);
@@ -1249,7 +1249,7 @@ mod tests {
         let mut app = TestApp::builder(Form::default())
             .clipboard(clipboard.clone())
             .build();
-        app.type_text(By::test_id("nombre"), "Ana");
+        app.type_text(By::test_id("name"), "Ana");
         let (key, modifiers) = cmd(Key::A);
         app.press(key, modifiers);
         let (key, modifiers) = cmd(Key::C);
@@ -1259,7 +1259,7 @@ mod tests {
         app.press(Key::End, Modifiers::NONE);
         let (key, modifiers) = cmd(Key::V);
         app.press(key, modifiers);
-        assert_eq!(app.value(By::test_id("nombre")), "AnaAna");
+        assert_eq!(app.value(By::test_id("name")), "AnaAna");
         assert_eq!(app.app().name, "AnaAna");
     }
 
@@ -1269,35 +1269,35 @@ mod tests {
         let mut app = TestApp::builder(Form::default())
             .clipboard(clipboard.clone())
             .build();
-        app.type_text(By::test_id("nombre"), "Ana Pérez");
+        app.type_text(By::test_id("name"), "Ana Pérez");
         let option = Modifiers {
             option: true,
             ..Modifiers::NONE
         };
         app.press(Key::Backspace, option);
-        assert_eq!(app.value(By::test_id("nombre")), "Ana ");
+        assert_eq!(app.value(By::test_id("name")), "Ana ");
         assert_eq!(app.app().name, "Ana ");
 
-        app.triple_click(By::test_id("nombre"));
+        app.triple_click(By::test_id("name"));
         let (key, modifiers) = cmd(Key::C);
         app.press(key, modifiers);
         assert_eq!(clipboard.text().as_deref(), Some("Ana "));
         let (key, modifiers) = cmd(Key::Backspace);
         app.press(key, modifiers);
-        assert_eq!(app.value(By::test_id("nombre")), "");
+        assert_eq!(app.value(By::test_id("name")), "");
     }
 
     #[test]
     fn keys_type_their_character() {
         let mut app = TestApp::new(Form::default());
-        app.click(By::test_id("nombre"));
+        app.click(By::test_id("name"));
         let shift = Modifiers {
             shift: true,
             ..Modifiers::NONE
         };
         app.press(Key::Char('o'), shift);
         app.press(Key::Char('k'), Modifiers::NONE);
-        assert_eq!(app.value(By::test_id("nombre")), "Ok");
+        assert_eq!(app.value(By::test_id("name")), "Ok");
     }
 
     struct Covered;
@@ -1330,8 +1330,8 @@ mod tests {
     #[ignore = "GPU"]
     fn capture_element_crops_to_bounds() {
         let app = TestApp::new(Form::default());
-        let bounds = app.screen().get(By::test_id("enviar")).bounds();
-        let image = app.capture(By::test_id("enviar")).unwrap();
+        let bounds = app.screen().get(By::test_id("submit")).bounds();
+        let image = app.capture(By::test_id("submit")).unwrap();
         assert_eq!(image.height, (bounds.height * 2.0).ceil() as u32);
         assert!(image.width > 0 && image.width < 2048);
         assert_eq!(image.rgba.len(), (image.width * image.height * 4) as usize);

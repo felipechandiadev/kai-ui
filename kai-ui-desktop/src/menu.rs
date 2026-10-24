@@ -308,13 +308,13 @@ mod tests {
         let mut with_input = state("b.con_entrada", Some("B"));
         with_input.needs_input = true;
         let model = menu_model(&[
-            state("b.uno", Some("B")),
-            state("a.uno", Some("A")),
+            state("b.one", Some("B")),
+            state("a.one", Some("A")),
             hidden,
             query,
             with_input,
             state("sin.menu", None),
-            state("b.dos", Some("B")),
+            state("b.two", Some("B")),
         ]);
         let shape: Vec<(&str, Vec<&str>)> = model
             .iter()
@@ -325,12 +325,12 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(shape, [("B", vec!["b.uno", "b.dos"]), ("A", vec!["a.uno"])]);
+        assert_eq!(shape, [("B", vec!["b.one", "b.two"]), ("A", vec!["a.one"])]);
     }
 
     #[test]
     fn enabling_an_item_keeps_the_structure() {
-        let before = menu_model(&[state("a.uno", Some("A")), state("a.dos", Some("A"))]);
+        let before = menu_model(&[state("a.one", Some("A")), state("a.two", Some("A"))]);
         let mut after = before.clone();
         after[0].items[1].enabled = false;
         assert!(same_structure(&before, &after));

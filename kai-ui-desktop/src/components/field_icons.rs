@@ -1,7 +1,7 @@
 //! Documented map from field role → Lucide icon for form adornments.
 //!
 //! Keeps demo and apps from pairing the wrong glyph (e.g. a search glass on
-//! an email field). See `docs/dev/19-iconografia-campos.md`.
+//! an email field). See `docs/dev/19-iconografia-fields_list.md`.
 
 use crate::icons::Icon;
 

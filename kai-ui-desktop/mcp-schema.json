@@ -4,7 +4,7 @@
     {
       "description": "Suma un clic al contador",
       "exposed": true,
-      "id": "contador.incrementar",
+      "id": "counter.increment",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -17,11 +17,11 @@
     {
       "description": "Suma varios clics al contador",
       "exposed": true,
-      "id": "contador.sumar",
+      "id": "counter.add",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "cantidad": {
+          "count": {
             "description": "Clics que se suman",
             "format": "uint32",
             "minimum": 0,
@@ -29,7 +29,7 @@
           }
         },
         "required": [
-          "cantidad"
+          "count"
         ],
         "type": "object"
       },
@@ -40,7 +40,7 @@
     {
       "description": "Vuelve el contador a cero",
       "exposed": true,
-      "id": "contador.reiniciar",
+      "id": "counter.reset",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -53,7 +53,7 @@
     {
       "description": "Registra el nombre y limpia el formulario",
       "exposed": true,
-      "id": "form.enviar",
+      "id": "form.submit",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -72,7 +72,7 @@
     {
       "description": "Borra el nombre, el correo, el rol y los términos",
       "exposed": true,
-      "id": "form.limpiar",
+      "id": "form.clear",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -84,7 +84,7 @@
     },
     {
       "exposed": false,
-      "id": "form.alternar_contrasena",
+      "id": "form.toggle_password",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -96,7 +96,7 @@
     },
     {
       "exposed": true,
-      "id": "form.ultimo_envio",
+      "id": "form.last_submission",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -114,35 +114,35 @@
     {
       "description": "Muestra una sección de la demo, como un clic en la barra lateral",
       "exposed": true,
-      "id": "ui.ir_a",
+      "id": "ui.go_to",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "seccion": {
+          "section": {
             "description": "Sección que se muestra",
             "oneOf": [
               {
-                "const": "inicio",
+                "const": "home",
                 "description": "Fondo de ventana, contador, formulario y estadísticas.",
                 "type": "string"
               },
               {
-                "const": "campos",
+                "const": "fields",
                 "description": "Variantes de TextField.",
                 "type": "string"
               },
               {
-                "const": "botones",
+                "const": "buttons",
                 "description": "Botones, tamaños e IconButtons.",
                 "type": "string"
               },
               {
-                "const": "seleccion",
+                "const": "selection",
                 "description": "Switches, checkboxes, selects y controles segmentados.",
                 "type": "string"
               },
               {
-                "const": "contenedores",
+                "const": "containers",
                 "description": "Cards, group boxes, estadísticas y texto.",
                 "type": "string"
               },
@@ -157,47 +157,47 @@
                 "type": "string"
               },
               {
-                "const": "tabla",
+                "const": "table",
                 "description": "Tabla de 10 000 clientes y lista virtualizada.",
                 "type": "string"
               },
               {
-                "const": "mapa",
+                "const": "map",
                 "description": "Mapa interactivo de Parral.",
                 "type": "string"
               },
               {
-                "const": "graficos",
+                "const": "charts",
                 "description": "Gráficos de barras y sparkline.",
                 "type": "string"
               },
               {
-                "const": "documento",
+                "const": "document",
                 "description": "Mini procesador de texto (esqueleto Document).",
                 "type": "string"
               },
               {
-                "const": "dialogos",
+                "const": "dialogs",
                 "description": "Diálogos, avisos (toasts) y la paleta de comandos.",
                 "type": "string"
               },
               {
-                "const": "plantilla_lista",
+                "const": "template_list",
                 "description": "Plantilla lista + detalle (master/detail).",
                 "type": "string"
               },
               {
-                "const": "plantilla_formulario",
+                "const": "template_form",
                 "description": "Plantilla formulario (densidad comfortable).",
                 "type": "string"
               },
               {
-                "const": "plantilla_datos",
+                "const": "template_data",
                 "description": "Plantilla vista de datos (densidad compact).",
                 "type": "string"
               },
               {
-                "const": "catalogo",
+                "const": "catalog",
                 "description": "Catálogo vivo: matriz filtrable tema × density × size.",
                 "type": "string"
               }
@@ -205,7 +205,7 @@
           }
         },
         "required": [
-          "seccion"
+          "section"
         ],
         "type": "object"
       },
@@ -216,7 +216,7 @@
     {
       "description": "Colapsa la barra lateral a un riel de íconos o la expande",
       "exposed": true,
-      "id": "ui.alternar_sidebar",
+      "id": "ui.toggle_sidebar",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -229,23 +229,23 @@
     {
       "description": "Muestra un aviso (toast) que se cierra solo a los 4 segundos",
       "exposed": true,
-      "id": "avisos.mostrar",
+      "id": "toasts.show",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "variante": {
+          "kind": {
             "description": "Variante del aviso",
             "enum": [
-              "exito",
+              "success",
               "error",
-              "advertencia",
+              "warning",
               "info"
             ],
             "type": "string"
           }
         },
         "required": [
-          "variante"
+          "kind"
         ],
         "type": "object"
       },
@@ -256,7 +256,7 @@
     {
       "description": "Descarga una imagen y la muestra en el avatar de la sección Multimedia",
       "exposed": true,
-      "id": "multimedia.cargar_url",
+      "id": "media.load_url",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -277,7 +277,7 @@
     {
       "description": "Centra el mapa de la sección Mapa en un punto, con el zoom dado",
       "exposed": true,
-      "id": "mapa.set_view",
+      "id": "map.set_view",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -328,7 +328,7 @@
     {
       "description": "Mueve el mapa de la sección Mapa hasta mostrar entera una caja de latitud y longitud",
       "exposed": true,
-      "id": "mapa.fit_bounds",
+      "id": "map.fit_bounds",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -377,7 +377,7 @@
     {
       "description": "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % de margen; un código desconocido, o un sector en edición, no cambia nada",
       "exposed": true,
-      "id": "areas.seleccionar",
+      "id": "areas.select",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -398,12 +398,12 @@
     {
       "description": "Reemplaza el polígono de un sector de DSP en el mapa de la sección Mapa, lo selecciona y lo encuadra; una geometría inválida es un error y no cambia nada",
       "exposed": true,
-      "id": "areas.editar_geometria",
+      "id": "areas.edit_geometry",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "code": {
-            "description": "Código del sector, como en areas.seleccionar",
+            "description": "Código del sector, como en areas.select",
             "type": "string"
           },
           "coordinates": {
@@ -432,7 +432,7 @@
     },
     {
       "exposed": true,
-      "id": "mapa.get_view",
+      "id": "map.get_view",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -478,7 +478,7 @@
     {
       "description": "Espera un momento en una tarea; mientras, el comando está en curso",
       "exposed": true,
-      "id": "botones.simular_espera",
+      "id": "buttons.simulate_wait",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -491,7 +491,7 @@
     {
       "description": "Guarda en un Excel las filas que muestra la tabla de clientes, con su búsqueda, filtros y orden",
       "exposed": true,
-      "id": "tabla.exportar",
+      "id": "table.export",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -569,7 +569,7 @@
     {
       "description": "Abre un archivo .docx en el editor de Documento (WordCraft)",
       "exposed": true,
-      "id": "documento.abrir",
+      "id": "document.open",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -582,7 +582,7 @@
     {
       "description": "Guarda el documento como .docx donde elijas",
       "exposed": true,
-      "id": "documento.guardar",
+      "id": "document.save",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -595,7 +595,7 @@
     {
       "description": "Exporta el documento a PDF (WordCraft / craft-pdf) donde elijas",
       "exposed": true,
-      "id": "documento.exportar_pdf",
+      "id": "document.export_pdf",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -608,7 +608,7 @@
     {
       "description": "Muestra u oculta la barra Buscar y reemplazar del documento",
       "exposed": true,
-      "id": "documento.buscar",
+      "id": "document.find",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},

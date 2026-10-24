@@ -240,7 +240,7 @@ mod tests {
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Prefs {
-        seccion: String,
+        section: String,
         zoom: f64,
     }
 
@@ -251,7 +251,7 @@ mod tests {
         /// v1 guardaba `section` en inglés y sin zoom.
         fn migrate(from: u32, raw: Value) -> Result<Value, String> {
             match from {
-                1 => Ok(json!({ "seccion": raw["section"], "zoom": 12.0 })),
+                1 => Ok(json!({ "section": raw["section"], "zoom": 12.0 })),
                 _ => Err(format!("versión {from} desconocida")),
             }
         }
@@ -272,7 +272,7 @@ mod tests {
         let store = temp_store("roundtrip");
         assert_eq!(store.load::<Prefs>(), Ok(None));
         let prefs = Prefs {
-            seccion: "mapa".into(),
+            section: "map".into(),
             zoom: 14.5,
         };
         store.save(&prefs).unwrap();
@@ -287,13 +287,13 @@ mod tests {
         std::fs::create_dir_all(store.dir()).unwrap();
         std::fs::write(
             store.path_of::<Prefs>(),
-            r#"{"version": 1, "data": {"section": "tabla"}}"#,
+            r#"{"version": 1, "data": {"section": "table"}}"#,
         )
         .unwrap();
         assert_eq!(
             store.load::<Prefs>(),
             Ok(Some(Prefs {
-                seccion: "tabla".into(),
+                section: "table".into(),
                 zoom: 12.0
             }))
         );
@@ -308,7 +308,7 @@ mod tests {
         std::fs::write(&path, "{ esto no es json").unwrap();
         assert!(matches!(store.load::<Prefs>(), Err(StoreError::Corrupt(_))));
 
-        std::fs::write(&path, r#"{"version": 2, "data": {"seccion": 5}}"#).unwrap();
+        std::fs::write(&path, r#"{"version": 2, "data": {"section": 5}}"#).unwrap();
         assert!(matches!(store.load::<Prefs>(), Err(StoreError::Corrupt(_))));
 
         std::fs::write(&path, r#"{"version": 9, "data": {}}"#).unwrap();
@@ -328,12 +328,12 @@ mod tests {
     fn saving_is_atomic_and_leaves_no_temporary_file() {
         let store = temp_store("atomic");
         let first = Prefs {
-            seccion: "inicio".into(),
+            section: "home".into(),
             zoom: 1.0,
         };
         store.save(&first).unwrap();
         let second = Prefs {
-            seccion: "mapa".into(),
+            section: "map".into(),
             zoom: 2.0,
         };
         store.save(&second).unwrap();

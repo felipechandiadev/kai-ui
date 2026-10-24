@@ -63,7 +63,7 @@ struct Export;
 
 impl Action for Export {
     type App = Busy;
-    const ID: &'static str = "prueba.exportar";
+    const ID: &'static str = "test.export";
     const TITLE: &'static str = "Exportar";
     fn into_msg(self) -> Msg {
         Msg::Export
@@ -117,21 +117,21 @@ impl App for Busy {
         div().children([
             button("Guardar", ButtonVariant::Primary)
                 .on_click(Msg::Save)
-                .test_id("guardar"),
+                .test_id("save"),
             button("Guardar y recargar", ButtonVariant::Secondary)
                 .on_click(Msg::SaveAndReload)
-                .test_id("recargar"),
+                .test_id("reload"),
             Button::new("Sincronizar")
                 .busy_feedback(false)
                 .on_click(Msg::Sync)
                 .build()
-                .test_id("sincronizar"),
+                .test_id("sync"),
             button("Recordar", ButtonVariant::Secondary)
                 .on_click(Msg::Later)
-                .test_id("recordar"),
+                .test_id("remind"),
             button("Exportar", ButtonVariant::Secondary)
                 .on_command(Export)
-                .test_id("exportar"),
+                .test_id("export"),
             button("Clic", ButtonVariant::Secondary).on_click(Msg::Click),
             text(format!("{} guardados", self.saved)).role(Role::Status),
         ])
@@ -145,22 +145,22 @@ fn by(test_id: &str) -> By {
 #[test]
 fn a_clicked_button_is_busy_until_its_task_delivers() {
     let mut app = TestApp::new(Busy::default());
-    let before = app.screen().get(by("guardar")).node().bounds;
-    app.hover(by("guardar"));
-    app.click(by("guardar"));
-    assert!(app.is_busy(by("guardar")));
+    let before = app.screen().get(by("save")).node().bounds;
+    app.hover(by("save"));
+    app.click(by("save"));
+    assert!(app.is_busy(by("save")));
     assert!(
         !app.is_busy(By::role(Role::Button).name("Clic")),
         "only the button that started it"
     );
     assert_eq!(app.mouse_cursor(), Cursor::Wait);
     assert_eq!(
-        app.screen().get(by("guardar")).node().bounds,
+        app.screen().get(by("save")).node().bounds,
         before,
         "same width"
     );
 
-    app.click(by("guardar"));
+    app.click(by("save"));
     let saves = app.messages().iter().filter(|msg| **msg == Msg::Save);
     assert_eq!(saves.count(), 1, "a busy button takes no clicks");
     app.click(By::role(Role::Button).name("Clic"));
@@ -168,10 +168,10 @@ fn a_clicked_button_is_busy_until_its_task_delivers() {
 
     app.app().gate.open();
     app.run_until_idle();
-    assert!(!app.is_busy(by("guardar")));
+    assert!(!app.is_busy(by("save")));
     assert_eq!(app.app().saved, 1);
     assert_eq!(app.mouse_cursor(), Cursor::Pointer);
-    app.click(by("guardar"));
+    app.click(by("save"));
     app.run_until_idle();
     assert_eq!(app.app().saved, 2);
 }
@@ -179,32 +179,32 @@ fn a_clicked_button_is_busy_until_its_task_delivers() {
 #[test]
 fn chained_tasks_keep_the_button_busy_until_the_last_one() {
     let mut app = TestApp::new(Busy::default());
-    app.click(by("recargar"));
+    app.click(by("reload"));
     app.run_next_tasks();
     assert!(app.messages().contains(&Msg::Reload));
     assert!(
-        app.is_busy(by("recargar")),
+        app.is_busy(by("reload")),
         "the reload the save started is still the button's"
     );
 
     app.app().reload_gate.open();
     app.run_until_idle();
     assert_eq!(app.app().reloaded, 1);
-    assert!(!app.is_busy(by("recargar")));
+    assert!(!app.is_busy(by("reload")));
 }
 
 #[test]
 fn opting_out_keeps_the_button_usable_and_timers_never_make_it_busy() {
     let mut app = TestApp::new(Busy::default());
-    app.click(by("sincronizar"));
+    app.click(by("sync"));
     assert!(app.tasks_pending());
-    assert!(!app.is_busy(by("sincronizar")));
-    app.click(by("sincronizar"));
+    assert!(!app.is_busy(by("sync")));
+    app.click(by("sync"));
     let syncs = app.messages().iter().filter(|msg| **msg == Msg::Sync);
     assert_eq!(syncs.count(), 2);
 
-    app.click(by("recordar"));
-    assert!(!app.is_busy(by("recordar")), "Effects::after is no task");
+    app.click(by("remind"));
+    assert!(!app.is_busy(by("remind")), "Effects::after is no task");
     app.app().gate.open();
     app.run_until_idle();
 }
@@ -213,7 +213,7 @@ fn opting_out_keeps_the_button_usable_and_timers_never_make_it_busy() {
 fn a_busy_command_blocks_its_buttons_the_menu_the_palette_and_agents() {
     let mut app = TestApp::new(Busy::default());
     assert!(app.perform(Export::ID));
-    assert!(app.is_busy(by("exportar")), "bound buttons show it");
+    assert!(app.is_busy(by("export")), "bound buttons show it");
     assert_eq!(
         app.available::<Export>(),
         Availability::disabled(COMMAND_BUSY)
@@ -224,17 +224,17 @@ fn a_busy_command_blocks_its_buttons_the_menu_the_palette_and_agents() {
         app.call(Export::ID, json!({})).unwrap_err().message,
         COMMAND_BUSY
     );
-    app.click(by("exportar"));
+    app.click(by("export"));
     let exports = app.messages().iter().filter(|msg| **msg == Msg::Export);
     assert_eq!(exports.count(), 1);
 
     app.app().gate.open();
     app.run_until_idle();
-    assert!(!app.is_busy(by("exportar")));
+    assert!(!app.is_busy(by("export")));
     assert_eq!(app.available::<Export>(), Availability::Enabled);
-    app.click(by("exportar"));
+    app.click(by("export"));
     assert!(
-        app.is_busy(by("exportar")),
+        app.is_busy(by("export")),
         "a click goes through the command"
     );
     app.run_until_idle();
@@ -243,7 +243,7 @@ fn a_busy_command_blocks_its_buttons_the_menu_the_palette_and_agents() {
 #[test]
 fn the_label_stays_for_assistive_tech_under_the_dots() {
     let mut app = TestApp::new(Busy::default());
-    app.click(by("guardar"));
+    app.click(by("save"));
     assert!(app.is_busy(By::role(Role::Button).name("Guardar")));
     app.app().gate.open();
     app.run_until_idle();

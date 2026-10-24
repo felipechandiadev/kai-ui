@@ -99,7 +99,7 @@ bajo 768). En Glass es un panel flotante redondeado.
 ## Tests (`TestApp`)
 
 `document_selection_collapsed(by)`, y los comandos de la ribbon por
-`documento.ribbon.cmd.<id>`; pestañas `documento.ribbon.tab.<id>`.
+`document.ribbon.cmd.<id>`; pestañas `document.ribbon.tab.<id>`.
 
 ## Pendiente
 

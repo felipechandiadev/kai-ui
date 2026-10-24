@@ -503,8 +503,8 @@ mod tests {
             "{:?}",
             header.bounds
         );
-        let plaza = archive.tile(TileId::new(15, 9846, 19916)).unwrap();
-        assert!(plaza.is_some_and(|bytes| bytes.len() > 1_000));
+        let square = archive.tile(TileId::new(15, 9846, 19916)).unwrap();
+        assert!(square.is_some_and(|bytes| bytes.len() > 1_000));
         assert_eq!(archive.tile(TileId::new(15, 0, 0)).unwrap(), None);
     }
 }

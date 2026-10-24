@@ -167,12 +167,12 @@ mod tests {
 
     #[test]
     fn hex_text_goes_to_a_color_and_back() {
-        let azul = Color::rgb(0x1e, 0x73, 0xae);
+        let blue = Color::rgb(0x1e, 0x73, 0xae);
         for text in ["#1e73ae", "1e73ae", "#1E73AE", "  #1e73Ae "] {
-            assert_eq!(Color::parse_hex(text), Some(azul), "{text:?}");
+            assert_eq!(Color::parse_hex(text), Some(blue), "{text:?}");
         }
-        assert_eq!(azul.to_hex(), "#1e73ae");
-        assert_eq!(Color::parse_hex(&azul.to_hex()), Some(azul));
+        assert_eq!(blue.to_hex(), "#1e73ae");
+        assert_eq!(Color::parse_hex(&blue.to_hex()), Some(blue));
         assert_eq!(Color::parse_hex("#f80"), Some(Color::rgb(0xff, 0x88, 0x00)));
         assert_eq!(Color::rgba(1, 2, 3, 4).to_hex(), "#010203");
         for text in [

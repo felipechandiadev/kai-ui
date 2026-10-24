@@ -135,19 +135,19 @@ mod tests {
                 toolbar_item(Icon::PanelLeft, "Barra lateral")
                     .pressed(self.sidebar)
                     .on_click(Msg::Sidebar)
-                    .test_id("barra.sidebar"),
+                    .test_id("bar.sidebar"),
                 toolbar_title("Ventana", Some("v1")),
                 toolbar_spacer(),
                 toolbar_item(Icon::Plus, "Agregar")
                     .on_click(Msg::Add)
-                    .test_id("barra.agregar"),
+                    .test_id("bar.agregar"),
                 toolbar_separator(),
                 toolbar_item(Icon::Settings, "Compartir")
                     .on_click(Msg::Share)
-                    .test_id("barra.compartir"),
+                    .test_id("bar.compartir"),
                 toolbar_search(
                     search_field(&self.query, Msg::Query)
-                        .test_id("barra.buscar")
+                        .test_id("bar.find")
                         .build(),
                 ),
             ])
@@ -159,31 +159,31 @@ mod tests {
         let mut app = TestApp::new(Window::default());
         app.screen().get(By::role(Role::Toolbar));
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("barra.sidebar")));
+        assert!(app.is_focused(By::test_id("bar.sidebar")));
         app.press(Key::ArrowRight, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("barra.agregar")));
+        assert!(app.is_focused(By::test_id("bar.agregar")));
         app.press(Key::Space, Modifiers::NONE);
         assert_eq!(app.app().added, 1);
         app.press(Key::ArrowRight, Modifiers::NONE);
         app.press(Key::ArrowRight, Modifiers::NONE);
         assert!(
-            app.is_focused(By::test_id("barra.compartir")),
+            app.is_focused(By::test_id("bar.compartir")),
             "stays at the end"
         );
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("barra.buscar")));
-        app.type_text(By::test_id("barra.buscar"), "ab");
+        assert!(app.is_focused(By::test_id("bar.find")));
+        app.type_text(By::test_id("bar.find"), "ab");
         app.press(Key::ArrowLeft, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("barra.buscar")), "arrows edit");
+        assert!(app.is_focused(By::test_id("bar.find")), "arrows edit");
         app.press(Key::Tab, Modifiers::NONE);
         assert!(
-            app.is_focused(By::test_id("barra.buscar.clear")),
+            app.is_focused(By::test_id("bar.find.clear")),
             "the clear button is a stop of its own"
         );
         app.press(Key::Tab, Modifiers::NONE);
         assert!(
-            app.is_focused(By::test_id("barra.sidebar")),
+            app.is_focused(By::test_id("bar.sidebar")),
             "Tab enters the items at the first one"
         );
     }
@@ -191,9 +191,9 @@ mod tests {
     #[test]
     fn a_toggle_item_reports_its_state() {
         let mut app = TestApp::new(Window::default());
-        app.click(By::test_id("barra.sidebar"));
+        app.click(By::test_id("bar.sidebar"));
         assert!(app.app().sidebar);
-        let item = app.screen().get(By::test_id("barra.sidebar"));
+        let item = app.screen().get(By::test_id("bar.sidebar"));
         assert_eq!(item.role(), Role::Button);
         assert_eq!(item.name().as_deref(), Some("Barra lateral"));
         assert_eq!(
@@ -205,13 +205,13 @@ mod tests {
     #[test]
     fn items_show_their_name_as_a_tooltip() {
         let mut app = TestApp::new(Window::default());
-        app.hover(By::test_id("barra.agregar"));
+        app.hover(By::test_id("bar.agregar"));
         app.advance(crate::element::TOOLTIP_DELAY);
         let tooltip = app.screen().get_by_test_id(crate::session::TOOLTIP);
-        let item = app.screen().get_by_test_id("barra.agregar").bounds();
+        let item = app.screen().get_by_test_id("bar.agregar").bounds();
         assert_eq!(
             tooltip.name(),
-            app.screen().get_by_test_id("barra.agregar").name()
+            app.screen().get_by_test_id("bar.agregar").name()
         );
         assert!(tooltip.bounds().y >= item.y + item.height, "below the item");
     }

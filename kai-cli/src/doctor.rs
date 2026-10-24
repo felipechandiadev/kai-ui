@@ -5,31 +5,31 @@ use std::process::Command;
 use crate::manifest::{self, Loaded, MSRV};
 
 pub fn run() -> Result<(), String> {
-    let mut fallos = 0u32;
-    let mut avisos = 0u32;
+    let mut failures = 0u32;
+    let mut warnings_found = 0u32;
 
     eprintln!("kai doctor: MSRV {MSRV}");
 
     match rustc_version() {
-        Ok(ver) => {
-            if version_gte(&ver, MSRV) {
-                eprintln!("  ok  rustc {ver} (≥ {MSRV})");
+        Ok(version) => {
+            if version_gte(&version, MSRV) {
+                eprintln!("  ok  rustc {version} (≥ {MSRV})");
             } else {
-                eprintln!("  ERR rustc {ver} es menor que {MSRV}");
-                fallos += 1;
+                eprintln!("  ERR rustc {version} es menor que {MSRV}");
+                failures += 1;
             }
         }
         Err(error) => {
             eprintln!("  ERR {error}");
-            fallos += 1;
+            failures += 1;
         }
     }
 
     match cargo_version() {
-        Ok(ver) => eprintln!("  ok  cargo {ver}"),
+        Ok(version) => eprintln!("  ok  cargo {version}"),
         Err(error) => {
             eprintln!("  ERR {error}");
-            fallos += 1;
+            failures += 1;
         }
     }
 
@@ -39,7 +39,7 @@ pub fn run() -> Result<(), String> {
             Ok(path) => eprintln!("  ok  Xcode CLT ({path})"),
             Err(error) => {
                 eprintln!("  ERR {error}");
-                fallos += 1;
+                failures += 1;
             }
         }
     }
@@ -51,44 +51,44 @@ pub fn run() -> Result<(), String> {
     match manifest::load_from_cwd() {
         Ok(loaded) => {
             eprintln!("  ok  kai.toml en {}", loaded.path.display());
-            check_manifest(&loaded, &mut fallos, &mut avisos);
+            check_manifest(&loaded, &mut failures, &mut warnings_found);
         }
         Err(error) => {
             eprintln!("  ERR {error}");
-            fallos += 1;
+            failures += 1;
         }
     }
 
-    if fallos == 0 && avisos == 0 {
+    if failures == 0 && warnings_found == 0 {
         eprintln!("kai doctor: todo bien");
         Ok(())
-    } else if fallos == 0 {
-        eprintln!("kai doctor: {avisos} aviso(s), sin errores");
+    } else if failures == 0 {
+        eprintln!("kai doctor: {warnings_found} aviso(s), sin errores");
         Ok(())
     } else {
-        Err(format!("{fallos} error(es), {avisos} aviso(s)"))
+        Err(format!("{failures} error(es), {warnings_found} aviso(s)"))
     }
 }
 
-fn check_manifest(loaded: &Loaded, fallos: &mut u32, avisos: &mut u32) {
+fn check_manifest(loaded: &Loaded, failures: &mut u32, warnings_found: &mut u32) {
     let cargo_toml = loaded.root.join("Cargo.toml");
     if !cargo_toml.is_file() {
         eprintln!(
             "  ERR no hay Cargo.toml junto a {} (¿path incorrecto?)",
             loaded.path.display()
         );
-        *fallos += 1;
+        *failures += 1;
     } else {
         eprintln!("  ok  Cargo.toml en la misma carpeta");
     }
 
     if loaded.manifest.mcp.enabled && loaded.manifest.mcp.expose == "all" {
         eprintln!("  avs [mcp] enabled + expose = \"all\": expone todo el registro");
-        *avisos += 1;
+        *warnings_found += 1;
     }
     if loaded.manifest.mcp.enabled && loaded.manifest.mcp.expose == "none" {
         eprintln!("  avs [mcp] enabled = true pero expose = \"none\": no habrá herramientas");
-        *avisos += 1;
+        *warnings_found += 1;
     }
 
     if let Some(bin) = &loaded.manifest.dev.bin {

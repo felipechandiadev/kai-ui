@@ -570,10 +570,10 @@ mod tests {
                 "Terminal de Buses"
             ]
         );
-        let (plaza, properties) = &areas[0];
+        let (square, properties) = &areas[0];
         assert_eq!(properties["code"], "AOP26000001");
         assert_eq!(properties["type"], "sector");
-        let bounds = plaza.bounds();
+        let bounds = square.bounds();
         assert!((bounds.east - bounds.west - 0.016).abs() < 1e-9);
         assert!((bounds.north - bounds.south - 0.012).abs() < 1e-9);
         assert!(polygons("{\"type\":\"Point\",\"coordinates\":[0,0]}").is_err());
@@ -589,7 +589,7 @@ mod tests {
         };
         let below = MapLayer::polygon(&square(-71.8265, -36.1415, 0.01))
             .unwrap()
-            .id("abajo");
+            .id("below");
         let above = MapLayer::polygon(&square(-71.82, -36.1415, 0.005))
             .unwrap()
             .id("arriba");
@@ -604,13 +604,13 @@ mod tests {
         );
         assert_eq!(
             hit_id(&layers, LatLon::new(-36.1415, -71.833)).as_deref(),
-            Some("abajo")
+            Some("below")
         );
         assert_eq!(hit_id(&layers, LatLon::new(-36.10, -71.8265)), None);
         layers[1].id.clear();
         assert_eq!(
             hit_id(&layers, LatLon::new(-36.1415, -71.82)).as_deref(),
-            Some("abajo"),
+            Some("below"),
             "layers without an id are not clickable"
         );
     }

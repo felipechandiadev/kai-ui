@@ -104,17 +104,17 @@ mod tests {
         assert_eq!(start.len(), 2, "the missing assets folder is skipped");
         assert_eq!(changes(&start, &snapshot(&roots)), Vec::<PathBuf>::new());
 
-        let nueva = src.join("vistas/mapa.rs");
-        std::fs::write(&nueva, "pub fn vista() {}").unwrap();
+        let new_one = src.join("vistas/mapa.rs");
+        std::fs::write(&new_one, "pub fn vista() {}").unwrap();
         let created = snapshot(&roots);
-        assert_eq!(changes(&start, &created), std::slice::from_ref(&nueva));
+        assert_eq!(changes(&start, &created), std::slice::from_ref(&new_one));
 
         touch_later(&src.join("main.rs"));
         let modified = snapshot(&roots);
         assert_eq!(changes(&created, &modified), [src.join("main.rs")]);
 
-        std::fs::remove_file(&nueva).unwrap();
-        assert_eq!(changes(&modified, &snapshot(&roots)), [nueva]);
+        std::fs::remove_file(&new_one).unwrap();
+        assert_eq!(changes(&modified, &snapshot(&roots)), [new_one]);
     }
 
     #[test]

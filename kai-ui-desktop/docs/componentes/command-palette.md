@@ -8,7 +8,7 @@ Código: `src/components.rs` (`command_palette`, `PaletteItem`).
 ## Uso
 
 La app normalmente **no** la construye: la sesión la abre con el comando
-`kai.paleta` (⌘⇧P) y la llena con el registro de comandos (`App::commands`).
+`kai.palette` (⌘⇧P) y la llena con el registro de comandos (`App::commands`).
 Cada acción registrada con `.expose()` o con menú aparece; las
 deshabilitadas salen con su motivo.
 
@@ -27,9 +27,9 @@ comportamiento vive en la sesión.
 
 ## Teclado y accesibilidad
 
-El campo `kai.paleta.buscar` tiene el foco; ↑/↓ mueven la selección, Return
+El campo `kai.palette.find` tiene el foco; ↑/↓ mueven la selección, Return
 ejecuta y Escape cierra. La fila elegida es el *active descendant* del
-campo, así VoiceOver la lee sin mover el foco. Filas: `kai.paleta.<id>`.
+campo, así VoiceOver la lee sin mover el foco. Filas: `kai.palette.<id>`.
 
 ## Relacionados
 

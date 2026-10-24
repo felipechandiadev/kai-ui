@@ -9,14 +9,14 @@ use crate::runtime::{App, Effects};
 use crate::testing::{By, TestApp};
 use crate::ui_engine::{Key, Modifiers};
 
-const FRUTAS: [&str; 6] = ["Pera", "Mango", "Manzana", "Óleo", "Melón", "Limón"];
+const FRUITS: [&str; 6] = ["Pera", "Mango", "Manzana", "Óleo", "Melón", "Limón"];
 
 #[derive(Default)]
-struct Frutas {
+struct Fruits {
     chosen: Option<usize>,
 }
 
-impl App for Frutas {
+impl App for Fruits {
     type Msg = usize;
 
     fn title(&self) -> String {
@@ -31,7 +31,7 @@ impl App for Frutas {
     fn view(&self) -> Element<usize> {
         div()
             .class("p-4")
-            .child(select(&FRUTAS, self.chosen, "Elegir fruta", |index| index).test_id("fruta"))
+            .child(select(&FRUITS, self.chosen, "Elegir fruta", |index| index).test_id("fruit"))
     }
 }
 
@@ -39,7 +39,7 @@ fn row(index: usize) -> By {
     By::test_id(format!("{MENU}.{index}"))
 }
 
-fn typed(app: &mut TestApp<Frutas>, text: &str) {
+fn typed(app: &mut TestApp<Fruits>, text: &str) {
     for c in text.chars() {
         app.press(Key::Char(c), Modifiers::NONE);
     }
@@ -47,8 +47,8 @@ fn typed(app: &mut TestApp<Frutas>, text: &str) {
 
 #[test]
 fn letters_go_to_the_option_they_begin_and_the_same_letter_goes_on() {
-    let mut app = TestApp::new(Frutas::default());
-    app.click(By::test_id("fruta"));
+    let mut app = TestApp::new(Fruits::default());
+    app.click(By::test_id("fruit"));
     assert!(app.is_focused(row(0)));
 
     typed(&mut app, "m");
@@ -74,7 +74,7 @@ fn letters_go_to_the_option_they_begin_and_the_same_letter_goes_on() {
 
 #[test]
 fn typeahead_wraps_and_finds_nothing_for_unknown_letters() {
-    let items: Vec<String> = FRUTAS.iter().map(|item| (*item).to_owned()).collect();
+    let items: Vec<String> = FRUITS.iter().map(|item| (*item).to_owned()).collect();
     assert_eq!(typeahead(&items, 5, "p"), Some(0), "wraps to the top");
     assert_eq!(
         typeahead(&items, 1, "mang"),

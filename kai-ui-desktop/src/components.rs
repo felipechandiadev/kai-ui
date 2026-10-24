@@ -442,7 +442,7 @@ impl<Msg> Button<Msg> {
     }
 }
 
-/// `variante` of the web `TextField`.
+/// `variant_kind` of the web `TextField`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FieldVariant {
     #[default]
@@ -1602,7 +1602,7 @@ pub fn command_palette<Msg>(
                 ControlState::Off
             })
             .key(item.id)
-            .test_id(format!("kai.paleta.{}", item.id))
+            .test_id(format!("kai.palette.{}", item.id))
             .label(item.title)
             .child(text(item.title).class("flex-1 whitespace-nowrap"));
         row.command = Some(item.id);
@@ -1634,7 +1634,7 @@ pub fn command_palette<Msg>(
             "bg-foreground/20",
             "bg-label/10",
         ))
-        .key("kai.paleta")
+        .key("kai.palette")
         .child(
             div()
                 .class(&style(
@@ -1644,7 +1644,7 @@ pub fn command_palette<Msg>(
                 ))
                 .role(Role::Dialog)
                 .label("Paleta de comandos")
-                .test_id("kai.paleta")
+                .test_id("kai.palette")
                 .children([
                     input(query, "Buscar comandos")
                         .class(&style(
@@ -1653,7 +1653,7 @@ pub fn command_palette<Msg>(
                             "text-body text-label border-separator placeholder-placeholder",
                         ))
                         .label("Buscar comandos")
-                        .test_id("kai.paleta.buscar"),
+                        .test_id("kai.palette.find"),
                     list,
                 ]),
         )
@@ -2332,15 +2332,15 @@ mod tests {
                         button("Rechazar", ButtonVariant::Primary).on_click(Msg::Toggle),
                     ],
                 )
-                .test_id("confirmar"),
+                .test_id("confirm"),
             ),
         );
         assert_tree_known(&tree);
         let layout = crate::testing::layout_of(&tree);
         let screen = crate::testing::Screen::new(&layout);
         let panel = screen.get(By::role(Role::Dialog).name("¿Reiniciar el contador?"));
-        assert_eq!(panel.test_id(), Some("confirmar.panel"));
-        let part = |name: &str| tree.find_test_id(&format!("confirmar.{name}")).unwrap();
+        assert_eq!(panel.test_id(), Some("confirm.panel"));
+        let part = |name: &str| tree.find_test_id(&format!("confirm.{name}")).unwrap();
         assert_eq!(part("title").role, Some(Role::Heading));
         assert_eq!(
             part("body").children[0].kind,
@@ -2352,9 +2352,9 @@ mod tests {
             .get(By::role(Role::Button).name("Rechazar"));
     }
 
-    /// `field` with test id `campo` and its ids assigned, so its parts are
-    /// found as `campo.shell`, `campo.floating`, ...
-    fn campo(field: TextField<Msg>) -> Element<Msg> {
+    /// `field` with test id `image_field` and its ids assigned, so its parts are
+    /// found as `image_field.shell`, `image_field.floating`, ...
+    fn image_field(field: TextField<Msg>) -> Element<Msg> {
         assigned(field.test_id("campo").build())
     }
 
@@ -2613,12 +2613,12 @@ mod tests {
     fn the_select_is_as_wide_as_a_text_field() {
         let tree = assigned(div().class("flex flex-col w-[360px]").children([
             TextField::new("Nombre", "Ana").test_id("campo").build(),
-            select(&["Admin"], Some(0), "Elegir", |_| Msg::Toggle).test_id("rol"),
+            select(&["Admin"], Some(0), "Elegir", |_| Msg::Toggle).test_id("role"),
         ]));
         for theme in [theme(), appkit(), appkit_dark()] {
             let layout = laid_out(&theme, &tree, &Interaction::default());
             let field = layout.bounds(part(&tree, "campo").id).unwrap().width;
-            let select = layout.bounds(part(&tree, "rol").id).unwrap().width;
+            let select = layout.bounds(part(&tree, "role").id).unwrap().width;
             assert_eq!(field, select, "{:?}", theme.kind);
             assert!(field >= 180.0, "{:?}: {field}", theme.kind);
         }
@@ -2886,7 +2886,7 @@ mod tests {
 
     /// Focus ring quads (3 pt wide) painted for `field` focused.
     fn appkit_rings(window: WindowActivity) -> (Rect, Vec<crate::render::Quad>) {
-        let field = campo(TextField::new("Nombre", "").on_input(Msg::Edited));
+        let field = image_field(TextField::new("Nombre", "").on_input(Msg::Edited));
         let input = part(&field, "campo.input").id;
         let shell = part(&field, "campo.shell").id;
         let theme = appkit();
@@ -2923,7 +2923,7 @@ mod tests {
 
     #[test]
     fn appkit_text_field_has_no_floating_label() {
-        let field = campo(TextField::new("Nombre", "Ana").required(true));
+        let field = image_field(TextField::new("Nombre", "Ana").required(true));
         let floating = part(&field, "campo.floating");
         let static_label = part(&field, "campo.label");
         let kai_display = |classes: &str| display(classes, group_focused());
@@ -2989,7 +2989,7 @@ mod tests {
                 let root: Element<Msg> = assigned(
                     div()
                         .control_size(size)
-                        .child(campo(TextField::new("Campo", "").bezel(bezel))),
+                        .child(image_field(TextField::new("Campo", "").bezel(bezel))),
                 );
                 let shell = part(&root, "campo.shell").id;
                 let layout = laid_out(&theme, &root, &Interaction::default());
@@ -3140,7 +3140,7 @@ mod tests {
                         icon_button_sized::<Msg>(Icon::Search, "x", variant, IconButtonSize::Md);
                     style(&button.class)
                 };
-                let field = campo(TextField::new("Campo", "x"));
+                let field = image_field(TextField::new("Campo", "x"));
                 let shell = style(&part(&field, "campo.shell").class);
                 assert_eq!(
                     shell.height,
@@ -3308,7 +3308,7 @@ mod tests {
 
     #[test]
     fn text_field_floats_its_label_only_with_value_or_focus() {
-        let empty = campo(
+        let empty = image_field(
             TextField::new("Nombre", "")
                 .on_input(Msg::Edited)
                 .on_submit(Msg::Submit),
@@ -3336,7 +3336,7 @@ mod tests {
         });
         assert_eq!(shell_style.border_color, Some(theme().colors.primary));
 
-        let filled = campo(TextField::new("Nombre", "Ana").placeholder("Tu nombre"));
+        let filled = image_field(TextField::new("Nombre", "Ana").placeholder("Tu nombre"));
         let label = part(&filled, "campo.floating");
         assert_eq!(display(&label.class, State::default()), Display::Flex);
         assert!(matches!(
@@ -3350,7 +3350,7 @@ mod tests {
     #[test]
     fn label_experiments_place_appkit_field_labels() {
         use crate::theme::{FieldLabels, MixStyle};
-        let field = campo(TextField::new("Correo", "a@b.cl"));
+        let field = image_field(TextField::new("Correo", "a@b.cl"));
         let floating = part(&field, "campo.floating");
         let fixed = part(&field, "campo.label");
         let mask = find(floating, |e| e.class.contains("h-[9px]")).unwrap();
@@ -3437,7 +3437,7 @@ mod tests {
         assert_eq!(filler.inset.bottom, crate::style::Length::Px(-1.0));
 
         // Contrast fields keep the AppKit label in every experiment.
-        let contrast = campo(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
+        let contrast = image_field(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
         let mut experimental = false;
         contrast.walk(&mut |e| {
             experimental |= e.class.contains("label-top:") || e.class.contains("label-tab:");
@@ -3453,7 +3453,7 @@ mod tests {
 
     #[test]
     fn required_fields_mark_label_and_placeholder_with_an_asterisk() {
-        let field = campo(
+        let field = image_field(
             TextField::new("Correo", "")
                 .required(true)
                 .helper_text("Usaremos este correo para avisarte"),
@@ -3491,7 +3491,7 @@ mod tests {
             helper.class
         );
 
-        let errored = campo(
+        let errored = image_field(
             TextField::new("Correo", "malo")
                 .helper_text("Formato inválido")
                 .error(true),
@@ -3511,13 +3511,13 @@ mod tests {
             part(&errored, "campo.shell").class
         );
 
-        let filled = campo(TextField::new("Correo", "a@b.cl").required(true));
+        let filled = image_field(TextField::new("Correo", "a@b.cl").required(true));
         assert!(filled.find_test_id("campo.placeholder").is_none());
     }
 
     #[test]
     fn password_fields_mask_the_value_and_toggle_without_stealing_focus() {
-        let hidden = campo(
+        let hidden = image_field(
             TextField::new("Contraseña", "secreto")
                 .password(false, Msg::Toggle)
                 .start_icon(Icon::User),
@@ -3547,7 +3547,8 @@ mod tests {
         assert_eq!(start.kind, Kind::Icon(Icon::User));
         assert!(start.class.contains("size-5"));
 
-        let shown = campo(TextField::new("Contraseña", "secreto").password(true, Msg::Toggle));
+        let shown =
+            image_field(TextField::new("Contraseña", "secreto").password(true, Msg::Toggle));
         assert!(matches!(
             part(&shown, "campo.input").kind,
             Kind::Input { masked: false, .. }
@@ -3562,7 +3563,7 @@ mod tests {
 
     #[test]
     fn compact_and_inline_layouts_move_the_label() {
-        let compact = campo(
+        let compact = image_field(
             TextField::new("Código", "")
                 .density(FieldDensity::Compact)
                 .required(true)
@@ -3578,7 +3579,7 @@ mod tests {
         );
         assert!(part(&compact, "campo.start").class.contains("text-[15px]"));
 
-        let inline = campo(
+        let inline = image_field(
             TextField::new("RUT", "")
                 .density(FieldDensity::Compact)
                 .label_layout(LabelLayout::Inline)
@@ -3600,7 +3601,7 @@ mod tests {
         });
         assert_eq!(order, ["campo.shell", "#", "campo.label", "campo.input"]);
 
-        let ignored = campo(TextField::new("Nombre", "").label_layout(LabelLayout::Inline));
+        let ignored = image_field(TextField::new("Nombre", "").label_layout(LabelLayout::Inline));
         assert!(
             !part(&ignored, "campo.label").class.contains("border-r"),
             "inline needs compact density"
@@ -3610,7 +3611,7 @@ mod tests {
     #[test]
     fn read_only_and_disabled_fields_use_the_muted_surface() {
         let theme = theme();
-        let read_only = campo(
+        let read_only = image_field(
             TextField::new("Folio", "123")
                 .read_only(true)
                 .select_on_focus(true),
@@ -3631,7 +3632,7 @@ mod tests {
         let label = part(&read_only, "campo.floating");
         assert!(label.class.contains("bg-field-muted"));
 
-        let disabled = campo(
+        let disabled = image_field(
             TextField::new("Folio", "123")
                 .disabled(true)
                 .select_on_focus(true)
@@ -3654,10 +3655,10 @@ mod tests {
         );
         assert_eq!(FocusOrder::from_tree(&disabled).ids().count(), 0);
 
-        let contrast = campo(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
+        let contrast = image_field(TextField::new("Buscar", "x").variant(FieldVariant::Contrast));
         let label = part(&contrast, "campo.floating");
         assert!(label.class.contains("bg-primary"));
-        let autocomplete = campo(
+        let autocomplete = image_field(
             TextField::new("Buscar", "")
                 .variant(FieldVariant::Autocomplete)
                 .read_only(true),
@@ -3758,13 +3759,13 @@ mod tests {
 
     #[test]
     fn alert_parts() {
-        let banner = assigned(alert(AlertVariant::Warning, "Cuidado").test_id("aviso"));
+        let banner = assigned(alert(AlertVariant::Warning, "Cuidado").test_id("toast"));
         assert_eq!(banner.role, Some(Role::Status));
         assert_eq!(
-            part(&banner, "aviso.icon").kind,
+            part(&banner, "toast.icon").kind,
             Kind::Icon(Icon::TriangleAlert)
         );
-        assert_eq!(part(&banner, "aviso.message").text_content(), "Cuidado");
+        assert_eq!(part(&banner, "toast.message").text_content(), "Cuidado");
     }
 
     #[test]
@@ -3777,14 +3778,14 @@ mod tests {
                 false,
                 SwitchDensity::Default,
             )
-            .test_id("avisos"),
+            .test_id("toasts"),
         );
-        let track = part(&labeled, "avisos.track");
+        let track = part(&labeled, "toasts.track");
         assert_eq!(track.role, Some(Role::Switch));
         assert_eq!(track.label.as_deref(), Some("Notificaciones"));
         assert!(track.is_pressed());
         assert_eq!(
-            part(&labeled, "avisos.label").text_content(),
+            part(&labeled, "toasts.label").text_content(),
             "Notificaciones"
         );
 

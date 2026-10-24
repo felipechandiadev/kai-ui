@@ -41,7 +41,7 @@ tiene botón de cerrar.
 
 ## Tests
 
-Pila: `kai.avisos`; cada aviso `kai.aviso.<id>` con partes `title`,
+Pila: `kai.toasts`; cada aviso `kai.toast.<id>` con partes `title`,
 `message`, `action`, `close`.
 
 ## Relacionados

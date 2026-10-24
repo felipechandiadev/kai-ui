@@ -169,7 +169,7 @@ fn view(&self) -> Element<Msg> {
 - **Layout:** Taffy da el rect del nodo `map`. Tras el layout, cada `marker(pos, anchor, hijo)` se coloca en posición absoluta en `proyectar(pos, zoom) − proyectar(centro, zoom) + centro_del_rect`, ajustada por `anchor`. Se reutiliza el soporte de `position: absolute` de [02](02-geometria-y-layout.md).
 - **Paint:** fondo del mapa (teselas), capas vectoriales, atribución obligatoria (texto pequeño abajo a la derecha) y luego los hijos Kai, todo dentro del clip del nodo.
 - **Accesibilidad ([08](08-accesibilidad.md)):** el mapa es un grupo con nombre accesible; cada marcador es un botón normal con foco y teclado. Flechas y `+`/`−` mueven y hacen zoom cuando el mapa tiene foco.
-- **Cámara (recomendación de [13](13-hoja-de-ruta-plataforma.md) §8.1):** durante el gesto la cámara es estado de UI por `WidgetId`, igual que el scroll, y no provoca `update`; al terminar se emite un solo `MapaMovido(MapView)`. La app mueve la cámara con `MapView` en el `Model` (o la acción `mapa.set_view`); el runtime aplica el cambio cuando la revisión de la cámara del `Model` cambia, para no pisar un gesto en curso.
+- **Cámara (recomendación de [13](13-hoja-de-ruta-plataforma.md) §8.1):** durante el gesto la cámara es estado de UI por `WidgetId`, igual que el scroll, y no provoca `update`; al terminar se emite un solo `MapaMovido(MapView)`. La app mueve la cámara con `MapView` en el `Model` (o la acción `map.set_view`); el runtime aplica el cambio cuando la revisión de la cámara del `Model` cambia, para no pisar un gesto en curso.
 
 ### 4.3 Lógica de teselas
 
@@ -224,16 +224,16 @@ Con el registro de [13](13-hoja-de-ruta-plataforma.md) §7.2 (diseño base en [0
 
 | Id | Tipo | Seguridad | Entrada | Salida |
 |---|---|---|---|---|
-| `mapa.get_view` | Consulta | — | `{}` | `{ view, visible_bounds }` |
-| `mapa.screen_to_latlon` | Consulta | — | `{ x, y }` (puntos lógicos) | `{ lat, lon }` |
-| `mapa.set_view` | Acción de UI | `Mutating` | `{ center: {lat, lon}, zoom, animate? }` | `MapView` |
-| `mapa.fit_bounds` | Acción de UI | `Mutating` | `{ bounds: [[lat, lon], [lat, lon]], padding? }` | `MapView` |
-| `mapa.add_marker` | Acción | `Mutating` | `{ position, title, id? }` | `{ id }` |
-| `mapa.remove_marker` | Acción | `Mutating` (undo: volver a añadirlo) | `{ id }` | `()` |
-| `mapa.draw_route` | Acción | `Mutating` | `{ points: [{lat, lon}], id? }` | `{ id }` |
-| `mapa.clear_layers` | Acción | `Destructive` si borra datos de usuario | `{ ids? }` | `()` |
+| `map.get_view` | Consulta | — | `{}` | `{ view, visible_bounds }` |
+| `map.screen_to_latlon` | Consulta | — | `{ x, y }` (puntos lógicos) | `{ lat, lon }` |
+| `map.set_view` | Acción de UI | `Mutating` | `{ center: {lat, lon}, zoom, animate? }` | `MapView` |
+| `map.fit_bounds` | Acción de UI | `Mutating` | `{ bounds: [[lat, lon], [lat, lon]], padding? }` | `MapView` |
+| `map.add_marker` | Acción | `Mutating` | `{ position, title, id? }` | `{ id }` |
+| `map.remove_marker` | Acción | `Mutating` (undo: volver a añadirlo) | `{ id }` | `()` |
+| `map.draw_route` | Acción | `Mutating` | `{ points: [{lat, lon}], id? }` | `{ id }` |
+| `map.clear_layers` | Acción | `Destructive` si borra datos de usuario | `{ ids? }` | `()` |
 
-Los comandos `mapa.*` son genéricos de Kai. Las acciones de dominio que guardan geometrías son de la app; en DSP, por ejemplo, `areas.editar_geometria { code, geometry }` (`Mutating`) e `incidencias.set_ubicacion { code, geometry }` (`Mutating`), con `geometry` GeoJSON validado (rangos de coordenadas, polígono cerrado y sin autointersección, límite de vértices).
+Los comandos `mapa.*` son genéricos de Kai. Las acciones de dominio que guardan geometrías son de la app; en DSP, por ejemplo, `areas.edit_geometry { code, geometry }` (`Mutating`) e `incidencias.set_ubicacion { code, geometry }` (`Mutating`), con `geometry` GeoJSON validado (rangos de coordenadas, polígono cerrado y sin autointersección, límite de vértices).
 
 ```rust
 // API propuesta (módulo kai::commands; en 09 §4.2 aparece como kai-commands)
@@ -385,7 +385,7 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 
 - Polilíneas, polígonos y popups como API estable; comandos `mapa.*` en el registro (13, Pasos 7–9) y recurso de vista (13, Paso 24); acciones de dominio con geometría en la app guía.
 - **Terminado cuando:** `TestApp::invoke(SetView { .. })` mueve la cámara; un cliente MCP (13, Paso 12) llama `incidencias.set_ubicacion` con un punto y la UI lo refleja; una geometría inválida vuelve como error de herramienta sin tocar el modelo.
-- **Estado: empezado.** La demo registra `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds { bounds }` y las acciones de dominio `areas.seleccionar { code }` y `areas.editar_geometria { code, coordinates }`, expuestas por MCP (`mcp-schema.json`). `areas.editar_geometria` reemplaza el anillo de un sector. La entrada se valida al deserializar (código conocido, 3 o más vértices, latitud y longitud en rango, sin cruces), así que una geometría inválida vuelve como error de herramienta sin tocar el modelo. Faltan polilíneas, popups, el recurso de vista e `incidencias.set_ubicacion`.
+- **Estado: empezado.** La demo registra `map.set_view`, `map.get_view`, `map.fit_bounds { bounds }` y las acciones de dominio `areas.select { code }` y `areas.edit_geometry { code, coordinates }`, expuestas por MCP (`mcp-schema.json`). `areas.edit_geometry` reemplaza el anillo de un sector. La entrada se valida al deserializar (código conocido, 3 o más vértices, latitud y longitud en rango, sin cruces), así que una geometría inválida vuelve como error de herramienta sin tocar el modelo. Faltan polilíneas, popups, el recurso de vista e `incidencias.set_ubicacion`.
 
 ### M3 — Vectorial (13, Etapa 7)
 

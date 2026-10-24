@@ -5,14 +5,14 @@ use std::process::{Command, ExitCode};
 use crate::manifest;
 
 #[derive(Debug, Default, PartialEq)]
-pub struct Opciones {
+pub struct Options {
     /// Activa la feature `snapshots` e incluye tests `#[ignore]` (capturas).
     pub snapshots: bool,
     /// Argumentos tras `--` para el binario de tests / filtros de cargo.
     pub cargo_args: Vec<String>,
 }
 
-pub fn run(opciones: &Opciones) -> Result<ExitCode, String> {
+pub fn run(options: &Options) -> Result<ExitCode, String> {
     let loaded = manifest::load_from_cwd().ok();
     let mut command = Command::new(cargo());
     command.arg("test");
@@ -22,7 +22,7 @@ pub fn run(opciones: &Opciones) -> Result<ExitCode, String> {
             command.args(["-p", package]);
         }
         let mut features = loaded.manifest.dev.features.clone();
-        if opciones.snapshots && !features.iter().any(|f| f == "snapshots") {
+        if options.snapshots && !features.iter().any(|f| f == "snapshots") {
             features.push("snapshots".into());
         }
         if !features.is_empty() {
@@ -35,14 +35,14 @@ pub fn run(opciones: &Opciones) -> Result<ExitCode, String> {
         );
     } else {
         eprintln!("kai test: sin kai.toml; se llama a cargo test en el cwd");
-        if opciones.snapshots {
+        if options.snapshots {
             command.args(["--features", "snapshots"]);
         }
     }
 
     // Forward remaining args to cargo; if --snapshots, also include ignored.
-    let mut forwarded = opciones.cargo_args.clone();
-    if opciones.snapshots {
+    let mut forwarded = options.cargo_args.clone();
+    if options.snapshots {
         // Ensure libtest sees --include-ignored after a `--` separator.
         if !forwarded.iter().any(|a| a == "--") {
             forwarded.push("--".into());
@@ -72,10 +72,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_opciones() {
+    fn default_options() {
         assert_eq!(
-            Opciones::default(),
-            Opciones {
+            Options::default(),
+            Options {
                 snapshots: false,
                 cargo_args: vec![]
             }

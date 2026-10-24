@@ -442,9 +442,9 @@ mod tests {
     fn panning_moves_the_content_with_the_pointer() {
         let camera = Camera::new(MapView::new(PLAZA, 14.0), SIZE);
         let moved = Camera::new(camera.panned(30.0, -20.0), SIZE);
-        let plaza = moved.to_local(PLAZA);
-        assert!((plaza.x - 430.0).abs() < 1e-3, "{plaza:?}");
-        assert!((plaza.y - 280.0).abs() < 1e-3);
+        let square = moved.to_local(PLAZA);
+        assert!((square.x - 430.0).abs() < 1e-3, "{square:?}");
+        assert!((square.y - 280.0).abs() < 1e-3);
         assert_eq!(moved.view.zoom, 14.0);
     }
 

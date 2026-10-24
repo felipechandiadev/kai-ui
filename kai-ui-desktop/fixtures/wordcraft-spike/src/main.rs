@@ -84,7 +84,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn un_parrafo_produce_display_list_con_glyphs() {
+    fn a_paragraph_produces_a_display_list_with_glyphs() {
         let _db = FontDb::global();
         let doc = Document::from_text("Párrafo de prueba.");
         let mut cache = LayoutCache::new();

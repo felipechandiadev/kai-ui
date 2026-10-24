@@ -43,7 +43,7 @@ pub struct RibbonItem {
     pub shortcut: String,
 }
 
-/// Grupo bajo una pestaña (`Inicio › Fuente` → "Fuente").
+/// Grupo bajo una pestaña (`Home › Fuente` → "Fuente").
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RibbonGroup {
     pub label: String,
@@ -943,7 +943,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             .class("disabled:opacity-40")
             .disabled(disabled)
             .pressed(pressed)
-            .test_id(format!("documento.ribbon.cmd.{}", item.cmd_id));
+            .test_id(format!("document.ribbon.cmd.{}", item.cmd_id));
         if let Some(ref on_cmd) = self.on_command {
             el = el.on_click(on_cmd(item.cmd_id.clone()));
         }
@@ -1016,7 +1016,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             })
             .class("xl:hidden w-[140px] min-w-[140px]")
             .label("Estilos")
-            .test_id("documento.ribbon.styles"),
+            .test_id("document.ribbon.styles"),
         )
     }
 
@@ -1107,7 +1107,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
             let mut qat = div()
                 .class("flex flex-row items-center gap-0.5 shrink-0 pb-1")
                 .role(Role::Toolbar)
-                .test_id("documento.archivo");
+                .test_id("document.file");
             for item in std::mem::take(&mut self.leading) {
                 qat = qat.child(item);
             }
@@ -1133,7 +1133,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                 ))
                 .role(Role::Tab)
                 .pressed(tab.id == active)
-                .test_id(format!("documento.ribbon.tab.{}", tab.id))
+                .test_id(format!("document.ribbon.tab.{}", tab.id))
                 .child(text(tab.label.as_str()));
             if tab.contextual {
                 // Como Word: las contextuales se distinguen por color.
@@ -1158,7 +1158,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
                 // Si aún no cabe, se desplaza en horizontal: nada queda fuera de alcance.
                 .class("flex flex-row flex-nowrap items-stretch gap-1 pt-1 overflow-x-auto")
                 .role(Role::Toolbar)
-                .test_id(format!("documento.ribbon.panel.{}", active_tab.id));
+                .test_id(format!("document.ribbon.panel.{}", active_tab.id));
 
             for (gi, group) in active_tab.groups.iter().enumerate() {
                 if gi > 0 {
@@ -1200,7 +1200,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
         if let Some(id) = self.test_id {
             root = root.test_id(id);
         } else {
-            root = root.test_id("documento.ribbon");
+            root = root.test_id("document.ribbon");
         }
         root
     }
@@ -1461,7 +1461,7 @@ mod tests {
     }
 
     #[test]
-    fn full_ribbon_includes_paso6_cmds() {
+    fn full_ribbon_includes_step6_cmds() {
         let tabs = ribbon_catalog(RibbonMode::Full);
         let ids: Vec<&str> = tabs
             .iter()

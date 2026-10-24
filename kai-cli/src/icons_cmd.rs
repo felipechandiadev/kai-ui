@@ -14,23 +14,23 @@ use serde::Deserialize;
 use crate::manifest;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Opciones {
+pub struct Options {
     /// Nombre kebab-case del archivo destino (`foo` → `assets/icons/foo.svg`).
-    pub nombre: String,
+    pub name: String,
     /// Origen explícito; si falta, se resuelve desde el catálogo del crate Kai.
     pub from: Option<PathBuf>,
 }
 
-pub fn run(opciones: &Opciones) -> Result<(), String> {
+pub fn run(options: &Options) -> Result<(), String> {
     let loaded = manifest::load_from_cwd()?;
-    add_in_root(&loaded.root, opciones)
+    add_in_root(&loaded.root, options)
 }
 
 /// Núcleo testeable: escribe en `root/assets/icons/` sin depender del cwd.
-pub fn add_in_root(root: &Path, opciones: &Opciones) -> Result<(), String> {
-    validate_nombre(&opciones.nombre)?;
+pub fn add_in_root(root: &Path, options: &Options) -> Result<(), String> {
+    validate_name(&options.name)?;
     let dest_dir = root.join("assets/icons");
-    let dest = dest_dir.join(format!("{}.svg", opciones.nombre));
+    let dest = dest_dir.join(format!("{}.svg", options.name));
     if dest.is_file() {
         return Err(format!(
             "ya existe {}; bórralo o elige otro nombre",
@@ -38,7 +38,7 @@ pub fn add_in_root(root: &Path, opciones: &Opciones) -> Result<(), String> {
         ));
     }
 
-    let source = resolve_source(root, opciones)?;
+    let source = resolve_source(root, options)?;
     let raw = fs::read_to_string(&source)
         .map_err(|e| format!("no se pudo leer {}: {e}", source.display()))?;
     let body = normalize_svg_body(&raw)?;
@@ -54,32 +54,32 @@ pub fn add_in_root(root: &Path, opciones: &Opciones) -> Result<(), String> {
     );
     eprintln!(
         "  uso: icon_svg(include_str!(\"../assets/icons/{}.svg\"))",
-        opciones.nombre
+        options.name
     );
     Ok(())
 }
 
-pub fn validate_nombre(nombre: &str) -> Result<(), String> {
-    if nombre.is_empty() {
+pub fn validate_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
         return Err("nombre vacío".into());
     }
-    let ok = nombre.chars().enumerate().all(|(i, c)| match c {
+    let ok = name.chars().enumerate().all(|(i, c)| match c {
         'a'..='z' | '0'..='9' => true,
         '-' => i > 0,
         _ => false,
-    }) && !nombre.starts_with('-')
-        && !nombre.ends_with('-')
-        && !nombre.contains("--");
+    }) && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--");
     if !ok {
         return Err(format!(
-            "nombre inválido: {nombre} (usa kebab-case Lucide, p. ej. circle-alert)"
+            "nombre inválido: {name} (usa kebab-case Lucide, p. ej. circle-alert)"
         ));
     }
     Ok(())
 }
 
-fn resolve_source(root: &Path, opciones: &Opciones) -> Result<PathBuf, String> {
-    if let Some(from) = &opciones.from {
+fn resolve_source(root: &Path, options: &Options) -> Result<PathBuf, String> {
+    if let Some(from) = &options.from {
         let path = if from.is_absolute() {
             from.clone()
         } else {
@@ -96,16 +96,16 @@ fn resolve_source(root: &Path, opciones: &Opciones) -> Result<PathBuf, String> {
         return Ok(path);
     }
     let kai_icons = find_kai_icons_dir(root)?;
-    let candidate = kai_icons.join(format!("{}.svg", opciones.nombre));
+    let candidate = kai_icons.join(format!("{}.svg", options.name));
     if candidate.is_file() {
         return Ok(candidate);
     }
     Err(format!(
         "el icono `{}` no está en el catálogo de Kai ({}); \
          usa `kai icons add ./mi.svg --name {}` o `--from`",
-        opciones.nombre,
+        options.name,
         kai_icons.display(),
-        opciones.nombre
+        options.name
     ))
 }
 
@@ -203,7 +203,7 @@ pub fn normalize_svg_body(raw: &str) -> Result<String, String> {
     Ok(format!("{inner}\n"))
 }
 
-pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Opciones, String> {
+pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     let primero = args
         .next()
         .ok_or_else(|| "kai icons add necesita un nombre o un archivo .svg".to_string())?;
@@ -211,7 +211,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Opciones, St
         return Err(String::new());
     }
 
-    let mut nombre: Option<String> = None;
+    let mut name: Option<String> = None;
     let mut from: Option<PathBuf> = None;
 
     if looks_like_svg_path(&primero) {
@@ -219,7 +219,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Opciones, St
     } else if primero.starts_with('-') {
         return Err(format!("argumento inesperado: {primero}"));
     } else {
-        nombre = Some(primero);
+        name = Some(primero);
     }
 
     while let Some(arg) = args.next() {
@@ -230,40 +230,40 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Opciones, St
             }
             "--name" => {
                 let n = args.next().ok_or("--name necesita un nombre")?;
-                nombre = Some(n);
+                name = Some(n);
             }
             "-h" | "--help" => return Err(String::new()),
-            otro => return Err(format!("argumento desconocido para kai icons add: {otro}")),
+            other => return Err(format!("argumento desconocido para kai icons add: {other}")),
         }
     }
 
-    let nombre = match nombre {
+    let name = match name {
         Some(n) => n,
         None => {
             let path = from
                 .as_ref()
                 .ok_or("kai icons add necesita --name o un nombre Lucide")?;
-            nombre_desde_path(path)?
+            name_from_path(path)?
         }
     };
 
-    if from.is_none() && looks_like_svg_path(&nombre) {
+    if from.is_none() && looks_like_svg_path(&name) {
         return Err("pasa el SVG como ruta y usa --name, o un nombre Lucide kebab-case".into());
     }
 
-    Ok(Opciones { nombre, from })
+    Ok(Options { name, from })
 }
 
 fn looks_like_svg_path(s: &str) -> bool {
     s.ends_with(".svg") || s.contains('/') || s.contains('\\') || s.starts_with('.')
 }
 
-fn nombre_desde_path(path: &Path) -> Result<String, String> {
+fn name_from_path(path: &Path) -> Result<String, String> {
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or_else(|| format!("no se pudo derivar --name de {}", path.display()))?;
-    validate_nombre(stem)?;
+    validate_name(stem)?;
     Ok(stem.to_string())
 }
 
@@ -284,20 +284,20 @@ mod tests {
     }
 
     #[test]
-    fn validate_nombre_acepta_kebab_lucide() {
-        assert!(validate_nombre("search").is_ok());
-        assert!(validate_nombre("circle-alert").is_ok());
-        assert!(validate_nombre("a1").is_ok());
-        assert!(validate_nombre("").is_err());
-        assert!(validate_nombre("Search").is_err());
-        assert!(validate_nombre("-x").is_err());
-        assert!(validate_nombre("x-").is_err());
-        assert!(validate_nombre("foo--bar").is_err());
-        assert!(validate_nombre("foo bar").is_err());
+    fn validate_name_accepts_lucide_kebab() {
+        assert!(validate_name("search").is_ok());
+        assert!(validate_name("circle-alert").is_ok());
+        assert!(validate_name("a1").is_ok());
+        assert!(validate_name("").is_err());
+        assert!(validate_name("Search").is_err());
+        assert!(validate_name("-x").is_err());
+        assert!(validate_name("x-").is_err());
+        assert!(validate_name("foo--bar").is_err());
+        assert!(validate_name("foo bar").is_err());
     }
 
     #[test]
-    fn normalize_extrae_hijos_de_documento_svg() {
+    fn normalize_extracts_children_of_an_svg_document() {
         let full = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>"#;
         assert_eq!(
             normalize_svg_body(full).unwrap(),
@@ -310,25 +310,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_nombre_y_from() {
+    fn parse_name_and_from() {
         assert_eq!(
             parse_args(["search".into()].into_iter()).unwrap(),
-            Opciones {
-                nombre: "search".into(),
+            Options {
+                name: "search".into(),
                 from: None,
             }
         );
         assert_eq!(
             parse_args(["./mi.svg".into(), "--name".into(), "foo".into()].into_iter()).unwrap(),
-            Opciones {
-                nombre: "foo".into(),
+            Options {
+                name: "foo".into(),
                 from: Some(PathBuf::from("./mi.svg")),
             }
         );
         assert_eq!(
             parse_args(["foo".into(), "--from".into(), "bar.svg".into()].into_iter()).unwrap(),
-            Opciones {
-                nombre: "foo".into(),
+            Options {
+                name: "foo".into(),
                 from: Some(PathBuf::from("bar.svg")),
             }
         );
@@ -350,8 +350,8 @@ mod tests {
         .unwrap();
         add_in_root(
             &root,
-            &Opciones {
-                nombre: "mi-icono".into(),
+            &Options {
+                name: "mi-icono".into(),
                 from: Some(src),
             },
         )
@@ -364,8 +364,8 @@ mod tests {
         );
         let err = add_in_root(
             &root,
-            &Opciones {
-                nombre: "mi-icono".into(),
+            &Options {
+                name: "mi-icono".into(),
                 from: Some(root.join("custom.svg")),
             },
         )
@@ -375,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn add_rechaza_nombre_invalido() {
+    fn add_rejects_an_invalid_name() {
         let root = temp_root("bad-name");
         fs::write(
             root.join("kai.toml"),
@@ -384,8 +384,8 @@ mod tests {
         .unwrap();
         let err = add_in_root(
             &root,
-            &Opciones {
-                nombre: "No Vale".into(),
+            &Options {
+                name: "No Vale".into(),
                 from: Some(root.join("x.svg")),
             },
         )
@@ -395,12 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn run_exige_kai_toml() {
+    fn run_requires_kai_toml() {
         let root = temp_root("no-toml");
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(&root).unwrap();
-        let err = run(&Opciones {
-            nombre: "search".into(),
+        let err = run(&Options {
+            name: "search".into(),
             from: None,
         })
         .unwrap_err();
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn add_copia_desde_catalogo_local_simulado() {
+    fn add_copies_from_simulated_local_catalog() {
         let root = temp_root("catalog");
         fs::write(
             root.join("kai.toml"),
@@ -427,8 +427,8 @@ mod tests {
         .unwrap();
         add_in_root(
             &root,
-            &Opciones {
-                nombre: "search".into(),
+            &Options {
+                name: "search".into(),
                 from: Some(kai_icons.join("search.svg")),
             },
         )

@@ -72,7 +72,7 @@ struct Demo {
     role: Option<usize>,
     terms: bool,
     /// Section shown next to the sidebar.
-    seccion: Seccion,
+    section: Section,
     /// The sidebar is a rail of icons.
     sidebar_collapsed: bool,
     /// The first window size has set `sidebar_collapsed`.
@@ -81,7 +81,7 @@ struct Demo {
     /// tests: nada toca el disco).
     store: Option<Store>,
     /// Lo último guardado, para escribir solo cuando algo cambia.
-    preferencias_guardadas: Option<PreferenciasDemo>,
+    saved_preferences: Option<DemoPreferences>,
     /// Window background effect (top panel); `KAI_BG`, `KAI_BG_ANIM`.
     background: BackgroundKind,
     background_motion: BackgroundMotion,
@@ -93,50 +93,50 @@ struct Demo {
     /// Selección.
     wifi: bool,
     /// Permissions under «Todos» (mixed while some are on).
-    permisos: [bool; 3],
-    /// Index into [`PAISES`].
-    pais: Option<usize>,
-    /// Index into [`ALINEACIONES`].
-    alineacion: usize,
+    permissions: [bool; 3],
+    /// Index into [`COUNTRIES`].
+    country: Option<usize>,
+    /// Index into [`ALIGNMENTS`].
+    alignment: usize,
     /// Contenedores: the selected tab.
-    pestana: usize,
+    tab_index: usize,
     /// Tabla: the toolbar search, the clients, what the table shows of
     /// them (search, filters, sort) and the selected one (index into
-    /// `clientes`), and whether an Excel file is being written.
+    /// `clients`), and whether an Excel file is being written.
     query: String,
-    clientes: Rc<[Cliente]>,
-    tabla: TableView,
-    cliente: Option<usize>,
-    exportando: bool,
+    clients: Rc<[Client]>,
+    table_view: TableView,
+    client: Option<usize>,
+    exporting: bool,
     /// Multimedia: the three image fields, the URL typed and the one
     /// loaded in the avatar.
-    foto: Imagen,
-    portada: Imagen,
-    logo: Imagen,
+    photo: ImageSlot,
+    cover: ImageSlot,
+    logo: ImageSlot,
     url: String,
     avatar_url: Option<String>,
     /// Diálogos y avisos.
-    dialogo: Option<Dialogo>,
+    dialog_kind: Option<DemoDialog>,
     toasts: Vec<Toast<Msg>>,
     next_toast: u64,
     /// Mapa: what it shows, and whether a new view glides there.
-    vista: MapView,
-    animar_vista: bool,
+    view: MapView,
+    animate_map: bool,
     /// Mapa: the DSP sectors (their outlines change when edited), whether
     /// they are drawn, the code of the one selected and the last request
     /// to frame a box (with its serial).
-    sectores: Vec<Sector>,
-    mostrar_areas: bool,
+    sectors: Vec<Sector>,
+    show_areas: bool,
     area: Option<String>,
-    encuadre: Option<(LatLonBounds, u64)>,
+    fit_request: Option<(LatLonBounds, u64)>,
     /// Mapa: the sector being edited and its draft.
-    edicion: Option<(String, PolygonDraft)>,
+    editing: Option<(String, PolygonDraft)>,
     /// Botones: the last wait that ended, and how many background syncs
     /// run.
-    espera: Option<&'static str>,
-    sincronizando: u32,
+    wait_ms: Option<&'static str>,
+    syncing: u32,
     /// Gráficos: the selected bar (month index).
-    mes: Option<usize>,
+    month: Option<usize>,
     /// Documento: markdown ligero + último comando de toolbar.
     doc_markdown: String,
     doc_cmd: Option<(DocumentCmd, u64)>,
@@ -147,9 +147,9 @@ struct Demo {
     /// Tras elegir ruta de guardar/exportar, pedimos TakeDocument.
     doc_pending_export: Option<(std::path::PathBuf, DocExportKind)>,
     /// I/O de archivo en curso (botones Archivo).
-    doc_archivo_busy: bool,
+    doc_file_busy: bool,
     /// Último archivo abierto/guardado (nombre para chrome Archivo).
-    doc_archivo_name: Option<String>,
+    doc_file_name: Option<String>,
     /// Pestaña activa del ribbon Documento (`home` / `insert`).
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     doc_ribbon_tab: String,
@@ -175,7 +175,7 @@ struct Demo {
     /// Estado breve del editor (find/comments/proofing).
     doc_edit_status: String,
     /// Plantilla lista+detalle: índice del cliente seleccionado.
-    plantilla_idx: usize,
+    template_index: usize,
     /// Catálogo vivo (Fase E): preset de tema, densidad y tamaño.
     catalog_preset: CatalogPreset,
     catalog_density: Density,
@@ -188,11 +188,11 @@ struct Demo {
 }
 
 /// How long the «Acciones con espera» buttons wait.
-const ESPERA: std::time::Duration = std::time::Duration::from_millis(1500);
+const WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl Default for Demo {
     fn default() -> Self {
-        let clientes: Rc<[Cliente]> = (1..=CLIENTES).map(cliente).collect();
+        let clients: Rc<[Client]> = (1..=CLIENT_COUNT).map(client).collect();
         Self {
             clicks: 0,
             name: String::new(),
@@ -210,7 +210,7 @@ impl Default for Demo {
             notifications: true,
             role: None,
             terms: false,
-            seccion: Seccion::Inicio,
+            section: Section::Home,
             sidebar_collapsed: false,
             sized: false,
             background: BackgroundKind::None,
@@ -220,43 +220,43 @@ impl Default for Demo {
             notes: String::new(),
             lookup: String::new(),
             wifi: true,
-            permisos: [true, false, true],
-            pais: Some(0),
-            alineacion: 0,
-            pestana: 0,
+            permissions: [true, false, true],
+            country: Some(0),
+            alignment: 0,
+            tab_index: 0,
             query: String::new(),
-            tabla: TableView::new(&clientes, &columnas()),
-            clientes,
-            cliente: None,
-            exportando: false,
-            foto: Imagen::with(sample_portrait()),
-            portada: Imagen::default(),
-            logo: Imagen::with(sample_landscape()),
+            table_view: TableView::new(&clients, &table_columns()),
+            clients,
+            client: None,
+            exporting: false,
+            photo: ImageSlot::with(sample_portrait()),
+            cover: ImageSlot::default(),
+            logo: ImageSlot::with(sample_landscape()),
             url: String::new(),
             avatar_url: None,
-            dialogo: None,
+            dialog_kind: None,
             toasts: Vec::new(),
             next_toast: 1,
-            vista: VISTA_INICIAL,
-            animar_vista: true,
+            view: INITIAL_VIEW,
+            animate_map: true,
             store: None,
-            preferencias_guardadas: None,
-            sectores: SECTORES.clone(),
-            mostrar_areas: true,
+            saved_preferences: None,
+            sectors: SECTORS.clone(),
+            show_areas: true,
             area: None,
-            encuadre: None,
-            edicion: None,
-            espera: None,
-            sincronizando: 0,
-            mes: None,
+            fit_request: None,
+            editing: None,
+            wait_ms: None,
+            syncing: 0,
+            month: None,
             doc_markdown: demo_doc_markdown(),
             doc_cmd: None,
             doc_cmd_serial: 0,
             doc_load: None,
             doc_load_serial: 0,
             doc_pending_export: None,
-            doc_archivo_busy: false,
-            doc_archivo_name: None,
+            doc_file_busy: false,
+            doc_file_name: None,
             doc_ribbon_tab: "home".into(),
             doc_ribbon_pressed: Vec::new(),
             doc_ribbon_disabled: Vec::new(),
@@ -267,7 +267,7 @@ impl Default for Demo {
             doc_replace: String::new(),
             doc_comment_draft: String::new(),
             doc_edit_status: String::new(),
-            plantilla_idx: 0,
+            template_index: 0,
             catalog_preset: CatalogPreset::GlassLight,
             catalog_density: Density::Comfortable,
             catalog_size: ControlSize::Large,
@@ -281,8 +281,8 @@ impl Default for Demo {
 }
 
 /// Plaza de Armas de Parral, where the map starts.
-const PLAZA_DE_ARMAS: LatLon = LatLon::new(-36.1415, -71.8265);
-const VISTA_INICIAL: MapView = MapView::new(PLAZA_DE_ARMAS, 13.0);
+const MAIN_SQUARE: LatLon = LatLon::new(-36.1415, -71.8265);
+const INITIAL_VIEW: MapView = MapView::new(MAIN_SQUARE, 13.0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DocExportKind {
@@ -333,11 +333,11 @@ const PARRAL_PMTILES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/maps/p
 /// The five starting sectors of DSP Parral, as its seed draws them.
 const DSP_AREAS: &str = include_str!("../assets/maps/dsp-areas.geojson");
 /// Margin around a selected sector, as a fraction of its size per side.
-const MARGEN_SECTOR: f64 = 0.2;
+const SECTOR_MARGIN: f64 = 0.2;
 /// Demo chart: six months of clicks and a longer trend.
-const MESES: [&str; 6] = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
-const CLICS_MES: [f32; 6] = [4.0, 12.0, 7.0, 15.0, 9.0, 11.0];
-const TENDENCIA: [f32; 12] = [
+const MONTHS: [&str; 6] = ["Ene", "Feb", "Mar", "Abr", "May", "Jun"];
+const CLICKS_PER_MONTH: [f32; 6] = [4.0, 12.0, 7.0, 15.0, 9.0, 11.0];
+const TREND: [f32; 12] = [
     2.0, 5.0, 4.0, 8.0, 6.0, 9.0, 7.0, 12.0, 10.0, 14.0, 11.0, 16.0,
 ];
 
@@ -345,15 +345,15 @@ const TENDENCIA: [f32; 12] = [
 #[derive(Clone, Debug, PartialEq)]
 struct Sector {
     code: String,
-    nombre: String,
-    tipo: String,
-    capa: MapLayer,
+    name: String,
+    kind_name: String,
+    layer: MapLayer,
     /// Its color as typed in Mapa: hex, or empty for the color of its type.
     color: String,
 }
 
 /// The five starting colors of DSP's area types.
-const PALETA_DSP: [(&str, Color); 5] = [
+const DSP_PALETTE: [(&str, Color); 5] = [
     ("Azul", Color::hex(0x1e73ae)),
     ("Naranjo", Color::hex(0xc45c26)),
     ("Verde", Color::hex(0x2d6a4f)),
@@ -362,8 +362,8 @@ const PALETA_DSP: [(&str, Color); 5] = [
 ];
 
 /// The color of an area type, as in DSP's `operation_area_types`.
-fn color_del_tipo(tipo: &str) -> Color {
-    match tipo {
+fn color_for_kind(kind_name: &str) -> Color {
+    match kind_name {
         "territorio" => Color::hex(0x1e73ae),
         "barrio" => Color::hex(0x2d6a4f),
         _ => Color::hex(0xc45c26),
@@ -372,22 +372,22 @@ fn color_del_tipo(tipo: &str) -> Color {
 
 impl Sector {
     /// Its outline, without repeating the first vertex.
-    fn anillo(&self) -> Vec<LatLon> {
-        self.capa.outer_ring()
+    fn ring_points(&self) -> Vec<LatLon> {
+        self.layer.outer_ring()
     }
 
-    /// Take `anillo` as its new outline; a ring a layer cannot be made
+    /// Take `ring_points` as its new outline; a ring a layer cannot be made
     /// of leaves it as it was.
-    fn con_anillo(&mut self, anillo: &[LatLon]) {
-        if let Ok(capa) = MapLayer::ring(anillo) {
-            self.capa = capa;
+    fn with_ring(&mut self, ring_points: &[LatLon]) {
+        if let Ok(layer) = MapLayer::ring(ring_points) {
+            self.layer = layer;
         }
     }
 
     /// The color typed for it, or else the one of its type (also while
     /// the typed hex is incomplete).
     fn color(&self) -> Color {
-        Color::parse_hex(&self.color).unwrap_or_else(|| color_del_tipo(&self.tipo))
+        Color::parse_hex(&self.color).unwrap_or_else(|| color_for_kind(&self.kind_name))
     }
 
     /// Background class of its color.
@@ -396,7 +396,7 @@ impl Sector {
     }
 }
 
-static SECTORES: LazyLock<Vec<Sector>> = LazyLock::new(|| {
+static SECTORS: LazyLock<Vec<Sector>> = LazyLock::new(|| {
     let text = |properties: &geojson::JsonObject, key: &str| {
         properties
             .get(key)
@@ -407,41 +407,41 @@ static SECTORES: LazyLock<Vec<Sector>> = LazyLock::new(|| {
     polygons(DSP_AREAS)
         .expect("assets/maps/dsp-areas.geojson")
         .into_iter()
-        .map(|(capa, properties)| {
-            let tipo = text(&properties, "type");
+        .map(|(layer, properties)| {
+            let kind_name = text(&properties, "type");
             Sector {
                 code: text(&properties, "code"),
-                nombre: text(&properties, "name"),
-                color: color_del_tipo(&tipo).to_hex(),
-                tipo,
-                capa,
+                name: text(&properties, "name"),
+                color: color_for_kind(&kind_name).to_hex(),
+                kind_name,
+                layer,
             }
         })
         .collect()
 });
 
 /// The sector `code` as the seed draws it.
-fn sector_inicial(code: &str) -> Option<&'static Sector> {
-    SECTORES.iter().find(|sector| sector.code == code)
+fn initial_sector(code: &str) -> Option<&'static Sector> {
+    SECTORS.iter().find(|sector| sector.code == code)
 }
 
 /// Area in hectares with a decimal comma.
-fn hectareas(area: f64) -> String {
+fn hectares(area: f64) -> String {
     format!("{area:.1} ha").replace('.', ",")
 }
 
 /// Largest file the image fields take, in megabytes.
-const MAX_IMAGEN_MB: u64 = 5;
+const MAX_IMAGE_MB: u64 = 5;
 
 /// An image field of «Multimedia»: what it shows and the last file
 /// refused.
 #[derive(Clone, Debug, Default, PartialEq)]
-struct Imagen {
+struct ImageSlot {
     actual: Option<ImageSource>,
     error: Option<String>,
 }
 
-impl Imagen {
+impl ImageSlot {
     fn with(source: ImageSource) -> Self {
         Self {
             actual: Some(source),
@@ -449,9 +449,9 @@ impl Imagen {
         }
     }
 
-    /// Show `path` if it is an image of at most [`MAX_IMAGEN_MB`].
+    /// Show `path` if it is an image of at most [`MAX_IMAGE_MB`].
     fn set(&mut self, path: PathBuf) {
-        match validate_image_file(&path, MAX_IMAGEN_MB) {
+        match validate_image_file(&path, MAX_IMAGE_MB) {
             Ok(()) => *self = Self::with(ImageSource::Path(path)),
             Err(error) => self.error = Some(error),
         }
@@ -460,35 +460,35 @@ impl Imagen {
 
 /// The image fields of «Multimedia».
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Campo {
-    Foto,
-    Portada,
+enum ImageField {
+    Photo,
+    Cover,
     Logo,
 }
 
 /// Rows of the client table.
-const CLIENTES: u32 = 10_000;
+const CLIENT_COUNT: u32 = 10_000;
 
 /// Pause in the typing of a column filter before the table refreshes.
-const PAUSA_FILTRO: std::time::Duration = std::time::Duration::from_millis(250);
+const FILTER_PAUSE: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// One client of the generated table: number, name, city, plan, amount.
 #[derive(Debug, PartialEq)]
-struct Cliente {
-    numero: u32,
-    nombre: String,
-    ciudad: &'static str,
+struct Client {
+    number: u32,
+    name: String,
+    city: &'static str,
     plan: &'static str,
-    monto: u32,
+    amount: u32,
 }
 
-/// Client `numero` (1-based), the same every time.
-fn cliente(numero: u32) -> Cliente {
-    const NOMBRES: [&str; 12] = [
+/// Client `number` (1-based), the same every time.
+fn client(number: u32) -> Client {
+    const FIRST_NAMES: [&str; 12] = [
         "Ana", "Bruno", "Carla", "Diego", "Elena", "Felipe", "Gabriela", "Hugo", "Inés", "Javier",
         "Laura", "Matías",
     ];
-    const APELLIDOS: [&str; 10] = [
+    const SURNAMES: [&str; 10] = [
         "Rojas",
         "Muñoz",
         "Soto",
@@ -500,7 +500,7 @@ fn cliente(numero: u32) -> Cliente {
         "Fuentes",
         "Vega",
     ];
-    const CIUDADES: [&str; 8] = [
+    const CITIES: [&str; 8] = [
         "Santiago",
         "Valparaíso",
         "Concepción",
@@ -510,84 +510,84 @@ fn cliente(numero: u32) -> Cliente {
         "Puerto Montt",
         "Arica",
     ];
-    const PLANES: [&str; 3] = ["Básico", "Pro", "Empresa"];
-    let n = numero as usize;
+    const PLANS: [&str; 3] = ["Básico", "Pro", "Empresa"];
+    let n = number as usize;
     let mix = n.wrapping_mul(2_654_435_761) >> 7;
-    Cliente {
-        numero,
-        nombre: format!(
+    Client {
+        number,
+        name: format!(
             "{} {}",
-            NOMBRES[n % NOMBRES.len()],
-            APELLIDOS[(n / NOMBRES.len() + mix) % APELLIDOS.len()]
+            FIRST_NAMES[n % FIRST_NAMES.len()],
+            SURNAMES[(n / FIRST_NAMES.len() + mix) % SURNAMES.len()]
         ),
-        ciudad: CIUDADES[mix % CIUDADES.len()],
-        plan: PLANES[(mix / 7) % PLANES.len()],
-        monto: (mix % 9_000 + 100) as u32 * 10,
+        city: CITIES[mix % CITIES.len()],
+        plan: PLANS[(mix / 7) % PLANS.len()],
+        amount: (mix % 9_000 + 100) as u32 * 10,
     }
 }
 
 /// Columns of the client table: number, name with its avatar, city, plan
 /// as a badge, amount and the row's actions.
-fn columnas() -> Vec<Column<Cliente, Msg>> {
+fn table_columns() -> Vec<Column<Client, Msg>> {
     vec![
-        Column::number("N.º", |c: &Cliente| f64::from(c.numero))
+        Column::number("N.º", |c: &Client| f64::from(c.number))
             .fixed(72.0)
             .sortable(),
-        Column::text("Nombre", |c: &Cliente| c.nombre.clone())
-            .render(|c: &Cliente| {
+        Column::text("Nombre", |c: &Client| c.name.clone())
+            .render(|c: &Client| {
                 div().class("flex items-center gap-2 min-w-0").children([
-                    Avatar::new(c.nombre.clone()).size(AvatarSize::Xs).build(),
-                    text(c.nombre.as_str()).class("truncate"),
+                    Avatar::new(c.name.clone()).size(AvatarSize::Xs).build(),
+                    text(c.name.as_str()).class("truncate"),
                 ])
             })
             .flex(2.0)
             .min_width(160.0)
             .sortable()
             .filterable(),
-        Column::text("Ciudad", |c: &Cliente| c.ciudad.to_owned())
+        Column::text("Ciudad", |c: &Client| c.city.to_owned())
             .flex(1.5)
             .sortable()
             .filterable()
             .hideable(),
-        Column::text("Plan", |c: &Cliente| c.plan.to_owned())
-            .render(|c: &Cliente| badge(c.plan, plan_badge(c.plan)))
+        Column::text("Plan", |c: &Client| c.plan.to_owned())
+            .render(|c: &Client| badge(c.plan, plan_badge(c.plan)))
             .fixed(104.0)
             .sortable()
             .filterable()
             .hideable(),
-        Column::number("Monto", |c: &Cliente| f64::from(c.monto))
-            .format(|monto| format!("$ {monto}"))
+        Column::number("Monto", |c: &Client| f64::from(c.amount))
+            .format(|amount| format!("$ {amount}"))
             .fixed(112.0)
             .sortable()
             .filterable()
             .hideable(),
-        Column::actions(|c: &Cliente| {
+        Column::actions(|c: &Client| {
             icon_button_sized(
                 Icon::Eye,
-                format!("Ver {}", c.nombre),
+                format!("Ver {}", c.name),
                 IconButtonVariant::Text,
                 IconButtonSize::Sm,
             )
-            .on_click(Msg::VerCliente(c.numero as usize - 1))
-            .test_id(format!("tabla.ver.{}", c.numero))
+            .on_click(Msg::ShowClient(c.number as usize - 1))
+            .test_id(format!("table.view.{}", c.number))
         })
         .fixed(64.0),
     ]
 }
 
 /// Panel of an expanded client row: what the row leaves out, and a button.
-fn detalle_cliente(c: &Cliente) -> Element<Msg> {
+fn client_detail(c: &Client) -> Element<Msg> {
     div()
         .class("flex items-center justify-between gap-3 h-full")
         .children([
             div().class("flex flex-col gap-0.5 min-w-0").children([
-                text(format!("Cliente N.º {} de {}", c.numero, c.ciudad))
+                text(format!("Cliente N.º {} de {}", c.number, c.city))
                     .class("text-sm font-medium truncate"),
-                caption(format!("Plan {} · $ {} al mes", c.plan, c.monto)),
+                caption(format!("Plan {} · $ {} al mes", c.plan, c.amount)),
             ]),
             button_sized("Ver ficha", ButtonVariant::Outlined, ButtonSize::Sm)
-                .on_click(Msg::VerCliente(c.numero as usize - 1))
-                .test_id(format!("tabla.ficha.{}", c.numero)),
+                .on_click(Msg::ShowClient(c.number as usize - 1))
+                .test_id(format!("table.card.{}", c.number)),
         ])
 }
 
@@ -601,46 +601,46 @@ fn plan_badge(plan: &str) -> BadgeVariant {
 }
 
 /// Options of the country select (Selección).
-const PAISES: [&str; 4] = ["Chile", "Argentina", "Perú", "Uruguay"];
+const COUNTRIES: [&str; 4] = ["Chile", "Argentina", "Perú", "Uruguay"];
 /// Options of the alignment segmented control (Selección).
-const ALINEACIONES: [&str; 3] = ["Izquierda", "Centro", "Derecha"];
+const ALIGNMENTS: [&str; 3] = ["Izquierda", "Centro", "Derecha"];
 /// Permissions under «Todos» (Selección).
-const PERMISOS: [&str; 3] = ["Leer", "Escribir", "Compartir"];
+const PERMISSIONS: [&str; 3] = ["Leer", "Escribir", "Compartir"];
 
 /// The open dialog of «Diálogos y avisos».
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Dialogo {
-    Guardar,
-    Eliminar,
+enum DemoDialog {
+    Save,
+    Delete,
 }
 
-/// Variant of a toast, for `avisos.mostrar`.
+/// Variant of a toast, for `warnings_found.mostrar`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-enum VarianteAviso {
-    Exito,
+enum ToastKind {
+    Success,
     Error,
-    Advertencia,
+    Warning,
     Info,
 }
 
-impl VarianteAviso {
-    const ALL: [VarianteAviso; 4] = [Self::Exito, Self::Error, Self::Advertencia, Self::Info];
+impl ToastKind {
+    const ALL: [ToastKind; 4] = [Self::Success, Self::Error, Self::Warning, Self::Info];
 
     fn alert(self) -> AlertVariant {
         match self {
-            Self::Exito => AlertVariant::Success,
+            Self::Success => AlertVariant::Success,
             Self::Error => AlertVariant::Error,
-            Self::Advertencia => AlertVariant::Warning,
+            Self::Warning => AlertVariant::Warning,
             Self::Info => AlertVariant::Info,
         }
     }
 
     fn key(self) -> &'static str {
         match self {
-            Self::Exito => "exito",
+            Self::Success => "success",
             Self::Error => "error",
-            Self::Advertencia => "advertencia",
+            Self::Warning => "warning",
             Self::Info => "info",
         }
     }
@@ -648,13 +648,13 @@ impl VarianteAviso {
     /// Button label, toast title and message.
     fn texts(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Self::Exito => ("Éxito", "Cambios guardados", "Se guardaron hace un momento"),
+            Self::Success => ("Éxito", "Cambios guardados", "Se guardaron hace un momento"),
             Self::Error => (
                 "Error",
                 "No se pudo enviar",
                 "Revisa la conexión y reintenta",
             ),
-            Self::Advertencia => ("Advertencia", "Espacio casi lleno", "Quedan 200 MB libres"),
+            Self::Warning => ("Advertencia", "Espacio casi lleno", "Quedan 200 MB libres"),
             Self::Info => (
                 "Info",
                 "Nueva versión",
@@ -699,8 +699,8 @@ const ROLES: [&str; 3] = ["Diseño", "Desarrollo", "Producto"];
 /// so a state saved by an older build still restores what it can.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
-struct EstadoDev {
-    seccion: Option<Seccion>,
+struct DevState {
+    section: Option<Section>,
     sidebar_collapsed: Option<bool>,
     /// Code of the selected sector in Mapa.
     area: Option<String>,
@@ -755,15 +755,15 @@ const APP_ID: &str = "dev.kai.ui-desktop";
 
 /// Lo que la demo recuerda entre ejecuciones (Paso 16).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct PreferenciasDemo {
-    seccion: Seccion,
+struct DemoPreferences {
+    section: Section,
     sidebar_collapsed: bool,
-    vista_mapa: MapView,
+    map_view_state: MapView,
     /// Catálogo vivo: índices de tema, densidad y tamaño.
-    catalogo: [usize; 3],
+    catalog: [usize; 3],
 }
 
-impl Stored for PreferenciasDemo {
+impl Stored for DemoPreferences {
     const KEY: &'static str = "preferencias";
     const VERSION: u32 = 1;
 }
@@ -771,59 +771,59 @@ impl Stored for PreferenciasDemo {
 /// Sections of the sidebar, in its order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-enum Seccion {
+enum Section {
     /// Fondo de ventana, contador, formulario y estadísticas.
-    Inicio,
+    Home,
     /// Variantes de TextField.
-    Campos,
+    Fields,
     /// Botones, tamaños e IconButtons.
-    Botones,
+    Buttons,
     /// Switches, checkboxes, selects y controles segmentados.
-    Seleccion,
+    Selection,
     /// Cards, group boxes, estadísticas y texto.
-    Contenedores,
+    Containers,
     /// Badges y alertas.
     Badges,
     /// Avatares, imágenes y campos de imagen (foto, portada, logo).
     Multimedia,
     /// Tabla de 10 000 clientes y lista virtualizada.
-    Tabla,
+    Table,
     /// Mapa interactivo de Parral.
-    Mapa,
+    Map,
     /// Gráficos de barras y sparkline.
-    Graficos,
+    Charts,
     /// Mini procesador de texto (esqueleto Document).
-    Documento,
+    Document,
     /// Diálogos, avisos (toasts) y la paleta de comandos.
-    Dialogos,
+    Dialogs,
     /// Plantilla lista + detalle (master/detail).
-    PlantillaLista,
+    TemplateList,
     /// Plantilla formulario (densidad comfortable).
-    PlantillaFormulario,
+    TemplateForm,
     /// Plantilla vista de datos (densidad compact).
-    PlantillaDatos,
+    TemplateData,
     /// Catálogo vivo: matriz filtrable tema × density × size.
-    Catalogo,
+    Catalog,
 }
 
-impl Seccion {
-    const ALL: [Seccion; 16] = [
-        Self::Inicio,
-        Self::Campos,
-        Self::Botones,
-        Self::Seleccion,
-        Self::Contenedores,
+impl Section {
+    const ALL: [Section; 16] = [
+        Self::Home,
+        Self::Fields,
+        Self::Buttons,
+        Self::Selection,
+        Self::Containers,
         Self::Badges,
         Self::Multimedia,
-        Self::Tabla,
-        Self::Mapa,
-        Self::Graficos,
-        Self::Documento,
-        Self::PlantillaLista,
-        Self::PlantillaFormulario,
-        Self::PlantillaDatos,
-        Self::Catalogo,
-        Self::Dialogos,
+        Self::Table,
+        Self::Map,
+        Self::Charts,
+        Self::Document,
+        Self::TemplateList,
+        Self::TemplateForm,
+        Self::TemplateData,
+        Self::Catalog,
+        Self::Dialogs,
     ];
 
     fn index(self) -> usize {
@@ -832,44 +832,44 @@ impl Seccion {
 
     fn key(self) -> &'static str {
         match self {
-            Self::Inicio => "inicio",
-            Self::Campos => "campos",
-            Self::Botones => "botones",
-            Self::Seleccion => "seleccion",
-            Self::Contenedores => "contenedores",
+            Self::Home => "home",
+            Self::Fields => "fields",
+            Self::Buttons => "buttons",
+            Self::Selection => "selection",
+            Self::Containers => "containers",
             Self::Badges => "badges",
             Self::Multimedia => "multimedia",
-            Self::Tabla => "tabla",
-            Self::Mapa => "mapa",
-            Self::Graficos => "graficos",
-            Self::Documento => "documento",
-            Self::Dialogos => "dialogos",
-            Self::PlantillaLista => "plantilla_lista",
-            Self::PlantillaFormulario => "plantilla_formulario",
-            Self::PlantillaDatos => "plantilla_datos",
-            Self::Catalogo => "catalogo",
+            Self::Table => "table",
+            Self::Map => "map",
+            Self::Charts => "charts",
+            Self::Document => "document",
+            Self::Dialogs => "dialogs",
+            Self::TemplateList => "template_list",
+            Self::TemplateForm => "template_form",
+            Self::TemplateData => "template_data",
+            Self::Catalog => "catalog",
         }
     }
 
     /// Sidebar row.
     fn item(self) -> SidebarItem {
         let (label, glyph) = match self {
-            Self::Inicio => ("Inicio", Icon::House),
-            Self::Campos => ("Campos", Icon::TextCursorInput),
-            Self::Botones => ("Botones", Icon::MousePointerClick),
-            Self::Seleccion => ("Selección", Icon::ToggleLeft),
-            Self::Contenedores => ("Contenedores", Icon::LayoutGrid),
+            Self::Home => ("Inicio", Icon::House),
+            Self::Fields => ("Campos", Icon::TextCursorInput),
+            Self::Buttons => ("Botones", Icon::MousePointerClick),
+            Self::Selection => ("Selección", Icon::ToggleLeft),
+            Self::Containers => ("Contenedores", Icon::LayoutGrid),
             Self::Badges => ("Badges y alertas", Icon::Tag),
             Self::Multimedia => ("Multimedia", Icon::Image),
-            Self::Tabla => ("Tabla", Icon::Table),
-            Self::Mapa => ("Mapa", Icon::Map),
-            Self::Graficos => ("Gráficos", Icon::LayoutDashboard),
-            Self::Documento => ("Documento", Icon::FileText),
-            Self::Dialogos => ("Diálogos y avisos", Icon::MessageSquare),
-            Self::PlantillaLista => ("Lista + detalle", Icon::Columns3),
-            Self::PlantillaFormulario => ("Formulario", Icon::TextCursorInput),
-            Self::PlantillaDatos => ("Vista de datos", Icon::Sheet),
-            Self::Catalogo => ("Catálogo vivo", Icon::LayoutTemplate),
+            Self::Table => ("Tabla", Icon::Table),
+            Self::Map => ("Mapa", Icon::Map),
+            Self::Charts => ("Gráficos", Icon::LayoutDashboard),
+            Self::Document => ("Documento", Icon::FileText),
+            Self::Dialogs => ("Diálogos y avisos", Icon::MessageSquare),
+            Self::TemplateList => ("Lista + detalle", Icon::Columns3),
+            Self::TemplateForm => ("Formulario", Icon::TextCursorInput),
+            Self::TemplateData => ("Vista de datos", Icon::Sheet),
+            Self::Catalog => ("Catálogo vivo", Icon::LayoutTemplate),
         };
         SidebarItem::new(label).icon(glyph)
     }
@@ -906,9 +906,9 @@ enum Msg {
     ToggleNotifications,
     SetRole(usize),
     ToggleTerms,
-    IrA(Seccion),
+    GoTo(Section),
     /// Plantilla lista+detalle: seleccionar fila.
-    PlantillaSelect(usize),
+    TemplateSelect(usize),
     CatalogPreset(usize),
     CatalogDensity(usize),
     CatalogSize(usize),
@@ -929,66 +929,66 @@ enum Msg {
     TogglePin,
     ToggleWifi,
     /// `None` is «Todos».
-    TogglePermiso(Option<usize>),
-    SetPais(usize),
-    SetAlineacion(usize),
-    SetPestana(usize),
+    TogglePermission(Option<usize>),
+    SetCountry(usize),
+    SetAlignment(usize),
+    SetTab(usize),
     /// The toolbar search, which filters the table.
     Query(String),
     /// Sort, filter, hide columns or expand rows of the table.
-    Tabla(ViewChange),
+    Table(ViewChange),
     /// Recompute the table's rows after a pause in a filter's typing.
-    RefrescarTabla,
-    /// A client of the table, by its index in `clientes`.
+    RefreshTable,
+    /// A client of the table, by its index in `clients`.
     SelectRow(usize),
     /// The «Ver» action of a client's row.
-    VerCliente(usize),
+    ShowClient(usize),
     /// Ask where to save the rows the table shows as an Excel file.
-    ExportarTabla,
+    ExportTable,
     /// Where the save panel said (`None`: cancelled).
-    GuardarExcel(Option<PathBuf>),
+    SaveExcel(Option<PathBuf>),
     /// The Excel file was written (its name and rows) or not.
-    TablaExportada(Result<(String, usize), String>),
-    OpenDialog(Dialogo),
+    TableExported(Result<(String, usize), String>),
+    OpenDialog(DemoDialog),
     CloseDialog,
     /// The dialog's default button.
     ConfirmDialog,
-    ShowToast(VarianteAviso),
+    ShowToast(ToastKind),
     CloseToast(u64),
     /// Opens the file panel for a field.
-    ElegirImagen(Campo),
+    PickImage(ImageField),
     /// The panel's answer, or a file dropped on the field.
-    ImagenElegida(Campo, Option<PathBuf>),
+    ImagePicked(ImageField, Option<PathBuf>),
     /// Loads the avatar from a URL; empty, back to the icon.
-    CargarUrl(String),
+    LoadUrl(String),
     /// A gesture on the map ended there.
-    MapaMovido(MapView),
-    /// Shows `vista` on the map, gliding there when `animar`.
-    FijarVista {
-        vista: MapView,
-        animar: bool,
+    MapMoved(MapView),
+    /// Shows `view` on the map, gliding there when `animate`.
+    SetMapView {
+        view: MapView,
+        animate: bool,
     },
     /// Selects the sector with this code and frames it.
-    SeleccionarArea(String),
+    SelectArea(String),
     /// Moves the map to show all of the box.
-    Encuadrar(LatLonBounds),
+    FitBounds(LatLonBounds),
     ToggleAreas,
     /// The selected bar of the chart, by month index.
-    Mes(usize),
+    Month(usize),
     /// Documento: contenido tipado / formateado.
-    Documento(DocumentChange),
+    Document(DocumentChange),
     /// Documento: comando de toolbar / Action / ribbon.
     DocCmd(DocumentCmd),
     /// Documento: cambiar pestaña del ribbon.
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
     DocRibbonTab(String),
     /// Resultado de guardar las preferencias en disco.
-    PreferenciasGuardadas(Result<(), StoreError>),
+    PreferencesSaved(Result<(), StoreError>),
     /// Documento: mostrar u ocultar la barra Buscar y reemplazar (⌘F).
-    DocAlternarBuscar,
+    DocToggleFind,
     /// Documento: mostrar u ocultar la barra de nuevo comentario.
     #[cfg_attr(not(feature = "document"), allow(dead_code))]
-    DocAlternarComentario,
+    DocToggleComment,
     /// Documento: query de find.
     DocFindChanged(String),
     /// Documento: texto de replace.
@@ -996,42 +996,42 @@ enum Msg {
     /// Documento: draft de comentario.
     DocCommentDraftChanged(String),
     /// Documento: panel Abrir `.docx`.
-    DocAbrir,
+    DocOpen,
     /// Ruta elegida al abrir (`None`: cancelado).
-    DocAbrirElegido(Option<PathBuf>),
+    DocOpenChosen(Option<PathBuf>),
     /// Bytes leídos del `.docx` (o error).
-    DocBytesLeidos(Result<Vec<u8>, String>),
+    DocBytesRead(Result<Vec<u8>, String>),
     /// Documento: panel Guardar `.docx`.
-    DocGuardar,
-    DocGuardarEn(Option<PathBuf>),
+    DocSave,
+    DocSaveTo(Option<PathBuf>),
     /// Documento: panel Exportar PDF.
-    DocExportarPdf,
-    DocExportarPdfEn(Option<PathBuf>),
+    DocExportPdf,
+    DocExportPdfTo(Option<PathBuf>),
     /// Escritura / export terminó.
-    DocArchivoListo(Result<String, String>),
+    DocFileReady(Result<String, String>),
     /// What the color field of the selected sector holds.
     ColorSector(String),
     /// Starts editing the outline of the sector with this code.
-    EditarArea(String),
+    EditArea(String),
     /// A change to the draft of the sector being edited (`Finish` keeps
     /// it if valid, `Cancel` drops it).
-    Edicion(PolygonEdit),
+    Editing(PolygonEdit),
     /// Replaces the outline of a sector (an agent's edit, already valid).
-    GuardarGeometria {
+    SaveGeometry {
         code: String,
-        anillo: Vec<LatLon>,
+        ring_points: Vec<LatLon>,
     },
-    /// Botones: wait [`ESPERA`] on a task; the button that sent it is busy
+    /// Botones: wait [`WAIT`] on a task; the button that sent it is busy
     /// meanwhile.
-    Esperar(&'static str),
+    Wait(&'static str),
     /// The wait of that name ended.
-    EsperaLista(&'static str),
+    WaitDone(&'static str),
     /// Save, then reload: two chained tasks.
-    GuardarYRecargar,
-    Recargar,
+    SaveAndReload,
+    Reload,
     /// A wait whose button stays usable.
-    Sincronizar,
-    Sincronizado,
+    Sync,
+    Synced,
 }
 
 impl Demo {
@@ -1058,7 +1058,7 @@ impl Demo {
 
     /// Ask the map to show `bounds` (a new request each time, so the same
     /// box frames again after a drag). Boxes with NaN are ignored.
-    fn encuadrar(&mut self, bounds: LatLonBounds) {
+    fn fit_to(&mut self, bounds: LatLonBounds) {
         let Some(bounds) = LatLonBounds::around([
             LatLon::new(bounds.south, bounds.west),
             LatLon::new(bounds.north, bounds.east),
@@ -1070,43 +1070,43 @@ impl Demo {
         }) else {
             return;
         };
-        let serial = self.encuadre.map_or(1, |(_, serial)| serial + 1);
-        self.encuadre = Some((bounds, serial));
-        self.animar_vista = true;
+        let serial = self.fit_request.map_or(1, |(_, serial)| serial + 1);
+        self.fit_request = Some((bounds, serial));
+        self.animate_map = true;
     }
 
     fn sector(&self, code: &str) -> Option<&Sector> {
-        self.sectores.iter().find(|sector| sector.code == code)
+        self.sectors.iter().find(|sector| sector.code == code)
     }
 
     /// Select sector `code`, show the sectors and frame it with a margin.
-    fn seleccionar(&mut self, code: &str) {
-        let Some(bounds) = self.sector(code).map(|s| s.capa.bounds()) else {
+    fn select_area(&mut self, code: &str) {
+        let Some(bounds) = self.sector(code).map(|s| s.layer.bounds()) else {
             return;
         };
         self.area = Some(code.to_owned());
-        self.mostrar_areas = true;
-        self.encuadrar(bounds.padded(MARGEN_SECTOR));
+        self.show_areas = true;
+        self.fit_to(bounds.padded(SECTOR_MARGIN));
     }
 
-    /// Give sector `code` the outline `anillo`.
-    fn guardar_anillo(&mut self, code: &str, anillo: &[LatLon]) {
-        if let Some(sector) = self.sectores.iter_mut().find(|s| s.code == code) {
-            sector.con_anillo(anillo);
+    /// Give sector `code` the outline `ring_points`.
+    fn save_ring(&mut self, code: &str, ring_points: &[LatLon]) {
+        if let Some(sector) = self.sectors.iter_mut().find(|s| s.code == code) {
+            sector.with_ring(ring_points);
         }
     }
 
-    fn editar(&mut self, edit: PolygonEdit) {
-        let Some((code, draft)) = &mut self.edicion else {
+    fn edit_sector(&mut self, edit: PolygonEdit) {
+        let Some((code, draft)) = &mut self.editing else {
             return;
         };
         match edit {
             PolygonEdit::Finish if draft.is_valid() => {
-                let (code, anillo) = (code.clone(), draft.ring().to_vec());
-                self.edicion = None;
-                self.guardar_anillo(&code, &anillo);
+                let (code, ring_points) = (code.clone(), draft.ring().to_vec());
+                self.editing = None;
+                self.save_ring(&code, &ring_points);
             }
-            PolygonEdit::Cancel => self.edicion = None,
+            PolygonEdit::Cancel => self.editing = None,
             edit => {
                 draft.apply(edit);
             }
@@ -1117,53 +1117,53 @@ impl Demo {
 /// Saves the rows the client table shows (search, filters, sort; no
 /// hidden columns) as an Excel file where the person chooses.
 #[derive(Clone, Deserialize, JsonSchema)]
-struct ExportarTabla;
+struct ExportTable;
 
-impl Action for ExportarTabla {
+impl Action for ExportTable {
     type App = Demo;
-    const ID: &'static str = "tabla.exportar";
+    const ID: &'static str = "table.export";
     const TITLE: &'static str = "Exportar a Excel";
     fn description() -> &'static str {
         "Guarda en un Excel las filas que muestra la tabla de clientes, con su búsqueda, \
          filtros y orden"
     }
     fn available(demo: &Demo) -> Availability {
-        if demo.exportando {
+        if demo.exporting {
             Availability::disabled("Ya se está exportando")
-        } else if demo.tabla.is_empty() {
+        } else if demo.table_view.is_empty() {
             Availability::disabled("No hay filas que exportar")
         } else {
             Availability::Enabled
         }
     }
     fn into_msg(self) -> Msg {
-        Msg::ExportarTabla
+        Msg::ExportTable
     }
 }
 
 /// Waits a moment on a task: its buttons, menu item and palette row are
 /// busy until it ends.
 #[derive(Clone, Deserialize, JsonSchema)]
-struct SimularEspera;
+struct SimulateWait;
 
-impl Action for SimularEspera {
+impl Action for SimulateWait {
     type App = Demo;
-    const ID: &'static str = "botones.simular_espera";
+    const ID: &'static str = "buttons.simulate_wait";
     const TITLE: &'static str = "Simular espera";
     fn description() -> &'static str {
         "Espera un momento en una tarea; mientras, el comando está en curso"
     }
     fn into_msg(self) -> Msg {
-        Msg::Esperar("comando")
+        Msg::Wait("command")
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct Incrementar;
+struct Increment;
 
-impl Action for Incrementar {
+impl Action for Increment {
     type App = Demo;
-    const ID: &'static str = "contador.incrementar";
+    const ID: &'static str = "counter.increment";
     const TITLE: &'static str = "Incrementar";
     fn description() -> &'static str {
         "Suma un clic al contador"
@@ -1173,32 +1173,32 @@ impl Action for Incrementar {
     }
 }
 
-/// Adds `cantidad` clicks at once; only scripts and agents call it.
+/// Adds `count` clicks at once; only scripts and agents call it.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct Sumar {
+struct Add {
     #[schemars(description = "Clics que se suman")]
-    cantidad: u32,
+    count: u32,
 }
 
-impl Action for Sumar {
+impl Action for Add {
     type App = Demo;
-    const ID: &'static str = "contador.sumar";
+    const ID: &'static str = "counter.add";
     const TITLE: &'static str = "Sumar";
     fn description() -> &'static str {
         "Suma varios clics al contador"
     }
     fn into_msg(self) -> Msg {
-        Msg::Add(self.cantidad)
+        Msg::Add(self.count)
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct Reiniciar;
+struct Reset;
 
-impl Action for Reiniciar {
+impl Action for Reset {
     type App = Demo;
-    const ID: &'static str = "contador.reiniciar";
+    const ID: &'static str = "counter.reset";
     const TITLE: &'static str = "Reiniciar";
     /// The clicks are lost: an agent needs the person's confirmation.
     const SAFETY: Safety = Safety::Destructive;
@@ -1218,11 +1218,11 @@ impl Action for Reiniciar {
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct Enviar;
+struct Submit;
 
-impl Action for Enviar {
+impl Action for Submit {
     type App = Demo;
-    const ID: &'static str = "form.enviar";
+    const ID: &'static str = "form.submit";
     const TITLE: &'static str = "Enviar";
     fn description() -> &'static str {
         "Registra el nombre y limpia el formulario"
@@ -1240,11 +1240,11 @@ impl Action for Enviar {
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct Limpiar;
+struct ClearForm;
 
-impl Action for Limpiar {
+impl Action for ClearForm {
     type App = Demo;
-    const ID: &'static str = "form.limpiar";
+    const ID: &'static str = "form.clear";
     const TITLE: &'static str = "Limpiar";
     fn description() -> &'static str {
         "Borra el nombre, el correo, el rol y los términos"
@@ -1255,11 +1255,11 @@ impl Action for Limpiar {
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct AlternarContrasena;
+struct TogglePasswordAction;
 
-impl Action for AlternarContrasena {
+impl Action for TogglePasswordAction {
     type App = Demo;
-    const ID: &'static str = "form.alternar_contrasena";
+    const ID: &'static str = "form.toggle_password";
     const TITLE: &'static str = "Mostrar u ocultar contraseña";
     fn into_msg(self) -> Msg {
         Msg::TogglePassword
@@ -1269,29 +1269,29 @@ impl Action for AlternarContrasena {
 /// Shows a section, as a click on the sidebar does.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct IrA {
+struct GoTo {
     #[schemars(description = "Sección que se muestra")]
-    seccion: Seccion,
+    section: Section,
 }
 
-impl Action for IrA {
+impl Action for GoTo {
     type App = Demo;
-    const ID: &'static str = "ui.ir_a";
+    const ID: &'static str = "ui.go_to";
     const TITLE: &'static str = "Ir a sección";
     fn description() -> &'static str {
         "Muestra una sección de la demo, como un clic en la barra lateral"
     }
     fn into_msg(self) -> Msg {
-        Msg::IrA(self.seccion)
+        Msg::GoTo(self.section)
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
-struct AlternarSidebar;
+struct ToggleSidebarAction;
 
-impl Action for AlternarSidebar {
+impl Action for ToggleSidebarAction {
     type App = Demo;
-    const ID: &'static str = "ui.alternar_sidebar";
+    const ID: &'static str = "ui.toggle_sidebar";
     const TITLE: &'static str = "Mostrar u ocultar barra lateral";
     fn description() -> &'static str {
         "Colapsa la barra lateral a un riel de íconos o la expande"
@@ -1304,27 +1304,27 @@ impl Action for AlternarSidebar {
 /// Shows a toast, as the buttons of «Diálogos y avisos» do.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct MostrarAviso {
+struct ShowToastAction {
     #[schemars(description = "Variante del aviso")]
-    variante: VarianteAviso,
+    kind: ToastKind,
 }
 
-impl Action for MostrarAviso {
+impl Action for ShowToastAction {
     type App = Demo;
-    const ID: &'static str = "avisos.mostrar";
+    const ID: &'static str = "toasts.show";
     const TITLE: &'static str = "Mostrar aviso";
     fn description() -> &'static str {
         "Muestra un aviso (toast) que se cierra solo a los 4 segundos"
     }
     fn into_msg(self) -> Msg {
-        Msg::ShowToast(self.variante)
+        Msg::ShowToast(self.kind)
     }
 }
 
 /// Shows the image at a URL in the avatar of «Multimedia».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct CargarUrl {
+struct LoadUrl {
     #[schemars(
         description = "Dirección http(s) de una imagen png, jpg o webp; vacía, \
                               vuelve al ícono"
@@ -1332,22 +1332,22 @@ struct CargarUrl {
     url: String,
 }
 
-impl Action for CargarUrl {
+impl Action for LoadUrl {
     type App = Demo;
-    const ID: &'static str = "multimedia.cargar_url";
+    const ID: &'static str = "media.load_url";
     const TITLE: &'static str = "Cargar imagen desde URL";
     fn description() -> &'static str {
         "Descarga una imagen y la muestra en el avatar de la sección Multimedia"
     }
     fn into_msg(self) -> Msg {
-        Msg::CargarUrl(self.url)
+        Msg::LoadUrl(self.url)
     }
 }
 
 /// Moves the map of «Mapa», as a drag or the zoom buttons would.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct FijarVista {
+struct SetMapView {
     #[schemars(description = "Centro del mapa (grados)")]
     center: LatLon,
     #[schemars(description = "Zoom de 0 (el mundo entero) a 20 (una calle)")]
@@ -1357,17 +1357,17 @@ struct FijarVista {
     animate: Option<bool>,
 }
 
-impl Action for FijarVista {
+impl Action for SetMapView {
     type App = Demo;
-    const ID: &'static str = "mapa.set_view";
+    const ID: &'static str = "map.set_view";
     const TITLE: &'static str = "Mover el mapa";
     fn description() -> &'static str {
         "Centra el mapa de la sección Mapa en un punto, con el zoom dado"
     }
     fn into_msg(self) -> Msg {
-        Msg::FijarVista {
-            vista: MapView::new(self.center, self.zoom),
-            animar: self.animate.unwrap_or(true),
+        Msg::SetMapView {
+            view: MapView::new(self.center, self.zoom),
+            animate: self.animate.unwrap_or(true),
         }
     }
 }
@@ -1375,9 +1375,9 @@ impl Action for FijarVista {
 /// Documento: negrita (WordCraft `format.bold`).
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocNegrita;
+struct DocBold;
 
-impl Action for DocNegrita {
+impl Action for DocBold {
     type App = Demo;
     const ID: &'static str = "format.bold";
     const TITLE: &'static str = "Negrita";
@@ -1391,9 +1391,9 @@ impl Action for DocNegrita {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocCursiva;
+struct DocItalic;
 
-impl Action for DocCursiva {
+impl Action for DocItalic {
     type App = Demo;
     const ID: &'static str = "format.italic";
     const TITLE: &'static str = "Cursiva";
@@ -1407,9 +1407,9 @@ impl Action for DocCursiva {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocLista;
+struct DocList;
 
-impl Action for DocLista {
+impl Action for DocList {
     type App = Demo;
     const ID: &'static str = "para.bullets";
     const TITLE: &'static str = "Lista con viñetas";
@@ -1423,9 +1423,9 @@ impl Action for DocLista {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocDeshacer;
+struct DocUndo;
 
-impl Action for DocDeshacer {
+impl Action for DocUndo {
     type App = Demo;
     const ID: &'static str = "edit.undo";
     const TITLE: &'static str = "Deshacer";
@@ -1439,9 +1439,9 @@ impl Action for DocDeshacer {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocRehacer;
+struct DocRedo;
 
-impl Action for DocRehacer {
+impl Action for DocRedo {
     type App = Demo;
     const ID: &'static str = "edit.redo";
     const TITLE: &'static str = "Rehacer";
@@ -1455,9 +1455,9 @@ impl Action for DocRehacer {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocTabla;
+struct DocTable;
 
-impl Action for DocTabla {
+impl Action for DocTable {
     type App = Demo;
     const ID: &'static str = "insert.table";
     const TITLE: &'static str = "Insertar tabla";
@@ -1471,9 +1471,9 @@ impl Action for DocTabla {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocImagen;
+struct DocImage;
 
-impl Action for DocImagen {
+impl Action for DocImage {
     type App = Demo;
     const ID: &'static str = "insert.picture";
     const TITLE: &'static str = "Insertar imagen";
@@ -1487,113 +1487,113 @@ impl Action for DocImagen {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocAbrir;
+struct DocOpen;
 
-impl Action for DocAbrir {
+impl Action for DocOpen {
     type App = Demo;
-    const ID: &'static str = "documento.abrir";
+    const ID: &'static str = "document.open";
     const TITLE: &'static str = "Abrir documento";
     fn description() -> &'static str {
         "Abre un archivo .docx en el editor de Documento (WordCraft)"
     }
     fn available(demo: &Demo) -> Availability {
-        if demo.doc_archivo_busy {
+        if demo.doc_file_busy {
             Availability::disabled("Ya hay una operación de archivo en curso")
         } else {
             Availability::Enabled
         }
     }
     fn into_msg(self) -> Msg {
-        Msg::DocAbrir
+        Msg::DocOpen
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocGuardar;
+struct DocSave;
 
-impl Action for DocGuardar {
+impl Action for DocSave {
     type App = Demo;
-    const ID: &'static str = "documento.guardar";
+    const ID: &'static str = "document.save";
     const TITLE: &'static str = "Guardar documento";
     fn description() -> &'static str {
         "Guarda el documento como .docx donde elijas"
     }
     fn available(demo: &Demo) -> Availability {
-        if demo.doc_archivo_busy {
+        if demo.doc_file_busy {
             Availability::disabled("Ya hay una operación de archivo en curso")
         } else {
             Availability::Enabled
         }
     }
     fn into_msg(self) -> Msg {
-        Msg::DocGuardar
+        Msg::DocSave
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocExportarPdf;
+struct DocExportPdf;
 
-impl Action for DocExportarPdf {
+impl Action for DocExportPdf {
     type App = Demo;
-    const ID: &'static str = "documento.exportar_pdf";
+    const ID: &'static str = "document.export_pdf";
     const TITLE: &'static str = "Exportar PDF";
     fn description() -> &'static str {
         "Exporta el documento a PDF (WordCraft / craft-pdf) donde elijas"
     }
     fn available(demo: &Demo) -> Availability {
-        if demo.doc_archivo_busy {
+        if demo.doc_file_busy {
             Availability::disabled("Ya hay una operación de archivo en curso")
         } else {
             Availability::Enabled
         }
     }
     fn into_msg(self) -> Msg {
-        Msg::DocExportarPdf
+        Msg::DocExportPdf
     }
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct DocBuscar;
+struct DocFind;
 
-impl Action for DocBuscar {
+impl Action for DocFind {
     type App = Demo;
-    const ID: &'static str = "documento.buscar";
+    const ID: &'static str = "document.find";
     const TITLE: &'static str = "Buscar y reemplazar";
     fn description() -> &'static str {
         "Muestra u oculta la barra Buscar y reemplazar del documento"
     }
     fn into_msg(self) -> Msg {
-        Msg::DocAlternarBuscar
+        Msg::DocToggleFind
     }
 }
 
 /// Frames a box on the map of «Mapa».
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct Encuadrar {
+struct FitBounds {
     #[schemars(description = "Caja a mostrar entera (grados)")]
     bounds: LatLonBounds,
 }
 
-impl Action for Encuadrar {
+impl Action for FitBounds {
     type App = Demo;
-    const ID: &'static str = "mapa.fit_bounds";
+    const ID: &'static str = "map.fit_bounds";
     const TITLE: &'static str = "Encuadrar el mapa";
     fn description() -> &'static str {
         "Mueve el mapa de la sección Mapa hasta mostrar entera una caja de latitud y longitud"
     }
     fn into_msg(self) -> Msg {
-        Msg::Encuadrar(self.bounds)
+        Msg::FitBounds(self.bounds)
     }
 }
 
 /// Selects a DSP sector of «Mapa», as a click on it or on the list would.
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct SeleccionarArea {
+struct SelectArea {
     #[schemars(
         description = "Código del sector: AOP26000001 (Plaza de Armas), AOP26000002 \
                        (Catillo), AOP26000003 (Villa San Pedro), AOP26000004 (Palma Rosa) \
@@ -1602,24 +1602,24 @@ struct SeleccionarArea {
     code: String,
 }
 
-impl Action for SeleccionarArea {
+impl Action for SelectArea {
     type App = Demo;
-    const ID: &'static str = "areas.seleccionar";
+    const ID: &'static str = "areas.select";
     const TITLE: &'static str = "Seleccionar sector";
     fn description() -> &'static str {
         "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % \
          de margen; un código desconocido, o un sector en edición, no cambia nada"
     }
     fn into_msg(self) -> Msg {
-        Msg::SeleccionarArea(self.code)
+        Msg::SelectArea(self.code)
     }
 }
 
 /// The outline an agent proposes for a sector, before it is checked.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct GeometriaPropuesta {
-    #[schemars(description = "Código del sector, como en areas.seleccionar")]
+struct ProposedGeometry {
+    #[schemars(description = "Código del sector, como en areas.select")]
     code: String,
     #[schemars(
         description = "Anillo exterior del polígono como en GeoJSON: [longitud, latitud] por \
@@ -1632,21 +1632,21 @@ struct GeometriaPropuesta {
 /// Replaces the outline of a DSP sector of «Mapa»; the input is checked
 /// as it is read, so an invalid one is an input error.
 #[derive(Clone, Deserialize, JsonSchema)]
-#[serde(try_from = "GeometriaPropuesta")]
-struct EditarGeometria {
+#[serde(try_from = "ProposedGeometry")]
+struct EditGeometry {
     code: String,
-    anillo: Vec<LatLon>,
+    ring_points: Vec<LatLon>,
 }
 
-impl TryFrom<GeometriaPropuesta> for EditarGeometria {
+impl TryFrom<ProposedGeometry> for EditGeometry {
     type Error = String;
 
-    fn try_from(propuesta: GeometriaPropuesta) -> Result<Self, String> {
-        if sector_inicial(&propuesta.code).is_none() {
-            return Err(format!("no hay un sector {}", propuesta.code));
+    fn try_from(proposed: ProposedGeometry) -> Result<Self, String> {
+        if initial_sector(&proposed.code).is_none() {
+            return Err(format!("no hay un sector {}", proposed.code));
         }
         let draft = PolygonDraft::from_ring(
-            propuesta
+            proposed
                 .coordinates
                 .iter()
                 .map(|[lon, lat]| LatLon::new(*lat, *lon)),
@@ -1662,50 +1662,50 @@ impl TryFrom<GeometriaPropuesta> for EditarGeometria {
             return Err(format!("los bordes {} y {} se cruzan", a + 1, b + 1));
         }
         Ok(Self {
-            code: propuesta.code,
-            anillo: draft.ring().to_vec(),
+            code: proposed.code,
+            ring_points: draft.ring().to_vec(),
         })
     }
 }
 
-impl Action for EditarGeometria {
+impl Action for EditGeometry {
     type App = Demo;
-    const ID: &'static str = "areas.editar_geometria";
+    const ID: &'static str = "areas.edit_geometry";
     const TITLE: &'static str = "Editar la geometría de un sector";
     fn description() -> &'static str {
         "Reemplaza el polígono de un sector de DSP en el mapa de la sección Mapa, lo selecciona y \
          lo encuadra; una geometría inválida es un error y no cambia nada"
     }
     fn into_msg(self) -> Msg {
-        Msg::GuardarGeometria {
+        Msg::SaveGeometry {
             code: self.code,
-            anillo: self.anillo,
+            ring_points: self.ring_points,
         }
     }
 }
 
 /// What the map of «Mapa» shows, as of the last gesture.
 #[derive(Deserialize, JsonSchema)]
-struct VistaDelMapa;
+struct MapViewQuery;
 
-impl Query for VistaDelMapa {
+impl Query for MapViewQuery {
     type App = Demo;
     type Output = MapView;
-    const ID: &'static str = "mapa.get_view";
+    const ID: &'static str = "map.get_view";
     const TITLE: &'static str = "Vista del mapa";
     fn run(demo: &Demo, _: Self) -> Result<MapView, CommandError> {
-        Ok(demo.vista)
+        Ok(demo.view)
     }
 }
 
 /// The last name sent, if any.
 #[derive(Deserialize, JsonSchema)]
-struct Saludo;
+struct LastSubmission;
 
-impl Query for Saludo {
+impl Query for LastSubmission {
     type App = Demo;
     type Output = Option<String>;
-    const ID: &'static str = "form.ultimo_envio";
+    const ID: &'static str = "form.last_submission";
     const TITLE: &'static str = "Último envío";
     fn run(demo: &Demo, _: Self) -> Result<Option<String>, CommandError> {
         Ok(demo.submissions.last().cloned())
@@ -1717,64 +1717,61 @@ impl App for Demo {
 
     fn commands(registry: &mut CommandRegistry<Self>) {
         registry
-            .action::<Incrementar>()
+            .action::<Increment>()
             .shortcut(Shortcut::cmd(Key::Char('i')))
             .menu("Contador")
             .expose();
-        registry.action::<Sumar>().expose();
+        registry.action::<Add>().expose();
         registry
-            .action::<Reiniciar>()
+            .action::<Reset>()
             .shortcut(Shortcut::cmd(Key::Char('0')))
             .menu("Contador")
             .expose();
         registry
-            .action::<Enviar>()
+            .action::<Submit>()
             .menu("Formulario")
-            .returns::<Saludo>()
+            .returns::<LastSubmission>()
             .expose();
-        registry.action::<Limpiar>().menu("Formulario").expose();
+        registry.action::<ClearForm>().menu("Formulario").expose();
         // Showing the password is the user's business, not an agent's.
-        registry.action::<AlternarContrasena>().menu("Formulario");
-        registry.query::<Saludo>().expose();
+        registry.action::<TogglePasswordAction>().menu("Formulario");
+        registry.query::<LastSubmission>().expose();
         // It takes a section, so it has no menu item nor shortcut.
-        registry.action::<IrA>().expose();
+        registry.action::<GoTo>().expose();
         registry
-            .action::<AlternarSidebar>()
+            .action::<ToggleSidebarAction>()
             .shortcut(Shortcut::ctrl_cmd(Key::Char('s')))
             .menu("Ver")
             .expose();
         // It takes a variant: no menu item, as `ui.ir_a`.
-        registry.action::<MostrarAviso>().expose();
-        registry.action::<CargarUrl>().expose();
-        registry.action::<FijarVista>().expose();
-        registry.action::<Encuadrar>().expose();
-        registry.action::<SeleccionarArea>().expose();
-        registry.action::<EditarGeometria>().expose();
-        registry.query::<VistaDelMapa>().expose();
-        registry.action::<SimularEspera>().menu("Botones").expose();
-        registry.action::<ExportarTabla>().menu("Archivo").expose();
-        registry.action::<DocNegrita>().menu("Documento").expose();
-        registry.action::<DocCursiva>().menu("Documento").expose();
-        registry.action::<DocLista>().menu("Documento").expose();
-        registry.action::<DocTabla>().menu("Documento").expose();
-        registry.action::<DocImagen>().menu("Documento").expose();
-        registry.action::<DocAbrir>().menu("Documento").expose();
-        registry.action::<DocGuardar>().menu("Documento").expose();
+        registry.action::<ShowToastAction>().expose();
+        registry.action::<LoadUrl>().expose();
+        registry.action::<SetMapView>().expose();
+        registry.action::<FitBounds>().expose();
+        registry.action::<SelectArea>().expose();
+        registry.action::<EditGeometry>().expose();
+        registry.query::<MapViewQuery>().expose();
+        registry.action::<SimulateWait>().menu("Botones").expose();
+        registry.action::<ExportTable>().menu("Archivo").expose();
+        registry.action::<DocBold>().menu("Documento").expose();
+        registry.action::<DocItalic>().menu("Documento").expose();
+        registry.action::<DocList>().menu("Documento").expose();
+        registry.action::<DocTable>().menu("Documento").expose();
+        registry.action::<DocImage>().menu("Documento").expose();
+        registry.action::<DocOpen>().menu("Documento").expose();
+        registry.action::<DocSave>().menu("Documento").expose();
+        registry.action::<DocExportPdf>().menu("Documento").expose();
         registry
-            .action::<DocExportarPdf>()
-            .menu("Documento")
-            .expose();
-        registry
-            .action::<DocBuscar>()
+            .action::<DocFind>()
             .shortcut(Shortcut::cmd(Key::Char('f')))
             .menu("Documento")
             .expose();
-        registry.action::<DocDeshacer>().menu("Documento").expose();
-        registry.action::<DocRehacer>().menu("Documento").expose();
+        registry.action::<DocUndo>().menu("Documento").expose();
+        registry.action::<DocRedo>().menu("Documento").expose();
     }
 
     fn theme(&self) -> Option<Theme> {
-        (self.seccion == Seccion::Catalogo).then(|| self.catalog_theme())
+        (self.section == Section::Catalog).then(|| self.catalog_theme())
     }
 
     fn resized(&self, size: Size) -> Option<Msg> {
@@ -1788,8 +1785,8 @@ impl App for Demo {
     }
 
     fn dev_state(&self) -> Option<serde_json::Value> {
-        serde_json::to_value(EstadoDev {
-            seccion: Some(self.seccion),
+        serde_json::to_value(DevState {
+            section: Some(self.section),
             sidebar_collapsed: Some(self.sidebar_collapsed),
             area: self.area.clone(),
         })
@@ -1797,20 +1794,20 @@ impl App for Demo {
     }
 
     fn restore_dev_state(&mut self, state: serde_json::Value) {
-        let Ok(estado) = serde_json::from_value::<EstadoDev>(state) else {
+        let Ok(state_value) = serde_json::from_value::<DevState>(state) else {
             return;
         };
-        if let Some(seccion) = estado.seccion {
-            self.seccion = seccion;
+        if let Some(section) = state_value.section {
+            self.section = section;
         }
-        if let Some(collapsed) = estado.sidebar_collapsed {
+        if let Some(collapsed) = state_value.sidebar_collapsed {
             self.sidebar_collapsed = collapsed;
             // The first window size must not undo the restored sidebar.
             self.sized = true;
         }
-        if let Some(code) = estado.area {
-            self.seleccionar(&code);
-            self.animar_vista = false;
+        if let Some(code) = state_value.area {
+            self.select_area(&code);
+            self.animate_map = false;
         }
     }
 
@@ -1824,8 +1821,8 @@ impl App for Demo {
     }
 
     fn update(&mut self, msg: Msg) -> Effects<Msg> {
-        let effects = self.actualizar(msg);
-        Effects::batch([effects, self.guardar_preferencias()])
+        let effects = self.update_model(msg);
+        Effects::batch([effects, self.save_preferences()])
     }
 
     fn background(&self) -> BackgroundEffect {
@@ -1843,20 +1840,20 @@ impl App for Demo {
                     "Ocultar barra lateral"
                 },
             )
-            .on_command(AlternarSidebar)
-            .test_id("barra.sidebar"),
+            .on_command(ToggleSidebarAction)
+            .test_id("bar.sidebar"),
             toolbar_title("Kai UI Desktop", Some(&version)),
-            toolbar_spacer().test_id("barra.espacio"),
+            toolbar_spacer().test_id("bar.espacio"),
             toolbar_item(Icon::Plus, "Sumar clic")
-                .on_command(Incrementar)
-                .test_id("barra.sumar"),
-            toolbar_separator().test_id("barra.separador"),
+                .on_command(Increment)
+                .test_id("bar.add"),
+            toolbar_separator().test_id("bar.separador"),
             toolbar_search(
                 search_field(&self.query, Msg::Query)
                     .placeholder("Filtrar clientes")
                     .label("Filtrar clientes")
-                    .on_submit(Msg::IrA(Seccion::Tabla))
-                    .test_id("barra.buscar")
+                    .on_submit(Msg::GoTo(Section::Table))
+                    .test_id("bar.find")
                     .build(),
             ),
         ]);
@@ -1868,7 +1865,7 @@ impl App for Demo {
 
         let counter = card()
             .class("w-full max-w-3xl")
-            .test_id("contador")
+            .test_id("counter")
             .children([
                 card_header(
                     "Contador reactivo",
@@ -1887,8 +1884,8 @@ impl App for Demo {
                     ),
                 ]),
                 card_actions().children([
-                    button("Reiniciar", ButtonVariant::Outlined).on_command(Reiniciar),
-                    button("Incrementar", ButtonVariant::Primary).on_command(Incrementar),
+                    button("Reiniciar", ButtonVariant::Outlined).on_command(Reset),
+                    button("Incrementar", ButtonVariant::Primary).on_command(Increment),
                 ]),
             ]);
 
@@ -1908,14 +1905,14 @@ impl App for Demo {
                     // Return here activates «Enviar», the default button.
                     page_grid_item(6).child(
                         TextField::new("Nombre", &self.name)
-                            .test_id("form.nombre")
+                            .test_id("form.name")
                             .field_icon(FieldKind::Name)
                             .on_input(Msg::NameChanged)
                             .build(),
                     ),
                     page_grid_item(6).child(
                         TextField::new("Correo", &self.email)
-                            .test_id("form.correo")
+                            .test_id("form.email")
                             .field_icon(FieldKind::Email)
                             .on_input(Msg::EmailChanged)
                             .on_submit(Msg::Submit)
@@ -1924,7 +1921,7 @@ impl App for Demo {
                     page_grid_item(6).child(
                         select(&ROLES, self.role, "Elegir rol", Msg::SetRole)
                             .label("Rol")
-                            .test_id("form.rol"),
+                            .test_id("form.role"),
                     ),
                     page_grid_item(6).child(
                         checkbox(
@@ -1936,7 +1933,7 @@ impl App for Demo {
                             },
                             Msg::ToggleTerms,
                         )
-                        .test_id("form.terminos"),
+                        .test_id("form.terms"),
                     ),
                 ]),
                 div()
@@ -1954,9 +1951,9 @@ impl App for Demo {
                     ]),
             ]),
             card_actions().children([
-                button("Limpiar", ButtonVariant::Text).on_command(Limpiar),
+                button("Limpiar", ButtonVariant::Text).on_command(ClearForm),
                 button("Enviar", ButtonVariant::Primary)
-                    .on_command(Enviar)
+                    .on_command(Submit)
                     .default_button(true),
             ]),
         ]);
@@ -2024,7 +2021,7 @@ impl App for Demo {
                 div().class("flex flex-wrap items-center gap-3").children([
                     button("Primary", ButtonVariant::Primary).on_click(Msg::Increment),
                     button("Secondary", ButtonVariant::Secondary)
-                        .test_id("botones.secondary")
+                        .test_id("buttons.secondary")
                         .on_click(Msg::Increment),
                     button("Outlined", ButtonVariant::Outlined).on_click(Msg::Increment),
                     button("Text", ButtonVariant::Text).on_click(Msg::Increment),
@@ -2069,54 +2066,54 @@ impl App for Demo {
             ]),
         ]);
 
-        let cards = match self.seccion {
-            Seccion::Inicio => vec![
+        let cards = match self.section {
+            Section::Home => vec![
                 self.background_panel(),
                 div().class("w-full max-w-3xl").child(alert_banner),
                 counter,
                 form,
                 stats,
             ],
-            Seccion::Campos => vec![self.fields(), self.more_fields(), self.field_states()],
-            Seccion::Botones => vec![
+            Section::Fields => vec![self.fields(), self.more_fields(), self.field_states()],
+            Section::Buttons => vec![
                 buttons_section,
                 self.button_states(),
                 self.waiting_buttons(),
                 self.appkit_buttons(),
                 self.control_sizes(),
             ],
-            Seccion::Seleccion => vec![self.selection()],
-            Seccion::Contenedores => self.containers(),
-            Seccion::Badges => vec![badges_and_alerts],
-            Seccion::Multimedia => vec![self.avatars(), self.image_fields()],
-            Seccion::Tabla => vec![
+            Section::Selection => vec![self.selection()],
+            Section::Containers => self.containers(),
+            Section::Badges => vec![badges_and_alerts],
+            Section::Multimedia => vec![self.avatars(), self.image_fields()],
+            Section::Table => vec![
                 self.client_table(),
                 self.simple_list(),
                 self.patterns_empty_loading(),
             ],
-            Seccion::Mapa => vec![self.mapa()],
-            Seccion::Graficos => self.graficos(),
-            Seccion::Documento => vec![self.documento()],
-            Seccion::Dialogos => vec![self.dialogs_and_toasts()],
-            Seccion::PlantillaLista => vec![self.plantilla_lista()],
-            Seccion::PlantillaFormulario => vec![self.plantilla_formulario()],
-            Seccion::PlantillaDatos => vec![self.plantilla_datos()],
-            Seccion::Catalogo => vec![self.catalogo_vivo()],
+            Section::Map => vec![self.map_view()],
+            Section::Charts => self.charts_view(),
+            Section::Document => vec![self.document_view()],
+            Section::Dialogs => vec![self.dialogs_and_toasts()],
+            Section::TemplateList => vec![self.template_list()],
+            Section::TemplateForm => vec![self.template_form()],
+            Section::TemplateData => vec![self.template_data()],
+            Section::Catalog => vec![self.live_catalog()],
         };
 
-        let content = if self.seccion == Seccion::Documento {
+        let content = if self.section == Section::Document {
             // Pages metaphor: ribbon + archivo + full-height canvas (no card / scroll shell).
             div()
                 .class("flex-1 flex flex-col min-h-0 min-w-0 bg-under-page")
-                .key(self.seccion.key())
-                .test_id("contenido")
+                .key(self.section.key())
+                .test_id("content")
                 .children(cards)
         } else {
             // Page shell (Fase B): Page → PageBody as one flex child of the
             // sidebar row (overflow-hidden on Page forces the body to scroll).
             page()
-                .key(self.seccion.key())
-                .test_id("contenido")
+                .key(self.section.key())
+                .test_id("content")
                 .child(page_body().children(cards))
         };
         let mut layers = vec![
@@ -2126,8 +2123,8 @@ impl App for Demo {
                 .children([self.sidebar(), content]),
             toast_stack(&self.toasts, Msg::CloseToast),
         ];
-        if let Some(dialogo) = self.dialogo {
-            layers.push(self.dialog(dialogo));
+        if let Some(dialog_kind) = self.dialog_kind {
+            layers.push(self.dialog(dialog_kind));
         }
         div()
             // `neutral` is systemGray in AppKit: use the window background.
@@ -2138,12 +2135,12 @@ impl App for Demo {
 }
 
 impl Demo {
-    fn preferencias(&self) -> PreferenciasDemo {
-        PreferenciasDemo {
-            seccion: self.seccion,
+    fn preferences(&self) -> DemoPreferences {
+        DemoPreferences {
+            section: self.section,
             sidebar_collapsed: self.sidebar_collapsed,
-            vista_mapa: self.vista,
-            catalogo: [
+            map_view_state: self.view,
+            catalog: [
                 self.catalog_preset.index(),
                 usize::from(self.catalog_density == Density::Compact),
                 CATALOG_SIZES
@@ -2156,12 +2153,12 @@ impl Demo {
 
     /// Restaura lo guardado. La ventana ya no pliega la barra lateral sola:
     /// manda lo que la persona dejó.
-    fn aplicar_preferencias(&mut self, p: &PreferenciasDemo) {
-        self.seccion = p.seccion;
+    fn apply_preferences(&mut self, p: &DemoPreferences) {
+        self.section = p.section;
         self.sidebar_collapsed = p.sidebar_collapsed;
         self.sized = true;
-        self.vista = p.vista_mapa;
-        let [preset, density, size] = p.catalogo;
+        self.view = p.map_view_state;
+        let [preset, density, size] = p.catalog;
         self.catalog_preset = CatalogPreset::ALL
             .get(preset)
             .copied()
@@ -2175,32 +2172,32 @@ impl Demo {
             .get(size)
             .copied()
             .unwrap_or(self.catalog_size);
-        self.preferencias_guardadas = Some(p.clone());
+        self.saved_preferences = Some(p.clone());
     }
 
     /// Guarda las preferencias si cambiaron desde lo último guardado.
-    fn guardar_preferencias(&mut self) -> Effects<Msg> {
+    fn save_preferences(&mut self) -> Effects<Msg> {
         let Some(store) = &self.store else {
             return Effects::none();
         };
-        let actuales = self.preferencias();
-        if self.preferencias_guardadas.as_ref() == Some(&actuales) {
+        let current_prefs = self.preferences();
+        if self.saved_preferences.as_ref() == Some(&current_prefs) {
             return Effects::none();
         }
-        let effect = store.save_effect(&actuales, Msg::PreferenciasGuardadas);
-        self.preferencias_guardadas = Some(actuales);
+        let effect = store.save_effect(&current_prefs, Msg::PreferencesSaved);
+        self.saved_preferences = Some(current_prefs);
         effect
     }
 
     /// Todo el `update` de la demo; [`App::update`] le suma el guardado
     /// de preferencias.
-    fn actualizar(&mut self, msg: Msg) -> Effects<Msg> {
+    fn update_model(&mut self, msg: Msg) -> Effects<Msg> {
         match msg {
-            Msg::ShowToast(variante) => {
-                let (_, title, message) = variante.texts();
-                let mut toast = Toast::new(0, variante.alert(), title).message(message);
-                if variante == VarianteAviso::Error {
-                    toast = toast.action("Reintentar", Msg::ShowToast(VarianteAviso::Exito));
+            Msg::ShowToast(kind) => {
+                let (_, title, message) = kind.texts();
+                let mut toast = Toast::new(0, kind.alert(), title).message(message);
+                if kind == ToastKind::Error {
+                    toast = toast.action("Reintentar", Msg::ShowToast(ToastKind::Success));
                 }
                 return self.show_toast(toast);
             }
@@ -2209,12 +2206,12 @@ impl Demo {
                 return Effects::cancel(toast_key(id));
             }
             Msg::ConfirmDialog => {
-                let toast = match self.dialogo.take() {
-                    Some(Dialogo::Guardar) => {
-                        let (_, title, message) = VarianteAviso::Exito.texts();
+                let toast = match self.dialog_kind.take() {
+                    Some(DemoDialog::Save) => {
+                        let (_, title, message) = ToastKind::Success.texts();
                         Toast::new(0, AlertVariant::Success, title).message(message)
                     }
-                    Some(Dialogo::Eliminar) => {
+                    Some(DemoDialog::Delete) => {
                         Toast::new(0, AlertVariant::Info, "Borrador eliminado")
                             .message("Se movió a la papelera")
                     }
@@ -2222,31 +2219,29 @@ impl Demo {
                 };
                 return self.show_toast(toast);
             }
-            Msg::Esperar(name) => {
-                let mut effect = Effects::perform(
-                    || std::thread::sleep(ESPERA),
-                    move |()| Msg::EsperaLista(name),
-                );
+            Msg::Wait(name) => {
+                let mut effect =
+                    Effects::perform(|| std::thread::sleep(WAIT), move |()| Msg::WaitDone(name));
                 if let Some(invocation) = current_invocation() {
                     effect = effect.completes(invocation);
                 }
                 return effect;
             }
-            Msg::EsperaLista(name) => self.espera = Some(name),
-            Msg::GuardarYRecargar => {
-                return Effects::perform(|| std::thread::sleep(ESPERA / 2), |()| Msg::Recargar);
+            Msg::WaitDone(name) => self.wait_ms = Some(name),
+            Msg::SaveAndReload => {
+                return Effects::perform(|| std::thread::sleep(WAIT / 2), |()| Msg::Reload);
             }
-            Msg::Recargar => {
+            Msg::Reload => {
                 return Effects::perform(
-                    || std::thread::sleep(ESPERA / 2),
-                    |()| Msg::EsperaLista("guardar y recargar"),
+                    || std::thread::sleep(WAIT / 2),
+                    |()| Msg::WaitDone("guardar y recargar"),
                 );
             }
-            Msg::Sincronizar => {
-                self.sincronizando += 1;
-                return Effects::perform(|| std::thread::sleep(ESPERA), |()| Msg::Sincronizado);
+            Msg::Sync => {
+                self.syncing += 1;
+                return Effects::perform(|| std::thread::sleep(WAIT), |()| Msg::Synced);
             }
-            Msg::Sincronizado => self.sincronizando = self.sincronizando.saturating_sub(1),
+            Msg::Synced => self.syncing = self.syncing.saturating_sub(1),
             Msg::Increment => self.clicks += 1,
             Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
             Msg::Reset => self.clicks = 0,
@@ -2275,23 +2270,23 @@ impl Demo {
                     Field::Url => &mut self.url,
                 } = value;
             }
-            Msg::ElegirImagen(campo) => {
-                let title = match campo {
-                    Campo::Foto => "Elegir foto de perfil",
-                    Campo::Portada => "Elegir portada",
-                    Campo::Logo => "Elegir logo",
+            Msg::PickImage(image_field) => {
+                let title = match image_field {
+                    ImageField::Photo => "Elegir foto de perfil",
+                    ImageField::Cover => "Elegir portada",
+                    ImageField::Logo => "Elegir logo",
                 };
                 return Effects::pick_file(PickFile::images(title), move |path| {
-                    Msg::ImagenElegida(campo, path)
+                    Msg::ImagePicked(image_field, path)
                 });
             }
-            Msg::ImagenElegida(campo, Some(path)) => match campo {
-                Campo::Foto => self.foto.set(path),
-                Campo::Portada => self.portada.set(path),
-                Campo::Logo => self.logo.set(path),
+            Msg::ImagePicked(image_field, Some(path)) => match image_field {
+                ImageField::Photo => self.photo.set(path),
+                ImageField::Cover => self.cover.set(path),
+                ImageField::Logo => self.logo.set(path),
             },
-            Msg::ImagenElegida(_, None) => {}
-            Msg::CargarUrl(url) => {
+            Msg::ImagePicked(_, None) => {}
+            Msg::LoadUrl(url) => {
                 let url = url.trim().to_owned();
                 self.avatar_url = (!url.is_empty()).then(|| url.clone());
                 self.url = url;
@@ -2300,8 +2295,8 @@ impl Demo {
             Msg::ToggleNotifications => self.notifications = !self.notifications,
             Msg::SetRole(index) => self.role = Some(index),
             Msg::ToggleTerms => self.terms = !self.terms,
-            Msg::IrA(seccion) => self.seccion = seccion,
-            Msg::PlantillaSelect(index) => self.plantilla_idx = index,
+            Msg::GoTo(section) => self.section = section,
+            Msg::TemplateSelect(index) => self.template_index = index,
             Msg::CatalogPreset(index) => {
                 self.catalog_preset = CatalogPreset::ALL
                     .get(index)
@@ -2341,49 +2336,50 @@ impl Demo {
             }
             Msg::TogglePin => self.show_pin = !self.show_pin,
             Msg::ToggleWifi => self.wifi = !self.wifi,
-            Msg::TogglePermiso(Some(index)) => self.permisos[index] = !self.permisos[index],
-            Msg::TogglePermiso(None) => {
-                let all = !self.permisos.iter().all(|on| *on);
-                self.permisos = [all; 3];
+            Msg::TogglePermission(Some(index)) => {
+                self.permissions[index] = !self.permissions[index]
             }
-            Msg::SetPais(index) => self.pais = Some(index),
-            Msg::SetAlineacion(index) => self.alineacion = index,
-            Msg::SetPestana(index) => self.pestana = index,
+            Msg::TogglePermission(None) => {
+                let all = !self.permissions.iter().all(|on| *on);
+                self.permissions = [all; 3];
+            }
+            Msg::SetCountry(index) => self.country = Some(index),
+            Msg::SetAlignment(index) => self.alignment = index,
+            Msg::SetTab(index) => self.tab_index = index,
             Msg::Query(query) => {
-                self.tabla.query.clone_from(&query);
+                self.table_view.query.clone_from(&query);
                 self.query = query;
-                self.tabla.refresh(&self.clientes, &columnas());
+                self.table_view.refresh(&self.clients, &table_columns());
             }
-            Msg::Tabla(change) => {
+            Msg::Table(change) => {
                 let typing = matches!(change, ViewChange::Filter(..));
-                self.tabla.apply(change);
+                self.table_view.apply(change);
                 if typing {
-                    return Effects::after(PAUSA_FILTRO, Msg::RefrescarTabla).keyed("filtro");
+                    return Effects::after(FILTER_PAUSE, Msg::RefreshTable).keyed("filter");
                 }
-                self.tabla.refresh(&self.clientes, &columnas());
+                self.table_view.refresh(&self.clients, &table_columns());
             }
-            Msg::RefrescarTabla => self.tabla.refresh(&self.clientes, &columnas()),
-            Msg::SelectRow(index) => self.cliente = Some(index),
-            Msg::VerCliente(index) => {
-                let Some(cliente) = self.clientes.get(index) else {
+            Msg::RefreshTable => self.table_view.refresh(&self.clients, &table_columns()),
+            Msg::SelectRow(index) => self.client = Some(index),
+            Msg::ShowClient(index) => {
+                let Some(client) = self.clients.get(index) else {
                     return Effects::none();
                 };
-                let toast = Toast::new(0, AlertVariant::Info, cliente.nombre.as_str()).message(
-                    format!("Cliente N.º {} de {}", cliente.numero, cliente.ciudad),
-                );
+                let toast = Toast::new(0, AlertVariant::Info, client.name.as_str())
+                    .message(format!("Cliente N.º {} de {}", client.number, client.city));
                 return self.show_toast(toast);
             }
-            Msg::ExportarTabla => {
-                if self.exportando || self.tabla.is_empty() {
+            Msg::ExportTable => {
+                if self.exporting || self.table_view.is_empty() {
                     return Effects::none();
                 }
                 let request = SaveFile::new("Exportar a Excel", "clientes.xlsx").types(&["xlsx"]);
-                return Effects::save_file(request, Msg::GuardarExcel);
+                return Effects::save_file(request, Msg::SaveExcel);
             }
-            Msg::GuardarExcel(None) => {}
-            Msg::GuardarExcel(Some(path)) => {
-                self.exportando = true;
-                let sheet = self.tabla.export(&self.clientes, &columnas());
+            Msg::SaveExcel(None) => {}
+            Msg::SaveExcel(Some(path)) => {
+                self.exporting = true;
+                let sheet = self.table_view.export(&self.clients, &table_columns());
                 return Effects::perform(
                     move || {
                         crate::xlsx::write(&sheet, "Clientes", &path)?;
@@ -2393,11 +2389,11 @@ impl Demo {
                         );
                         Ok((name, sheet.rows.len()))
                     },
-                    Msg::TablaExportada,
+                    Msg::TableExported,
                 );
             }
-            Msg::TablaExportada(result) => {
-                self.exportando = false;
+            Msg::TableExported(result) => {
+                self.exporting = false;
                 let toast = match result {
                     Ok((name, rows)) => Toast::new(0, AlertVariant::Success, "Excel exportado")
                         .message(format!("{rows} filas en {name}")),
@@ -2407,22 +2403,22 @@ impl Demo {
                 };
                 return self.show_toast(toast);
             }
-            Msg::OpenDialog(dialogo) => self.dialogo = Some(dialogo),
-            Msg::CloseDialog => self.dialogo = None,
-            Msg::MapaMovido(vista) => self.vista = vista,
-            Msg::FijarVista { vista, animar } => {
-                self.vista = vista.clamped();
-                self.animar_vista = animar;
+            Msg::OpenDialog(dialog_kind) => self.dialog_kind = Some(dialog_kind),
+            Msg::CloseDialog => self.dialog_kind = None,
+            Msg::MapMoved(view) => self.view = view,
+            Msg::SetMapView { view, animate } => {
+                self.view = view.clamped();
+                self.animate_map = animate;
             }
-            Msg::SeleccionarArea(code) => {
-                if self.edicion.is_none() {
-                    self.seleccionar(&code);
+            Msg::SelectArea(code) => {
+                if self.editing.is_none() {
+                    self.select_area(&code);
                 }
             }
-            Msg::Encuadrar(bounds) => self.encuadrar(bounds),
-            Msg::ToggleAreas => self.mostrar_areas = !self.mostrar_areas,
-            Msg::Mes(index) => self.mes = Some(index),
-            Msg::Documento(change) => {
+            Msg::FitBounds(bounds) => self.fit_to(bounds),
+            Msg::ToggleAreas => self.show_areas = !self.show_areas,
+            Msg::Month(index) => self.month = Some(index),
+            Msg::Document(change) => {
                 self.doc_markdown = change.markdown;
                 #[cfg(feature = "document")]
                 {
@@ -2437,18 +2433,18 @@ impl Demo {
                 if let Some(export) = change.export
                     && let Some((path, kind)) = self.doc_pending_export.take()
                 {
-                    self.doc_archivo_busy = true;
+                    self.doc_file_busy = true;
                     let doc = (*export.0).clone();
                     return Effects::perform(
                         move || write_document_file(doc, path, kind),
-                        Msg::DocArchivoListo,
+                        Msg::DocFileReady,
                     );
                 }
                 #[cfg(not(feature = "document"))]
                 if self.doc_pending_export.take().is_some() {
                     return Effects::perform(
                         || Err("Compila con --features document".into()),
-                        Msg::DocArchivoListo,
+                        Msg::DocFileReady,
                     );
                 }
             }
@@ -2459,37 +2455,37 @@ impl Demo {
             Msg::DocRibbonTab(id) => {
                 self.doc_ribbon_tab = id;
             }
-            Msg::DocAlternarBuscar => self.doc_find_open = !self.doc_find_open,
-            Msg::PreferenciasGuardadas(Ok(())) => {}
-            Msg::PreferenciasGuardadas(Err(e)) => {
+            Msg::DocToggleFind => self.doc_find_open = !self.doc_find_open,
+            Msg::PreferencesSaved(Ok(())) => {}
+            Msg::PreferencesSaved(Err(e)) => {
                 eprintln!("No se guardaron las preferencias: {e}");
             }
-            Msg::DocAlternarComentario => self.doc_comment_open = !self.doc_comment_open,
+            Msg::DocToggleComment => self.doc_comment_open = !self.doc_comment_open,
             Msg::DocFindChanged(v) => self.doc_find = v,
             Msg::DocReplaceChanged(v) => self.doc_replace = v,
             Msg::DocCommentDraftChanged(v) => self.doc_comment_draft = v,
-            Msg::DocAbrir => {
-                if self.doc_archivo_busy {
+            Msg::DocOpen => {
+                if self.doc_file_busy {
                     return Effects::none();
                 }
                 let request = PickFile::new("Abrir documento").types(&["docx"]);
-                return Effects::pick_file(request, Msg::DocAbrirElegido);
+                return Effects::pick_file(request, Msg::DocOpenChosen);
             }
-            Msg::DocAbrirElegido(None) => {}
-            Msg::DocAbrirElegido(Some(path)) => {
-                self.doc_archivo_busy = true;
+            Msg::DocOpenChosen(None) => {}
+            Msg::DocOpenChosen(Some(path)) => {
+                self.doc_file_busy = true;
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                self.doc_archivo_name = Some(name);
+                self.doc_file_name = Some(name);
                 return Effects::perform(
                     move || std::fs::read(&path).map_err(|e| e.to_string()),
-                    Msg::DocBytesLeidos,
+                    Msg::DocBytesRead,
                 );
             }
-            Msg::DocBytesLeidos(result) => {
-                self.doc_archivo_busy = false;
+            Msg::DocBytesRead(result) => {
+                self.doc_file_busy = false;
                 match result {
                     Ok(bytes) => {
                         self.doc_load_serial = self.doc_load_serial.saturating_add(1);
@@ -2505,40 +2501,40 @@ impl Demo {
                     }
                 }
             }
-            Msg::DocGuardar => {
-                if self.doc_archivo_busy {
+            Msg::DocSave => {
+                if self.doc_file_busy {
                     return Effects::none();
                 }
                 let request = SaveFile::new("Guardar documento", "informe.docx").types(&["docx"]);
-                return Effects::save_file(request, Msg::DocGuardarEn);
+                return Effects::save_file(request, Msg::DocSaveTo);
             }
-            Msg::DocGuardarEn(None) => {}
-            Msg::DocGuardarEn(Some(path)) => {
+            Msg::DocSaveTo(None) => {}
+            Msg::DocSaveTo(Some(path)) => {
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                self.doc_archivo_name = Some(name);
+                self.doc_file_name = Some(name);
                 self.doc_pending_export = Some((path, DocExportKind::Docx));
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
             }
-            Msg::DocExportarPdf => {
-                if self.doc_archivo_busy {
+            Msg::DocExportPdf => {
+                if self.doc_file_busy {
                     return Effects::none();
                 }
                 let request = SaveFile::new("Exportar PDF", "informe.pdf").types(&["pdf"]);
-                return Effects::save_file(request, Msg::DocExportarPdfEn);
+                return Effects::save_file(request, Msg::DocExportPdfTo);
             }
-            Msg::DocExportarPdfEn(None) => {}
-            Msg::DocExportarPdfEn(Some(path)) => {
+            Msg::DocExportPdfTo(None) => {}
+            Msg::DocExportPdfTo(Some(path)) => {
                 // No cambia el nombre del .docx activo; solo toast al terminar.
                 self.doc_pending_export = Some((path, DocExportKind::Pdf));
                 self.doc_cmd_serial = self.doc_cmd_serial.saturating_add(1);
                 self.doc_cmd = Some((DocumentCmd::TakeDocument, self.doc_cmd_serial));
             }
-            Msg::DocArchivoListo(result) => {
-                self.doc_archivo_busy = false;
+            Msg::DocFileReady(result) => {
+                self.doc_file_busy = false;
                 let toast = match result {
                     Ok(name) => Toast::new(0, AlertVariant::Success, "Archivo listo").message(name),
                     Err(error) => {
@@ -2550,34 +2546,34 @@ impl Demo {
             Msg::ColorSector(color) => {
                 let code = self.area.clone();
                 if let Some(sector) = self
-                    .sectores
+                    .sectors
                     .iter_mut()
                     .find(|s| Some(&s.code) == code.as_ref())
                 {
                     sector.color = color;
                 }
             }
-            Msg::EditarArea(code) => {
-                if self.edicion.is_none()
-                    && let Some(anillo) = self.sector(&code).map(Sector::anillo)
-                    && let Ok(draft) = PolygonDraft::from_ring(anillo)
+            Msg::EditArea(code) => {
+                if self.editing.is_none()
+                    && let Some(ring_points) = self.sector(&code).map(Sector::ring_points)
+                    && let Ok(draft) = PolygonDraft::from_ring(ring_points)
                 {
-                    self.seleccionar(&code);
-                    self.edicion = Some((code, draft));
+                    self.select_area(&code);
+                    self.editing = Some((code, draft));
                 }
             }
-            Msg::Edicion(edit) => self.editar(edit),
-            Msg::GuardarGeometria { code, anillo } => {
+            Msg::Editing(edit) => self.edit_sector(edit),
+            Msg::SaveGeometry { code, ring_points } => {
                 if self
-                    .edicion
+                    .editing
                     .as_ref()
                     .is_some_and(|(editing, _)| *editing == code)
                 {
-                    self.edicion = None;
+                    self.editing = None;
                 }
-                self.guardar_anillo(&code, &anillo);
-                if self.edicion.is_none() {
-                    self.seleccionar(&code);
+                self.save_ring(&code, &ring_points);
+                if self.editing.is_none() {
+                    self.select_area(&code);
                 }
             }
         }
@@ -2587,46 +2583,46 @@ impl Demo {
 
 impl Demo {
     fn sidebar(&self) -> Element<Msg> {
-        let mut inicio = Seccion::Inicio.item();
+        let mut home_view = Section::Home.item();
         if !self.submissions.is_empty() {
-            inicio = inicio.badge(self.submissions.len().to_string());
+            home_view = home_view.badge(self.submissions.len().to_string());
         }
         let groups = [
-            SidebarGroup::titled("Demo", [inicio]),
+            SidebarGroup::titled("Demo", [home_view]),
             SidebarGroup::titled(
                 "Componentes",
                 [
-                    Seccion::Campos,
-                    Seccion::Botones,
-                    Seccion::Seleccion,
-                    Seccion::Contenedores,
-                    Seccion::Badges,
-                    Seccion::Multimedia,
+                    Section::Fields,
+                    Section::Buttons,
+                    Section::Selection,
+                    Section::Containers,
+                    Section::Badges,
+                    Section::Multimedia,
                 ]
-                .map(Seccion::item),
+                .map(Section::item),
             ),
             SidebarGroup::titled(
                 "Datos",
                 [
-                    Seccion::Tabla.item(),
-                    Seccion::Mapa.item(),
-                    Seccion::Graficos.item(),
-                    Seccion::Documento.item(),
+                    Section::Table.item(),
+                    Section::Map.item(),
+                    Section::Charts.item(),
+                    Section::Document.item(),
                 ],
             ),
             SidebarGroup::titled(
                 "Plantillas",
                 [
-                    Seccion::PlantillaLista.item(),
-                    Seccion::PlantillaFormulario.item(),
-                    Seccion::PlantillaDatos.item(),
+                    Section::TemplateList.item(),
+                    Section::TemplateForm.item(),
+                    Section::TemplateData.item(),
                 ],
             ),
-            SidebarGroup::titled("Catálogo", [Seccion::Catalogo.item()]),
-            SidebarGroup::titled("Superposiciones", [Seccion::Dialogos.item()]),
+            SidebarGroup::titled("Catálogo", [Section::Catalog.item()]),
+            SidebarGroup::titled("Superposiciones", [Section::Dialogs.item()]),
         ];
-        Sidebar::new(&groups, self.seccion.index(), |index| {
-            Msg::IrA(Seccion::ALL[index])
+        Sidebar::new(&groups, self.section.index(), |index| {
+            Msg::GoTo(Section::ALL[index])
         })
         .collapsed(self.sidebar_collapsed)
         .label("Secciones")
@@ -2668,7 +2664,7 @@ impl Demo {
     }
 
     /// Fase E — catálogo vivo: filtros tema × density × size + muestras.
-    fn catalogo_vivo(&self) -> Element<Msg> {
+    fn live_catalog(&self) -> Element<Msg> {
         let size = self.catalog_size;
         let field_density = match self.catalog_density {
             Density::Comfortable => FieldDensity::Default,
@@ -2688,7 +2684,7 @@ impl Demo {
         let size_idx = size.index();
         let filters = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.filtros")
+            .test_id("catalog.filters")
             .children([
                 card_header(
                     "Filtros",
@@ -2703,7 +2699,7 @@ impl Demo {
                             Msg::CatalogPreset,
                             false,
                         )
-                        .test_id("catalogo.preset"),
+                        .test_id("catalog.preset"),
                     ]),
                     div().class("flex flex-col gap-1.5").children([
                         caption("Densidad"),
@@ -2713,7 +2709,7 @@ impl Demo {
                             Msg::CatalogDensity,
                             false,
                         )
-                        .test_id("catalogo.density"),
+                        .test_id("catalog.density"),
                     ]),
                     div().class("flex flex-col gap-1.5").children([
                         caption("Tamaño (ControlSize)"),
@@ -2723,14 +2719,14 @@ impl Demo {
                             Msg::CatalogSize,
                             false,
                         )
-                        .test_id("catalogo.size"),
+                        .test_id("catalog.size"),
                     ]),
                 ]),
             ]);
 
         let buttons = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.botones")
+            .test_id("catalog.buttons")
             .children([
                 card_header(
                     "Button",
@@ -2765,7 +2761,7 @@ impl Demo {
 
         let fields = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.campos")
+            .test_id("catalog.fields")
             .children([
                 card_header(
                     "TextField",
@@ -2782,7 +2778,7 @@ impl Demo {
                                 .field_icon(FieldKind::Name)
                                 .density(field_density)
                                 .on_input(Msg::CatalogSample)
-                                .test_id("catalogo.campo.default")
+                                .test_id("catalog.campo.default")
                                 .build()
                                 .control_size(size),
                         ),
@@ -2791,7 +2787,7 @@ impl Demo {
                                 .field_icon(FieldKind::Email)
                                 .density(field_density)
                                 .required(true)
-                                .test_id("catalogo.campo.required")
+                                .test_id("catalog.campo.required")
                                 .build()
                                 .control_size(size),
                         ),
@@ -2801,7 +2797,7 @@ impl Demo {
                                 .field_icon(FieldKind::Search)
                                 .helper_text("Puedes usar palabras clave")
                                 .density(field_density)
-                                .test_id("catalogo.campo.helper")
+                                .test_id("catalog.campo.helper")
                                 .build()
                                 .control_size(size),
                         ),
@@ -2812,7 +2808,7 @@ impl Demo {
                                 .error(true)
                                 .density(field_density)
                                 .disabled(false)
-                                .test_id("catalogo.campo.error")
+                                .test_id("catalog.campo.error")
                                 .build()
                                 .control_size(size),
                         ),
@@ -2830,7 +2826,7 @@ impl Demo {
         };
         let choices = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.eleccion")
+            .test_id("catalog.eleccion")
             .children([
                 card_header(
                     "Checkbox · Switch · Select",
@@ -2848,21 +2844,21 @@ impl Demo {
                                     Msg::CatalogToggleCheck,
                                     false,
                                 )
-                                .test_id("catalogo.check"),
+                                .test_id("catalog.check"),
                                 checkbox_with_options(
                                     "Mixto",
                                     ControlState::Mixed,
                                     Msg::Increment,
                                     false,
                                 )
-                                .test_id("catalogo.check.mixed"),
+                                .test_id("catalog.check.mixed"),
                                 checkbox_with_options(
                                     "Deshabilitado",
                                     ControlState::On,
                                     Msg::Increment,
                                     true,
                                 )
-                                .test_id("catalogo.check.disabled"),
+                                .test_id("catalog.check.disabled"),
                             ]),
                     ]),
                     div().class("flex flex-col gap-2").children([
@@ -2877,7 +2873,7 @@ impl Demo {
                                     false,
                                     switch_density,
                                 )
-                                .test_id("catalogo.switch"),
+                                .test_id("catalog.switch"),
                                 switch_labeled(
                                     "Deshabilitado",
                                     true,
@@ -2885,7 +2881,7 @@ impl Demo {
                                     true,
                                     switch_density,
                                 )
-                                .test_id("catalogo.switch.disabled"),
+                                .test_id("catalog.switch.disabled"),
                             ]),
                     ]),
                     div().class("flex flex-col gap-2 max-w-xs").children([
@@ -2899,7 +2895,7 @@ impl Demo {
                         )
                         .label("Rol")
                         .control_size(size)
-                        .test_id("catalogo.select"),
+                        .test_id("catalog.select"),
                         select_with_options(
                             &["Diseño", "Desarrollo", "Producto"],
                             Some(1),
@@ -2909,14 +2905,14 @@ impl Demo {
                         )
                         .label("Deshabilitado")
                         .control_size(size)
-                        .test_id("catalogo.select.disabled"),
+                        .test_id("catalog.select.disabled"),
                     ]),
                 ]),
             ]);
 
         let badges = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.badges")
+            .test_id("catalog.badges")
             .children([
                 card_header(
                     "Badge · Alert",
@@ -2944,7 +2940,7 @@ impl Demo {
         };
         let feedback = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.feedback")
+            .test_id("catalog.feedback")
             .children([
                 card_header(
                     "DotProgress · Tabs",
@@ -2961,7 +2957,7 @@ impl Demo {
                                 DotProgress::new()
                                     .size(progress_size)
                                     .label("Cargando catálogo")
-                                    .test_id("catalogo.progress")
+                                    .test_id("catalog.progress")
                                     .build(),
                             ]),
                             div().class("flex flex-col gap-1").children([
@@ -2976,13 +2972,13 @@ impl Demo {
                         )
                         .tab("Avanzado", paragraph("Contenido de la pestaña Avanzado."))
                         .build()
-                        .test_id("catalogo.tabs"),
+                        .test_id("catalog.tabs"),
                 ]),
             ]);
 
         let empties = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.empty")
+            .test_id("catalog.empty")
             .children([
                 card_header(
                     "Empty filter vs empty resource",
@@ -3000,7 +2996,7 @@ impl Demo {
                                     EmptyState::filter("No hay resultados")
                                         .description("Ningún ítem coincide con el filtro.")
                                         .action("Limpiar filtros", Msg::CatalogClearFilter)
-                                        .test_id("catalogo.empty.filter")
+                                        .test_id("catalog.empty.filter")
                                         .build(),
                                 ),
                         ),
@@ -3014,7 +3010,7 @@ impl Demo {
                                     EmptyState::resource("Sin elementos")
                                         .description("Todavía no hay nada en esta colección.")
                                         .action("Crear elemento", Msg::Increment)
-                                        .test_id("catalogo.empty.resource")
+                                        .test_id("catalog.empty.resource")
                                         .build(),
                                 ),
                         ),
@@ -3035,7 +3031,7 @@ impl Demo {
         };
         let layers = card()
             .class("w-full max-w-4xl")
-            .test_id("catalogo.capas")
+            .test_id("catalog.capas")
             .children([
                 card_header(
                     "Capas AppKit",
@@ -3053,29 +3049,29 @@ impl Demo {
 
         div()
             .class("flex flex-col gap-5 w-full")
-            .test_id("catalogo")
+            .test_id("catalog")
             .children([
                 filters, buttons, fields, choices, badges, feedback, empties, layers,
             ])
     }
 
     /// Fase C — lista + detalle (master/detail) sobre PageGrid.
-    fn plantilla_lista(&self) -> Element<Msg> {
-        const CLIENTES: [(&str, &str, &str); 5] = [
+    fn template_list(&self) -> Element<Msg> {
+        const CLIENT_COUNT: [(&str, &str, &str); 5] = [
             ("Ana Ruiz", "ana.ruiz@ejemplo.cl", "Activa"),
             ("Bruno Vega", "bruno.vega@ejemplo.cl", "Activo"),
             ("Carla Soto", "carla.soto@ejemplo.cl", "Pendiente"),
             ("Diego Núñez", "diego.nunez@ejemplo.cl", "Activo"),
             ("Elena Paredes", "elena.paredes@ejemplo.cl", "Inactiva"),
         ];
-        let idx = self.plantilla_idx.min(CLIENTES.len() - 1);
+        let idx = self.template_index.min(CLIENT_COUNT.len() - 1);
         let list = div()
             .class(
                 "flex flex-col gap-1 w-full rounded-lg border border-border/70 \
                  appkit:border-separator appkit:rounded-md overflow-hidden bg-card appkit:bg-control",
             )
-            .part("lista")
-            .children(CLIENTES.iter().enumerate().map(|(i, (name, email, _))| {
+            .part("items")
+            .children(CLIENT_COUNT.iter().enumerate().map(|(i, (name, email, _))| {
                 let selected = i == idx;
                 div()
                     .class(if selected {
@@ -3086,8 +3082,8 @@ impl Demo {
                          hover:bg-muted/40 appkit:hover:bg-fill-3"
                     })
                     .role(Role::Button)
-                    .on_click(Msg::PlantillaSelect(i))
-                    .test_id(format!("plantilla.lista.row.{i}"))
+                    .on_click(Msg::TemplateSelect(i))
+                    .test_id(format!("template.items.row.{i}"))
                     .children([
                         text(*name).class(
                             "text-sm font-medium text-foreground appkit:text-label",
@@ -3097,7 +3093,7 @@ impl Demo {
                         ),
                     ])
             }));
-        let (name, email, estado) = CLIENTES[idx];
+        let (name, email, state_value) = CLIENT_COUNT[idx];
         let detail = div()
             .class(
                 "flex flex-col gap-3 w-full min-h-40 rounded-lg border border-border/70 \
@@ -3106,7 +3102,7 @@ impl Demo {
             .part("panel")
             .children([
                 heading(name),
-                caption(format!("{email} · {estado}")),
+                caption(format!("{email} · {state_value}")),
                 paragraph(
                     "Panel de detalle: en una app real aquí van fichas, historial o acciones \
                      sobre el ítem seleccionado en la lista.",
@@ -3114,10 +3110,10 @@ impl Demo {
                 div().class("flex flex-wrap gap-2 pt-1").children([
                     button("Editar", ButtonVariant::Primary)
                         .on_click(Msg::Increment)
-                        .test_id("plantilla.lista.editar"),
+                        .test_id("template.items.edit"),
                     button("Archivar", ButtonVariant::Outlined)
                         .on_click(Msg::Reset)
-                        .test_id("plantilla.lista.archivar"),
+                        .test_id("template.items.archive"),
                 ]),
             ]);
         MasterDetailPage::new(list, detail)
@@ -3128,16 +3124,16 @@ impl Demo {
                     .action(
                         button("Nuevo", ButtonVariant::Primary)
                             .on_click(Msg::Increment)
-                            .test_id("plantilla.lista.nuevo"),
+                            .test_id("template.items.new"),
                     ),
             )
             .list_span(4)
-            .test_id("plantilla.lista")
+            .test_id("template.items")
             .build()
     }
 
     /// Fase C — formulario comfortable con PageGrid (spans 6/12).
-    fn plantilla_formulario(&self) -> Element<Msg> {
+    fn template_form(&self) -> Element<Msg> {
         FormPage::new()
             .header(
                 PageHeader::new("Nuevo cliente")
@@ -3149,38 +3145,38 @@ impl Demo {
                     TextField::new("Nombre", &self.name)
                         .placeholder("Ana Ruiz")
                         .on_input(Msg::NameChanged)
-                        .test_id("plantilla.form.nombre")
+                        .test_id("template.form.name")
                         .build(),
                 ),
                 form_field_cell(
                     TextField::new("Correo", &self.email)
                         .placeholder("ana@ejemplo.cl")
                         .on_input(Msg::EmailChanged)
-                        .test_id("plantilla.form.correo")
+                        .test_id("template.form.email")
                         .build(),
                 ),
                 form_full_cell(
                     TextField::new("Notas", &self.notes)
                         .placeholder("Contexto, preferencias…")
                         .on_input(|v| Msg::Edit(Field::Notes, v))
-                        .test_id("plantilla.form.notas")
+                        .test_id("template.form.notes")
                         .build(),
                 ),
             ])
             .actions([
                 button("Cancelar", ButtonVariant::Text)
                     .on_click(Msg::Clear)
-                    .test_id("plantilla.form.cancelar"),
+                    .test_id("template.form.cancel"),
                 button("Guardar", ButtonVariant::Primary)
                     .on_click(Msg::Submit)
-                    .test_id("plantilla.form.guardar"),
+                    .test_id("template.form.save"),
             ])
-            .test_id("plantilla.formulario")
+            .test_id("template.form")
             .build()
     }
 
     /// Fase C — vista de datos compacta (tabla / métricas densas).
-    fn plantilla_datos(&self) -> Element<Msg> {
+    fn template_data(&self) -> Element<Msg> {
         let metrics = page_grid().children([
             page_grid_item(4).child(
                 div()
@@ -3231,7 +3227,7 @@ impl Demo {
                 "w-full rounded-md border border-border/70 appkit:border-separator \
                  overflow-hidden bg-card appkit:bg-control",
             )
-            .part("tabla")
+            .part("table")
             .children({
                 let mut kids: Vec<Element<Msg>> = vec![
                     div()
@@ -3248,7 +3244,7 @@ impl Demo {
                             text("Monto"),
                         ]),
                 ];
-                for (i, (orden, cliente, estado, monto)) in rows.iter().enumerate() {
+                for (i, (sort_order, client, state_value, amount)) in rows.iter().enumerate() {
                     kids.push(
                         div()
                             .class(
@@ -3256,8 +3252,13 @@ impl Demo {
                                  text-foreground appkit:text-label border-b \
                                  border-border/40 appkit:border-separator last:border-0",
                             )
-                            .test_id(format!("plantilla.datos.row.{i}"))
-                            .children([text(*orden), text(*cliente), text(*estado), text(*monto)]),
+                            .test_id(format!("template.data.row.{i}"))
+                            .children([
+                                text(*sort_order),
+                                text(*client),
+                                text(*state_value),
+                                text(*amount),
+                            ]),
                     );
                 }
                 kids
@@ -3269,13 +3270,13 @@ impl Demo {
                     .breadcrumbs(["Demo", "Plantillas", "Vista de datos"])
                     .action(
                         button("Exportar", ButtonVariant::Outlined)
-                            .on_click(Msg::ExportarTabla)
-                            .test_id("plantilla.datos.exportar"),
+                            .on_click(Msg::ExportTable)
+                            .test_id("template.data.export"),
                     ),
             )
             .child(metrics)
             .child(table)
-            .test_id("plantilla.datos")
+            .test_id("template.data")
             .build()
     }
 
@@ -3291,7 +3292,7 @@ impl Demo {
         };
         card()
             .class("w-full max-w-3xl")
-            .test_id("botones.estados")
+            .test_id("buttons.estados")
             .children([
                 card_header(
                     "Estados de Button",
@@ -3356,14 +3357,14 @@ impl Demo {
             ("Text", ButtonVariant::Text),
             ("Danger", ButtonVariant::Danger),
         ];
-        let status = match (self.espera, self.sincronizando) {
-            (_, 1..) => format!("Sincronizando ({})…", self.sincronizando),
+        let status = match (self.wait_ms, self.syncing) {
+            (_, 1..) => format!("Sincronizando ({})…", self.syncing),
             (Some(name), _) => format!("Terminó: {name}"),
             (None, _) => "Pulsa un botón: espera 1,5 s".to_owned(),
         };
         card()
             .class("w-full max-w-3xl")
-            .test_id("botones.espera")
+            .test_id("buttons.wait")
             .children([
                 card_header(
                     "Acciones con espera",
@@ -3377,26 +3378,26 @@ impl Demo {
                         .class("flex flex-wrap items-center gap-3")
                         .children(variants.map(|(name, variant)| {
                             button(name, variant)
-                                .on_click(Msg::Esperar(name))
-                                .test_id(format!("espera.{}", name.to_lowercase()))
+                                .on_click(Msg::Wait(name))
+                                .test_id(format!("wait.{}", name.to_lowercase()))
                         })),
                     div().class("flex flex-wrap items-center gap-3").children([
                         Button::new("Guardar y recargar")
                             .accent(true)
-                            .on_click(Msg::GuardarYRecargar)
+                            .on_click(Msg::SaveAndReload)
                             .build()
-                            .test_id("espera.recargar"),
+                            .test_id("wait.reload"),
                         Button::new("Sincronizar en segundo plano")
                             .busy_feedback(false)
-                            .on_click(Msg::Sincronizar)
+                            .on_click(Msg::Sync)
                             .build()
-                            .test_id("espera.sincronizar"),
+                            .test_id("wait.sync"),
                         button("Simular espera (comando)", ButtonVariant::Outlined)
-                            .on_command(SimularEspera),
+                            .on_command(SimulateWait),
                         Button::new("Cargando")
                             .loading(true)
                             .build()
-                            .test_id("espera.cargando"),
+                            .test_id("wait.cargando"),
                     ]),
                     div()
                         .class("flex items-center gap-6 pt-2 text-primary")
@@ -3404,15 +3405,15 @@ impl Demo {
                             caption("DotProgress:"),
                             DotProgress::new()
                                 .size(DotSize::Sm)
-                                .test_id("espera.puntos.sm")
+                                .test_id("wait.puntos.sm")
                                 .build(),
                             dot_progress().test_id("espera.puntos.md"),
                             DotProgress::new()
                                 .size(DotSize::Lg)
-                                .test_id("espera.puntos.lg")
+                                .test_id("wait.puntos.lg")
                                 .build(),
                         ]),
-                    caption(status).role(Role::Status).test_id("espera.estado"),
+                    caption(status).role(Role::Status).test_id("wait.state"),
                 ]),
             ])
     }
@@ -3423,7 +3424,7 @@ impl Demo {
         let built = |button: Button<Msg>, id: &str| button.build().test_id(id);
         card()
             .class("w-full max-w-3xl")
-            .test_id("botones.appkit")
+            .test_id("buttons.appkit")
             .children([
                 card_header(
                     "Button::new",
@@ -3435,47 +3436,47 @@ impl Demo {
                             Button::new("Push")
                                 .bezel(BezelStyle::Push)
                                 .on_click(Msg::Increment),
-                            "botones.push",
+                            "buttons.push",
                         ),
                         built(
                             Button::new("Bordered")
                                 .bezel(BezelStyle::Bordered)
                                 .on_click(Msg::Increment),
-                            "botones.bordered",
+                            "buttons.bordered",
                         ),
                         built(
                             Button::new("Borderless")
                                 .bezel(BezelStyle::Borderless)
                                 .on_click(Msg::Increment),
-                            "botones.borderless",
+                            "buttons.borderless",
                         ),
                     ]),
                     div().class("flex flex-wrap items-center gap-3").children([
                         built(
                             Button::new("Acento").accent(true).on_click(Msg::Increment),
-                            "botones.acento",
+                            "buttons.acento",
                         ),
                         built(
                             Button::new("Destructivo")
                                 .destructive(true)
                                 .on_click(Msg::Reset),
-                            "botones.destructivo",
+                            "buttons.destructivo",
                         ),
                         built(
                             Button::new("Cancelar (Esc)")
                                 .cancel_button()
                                 .on_click(Msg::Reset),
-                            "botones.cancelar",
+                            "buttons.cancel",
                         ),
                         built(
                             Button::new("Pequeño")
                                 .control_size(ControlSize::Small)
                                 .disabled(true),
-                            "botones.pequeno",
+                            "buttons.pequeno",
                         ),
                         icon_button(Icon::Settings, "Ajustes", IconButtonVariant::Secondary)
                             .on_click(Msg::Increment)
-                            .test_id("botones.icono"),
+                            .test_id("buttons.icono"),
                     ]),
                 ]),
             ])
@@ -3488,7 +3489,7 @@ impl Demo {
         let edit = |field: Field| move |value: String| Msg::Edit(field, value);
         card()
             .class("w-full max-w-3xl")
-            .test_id("campos.mas")
+            .test_id("fields.mas")
             .children([
                 card_header(
                     "Más campos",
@@ -3499,19 +3500,19 @@ impl Demo {
                         .class("grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5")
                         .children([
                             TextField::new("PIN", &self.pin)
-                                .test_id("campos.pin")
+                                .test_id("fields.pin")
                                 .password(self.show_pin, Msg::TogglePin)
                                 .on_input(edit(Field::Pin))
                                 .build(),
                             TextField::new("Usuario", &self.lookup)
-                                .test_id("campos.redondeado")
+                                .test_id("fields.redondeado")
                                 .bezel(FieldBezel::Rounded)
                                 .placeholder("Placeholder en color primario")
                                 .placeholder_color("primary/60")
                                 .on_input(edit(Field::Lookup))
                                 .build(),
                             TextField::new("Sitio", "kai.cl")
-                                .test_id("campos.adornos")
+                                .test_id("fields.adornos")
                                 .start_adornment(text("https://").class(
                                     "text-sm text-muted-foreground appkit:text-secondary-label",
                                 ))
@@ -3524,11 +3525,11 @@ impl Demo {
                                 .variant(SearchVariant::Field)
                                 .placeholder("Buscar en la ayuda")
                                 .label("Buscar en la ayuda")
-                                .test_id("campos.busqueda")
+                                .test_id("fields.busqueda")
                                 .build(),
                         ]),
                     text_area("Notas", &self.notes)
-                        .test_id("campos.notas")
+                        .test_id("fields.notes")
                         .placeholder("Varias líneas; Retorno agrega una")
                         .auto_grow(3, 6)
                         .max_length(280)
@@ -3550,7 +3551,7 @@ impl Demo {
                 ControlState::Off
             }
         };
-        let all = match self.permisos.iter().filter(|on| **on).count() {
+        let all = match self.permissions.iter().filter(|on| **on).count() {
             0 => ControlState::Off,
             3 => ControlState::On,
             _ => ControlState::Mixed,
@@ -3559,34 +3560,34 @@ impl Demo {
             text(content).class("text-sm font-medium text-foreground appkit:text-label")
         };
         let mut checks = vec![
-            checkbox_with_options("Todos", all, Msg::TogglePermiso(None), false)
-                .test_id("seleccion.todos"),
+            checkbox_with_options("Todos", all, Msg::TogglePermission(None), false)
+                .test_id("selection.all"),
         ];
-        for (index, name) in PERMISOS.iter().enumerate() {
+        for (index, name) in PERMISSIONS.iter().enumerate() {
             checks.push(
                 checkbox_with_options(
                     name,
-                    state(self.permisos[index]),
-                    Msg::TogglePermiso(Some(index)),
+                    state(self.permissions[index]),
+                    Msg::TogglePermission(Some(index)),
                     false,
                 )
                 .class("ml-6")
-                .test_id(format!("seleccion.permiso.{index}")),
+                .test_id(format!("selection.permiso.{index}")),
             );
         }
         checks.push(
             checkbox_with_options(
                 "Administrar",
                 ControlState::Off,
-                Msg::TogglePermiso(None),
+                Msg::TogglePermission(None),
                 true,
             )
             .class("ml-6")
-            .test_id("seleccion.administrar"),
+            .test_id("selection.administrar"),
         );
         card()
             .class("w-full max-w-3xl")
-            .test_id("seleccion")
+            .test_id("selection")
             .children([
                 card_header(
                     "Selección",
@@ -3597,7 +3598,7 @@ impl Demo {
                         div().class("flex items-center gap-2").children([
                             switch(self.wifi, Msg::ToggleWifi)
                                 .label("Wi-Fi")
-                                .test_id("seleccion.wifi"),
+                                .test_id("selection.wifi"),
                             label("Wi-Fi"),
                         ]),
                         div().class("flex items-center gap-2").children([
@@ -3608,7 +3609,7 @@ impl Demo {
                                 SwitchDensity::Compact,
                             )
                             .label("Bluetooth")
-                            .test_id("seleccion.bluetooth"),
+                            .test_id("selection.bluetooth"),
                             label("Bluetooth (deshabilitado)"),
                         ]),
                     ]),
@@ -3619,31 +3620,37 @@ impl Demo {
                         .class("grid grid-cols-1 sm:grid-cols-2 gap-4")
                         .children([
                             select_with_options(
-                                &PAISES,
-                                self.pais,
+                                &COUNTRIES,
+                                self.country,
                                 "Elegir país",
-                                Msg::SetPais,
+                                Msg::SetCountry,
                                 false,
                             )
                             .label("País")
-                            .test_id("seleccion.pais"),
-                            select_with_options(&PAISES, None, "Sin región", Msg::SetPais, true)
-                                .label("Región")
-                                .test_id("seleccion.region"),
+                            .test_id("selection.country"),
+                            select_with_options(
+                                &COUNTRIES,
+                                None,
+                                "Sin región",
+                                Msg::SetCountry,
+                                true,
+                            )
+                            .label("Región")
+                            .test_id("selection.region"),
                         ]),
                     div().class("flex flex-wrap items-center gap-3").children([
                         label("Alineación"),
                         segmented_with_options(
-                            &ALINEACIONES,
-                            self.alineacion,
-                            Msg::SetAlineacion,
+                            &ALIGNMENTS,
+                            self.alignment,
+                            Msg::SetAlignment,
                             false,
                         )
                         .label("Alineación")
-                        .test_id("seleccion.alineacion"),
+                        .test_id("selection.alineacion"),
                         segmented_with_options(&["Día", "Semana"], 0, |_| Msg::Increment, true)
                             .label("Vista")
-                            .test_id("seleccion.vista"),
+                            .test_id("selection.view"),
                     ]),
                 ]),
             ])
@@ -3655,7 +3662,7 @@ impl Demo {
         vec![
             card()
                 .class("w-full max-w-3xl")
-                .test_id("contenedores.card")
+                .test_id("containers.card")
                 .children([
                     card_header("Card completa", Some("Encabezado, contenido y acciones")),
                     card_content().children([
@@ -3684,14 +3691,14 @@ impl Demo {
                             SwitchDensity::Default,
                         )],
                     )
-                    .test_id("contenedores.grupo"),
+                    .test_id("containers.grupo"),
                     group_box(
                         None,
                         [caption("Un group box sin título agrupa sin encabezado.")],
                     )
-                    .test_id("contenedores.sin_titulo"),
+                    .test_id("containers.sin_titulo"),
                 ]),
-            Tabs::new(self.pestana, Msg::SetPestana)
+            Tabs::new(self.tab_index, Msg::SetTab)
                 .tab(
                     "General",
                     paragraph("Las pestañas muestran un panel a la vez; ← y → cambian de pestaña."),
@@ -3712,13 +3719,13 @@ impl Demo {
                 )
                 .build()
                 .class("w-full max-w-3xl")
-                .test_id("contenedores.pestanas"),
+                .test_id("containers.pestanas"),
             div()
                 .class("grid grid-cols-3 gap-4 w-full max-w-3xl")
-                .test_id("contenedores.stats")
+                .test_id("containers.stats")
                 .children([
-                    stat("Clientes", CLIENTES.to_string(), Some("en la tabla")),
-                    stat("Filtrados", self.tabla.len().to_string(), None),
+                    stat("Clientes", CLIENT_COUNT.to_string(), Some("en la tabla")),
+                    stat("Filtrados", self.table_view.len().to_string(), None),
                     stat("Avisos", self.toasts.len().to_string(), Some("abiertos")),
                 ]),
         ]
@@ -3727,45 +3734,45 @@ impl Demo {
     /// Tabla: ten thousand generated clients, sorted by the header and
     /// filtered by the toolbar search.
     fn client_table(&self) -> Element<Msg> {
-        let summary = match self.cliente.and_then(|index| self.clientes.get(index)) {
-            Some(cliente) => format!("Seleccionado: {}", cliente.nombre),
+        let summary = match self.client.and_then(|index| self.clients.get(index)) {
+            Some(client) => format!("Seleccionado: {}", client.name),
             None => "Elige una fila con un clic o con ↑ ↓".to_owned(),
         };
-        let shown = if !self.tabla.is_filtered() {
-            format!("{} clientes", self.tabla.len())
+        let shown = if !self.table_view.is_filtered() {
+            format!("{} clientes", self.table_view.len())
         } else if self.query.trim().is_empty() {
-            format!("{} de {CLIENTES} filtrados", self.tabla.len())
+            format!("{} de {CLIENT_COUNT} filtrados", self.table_view.len())
         } else {
             format!(
-                "{} de {CLIENTES} con «{}»",
-                self.tabla.len(),
+                "{} de {CLIENT_COUNT} con «{}»",
+                self.table_view.len(),
                 self.query.trim()
             )
         };
-        let filtrando = self.tabla.filtering;
-        let filtrar = icon_button_sized(
-            if filtrando {
+        let filtering_now = self.table_view.filtering;
+        let filter_rows = icon_button_sized(
+            if filtering_now {
                 Icon::FunnelX
             } else {
                 Icon::Funnel
             },
             "Filtrar",
-            if self.tabla.has_filters() {
+            if self.table_view.has_filters() {
                 IconButtonVariant::Primary
             } else {
                 IconButtonVariant::Outlined
             },
             IconButtonSize::Sm,
         )
-        .tooltip(if filtrando {
+        .tooltip(if filtering_now {
             "Quitar los filtros"
         } else {
             "Filtrar por columna"
         })
-        .pressed(filtrando)
-        .on_click(Msg::Tabla(ViewChange::Filtering(!filtrando)))
-        .test_id("tabla.filtrar");
-        let columnas_boton = column_menu(
+        .pressed(filtering_now)
+        .on_click(Msg::Table(ViewChange::Filtering(!filtering_now)))
+        .test_id("table.filter");
+        let columns_button = column_menu(
             icon_button_sized(
                 Icon::Columns3,
                 "Columnas",
@@ -3773,12 +3780,12 @@ impl Demo {
                 IconButtonSize::Sm,
             )
             .tooltip("Mostrar u ocultar columnas")
-            .test_id("tabla.columnas"),
-            &columnas(),
-            &self.tabla,
-            Msg::Tabla,
+            .test_id("table.columns"),
+            &table_columns(),
+            &self.table_view,
+            Msg::Table,
         );
-        card().class("w-full max-w-3xl").test_id("tabla").children([
+        card().class("w-full max-w-3xl").test_id("table").children([
             card_header(
                 "Clientes",
                 Some("10 000 filas; solo se construyen las visibles"),
@@ -3787,23 +3794,23 @@ impl Demo {
                 div()
                     .class("flex items-center justify-between gap-3")
                     .children([
-                        caption(shown).role(Role::Status).test_id("tabla.total"),
+                        caption(shown).role(Role::Status).test_id("table.total"),
                         div().class("flex items-center gap-3").children([
-                            caption(summary).test_id("tabla.seleccion"),
-                            filtrar,
-                            columnas_boton,
+                            caption(summary).test_id("table.selection"),
+                            filter_rows,
+                            columns_button,
                             button_sized("Exportar", ButtonVariant::Outlined, ButtonSize::Sm)
-                                .on_command(ExportarTabla)
-                                .busy(self.exportando),
+                                .on_command(ExportTable)
+                                .busy(self.exporting),
                         ]),
                     ]),
-                Table::new(Rc::clone(&self.clientes), columnas(), &self.tabla)
-                    .on_view(Msg::Tabla)
-                    .selected(self.cliente)
+                Table::new(Rc::clone(&self.clients), table_columns(), &self.table_view)
+                    .on_view(Msg::Table)
+                    .selected(self.client)
                     .on_select(Msg::SelectRow)
-                    .expandable(detalle_cliente, 64.0)
+                    .expandable(client_detail, 64.0)
                     .label("Clientes")
-                    .test_id("tabla.clientes")
+                    .test_id("table.clients")
                     .build()
                     .class("h-[360px] rounded-md border border-border appkit:border-separator"),
             ]),
@@ -3828,7 +3835,7 @@ impl Demo {
         let url = self.url.clone();
         card()
             .class("w-full max-w-3xl")
-            .test_id("multimedia.avatares")
+            .test_id("media.avatares")
             .children([
                 card_header(
                     "Avatares",
@@ -3863,20 +3870,20 @@ impl Demo {
                             "Imagen remota",
                             self.avatar_url.clone().map(ImageSource::Url),
                         )
-                        .test_id("multimedia.avatar_url"),
+                        .test_id("media.avatar_url"),
                         div().class("flex flex-1 flex-col gap-2 min-w-0").children([
-                            caption("Desde una URL (multimedia.cargar_url):"),
+                            caption("Desde una URL (media.load_url):"),
                             div().class("flex items-center gap-3").children([
                                 TextField::new("URL de la imagen", &self.url)
                                     .placeholder("https://…/foto.png")
                                     .on_input(|value| Msg::Edit(Field::Url, value))
-                                    .on_submit(Msg::CargarUrl(self.url.clone()))
-                                    .test_id("multimedia.url")
+                                    .on_submit(Msg::LoadUrl(self.url.clone()))
+                                    .test_id("media.url")
                                     .build()
                                     .class("flex-1"),
                                 button("Cargar", ButtonVariant::Outlined)
-                                    .on_command(CargarUrl { url })
-                                    .test_id("multimedia.cargar"),
+                                    .on_command(LoadUrl { url })
+                                    .test_id("media.load"),
                             ]),
                         ]),
                     ]),
@@ -3886,7 +3893,7 @@ impl Demo {
                             image(sample_landscape())
                                 .alt("Paisaje")
                                 .class("w-48 rounded-md")
-                                .test_id("multimedia.paisaje"),
+                                .test_id("media.paisaje"),
                             image(sample_landscape())
                                 .alt("Paisaje recortado")
                                 .class("size-24 rounded-md object-cover"),
@@ -3901,14 +3908,15 @@ impl Demo {
     /// dropped from Finder replaces the image, and a refused one shows its
     /// error.
     fn image_fields(&self) -> Element<Msg> {
-        let field = |campo: Campo, variant: MediaVariant, imagen: &Imagen, id: &str| {
-            MediaSlot::new(variant)
-                .current(imagen.actual.clone())
-                .on_pick(Msg::ElegirImagen(campo))
-                .on_drop(move |path| Msg::ImagenElegida(campo, Some(path)))
-                .error(imagen.error.clone())
-                .test_id(id)
-        };
+        let field =
+            |image_field: ImageField, variant: MediaVariant, image_value: &ImageSlot, id: &str| {
+                MediaSlot::new(variant)
+                    .current(image_value.actual.clone())
+                    .on_pick(Msg::PickImage(image_field))
+                    .on_drop(move |path| Msg::ImagePicked(image_field, Some(path)))
+                    .error(image_value.error.clone())
+                    .test_id(id)
+            };
         let labeled = |label: &str, slot: Element<Msg>| {
             div()
                 .class("flex flex-col items-center gap-2 min-w-0")
@@ -3916,14 +3924,14 @@ impl Demo {
         };
         card()
             .class("w-full max-w-3xl")
-            .test_id("multimedia.campos")
+            .test_id("media.fields")
             .children([
                 card_header(
                     "Campos de imagen",
                     Some(
                         format!(
                             "Clic para elegir o arrastra desde Finder; png, jpg o webp de \
-                             hasta {MAX_IMAGEN_MB} MB"
+                             hasta {MAX_IMAGE_MB} MB"
                         )
                         .as_str(),
                     ),
@@ -3933,20 +3941,20 @@ impl Demo {
                         labeled(
                             "Foto de perfil",
                             field(
-                                Campo::Foto,
+                                ImageField::Photo,
                                 MediaVariant::Avatar(AvatarSize::Md),
-                                &self.foto,
-                                "multimedia.foto",
+                                &self.photo,
+                                "media.photo",
                             )
                             .build(),
                         ),
                         labeled(
                             "Logo",
                             field(
-                                Campo::Logo,
+                                ImageField::Logo,
                                 MediaVariant::Logo,
                                 &self.logo,
-                                "multimedia.logo",
+                                "media.logo",
                             )
                             .build(),
                         ),
@@ -3954,10 +3962,10 @@ impl Demo {
                     labeled(
                         "Portada",
                         field(
-                            Campo::Portada,
+                            ImageField::Cover,
                             MediaVariant::Banner,
-                            &self.portada,
-                            "multimedia.portada",
+                            &self.cover,
+                            "media.cover",
                         )
                         .build(),
                     ),
@@ -3983,7 +3991,7 @@ impl Demo {
                     }),
                 )
                 .label("Elementos")
-                .test_id("tabla.lista")
+                .test_id("table.items")
                 .class("h-48 rounded-md border border-border appkit:border-separator"),
             ),
         ])
@@ -3991,69 +3999,69 @@ impl Demo {
 
     /// Mapa: Parral with a pin on the plaza, the DSP sectors over it, a
     /// list that frames them, and where the map is.
-    fn mapa(&self) -> Element<Msg> {
-        let vista = self.vista;
-        let seleccionada = self.area.as_deref();
-        let editando = self.edicion.as_ref().map(|(code, _)| code.as_str());
-        let capas = self
-            .sectores
+    fn map_view(&self) -> Element<Msg> {
+        let view = self.view;
+        let selected_one = self.area.as_deref();
+        let editing_code = self.editing.as_ref().map(|(code, _)| code.as_str());
+        let layers_list = self
+            .sectors
             .iter()
-            .filter(|sector| self.mostrar_areas && editando != Some(sector.code.as_str()))
+            .filter(|sector| self.show_areas && editing_code != Some(sector.code.as_str()))
             .map(|sector| {
                 let color = sector.color();
                 sector
-                    .capa
+                    .layer
                     .clone()
                     .id(&sector.code)
                     .fill(color, 0.12)
                     .stroke(color, 2.0)
-                    .label(&sector.nombre)
-                    .selected(seleccionada == Some(sector.code.as_str()))
+                    .label(&sector.name)
+                    .selected(selected_one == Some(sector.code.as_str()))
             });
-        let mut mapa = map(&vista)
+        let mut map_view = map(&view)
             .basemap(TileSource::pmtiles(PARRAL_PMTILES, MapStyle::protomaps()))
-            .layers(capas)
-            .animate_view(self.animar_vista)
-            .on_view_change(Msg::MapaMovido);
-        mapa = match &self.edicion {
+            .layers(layers_list)
+            .animate_view(self.animate_map)
+            .on_view_change(Msg::MapMoved);
+        map_view = match &self.editing {
             Some((code, draft)) => {
                 let color = self
                     .sector(code)
                     .map_or(Color::hex(0xc45c26), Sector::color);
-                mapa.polygon_editor(draft, color, Msg::Edicion)
+                map_view.polygon_editor(draft, color, Msg::Editing)
             }
-            None => mapa.on_area_click(Msg::SeleccionarArea),
+            None => map_view.on_area_click(Msg::SelectArea),
         };
-        let mut mapa = mapa
+        let mut map_view = map_view
             .label("Mapa de Parral")
-            .test_id("mapa.vista")
+            .test_id("map.view")
             .class("flex-1 min-w-0 h-96 border border-border")
             .children([marker(
-                PLAZA_DE_ARMAS,
+                MAIN_SQUARE,
                 Anchor::Bottom,
                 icon(Icon::MapPin).class("size-8 text-primary"),
             )
             .alt("Plaza de Armas")]);
-        if let Some((bounds, serial)) = self.encuadre {
-            mapa = mapa.fit_bounds(bounds, serial);
+        if let Some((bounds, serial)) = self.fit_request {
+            map_view = map_view.fit_bounds(bounds, serial);
         }
-        let lista = div()
+        let list_view = div()
             .role(Role::List)
             .label("Sectores")
-            .test_id("mapa.sectores")
+            .test_id("map.sectors")
             .class("flex flex-col gap-1 w-44")
-            .children(self.sectores.iter().map(|sector| {
-                let elegido = seleccionada == Some(sector.code.as_str());
+            .children(self.sectors.iter().map(|sector| {
+                let chosen_one = selected_one == Some(sector.code.as_str());
                 div()
                     .role(Role::Button)
-                    .pressed(elegido)
-                    .on_click(Msg::SeleccionarArea(sector.code.clone()))
-                    .test_id(format!("mapa.sector.{}", sector.code))
+                    .pressed(chosen_one)
+                    .on_click(Msg::SelectArea(sector.code.clone()))
+                    .test_id(format!("map.sector.{}", sector.code))
                     .class(&format!(
                         "flex items-center gap-2 h-8 px-2 rounded-md border text-sm \
                          text-foreground cursor-pointer focus-visible:ring-2 \
                          focus-visible:ring-primary/40 {}",
-                        if elegido {
+                        if chosen_one {
                             format!("{CHOICE_ACTIVE} font-medium")
                         } else {
                             CHOICE_HOVER.to_owned()
@@ -4061,112 +4069,112 @@ impl Demo {
                     ))
                     .children([
                         div().class(&format!("size-3 shrink-0 rounded-sm {}", sector.swatch())),
-                        text(&sector.nombre),
+                        text(&sector.name),
                     ])
             }));
-        let estado = match (
-            &self.edicion,
+        let state_value = match (
+            &self.editing,
             self.area.as_deref().and_then(|c| self.sector(c)),
         ) {
             (Some(_), Some(sector)) => format!(
                 "Editando {}: arrastra los vértices, haz clic entre dos para agregar uno; \
                  Supr borra el vértice elegido y ⌘Z deshace",
-                sector.nombre
+                sector.name
             ),
             (None, Some(sector)) => format!(
                 "Sector {} · {} · {}",
-                sector.nombre,
+                sector.name,
                 sector.code,
-                hectareas(crate::maps::editor::area_m2(&sector.anillo()) / 10_000.0)
+                hectares(crate::maps::editor::area_m2(&sector.ring_points()) / 10_000.0)
             ),
             _ => "Elige un sector en la lista o en el mapa".to_owned(),
         };
-        let edicion = self.edicion.as_ref().map(|(_, draft)| {
-            let cruza = draft.crossing().is_some();
+        let editing = self.editing.as_ref().map(|(_, draft)| {
+            let crosses = draft.crossing().is_some();
             div()
                 .class("flex items-center gap-3")
-                .test_id("mapa.edicion")
+                .test_id("map.edicion")
                 .children([
-                    caption(format!("Superficie {}", hectareas(draft.area_ha())))
+                    caption(format!("Superficie {}", hectares(draft.area_ha())))
                         .role(Role::Status)
-                        .test_id("mapa.superficie"),
-                    if cruza {
+                        .test_id("map.superficie"),
+                    if crosses {
                         caption("Los bordes se cruzan")
                             .class("text-error")
                             .role(Role::Alert)
-                            .test_id("mapa.cruce")
+                            .test_id("map.cruce")
                     } else {
                         div()
                     },
                     div().class("flex-1"),
                     button("Cancelar", ButtonVariant::Outlined)
-                        .on_click(Msg::Edicion(PolygonEdit::Cancel))
-                        .test_id("mapa.cancelar"),
+                        .on_click(Msg::Editing(PolygonEdit::Cancel))
+                        .test_id("map.cancel"),
                     button("Terminar", ButtonVariant::Primary)
-                        .on_click(Msg::Edicion(PolygonEdit::Finish))
+                        .on_click(Msg::Editing(PolygonEdit::Finish))
                         .disabled(!draft.is_valid())
-                        .test_id("mapa.terminar"),
+                        .test_id("map.finish"),
                 ])
         });
         let color = self
             .area
             .as_deref()
             .and_then(|code| self.sector(code))
-            .filter(|_| self.edicion.is_none())
+            .filter(|_| self.editing.is_none())
             .map(|sector| {
                 div().class("flex w-80").child(
                     color_field("Color del sector", &sector.color, Msg::ColorSector)
-                        .palette(PALETA_DSP)
+                        .palette(DSP_PALETTE)
                         .allow_empty(true)
-                        .test_id("mapa.color")
+                        .test_id("map.color")
                         .build(),
                 )
             });
-        let editar = button("Editar sector", ButtonVariant::Outlined)
-            .on_click(Msg::EditarArea(self.area.clone().unwrap_or_default()))
-            .disabled(self.area.is_none() || self.edicion.is_some())
-            .test_id("mapa.editar");
-        card().class("w-full max-w-3xl").test_id("mapa").children([
+        let edit_sector = button("Editar sector", ButtonVariant::Outlined)
+            .on_click(Msg::EditArea(self.area.clone().unwrap_or_default()))
+            .disabled(self.area.is_none() || self.editing.is_some())
+            .test_id("map.edit");
+        card().class("w-full max-w-3xl").test_id("map").children([
             card_header(
                 "Parral",
                 Some("Arrastra, usa la rueda o pellizca; doble clic acerca y ⇧ doble clic aleja"),
             ),
             card_content().class("gap-3").children(
                 [div().class("flex gap-3").children([
-                    mapa,
+                    map_view,
                     div().class("flex flex-col gap-3 w-44").children([
-                        lista,
-                        editar,
+                        list_view,
+                        edit_sector,
                         switch_labeled(
                             "Sectores",
-                            self.mostrar_areas,
+                            self.show_areas,
                             Msg::ToggleAreas,
                             false,
                             SwitchDensity::Compact,
                         )
-                        .test_id("mapa.mostrar_sectores"),
+                        .test_id("map.mostrar_sectores"),
                     ]),
                 ])]
                 .into_iter()
-                .chain(edicion)
+                .chain(editing)
                 .chain(color)
                 .chain([
-                    caption(estado).test_id("mapa.sector"),
+                    caption(state_value).test_id("map.sector"),
                     div()
                         .class("flex items-center justify-between gap-3")
                         .children([
                             caption(format!(
                                 "{:.4}, {:.4} · zoom {:.1}",
-                                vista.center.lat, vista.center.lon, vista.zoom
+                                view.center.lat, view.center.lon, view.zoom
                             ))
                             .role(Role::Status)
-                            .test_id("mapa.posicion"),
+                            .test_id("map.posicion"),
                             button("Volver a la plaza", ButtonVariant::Outlined)
-                                .on_click(Msg::FijarVista {
-                                    vista: VISTA_INICIAL,
-                                    animar: true,
+                                .on_click(Msg::SetMapView {
+                                    view: INITIAL_VIEW,
+                                    animate: true,
                                 })
-                                .test_id("mapa.volver"),
+                                .test_id("map.volver"),
                         ]),
                 ]),
             ),
@@ -4174,42 +4182,42 @@ impl Demo {
     }
 
     /// Gráficos: a bar chart of monthly clicks and a sparkline of the trend.
-    fn graficos(&self) -> Vec<Element<Msg>> {
-        let elegido = self.mes.map(|index| {
+    fn charts_view(&self) -> Vec<Element<Msg>> {
+        let chosen_one = self.month.map(|index| {
             format!(
                 "Seleccionado: {} ({})",
-                MESES[index], CLICS_MES[index] as i32
+                MONTHS[index], CLICKS_PER_MONTH[index] as i32
             )
         });
         vec![
             card()
                 .class("w-full max-w-3xl")
-                .test_id("graficos.barras")
+                .test_id("charts.bars")
                 .children([
                     card_header("Barras", Some("Clics por mes; elige una barra")),
                     card_content().children([
                         chart(ChartKind::Bar)
-                            .categories(MESES)
-                            .series("Clics", &CLICS_MES)
-                            .selected(self.mes)
-                            .on_select(Msg::Mes)
+                            .categories(MONTHS)
+                            .series("Clics", &CLICKS_PER_MONTH)
+                            .selected(self.month)
+                            .on_select(Msg::Month)
                             .label("Clics por mes")
-                            .test_id("graficos.barras.plot")
+                            .test_id("charts.bars.plot")
                             .class("h-48 w-full"),
-                        caption(elegido.as_deref().unwrap_or("Elige una barra")),
+                        caption(chosen_one.as_deref().unwrap_or("Elige una barra")),
                     ]),
                 ]),
             card()
                 .class("w-full max-w-3xl")
-                .test_id("graficos.sparkline")
+                .test_id("charts.sparkline")
                 .children([
                     card_header("Sparkline", Some("Tendencia compacta, sin ejes")),
                     card_content().class("flex items-center gap-4").children([
                         stat("Tendencia", "16", Some("último mes")),
                         chart(ChartKind::Sparkline)
-                            .series("Tendencia", &TENDENCIA)
+                            .series("Tendencia", &TREND)
                             .label("Tendencia")
-                            .test_id("graficos.sparkline.plot")
+                            .test_id("charts.sparkline.plot")
                             .class("h-8 flex-1"),
                     ]),
                 ]),
@@ -4217,7 +4225,7 @@ impl Demo {
     }
 
     #[cfg(feature = "document")]
-    fn documento_ribbon_chrome(&self) -> Element<Msg> {
+    fn document_ribbon_chrome(&self) -> Element<Msg> {
         document_ribbon()
             .mode(RibbonMode::Full)
             .active_tab(self.doc_ribbon_tab.clone())
@@ -4227,47 +4235,47 @@ impl Demo {
             .on_tab(Msg::DocRibbonTab)
             // Un comentario necesita texto: el botón abre la barra que lo pide.
             .on_command(|id| match id.as_str() {
-                "review.newComment" => Msg::DocAlternarComentario,
+                "review.newComment" => Msg::DocToggleComment,
                 _ => Msg::DocCmd(document_cmd_for(&id)),
             })
             .leading([
                 toolbar_item(Icon::FolderOpen, "Abrir…")
-                    .on_command(DocAbrir)
-                    .test_id("documento.abrir"),
+                    .on_command(DocOpen)
+                    .test_id("document.open"),
                 toolbar_item(Icon::Save, "Guardar…")
-                    .on_command(DocGuardar)
-                    .test_id("documento.guardar"),
+                    .on_command(DocSave)
+                    .test_id("document.save"),
                 toolbar_item(Icon::FileDown, "Exportar PDF…")
-                    .on_command(DocExportarPdf)
-                    .test_id("documento.exportar_pdf"),
+                    .on_command(DocExportPdf)
+                    .test_id("document.export_pdf"),
                 toolbar_item(Icon::Search, "Buscar y reemplazar")
-                    .on_command(DocBuscar)
-                    .test_id("documento.buscar"),
+                    .on_command(DocFind)
+                    .test_id("document.find"),
             ])
-            .test_id("documento.ribbon")
+            .test_id("document.ribbon")
             .build()
     }
 
     #[cfg(not(feature = "document"))]
-    fn documento_ribbon_chrome(&self) -> Element<Msg> {
+    fn document_ribbon_chrome(&self) -> Element<Msg> {
         div()
             .class("flex flex-col gap-1")
-            .test_id("documento.ribbon")
+            .test_id("document.ribbon")
             .children([
                 div()
                     .class("flex flex-row items-center gap-0.5")
                     .role(Role::Toolbar)
-                    .test_id("documento.archivo")
+                    .test_id("document.file")
                     .children([
                         toolbar_item(Icon::FolderOpen, "Abrir…")
-                            .on_command(DocAbrir)
-                            .test_id("documento.abrir"),
+                            .on_command(DocOpen)
+                            .test_id("document.open"),
                         toolbar_item(Icon::Save, "Guardar…")
-                            .on_command(DocGuardar)
-                            .test_id("documento.guardar"),
+                            .on_command(DocSave)
+                            .test_id("document.save"),
                         toolbar_item(Icon::FileDown, "Exportar PDF…")
-                            .on_command(DocExportarPdf)
-                            .test_id("documento.exportar_pdf"),
+                            .on_command(DocExportPdf)
+                            .test_id("document.export_pdf"),
                     ]),
                 text("Compila con --features document para el ribbon WordCraft.")
                     .class("text-sm text-muted-foreground"),
@@ -4275,28 +4283,28 @@ impl Demo {
     }
 
     /// Documento: metáfora Pages — ribbon (QAT Archivo + tabs) + canvas Letter.
-    fn documento(&self) -> Element<Msg> {
+    fn document_view(&self) -> Element<Msg> {
         let mut editor = document()
             .label("Informe de demostración")
             .placeholder_text("Escribe aquí…")
             .markdown(&self.doc_markdown)
-            .on_change(Msg::Documento)
+            .on_change(Msg::Document)
             .class("flex-1 min-h-0 w-full")
-            .test_id("documento.editor");
+            .test_id("document.editor");
         if let Some((cmd, serial)) = &self.doc_cmd {
             editor = editor.pending_cmd(cmd.clone(), *serial);
         }
         if let Some((serial, bytes)) = &self.doc_load {
             editor = editor.pending_load(bytes.clone(), *serial);
         }
-        let mut chrome = vec![self.documento_ribbon_chrome()];
+        let mut chrome = vec![self.document_ribbon_chrome()];
         if self.doc_find_open {
-            chrome.push(self.documento_find_bar());
+            chrome.push(self.document_find_bar());
         }
         if self.doc_comment_open {
-            chrome.push(self.documento_comment_bar());
+            chrome.push(self.document_comment_bar());
         }
-        let status = match &self.doc_archivo_name {
+        let status = match &self.doc_file_name {
             Some(name) => name.clone(),
             None => "Sin guardar".into(),
         };
@@ -4307,7 +4315,7 @@ impl Demo {
         };
         div()
             .class("flex flex-col flex-1 min-h-0 w-full")
-            .test_id("documento")
+            .test_id("document")
             .children([
                 div()
                     .class("flex-none flex flex-col px-3 pt-2 pb-1 bg-window border-b border-separator gap-1")
@@ -4318,81 +4326,81 @@ impl Demo {
                     .class("flex-none flex flex-row items-center px-3 py-1 bg-window border-t border-separator")
                     .children([text(status)
                         .class("text-xs text-muted-foreground")
-                        .test_id("documento.status")]),
+                        .test_id("document.status")]),
             ])
     }
 
     /// Buscar y reemplazar en una sola fila, oculta hasta ⌘F (como Pages).
-    fn documento_find_bar(&self) -> Element<Msg> {
+    fn document_find_bar(&self) -> Element<Msg> {
         let find = self.doc_find.clone();
         let replace = self.doc_replace.clone();
         div()
             .class("flex flex-row items-center gap-1 py-1")
-            .test_id("documento.findbar")
+            .test_id("document.findbar")
             .children([
                 search_field(&self.doc_find, Msg::DocFindChanged)
                     .label("Buscar en el documento")
                     .on_submit(Msg::DocCmd(DocumentCmd::Find { text: find.clone() }))
-                    .test_id("documento.find.query")
+                    .test_id("document.find.query")
                     .build(),
                 search_field(&self.doc_replace, Msg::DocReplaceChanged)
                     .placeholder("Reemplazar con")
                     .label("Reemplazar con")
-                    .test_id("documento.find.replace")
+                    .test_id("document.find.replace")
                     .build(),
                 toolbar_item(Icon::ChevronUp, "Anterior")
                     .on_click(Msg::DocCmd(DocumentCmd::FindPrevious))
-                    .test_id("documento.find.prev"),
+                    .test_id("document.find.prev"),
                 toolbar_item(Icon::ChevronDown, "Siguiente")
                     .on_click(Msg::DocCmd(DocumentCmd::FindNext))
-                    .test_id("documento.find.next"),
+                    .test_id("document.find.next"),
                 button("Reemplazar", ButtonVariant::Text)
                     .on_click(Msg::DocCmd(DocumentCmd::Replace {
                         text: find.clone(),
                         with: replace.clone(),
                     }))
-                    .test_id("documento.find.replace_one"),
+                    .test_id("document.find.replace_one"),
                 button("Todo", ButtonVariant::Text)
                     .on_click(Msg::DocCmd(DocumentCmd::ReplaceAll {
                         text: find,
                         with: replace,
                     }))
-                    .test_id("documento.find.replace_all"),
+                    .test_id("document.find.replace_all"),
                 toolbar_item(Icon::X, "Cerrar búsqueda")
-                    .on_click(Msg::DocAlternarBuscar)
-                    .test_id("documento.find.close"),
+                    .on_click(Msg::DocToggleFind)
+                    .test_id("document.find.close"),
             ])
     }
 
     /// Texto del nuevo comentario, en una fila bajo el ribbon (como el
     /// globo de Word): Enter o «Comentar» lo inserta en la selección.
-    fn documento_comment_bar(&self) -> Element<Msg> {
+    fn document_comment_bar(&self) -> Element<Msg> {
         let insert = Msg::DocCmd(DocumentCmd::NewComment {
             text: self.doc_comment_draft.clone(),
         });
         div()
             .class("flex flex-row items-center gap-1 py-1")
-            .test_id("documento.commentbar")
+            .test_id("document.commentbar")
             .children([
                 search_field(&self.doc_comment_draft, Msg::DocCommentDraftChanged)
                     .placeholder("Escribe un comentario")
                     .label("Comentario")
                     .on_submit(insert.clone())
-                    .test_id("documento.comment.draft")
+                    .test_id("document.comment.draft")
                     .build(),
                 button("Comentar", ButtonVariant::Text)
                     .on_click(insert)
-                    .test_id("documento.comment.new"),
+                    .test_id("document.comment.new"),
                 toolbar_item(Icon::X, "Cerrar comentario")
-                    .on_click(Msg::DocAlternarComentario)
-                    .test_id("documento.comment.close"),
+                    .on_click(Msg::DocToggleComment)
+                    .test_id("document.comment.close"),
             ])
     }
 
     fn dialogs_and_toasts(&self) -> Element<Msg> {
         card()
             .class("w-full max-w-3xl")
-            .test_id("dialogos")
+            .test_id("dialogs")
             .children([
                 card_header(
                     "Diálogos y avisos",
@@ -4402,19 +4410,19 @@ impl Demo {
                     div().class("flex flex-wrap items-center gap-3").children([
                         caption("Diálogos:"),
                         button("Guardar cambios…", ButtonVariant::Outlined)
-                            .on_click(Msg::OpenDialog(Dialogo::Guardar))
-                            .test_id("dialogos.guardar"),
+                            .on_click(Msg::OpenDialog(DemoDialog::Save))
+                            .test_id("dialogs.save"),
                         button("Eliminar borrador…", ButtonVariant::Danger)
-                            .on_click(Msg::OpenDialog(Dialogo::Eliminar))
-                            .test_id("dialogos.eliminar"),
+                            .on_click(Msg::OpenDialog(DemoDialog::Delete))
+                            .test_id("dialogs.delete"),
                     ]),
                     div()
                         .class("flex flex-wrap items-center gap-3")
                         .child(caption("Avisos:"))
-                        .children(VarianteAviso::ALL.map(|variante| {
-                            button(variante.texts().0, ButtonVariant::Secondary)
-                                .on_click(Msg::ShowToast(variante))
-                                .test_id(format!("avisos.{}", variante.key()))
+                        .children(ToastKind::ALL.map(|kind| {
+                            button(kind.texts().0, ButtonVariant::Secondary)
+                                .on_click(Msg::ShowToast(kind))
+                                .test_id(format!("toasts.{}", kind.key()))
                         })),
                     div().class("flex flex-wrap items-center gap-3").children([
                         caption("Comandos:"),
@@ -4422,19 +4430,19 @@ impl Demo {
                             .bezel(BezelStyle::Borderless)
                             .build()
                             .run_command(PALETTE)
-                            .test_id("dialogos.paleta"),
+                            .test_id("dialogs.palette"),
                     ]),
                 ]),
             ])
     }
 
     /// The open dialog.
-    fn dialog(&self, dialogo: Dialogo) -> Element<Msg> {
-        let dialog = match dialogo {
-            Dialogo::Guardar => Dialog::new("¿Guardar los cambios?")
+    fn dialog(&self, dialog_kind: DemoDialog) -> Element<Msg> {
+        let dialog = match dialog_kind {
+            DemoDialog::Save => Dialog::new("¿Guardar los cambios?")
                 .message("Los cambios quedarán disponibles para todo el equipo.")
                 .default_button("Guardar", Msg::ConfirmDialog),
-            Dialogo::Eliminar => Dialog::new("¿Eliminar el borrador?")
+            DemoDialog::Delete => Dialog::new("¿Eliminar el borrador?")
                 .message("Esta acción no se puede deshacer.")
                 .destructive(true)
                 .width(DialogWidth::Sm)
@@ -4442,7 +4450,7 @@ impl Demo {
         };
         dialog
             .cancel_button("Cancelar", Msg::CloseDialog)
-            .test_id("dialogo")
+            .test_id("dialog")
             .build()
     }
 
@@ -4476,7 +4484,7 @@ impl Demo {
                             |index| Msg::SetBackground(options[index].0),
                         )
                         .label("Efecto")
-                        .test_id("fondo.efecto"),
+                        .test_id("background.efecto"),
                         switch_labeled(
                             "Animado",
                             animated,
@@ -4549,7 +4557,7 @@ impl Demo {
         };
         card()
             .class("w-full max-w-3xl")
-            .test_id("campos.estados")
+            .test_id("fields.estados")
             .children([
                 card_header(
                     "Estados de TextField",
@@ -4713,7 +4721,7 @@ impl Demo {
                         TextField::new("Contraseña", &self.password)
                             .test_id("form.password")
                             .field_icon(FieldKind::Password)
-                            .password_command(self.show_password, AlternarContrasena)
+                            .password_command(self.show_password, TogglePasswordAction)
                             .required(true)
                             .helper_text("Mínimo 8 caracteres")
                             .on_input(edit(Field::Password))
@@ -4808,8 +4816,8 @@ pub fn run_from_env() -> Result<(), Box<dyn std::error::Error>> {
     // Preferencias de la ejecución anterior; un problema solo se avisa.
     match Store::for_app(APP_ID) {
         Ok(store) => {
-            match store.load::<PreferenciasDemo>() {
-                Ok(Some(prefs)) => demo.aplicar_preferencias(&prefs),
+            match store.load::<DemoPreferences>() {
+                Ok(Some(prefs)) => demo.apply_preferences(&prefs),
                 Ok(None) => {}
                 Err(e) => eprintln!("Preferencias ignoradas ({}): {e}", store.dir().display()),
             }
@@ -4905,8 +4913,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        Campo, CargarUrl, Dialogo, ImageSource, LatLon, LatLonBounds, MapView, PLAZA_DE_ARMAS,
-        SECTORES, SimularEspera, VISTA_INICIAL, VarianteAviso, ViewChange, sector_inicial,
+        DemoDialog, INITIAL_VIEW, ImageField, ImageSource, LatLon, LatLonBounds, LoadUrl,
+        MAIN_SQUARE, MapView, SECTORS, SimulateWait, ToastKind, ViewChange, initial_sector,
     };
 
     use cosmic_text::{
@@ -4914,8 +4922,8 @@ mod tests {
     };
 
     use super::{
-        AlternarContrasena, Demo, Enviar, Field, Incrementar, Limpiar, Msg, Reiniciar, Saludo,
-        Seccion,
+        ClearForm, Demo, Field, Increment, LastSubmission, Msg, Reset, Section, Submit,
+        TogglePasswordAction,
     };
     use serde_json::json;
 
@@ -4931,10 +4939,10 @@ mod tests {
     use crate::menu::{MenuEntry, menu_model};
 
     impl Demo {
-        /// The default demo showing `seccion`.
-        fn at(seccion: Seccion) -> Self {
+        /// The default demo showing `section`.
+        fn at(section: Section) -> Self {
             Self {
-                seccion,
+                section,
                 ..Self::default()
             }
         }
@@ -4968,7 +4976,7 @@ mod tests {
         use crate::theme::MixStyle;
         let rows = [
             (Demo::default(), ("Nombre", "Correo")),
-            (Demo::at(Seccion::Campos), ("Buscar", "Contraseña")),
+            (Demo::at(Section::Fields), ("Buscar", "Contraseña")),
         ];
         let themes = [
             Theme::kai(Density::Comfortable),
@@ -5050,7 +5058,7 @@ mod tests {
                                 .build(),
                             button("Enviar", ButtonVariant::Primary)
                                 .control_size(size)
-                                .test_id("enviar"),
+                                .test_id("submit"),
                         ]),
                     );
                     tree.assign_ids();
@@ -5070,7 +5078,7 @@ mod tests {
                     );
                     let screen = Screen::new(&layout);
                     let field = screen.get_by_test_id("campo.shell").bounds();
-                    let button = screen.get_by_test_id("enviar").bounds();
+                    let button = screen.get_by_test_id("submit").bounds();
                     let at = format!("{generation:?} {appearance:?} {size:?}");
                     assert_eq!(field.height, height, "{at}");
                     assert_eq!(button.height, height, "{at}");
@@ -5133,7 +5141,7 @@ mod tests {
             repeat: false,
         });
         let mut demo = Demo::default();
-        let name = find(&demo, By::test_id("form.nombre.input"));
+        let name = find(&demo, By::test_id("form.name.input"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let mut model = UiModel::default();
         dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
@@ -5141,13 +5149,13 @@ mod tests {
         assert_eq!(empty.activated, None, "«Enviar» is disabled without a name");
 
         demo.apply(Msg::NameChanged("Ana".to_owned()));
-        let send = find(&demo, By::test_id("form.enviar"));
+        let send = find(&demo, By::test_id("form.submit"));
         let order = FocusOrder::from_tree(&build_view(&demo));
         let result = dispatch(&mut model, &order, return_key.clone());
         assert_eq!(result.activated.map(|a| a.widget), Some(send));
 
         // «Correo» keeps its on_submit.
-        let email = find(&demo, By::test_id("form.correo.input"));
+        let email = find(&demo, By::test_id("form.email.input"));
         dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
         let result = dispatch(&mut model, &order, return_key);
         assert_eq!(result.activated, None);
@@ -5231,26 +5239,31 @@ mod tests {
         // the background effects (one stop; «Animado» starts disabled),
         // «Incrementar» («Reiniciar» starts disabled) and the form
         // («Enviar» starts disabled).
-        let inicio = [
-            "barra.sidebar",
-            "barra.buscar.input",
+        let home_view = [
+            "bar.sidebar",
+            "bar.find.input",
             "nav.0",
-            "fondo.efecto.0",
-            "contador.incrementar",
-            "form.nombre.input",
-            "form.correo.input",
-            "form.rol",
-            "form.terminos",
+            "background.efecto.0",
+            "counter.increment",
+            "form.name.input",
+            "form.email.input",
+            "form.role",
+            "form.terms",
             "form.notificaciones.track",
-            "form.limpiar",
+            "form.clear",
         ];
-        assert_eq!(tab_stops(&mut TestApp::new(Demo::default())), inicio);
+        assert_eq!(tab_stops(&mut TestApp::new(Demo::default())), home_view);
 
-        let campos = tab_stops(&mut TestApp::new(Demo::at(Seccion::Campos)));
-        assert_eq!(campos[2], "nav.1", "the sidebar enters at the selection");
-        let password = campos.iter().position(|stop| stop == "form.password.input");
+        let fields_list = tab_stops(&mut TestApp::new(Demo::at(Section::Fields)));
         assert_eq!(
-            campos[password.unwrap() + 1],
+            fields_list[2], "nav.1",
+            "the sidebar enters at the selection"
+        );
+        let password = fields_list
+            .iter()
+            .position(|stop| stop == "form.password.input");
+        assert_eq!(
+            fields_list[password.unwrap() + 1],
             "form.password.toggle",
             "the eye follows its field"
         );
@@ -5260,7 +5273,7 @@ mod tests {
         let stops = tab_stops(&mut TestApp::new(glow));
         assert_eq!(
             stops.len(),
-            inicio.len() + 1,
+            home_view.len() + 1,
             "with an effect «Animado» joins"
         );
         assert_eq!(stops[4], "Animado");
@@ -5368,7 +5381,7 @@ mod tests {
         let root = layout.root().unwrap();
         assert_eq!((root.bounds.width, root.bounds.height), (420.0, 340.0));
         let screen = Screen::new(&layout);
-        let content = screen.get_by_test_id("contenido").node();
+        let content = screen.get_by_test_id("content").node();
         let scroll = content.scroll.expect("content scrolls");
         assert!(scroll.max > 0.0, "the small window overflows");
         let header = screen.get(By::role(Role::Toolbar)).node();
@@ -5460,7 +5473,7 @@ mod tests {
         assert_eq!(tree.validate_ids(), Vec::<String>::new());
         let layout = layout_of(&tree);
         let screen = Screen::new(&layout);
-        let send = screen.get_by_test_id("form.enviar");
+        let send = screen.get_by_test_id("form.submit");
         assert_eq!(send.role(), Role::Button);
         assert_eq!(send.name().as_deref(), Some("Enviar"));
         assert_eq!(
@@ -5469,39 +5482,36 @@ mod tests {
         );
         assert_eq!(
             screen.get(By::role(Role::Button).name("Limpiar")).test_id(),
-            Some("form.limpiar")
+            Some("form.clear")
         );
         assert_eq!(
             screen.get_by_label("Nombre").test_id(),
-            Some("form.nombre.input")
+            Some("form.name.input")
         );
         assert_eq!(
             screen.get_by_label("Correo").test_id(),
-            Some("form.correo.input")
+            Some("form.email.input")
         );
         assert_eq!(
-            screen.get_by_test_id("barra.sumar").name().as_deref(),
+            screen.get_by_test_id("bar.add").name().as_deref(),
             Some("Sumar clic")
         );
         assert_eq!(
-            screen
-                .get_by_test_id("barra.buscar.input")
-                .name()
-                .as_deref(),
+            screen.get_by_test_id("bar.find.input").name().as_deref(),
             Some("Filtrar clientes")
         );
         // Sidebar rows are parts of `nav`, by position.
-        for (index, seccion) in Seccion::ALL.into_iter().enumerate() {
-            let row = screen.get(sidebar_row(&seccion.item().label));
+        for (index, section) in Section::ALL.into_iter().enumerate() {
+            let row = screen.get(sidebar_row(&section.item().label));
             assert_eq!(row.test_id(), Some(format!("nav.{index}").as_str()));
         }
 
         // Every section: unique ids, and its controls reachable by id.
-        for seccion in Seccion::ALL {
-            let tree = build_view(&Demo::at(seccion));
-            assert_eq!(tree.validate_ids(), Vec::<String>::new(), "{seccion:?}");
+        for section in Section::ALL {
+            let tree = build_view(&Demo::at(section));
+            assert_eq!(tree.validate_ids(), Vec::<String>::new(), "{section:?}");
         }
-        let layout = layout_of(&build_view(&Demo::at(Seccion::Campos)));
+        let layout = layout_of(&build_view(&Demo::at(Section::Fields)));
         let screen = Screen::new(&layout);
         assert_eq!(
             screen.get_by_label("Contraseña").test_id(),
@@ -5515,41 +5525,41 @@ mod tests {
         );
         assert_eq!(
             screen.get_by_label("PIN").test_id(),
-            Some("campos.pin.input")
+            Some("fields.pin.input")
         );
         assert_eq!(
-            screen.get_by_test_id("campos.notas.input").role(),
+            screen.get_by_test_id("fields.notes.input").role(),
             Role::TextArea
         );
 
-        let layout = layout_of(&build_view(&Demo::at(Seccion::Seleccion)));
+        let layout = layout_of(&build_view(&Demo::at(Section::Selection)));
         let screen = Screen::new(&layout);
         assert_eq!(
-            screen.get_by_test_id("seleccion.todos").role(),
+            screen.get_by_test_id("selection.all").role(),
             Role::Checkbox
         );
         assert_eq!(
-            screen.get_by_test_id("seleccion.pais").role(),
+            screen.get_by_test_id("selection.country").role(),
             Role::PopUpButton
         );
         assert_eq!(
             screen
-                .get_by_test_id("seleccion.alineacion.1")
+                .get_by_test_id("selection.alineacion.1")
                 .name()
                 .as_deref(),
             Some("Centro")
         );
 
-        let layout = layout_of(&build_view(&Demo::at(Seccion::Tabla)));
+        let layout = layout_of(&build_view(&Demo::at(Section::Table)));
         let screen = Screen::new(&layout);
-        assert_eq!(screen.get_by_test_id("tabla.clientes").role(), Role::Table);
-        assert_eq!(screen.get_by_test_id("tabla.lista").role(), Role::List);
+        assert_eq!(screen.get_by_test_id("table.clients").role(), Role::Table);
+        assert_eq!(screen.get_by_test_id("table.items").role(), Role::List);
     }
 
     #[test]
     fn typing_a_name_enables_send_and_the_click_submits_it() {
         let mut app = TestApp::new(Demo::default());
-        let send = || By::test_id("form.enviar");
+        let send = || By::test_id("form.submit");
         assert!(!app.is_enabled(send()));
         app.click(send());
         assert_eq!(app.messages(), [], "a disabled button sends nothing");
@@ -5575,18 +5585,18 @@ mod tests {
     fn the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them() {
         let mut app = TestApp::new(Demo::default());
         app.screen().get(By::text("Elegir rol"));
-        app.click(By::test_id("form.rol"));
+        app.click(By::test_id("form.role"));
         app.click(By::test_id("kai.menu.1"));
-        app.click(By::test_id("form.terminos"));
+        app.click(By::test_id("form.terms"));
         assert_eq!(app.messages(), [Msg::SetRole(1), Msg::ToggleTerms]);
         assert_eq!((app.app().role, app.app().terms), (Some(1), true));
         app.screen().get(By::text("Desarrollo"));
         assert_eq!(
-            app.screen().get_by_test_id("form.terminos").role(),
+            app.screen().get_by_test_id("form.terms").role(),
             Role::Checkbox
         );
 
-        app.click(By::test_id("form.limpiar"));
+        app.click(By::test_id("form.clear"));
         assert_eq!((app.app().role, app.app().terms), (None, false));
         app.screen().get(By::text("Elegir rol"));
     }
@@ -5621,42 +5631,42 @@ mod tests {
         By::role(Role::SidebarItem).name(name)
     }
 
-    /// Something only section `seccion` shows.
-    fn landmark(seccion: Seccion) -> &'static str {
-        match seccion {
-            Seccion::Inicio => "contador",
-            Seccion::Campos => "form.password",
-            Seccion::Botones => "botones.secondary",
-            Seccion::Seleccion => "seleccion",
-            Seccion::Contenedores => "contenedores.card",
-            Seccion::Badges => "badges",
-            Seccion::Multimedia => "multimedia.campos",
-            Seccion::Tabla => "tabla.clientes",
-            Seccion::Mapa => "mapa.vista",
-            Seccion::Graficos => "graficos.barras",
-            Seccion::Documento => "documento.editor",
-            Seccion::Dialogos => "dialogos",
-            Seccion::PlantillaLista => "plantilla.lista",
-            Seccion::PlantillaFormulario => "plantilla.formulario",
-            Seccion::PlantillaDatos => "plantilla.datos",
-            Seccion::Catalogo => "catalogo",
+    /// Something only section `section` shows.
+    fn landmark(section: Section) -> &'static str {
+        match section {
+            Section::Home => "counter",
+            Section::Fields => "form.password",
+            Section::Buttons => "buttons.secondary",
+            Section::Selection => "selection",
+            Section::Containers => "containers.card",
+            Section::Badges => "badges",
+            Section::Multimedia => "media.fields",
+            Section::Table => "table.clients",
+            Section::Map => "map.view",
+            Section::Charts => "charts.bars",
+            Section::Document => "document.editor",
+            Section::Dialogs => "dialogs",
+            Section::TemplateList => "template.items",
+            Section::TemplateForm => "template.form",
+            Section::TemplateData => "template.data",
+            Section::Catalog => "catalog",
         }
     }
 
     #[cfg(feature = "document")]
     #[test]
     fn document_types_bold_and_undo() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         assert_eq!(
             app.screen().get(editor()).name().as_deref(),
             Some("Informe de demostración")
         );
         app.type_text(editor(), "Hola");
         assert_eq!(app.value(editor()), "Hola");
-        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.click(By::test_id("document.ribbon.cmd.select.all"));
         assert!(app.perform("format.bold"));
         assert_eq!(app.value(editor()), "Hola");
         assert!(app.perform("edit.undo"));
@@ -5669,10 +5679,10 @@ mod tests {
     #[test]
     #[ignore = "en desarrollo: drag de selección en editor"]
     fn document_pointer_drag_selects_text() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.type_text(editor(), "Hola mundo seleccionable");
         assert_eq!(app.value(editor()), "Hola mundo seleccionable");
 
@@ -5690,10 +5700,10 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_shift_arrows_extend_selection() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.type_text(editor(), "abcdef");
         app.press(Key::ArrowLeft, Modifiers::NONE);
         app.press(Key::ArrowLeft, Modifiers::NONE);
@@ -5725,13 +5735,13 @@ mod tests {
         use crate::render::DrawOp;
         use crate::testing::MemoryClipboard;
         let clipboard = MemoryClipboard::new();
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::builder(demo).clipboard(clipboard.clone()).build();
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.type_text(editor(), "ClipDoc");
         assert_eq!(app.value(editor()), "ClipDoc");
-        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.click(By::test_id("document.ribbon.cmd.select.all"));
         app.press(Key::C, CMD);
         assert_eq!(clipboard.text().as_deref(), Some("ClipDoc"));
         app.press(Key::X, CMD);
@@ -5766,12 +5776,12 @@ mod tests {
     fn document_clipboard_copy_preserves_bold_via_html() {
         use crate::testing::MemoryClipboard;
         let clipboard = MemoryClipboard::new();
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::builder(demo).clipboard(clipboard.clone()).build();
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.type_text(editor(), "RichDoc");
-        app.click(By::test_id("documento.ribbon.cmd.select.all"));
+        app.click(By::test_id("document.ribbon.cmd.select.all"));
         assert!(app.perform("format.bold"));
         app.press(Key::C, CMD);
         assert_eq!(clipboard.text().as_deref(), Some("RichDoc"));
@@ -5793,8 +5803,8 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_multipage_scrolls_and_keeps_hit_target() {
-        let mut app = TestApp::new(Demo::at(Seccion::Documento));
-        let editor = || By::test_id("documento.editor");
+        let mut app = TestApp::new(Demo::at(Section::Document));
+        let editor = || By::test_id("document.editor");
         let before = app.value(editor());
         assert!(
             before.contains("Párrafo 40") || before.len() > 200,
@@ -5816,10 +5826,10 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_inserts_table_and_picture_from_toolbar() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.click(editor());
         assert!(app.perform("insert.table"));
         assert!(app.perform("insert.picture"));
@@ -5833,17 +5843,17 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_ribbon_bold_and_insert_table() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.type_text(editor(), "Ribbon");
         assert_eq!(app.value(editor()), "Ribbon");
-        app.click(By::test_id("documento.ribbon.cmd.select.all"));
-        app.click(By::test_id("documento.ribbon.cmd.format.bold"));
+        app.click(By::test_id("document.ribbon.cmd.select.all"));
+        app.click(By::test_id("document.ribbon.cmd.format.bold"));
         assert_eq!(app.value(editor()), "Ribbon");
-        app.click(By::test_id("documento.ribbon.tab.insert"));
-        app.click(By::test_id("documento.ribbon.cmd.insert.table"));
+        app.click(By::test_id("document.ribbon.tab.insert"));
+        app.click(By::test_id("document.ribbon.cmd.insert.table"));
         assert!(app.perform("edit.undo"));
         app.type_text(editor(), "!");
         assert!(app.value(editor()).contains('!'));
@@ -5860,64 +5870,64 @@ mod tests {
             ..Demo::default()
         };
         let mut app = TestApp::new(demo);
-        app.call("ui.ir_a", serde_json::json!({ "seccion": "mapa" }))
-            .expect("ui.ir_a");
+        app.call("ui.go_to", serde_json::json!({ "section": "map" }))
+            .expect("ui.go_to");
         app.run_until_idle();
-        let guardadas: super::PreferenciasDemo = Store::at(&dir)
+        let saved: super::DemoPreferences = Store::at(&dir)
             .load()
             .expect("archivo legible")
             .expect("preferencias guardadas");
-        assert_eq!(guardadas.seccion, Seccion::Mapa);
+        assert_eq!(saved.section, Section::Map);
 
         // Una ejecución nueva arranca donde quedó la anterior.
-        let mut otra = Demo::default();
-        otra.aplicar_preferencias(&guardadas);
-        assert_eq!(otra.seccion, Seccion::Mapa);
+        let mut other_one = Demo::default();
+        other_one.apply_preferences(&saved);
+        assert_eq!(other_one.section, Section::Map);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(feature = "document")]
     #[test]
     fn document_contextual_tabs_follow_table_and_picture() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
-        let tab = |id: &str| By::test_id(format!("documento.ribbon.tab.{id}"));
+        let editor = || By::test_id("document.editor");
+        let tab = |id: &str| By::test_id(format!("document.ribbon.tab.{id}"));
         app.type_text(editor(), "Texto");
         assert!(app.screen().try_get(tab("table")).is_err());
         assert!(app.screen().try_get(tab("picture")).is_err());
 
         app.click(tab("insert"));
-        app.click(By::test_id("documento.ribbon.cmd.insert.table"));
+        app.click(By::test_id("document.ribbon.cmd.insert.table"));
         assert!(
             app.screen().try_get(tab("table")).is_ok(),
             "caret en la tabla"
         );
         app.click(tab("table"));
-        app.click(By::test_id("documento.ribbon.cmd.table.style:TableGrid"));
+        app.click(By::test_id("document.ribbon.cmd.table.style:TableGrid"));
 
         app.click(tab("insert"));
-        app.click(By::test_id("documento.ribbon.cmd.insert.picture"));
+        app.click(By::test_id("document.ribbon.cmd.insert.picture"));
         assert!(
             app.screen().try_get(tab("picture")).is_ok(),
             "imagen seleccionada"
         );
         app.click(tab("picture"));
-        app.click(By::test_id("documento.ribbon.cmd.arrange.wrap:square"));
+        app.click(By::test_id("document.ribbon.cmd.arrange.wrap:square"));
     }
 
     #[cfg(feature = "document")]
     #[test]
     fn document_ribbon_collapses_with_the_window_width() {
         let at = |width: f32| {
-            TestApp::builder(Demo::at(Seccion::Documento))
+            TestApp::builder(Demo::at(Section::Document))
                 .viewport(width, 800.0)
                 .build()
         };
         let shown = |app: &TestApp<Demo>, by: By| app.screen().query(by).is_some();
-        let gallery = || By::test_id("documento.ribbon.cmd.para.heading2");
-        let styles = || By::test_id("documento.ribbon.styles");
+        let gallery = || By::test_id("document.ribbon.cmd.para.heading2");
+        let styles = || By::test_id("document.ribbon.styles");
         let paste_label = || By::text("Pegar");
         let group_label = || By::text("Portapapeles");
 
@@ -5935,7 +5945,7 @@ mod tests {
         assert!(!shown(&medium, paste_label()) && shown(&medium, group_label()));
         assert!(shown(
             &medium,
-            By::test_id("documento.ribbon.cmd.edit.paste")
+            By::test_id("document.ribbon.cmd.edit.paste")
         ));
 
         // < md: sin etiquetas de grupo.
@@ -5946,23 +5956,23 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_new_comment_asks_for_its_text() {
-        let mut app = TestApp::new(Demo::at(Seccion::Documento));
-        let bar = || By::test_id("documento.commentbar");
+        let mut app = TestApp::new(Demo::at(Section::Document));
+        let bar = || By::test_id("document.commentbar");
         assert!(app.screen().try_get(bar()).is_err());
-        app.click(By::test_id("documento.ribbon.tab.review"));
-        app.click(By::test_id("documento.ribbon.cmd.review.newComment"));
+        app.click(By::test_id("document.ribbon.tab.review"));
+        app.click(By::test_id("document.ribbon.cmd.review.newComment"));
         assert!(app.screen().try_get(bar()).is_ok());
-        app.click(By::test_id("documento.comment.close"));
+        app.click(By::test_id("document.comment.close"));
         assert!(app.screen().try_get(bar()).is_err());
     }
 
     #[cfg(feature = "document")]
     #[test]
     fn document_ribbon_shows_bold_pressed_and_cut_disabled() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         // Sin selección: cut disabled en chrome.
         assert!(
             app.app()
@@ -5982,8 +5992,8 @@ mod tests {
             "cut disabled without selection: {:?}",
             app.app().doc_ribbon_disabled
         );
-        app.click(By::test_id("documento.ribbon.cmd.select.all"));
-        app.click(By::test_id("documento.ribbon.cmd.format.bold"));
+        app.click(By::test_id("document.ribbon.cmd.select.all"));
+        app.click(By::test_id("document.ribbon.cmd.format.bold"));
         assert!(
             app.app()
                 .doc_ribbon_pressed
@@ -6004,7 +6014,7 @@ mod tests {
         let tree = build_view(app.app());
         let mut bold_pressed = false;
         tree.walk(&mut |el| {
-            if el.test_id.as_deref() == Some("documento.ribbon.cmd.format.bold") {
+            if el.test_id.as_deref() == Some("document.ribbon.cmd.format.bold") {
                 bold_pressed = el.is_pressed();
             }
         });
@@ -6021,24 +6031,24 @@ mod tests {
         assert!(tabs.iter().any(|t| t.id == "view"));
         assert!(tabs.iter().any(|t| t.id == "references"));
 
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        let editor = || By::test_id("documento.editor");
+        let editor = || By::test_id("document.editor");
         app.click(editor());
         app.type_text(editor(), "Tabs");
 
-        app.click(By::test_id("documento.ribbon.tab.layout"));
-        app.click(By::test_id("documento.ribbon.cmd.layout.orientation"));
+        app.click(By::test_id("document.ribbon.tab.layout"));
+        app.click(By::test_id("document.ribbon.cmd.layout.orientation"));
 
-        app.click(By::test_id("documento.ribbon.tab.review"));
-        app.click(By::test_id("documento.ribbon.cmd.review.wordCount"));
+        app.click(By::test_id("document.ribbon.tab.review"));
+        app.click(By::test_id("document.ribbon.cmd.review.wordCount"));
 
-        app.click(By::test_id("documento.ribbon.tab.view"));
-        app.click(By::test_id("documento.ribbon.cmd.view.zoomIn"));
+        app.click(By::test_id("document.ribbon.tab.view"));
+        app.click(By::test_id("document.ribbon.cmd.view.zoomIn"));
 
-        app.click(By::test_id("documento.ribbon.tab.references"));
-        app.click(By::test_id("documento.ribbon.cmd.references.footnote"));
+        app.click(By::test_id("document.ribbon.tab.references"));
+        app.click(By::test_id("document.ribbon.cmd.references.footnote"));
 
         assert!(
             app.value(editor()).contains("Tabs") || !app.value(editor()).is_empty(),
@@ -6049,10 +6059,10 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_save_docx_via_file_panel() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown = "Hola archivo".into();
         let mut app = TestApp::new(demo);
-        app.click(By::test_id("documento.guardar"));
+        app.click(By::test_id("document.save"));
         let request = app.file_save_request().cloned().expect("save panel");
         assert_eq!(request.name, "informe.docx");
         assert_eq!(request.types, ["docx"]);
@@ -6062,7 +6072,7 @@ mod tests {
         let path = dir.join("informe.docx");
         app.on_file_save(Some(path.clone()));
         app.run_until_idle();
-        assert!(!app.app().doc_archivo_busy);
+        assert!(!app.app().doc_file_busy);
         let bytes = std::fs::read(&path).expect("docx written");
         assert!(bytes.starts_with(b"PK"), "docx zip");
         app.screen().get(By::text("Archivo listo"));
@@ -6073,10 +6083,10 @@ mod tests {
     #[test]
     fn document_open_docx_via_file_panel() {
         // Seed a .docx via Guardar, then Abrir into a fresh demo.
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown = "Desde disco".into();
         let mut app = TestApp::new(demo);
-        app.click(By::test_id("documento.guardar"));
+        app.click(By::test_id("document.save"));
         let dir = std::env::temp_dir().join(format!("kai-doc-open-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("seed.docx");
@@ -6084,16 +6094,16 @@ mod tests {
         app.run_until_idle();
         assert!(path.exists());
 
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown.clear();
         let mut app = TestApp::new(demo);
-        app.click(By::test_id("documento.abrir"));
+        app.click(By::test_id("document.open"));
         let request = app.file_pick_request().cloned().expect("open panel");
         assert_eq!(request.types, ["docx"]);
         app.on_file_pick(Some(path.clone()));
         app.run_until_idle();
-        assert!(!app.app().doc_archivo_busy);
-        let value = app.value(By::test_id("documento.editor"));
+        assert!(!app.app().doc_file_busy);
+        let value = app.value(By::test_id("document.editor"));
         assert!(
             value.contains("Desde disco"),
             "opened docx should restore text; got {value:?}"
@@ -6105,10 +6115,10 @@ mod tests {
     #[cfg(feature = "document")]
     #[test]
     fn document_export_pdf_via_file_panel() {
-        let mut demo = Demo::at(Seccion::Documento);
+        let mut demo = Demo::at(Section::Document);
         demo.doc_markdown = "PDF demo".into();
         let mut app = TestApp::new(demo);
-        assert!(app.perform("documento.exportar_pdf"));
+        assert!(app.perform("document.export_pdf"));
         let request = app.file_save_request().cloned().expect("pdf panel");
         assert_eq!(request.name, "informe.pdf");
         assert_eq!(request.types, ["pdf"]);
@@ -6126,17 +6136,17 @@ mod tests {
     #[test]
     fn the_sidebar_shows_one_section_at_a_time() {
         let mut app = TestApp::new(Demo::default());
-        app.screen().get(By::test_id("form.nombre"));
+        app.screen().get(By::test_id("form.name"));
         app.click(sidebar_row("Campos"));
-        assert_eq!(app.messages(), [Msg::IrA(Seccion::Campos)]);
+        assert_eq!(app.messages(), [Msg::GoTo(Section::Fields)]);
         app.screen().get(By::test_id("form.password"));
-        assert!(app.screen().query(By::test_id("form.nombre")).is_none());
+        assert!(app.screen().query(By::test_id("form.name")).is_none());
         assert!(app.is_focused(sidebar_row("Campos")));
 
         // ↓ walks every section in order, across the groups, and ↑ back.
-        for pair in Seccion::ALL[1..].windows(2) {
+        for pair in Section::ALL[1..].windows(2) {
             app.press(Key::ArrowDown, Modifiers::NONE);
-            assert_eq!(app.app().seccion, pair[1]);
+            assert_eq!(app.app().section, pair[1]);
             app.screen().get(By::test_id(landmark(pair[1])));
             assert!(
                 app.screen().query(By::test_id(landmark(pair[0]))).is_none(),
@@ -6144,10 +6154,10 @@ mod tests {
                 pair[0]
             );
         }
-        for _ in 1..Seccion::ALL.len() {
+        for _ in 1..Section::ALL.len() {
             app.press(Key::ArrowUp, Modifiers::NONE);
         }
-        assert_eq!(app.app().seccion, Seccion::Inicio);
+        assert_eq!(app.app().section, Section::Home);
         assert!(app.is_focused(sidebar_row("Inicio")));
     }
 
@@ -6203,8 +6213,8 @@ mod tests {
 
     #[test]
     fn clicking_a_bar_selects_its_category() {
-        let mut app = TestApp::new(Demo::at(Seccion::Graficos));
-        let plot = app.screen().get(By::test_id("graficos.barras.plot"));
+        let mut app = TestApp::new(Demo::at(Section::Charts));
+        let plot = app.screen().get(By::test_id("charts.bars.plot"));
         assert_eq!(plot.name().as_deref(), Some("Clics por mes"));
         assert_eq!(
             plot.node().description.as_deref(),
@@ -6212,31 +6222,23 @@ mod tests {
         );
         let width = plot.bounds().width;
         let height = plot.bounds().height;
-        app.click_at(
-            By::test_id("graficos.barras.plot"),
-            width * 0.08,
-            height * 0.5,
-        );
-        assert_eq!(app.messages(), [Msg::Mes(0)]);
-        assert_eq!(app.app().mes, Some(0));
+        app.click_at(By::test_id("charts.bars.plot"), width * 0.08, height * 0.5);
+        assert_eq!(app.messages(), [Msg::Month(0)]);
+        assert_eq!(app.app().month, Some(0));
         app.screen().get(By::text("Seleccionado: Ene (4)"));
-        app.click_at(
-            By::test_id("graficos.barras.plot"),
-            width * 0.92,
-            height * 0.5,
-        );
-        assert_eq!(app.app().mes, Some(5));
+        app.click_at(By::test_id("charts.bars.plot"), width * 0.92, height * 0.5);
+        assert_eq!(app.app().month, Some(5));
         app.screen().get(By::text("Seleccionado: Jun (11)"));
     }
 
     #[test]
     fn waiting_buttons_show_the_dots_until_their_task_ends() {
-        let mut app = TestApp::new(Demo::at(Seccion::Botones));
-        let primary = By::test_id("espera.primary");
+        let mut app = TestApp::new(Demo::at(Section::Buttons));
+        let primary = By::test_id("wait.primary");
         let width = app.screen().get(primary.clone()).bounds().width;
         app.click(primary.clone());
         assert!(app.is_busy(primary.clone()));
-        assert!(!app.is_busy(By::test_id("espera.secondary")));
+        assert!(!app.is_busy(By::test_id("wait.secondary")));
         assert_eq!(app.screen().get(primary.clone()).bounds().width, width);
         assert_eq!(
             app.screen().get(primary.clone()).name().as_deref(),
@@ -6244,51 +6246,48 @@ mod tests {
         );
         app.click(primary.clone());
         let waits = app.messages().iter();
-        assert_eq!(
-            waits.filter(|msg| **msg == Msg::Esperar("Primary")).count(),
-            1
-        );
+        assert_eq!(waits.filter(|msg| **msg == Msg::Wait("Primary")).count(), 1);
         app.run_until_idle();
         assert!(!app.is_busy(primary));
         app.screen().get(By::text("Terminó: Primary"));
-        assert!(app.is_busy(By::test_id("espera.cargando")), "loading(true)");
+        assert!(app.is_busy(By::test_id("wait.cargando")), "loading(true)");
     }
 
     #[test]
     fn a_chained_save_and_a_background_sync_in_the_demo() {
-        let mut app = TestApp::new(Demo::at(Seccion::Botones));
-        app.click(By::test_id("espera.recargar"));
+        let mut app = TestApp::new(Demo::at(Section::Buttons));
+        app.click(By::test_id("wait.reload"));
         app.run_next_tasks();
-        assert!(app.messages().contains(&Msg::Recargar));
-        assert!(app.is_busy(By::test_id("espera.recargar")));
+        assert!(app.messages().contains(&Msg::Reload));
+        assert!(app.is_busy(By::test_id("wait.reload")));
         app.run_until_idle();
-        assert!(!app.is_busy(By::test_id("espera.recargar")));
+        assert!(!app.is_busy(By::test_id("wait.reload")));
         app.screen().get(By::text("Terminó: guardar y recargar"));
 
-        let sync = By::test_id("espera.sincronizar");
+        let sync = By::test_id("wait.sync");
         app.click(sync.clone());
         app.click(sync.clone());
         assert!(!app.is_busy(sync));
         app.screen().get(By::text("Sincronizando (2)…"));
         app.run_until_idle();
-        assert_eq!(app.app().sincronizando, 0);
+        assert_eq!(app.app().syncing, 0);
     }
 
     #[test]
     fn the_wait_command_is_in_course_everywhere_while_it_runs() {
-        const ID: &str = <SimularEspera as crate::commands::Action>::ID;
-        let mut app = TestApp::new(Demo::at(Seccion::Botones));
+        const ID: &str = <SimulateWait as crate::commands::Action>::ID;
+        let mut app = TestApp::new(Demo::at(Section::Buttons));
         let bound = By::test_id(ID);
         assert!(app.perform(ID));
         assert!(app.is_busy(bound.clone()));
         assert_eq!(
-            app.available::<SimularEspera>(),
+            app.available::<SimulateWait>(),
             Availability::disabled(crate::session::COMMAND_BUSY)
         );
         assert!(!app.perform(ID));
         app.run_until_idle();
         assert!(!app.is_busy(bound));
-        assert_eq!(app.available::<SimularEspera>(), Availability::Enabled);
+        assert_eq!(app.available::<SimulateWait>(), Availability::Enabled);
     }
 
     /// Every public constructor of `components` shows up in the demo,
@@ -6357,150 +6356,140 @@ mod tests {
             "master_list_span_classes",
             "master_detail_span_classes",
         ];
-        use Seccion::*;
-        let shown: Vec<(&[&str], Seccion, Option<&str>, By)> = vec![
-            (&["toolbar"], Inicio, None, By::role(Role::Toolbar)),
-            (&["toolbar_item"], Inicio, None, By::test_id("barra.sumar")),
-            (&["toolbar_title"], Inicio, None, By::text("Kai UI Desktop")),
-            (
-                &["toolbar_spacer"],
-                Inicio,
-                None,
-                By::test_id("barra.espacio"),
-            ),
+        use Section::*;
+        let shown: Vec<(&[&str], Section, Option<&str>, By)> = vec![
+            (&["toolbar"], Home, None, By::role(Role::Toolbar)),
+            (&["toolbar_item"], Home, None, By::test_id("bar.add")),
+            (&["toolbar_title"], Home, None, By::text("Kai UI Desktop")),
+            (&["toolbar_spacer"], Home, None, By::test_id("bar.espacio")),
             (
                 &["toolbar_separator"],
-                Inicio,
+                Home,
                 None,
-                By::test_id("barra.separador"),
+                By::test_id("bar.separador"),
             ),
             (
                 &["toolbar_search", "search_field", "SearchField"],
-                Inicio,
+                Home,
                 None,
                 By::role(Role::SearchInput).name("Filtrar clientes"),
             ),
             (
                 &["sidebar", "Sidebar"],
-                Inicio,
+                Home,
                 None,
                 By::role(Role::Sidebar).name("Secciones"),
             ),
-            (&["segmented"], Inicio, None, By::test_id("fondo.efecto")),
+            (&["segmented"], Home, None, By::test_id("background.efecto")),
             (
                 &["switch_labeled"],
-                Inicio,
+                Home,
                 None,
                 By::role(Role::Switch).name("Notificaciones"),
             ),
             (
                 &["checkbox"],
-                Inicio,
+                Home,
                 None,
                 By::role(Role::Checkbox).name("Acepto los términos"),
             ),
-            (&["select"], Inicio, None, By::test_id("form.rol")),
-            (&["stat"], Inicio, None, By::text("Envíos")),
-            (&["TextField"], Campos, None, By::test_id("form.password")),
+            (&["select"], Home, None, By::test_id("form.role")),
+            (&["stat"], Home, None, By::text("Envíos")),
+            (&["TextField"], Fields, None, By::test_id("form.password")),
             (
                 &["text_area", "TextArea"],
-                Campos,
+                Fields,
                 None,
                 By::role(Role::TextArea).name("Notas"),
             ),
-            (&["button"], Botones, None, By::test_id("botones.secondary")),
+            (&["button"], Buttons, None, By::test_id("buttons.secondary")),
             (
                 &["button_sized"],
-                Botones,
+                Buttons,
                 None,
                 By::role(Role::Button).name("Grande"),
             ),
-            (&["Button"], Botones, None, By::test_id("botones.bordered")),
+            (&["Button"], Buttons, None, By::test_id("buttons.bordered")),
             (
                 &["DotProgress", "dot_progress"],
-                Botones,
+                Buttons,
                 None,
                 By::role(Role::ProgressIndicator).name("Cargando"),
             ),
             (
                 &["icon_button"],
-                Botones,
+                Buttons,
                 None,
-                By::test_id("botones.icono"),
+                By::test_id("buttons.icono"),
             ),
             (
                 &["icon_button_sized"],
-                Botones,
+                Buttons,
                 None,
                 By::role(Role::Button).name("Usuario"),
             ),
             (
                 &["switch"],
-                Seleccion,
+                Selection,
                 None,
                 By::role(Role::Switch).name("Wi-Fi"),
             ),
             (
                 &["switch_with_options"],
-                Seleccion,
+                Selection,
                 None,
-                By::test_id("seleccion.bluetooth"),
+                By::test_id("selection.bluetooth"),
             ),
             (
                 &["checkbox_with_options"],
-                Seleccion,
+                Selection,
                 None,
-                By::test_id("seleccion.todos"),
+                By::test_id("selection.all"),
             ),
             (
                 &["select_with_options"],
-                Seleccion,
+                Selection,
                 None,
-                By::test_id("seleccion.pais"),
+                By::test_id("selection.country"),
             ),
             (
                 &["select_menu"],
-                Seleccion,
-                Some("seleccion.pais"),
+                Selection,
+                Some("selection.country"),
                 By::role(Role::Menu),
             ),
             (
                 &["segmented_with_options"],
-                Seleccion,
+                Selection,
                 None,
-                By::test_id("seleccion.alineacion"),
+                By::test_id("selection.alineacion"),
             ),
             (
                 &["card", "card_header", "card_content", "card_actions"],
-                Contenedores,
+                Containers,
                 None,
-                By::test_id("contenedores.card"),
+                By::test_id("containers.card"),
             ),
             (
                 &["group_box"],
-                Contenedores,
+                Containers,
                 None,
-                By::test_id("contenedores.grupo"),
+                By::test_id("containers.grupo"),
             ),
             (
                 &["heading"],
-                Contenedores,
+                Containers,
                 None,
                 By::role(Role::Heading).name("Título de sección"),
             ),
-            (
-                &["paragraph"],
-                Contenedores,
-                None,
-                By::role(Role::Paragraph),
-            ),
+            (&["paragraph"], Containers, None, By::role(Role::Paragraph)),
             (
                 &["caption"],
-                Contenedores,
+                Containers,
                 None,
                 By::text("Una leyenda, para notas y metadatos."),
             ),
-            (&["Tabs"], Contenedores, None, By::role(Role::TabList)),
+            (&["Tabs"], Containers, None, By::role(Role::TabList)),
             (&["badge"], Badges, None, By::text("Warning")),
             (
                 &["Avatar"],
@@ -6512,13 +6501,13 @@ mod tests {
                 &["avatar"],
                 Multimedia,
                 None,
-                By::test_id("multimedia.avatar_url"),
+                By::test_id("media.avatar_url"),
             ),
             (
                 &["MediaSlot"],
                 Multimedia,
                 None,
-                By::test_id("multimedia.portada.preview"),
+                By::test_id("media.cover.preview"),
             ),
             (
                 &["alert"],
@@ -6528,122 +6517,117 @@ mod tests {
             ),
             (
                 &["Table"],
-                Tabla,
+                Table,
                 None,
                 By::role(Role::Table).name("Clientes"),
             ),
             (
                 &["virtual_list"],
-                Tabla,
+                Table,
                 None,
                 By::role(Role::List).name("Elementos"),
             ),
             (
                 &["column_menu"],
-                Tabla,
+                Table,
                 None,
                 By::role(Role::Button).name("Columnas"),
             ),
             (
                 &["map"],
-                Mapa,
+                Map,
                 None,
                 By::role(Role::Group).name("Mapa de Parral"),
             ),
             (
                 &["marker"],
-                Mapa,
+                Map,
                 None,
                 By::role(Role::Image).name("Plaza de Armas"),
             ),
             (
                 &["MapLayer", "polygons"],
-                Mapa,
+                Map,
                 None,
                 By::role(Role::List).name("Sectores"),
             ),
             (
                 &["color_field", "ColorField"],
-                Mapa,
-                Some("mapa.sector.AOP26000002"),
+                Map,
+                Some("map.sector.AOP26000002"),
                 By::role(Role::Group).name("Color del sector"),
             ),
             (
                 &["chart"],
-                Graficos,
+                Charts,
                 None,
                 By::role(Role::Image).name("Clics por mes"),
             ),
             (
                 &["document"],
-                Documento,
+                Document,
                 None,
                 By::role(Role::TextArea).name("Informe de demostración"),
             ),
             (
                 &["Dialog", "dialog"],
-                Dialogos,
-                Some("dialogos.guardar"),
+                Dialogs,
+                Some("dialogs.save"),
                 By::role(Role::Dialog).name("¿Guardar los cambios?"),
             ),
             (
                 &["toast_stack"],
-                Dialogos,
-                Some("avisos.info"),
-                By::test_id("kai.aviso.1"),
+                Dialogs,
+                Some("toasts.info"),
+                By::test_id("kai.toast.1"),
             ),
             (
                 &["command_palette"],
-                Dialogos,
-                Some("dialogos.paleta"),
-                By::test_id("kai.paleta"),
+                Dialogs,
+                Some("dialogs.palette"),
+                By::test_id("kai.palette"),
             ),
             (
                 &["MasterDetailPage", "PageHeader", "breadcrumb_trail"],
-                PlantillaLista,
+                TemplateList,
                 None,
-                By::test_id("plantilla.lista"),
+                By::test_id("template.items"),
             ),
             (
                 &["FormPage", "form_field_cell", "form_full_cell"],
-                PlantillaFormulario,
+                TemplateForm,
                 None,
-                By::test_id("plantilla.formulario"),
+                By::test_id("template.form"),
             ),
             (
                 &["DataPage"],
-                PlantillaDatos,
+                TemplateData,
                 None,
-                By::test_id("plantilla.datos"),
+                By::test_id("template.data"),
             ),
-            (
-                &["EmptyState"],
-                Catalogo,
-                None,
-                By::test_id("catalogo.empty"),
-            ),
+            (&["EmptyState"], Catalog, None, By::test_id("catalog.empty")),
             (
                 &["loading_placeholder"],
-                Tabla,
+                Table,
                 None,
                 By::test_id("patrones.loading"),
             ),
         ];
         let mut covered = BTreeSet::new();
-        for (names, seccion, open, by) in shown {
-            let mut app = TestApp::new(Demo::at(seccion));
+        for (names, section, open, by) in shown {
+            let mut app = TestApp::new(Demo::at(section));
             if let Some(id) = open {
                 app.click(By::test_id(id));
             }
             assert!(
                 !app.screen().all(by).is_empty(),
-                "{names:?} no aparece en {seccion:?}"
+                "{names:?} no aparece en {section:?}"
             );
             covered.extend(names.iter().copied());
         }
-        let mut editor = TestApp::new(Demo::at(Mapa));
-        editar_catillo(&mut editor);
-        assert!(!editor.screen().all(vertice(0)).is_empty());
+        let mut editor = TestApp::new(Demo::at(Map));
+        edit_catillo(&mut editor);
+        assert!(!editor.screen().all(vertex(0)).is_empty());
         covered.insert("PolygonDraft");
 
         let public: BTreeSet<&str> = SOURCES
@@ -6678,37 +6662,37 @@ mod tests {
     fn image_fields_take_picked_and_dropped_files_and_refuse_others() {
         let dir = std::env::temp_dir().join(format!("kai-demo-media-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let foto = dir.join("portada.png");
-        std::fs::write(&foto, png([200, 40, 40, 255])).unwrap();
-        let mut app = TestApp::new(Demo::at(Seccion::Multimedia));
-        let preview = |id: &str| By::test_id(format!("multimedia.{id}.preview"));
+        let photo = dir.join("portada.png");
+        std::fs::write(&photo, png([200, 40, 40, 255])).unwrap();
+        let mut app = TestApp::new(Demo::at(Section::Multimedia));
+        let preview = |id: &str| By::test_id(format!("media.{id}.preview"));
         assert_eq!(
-            app.screen().get(preview("portada")).name().as_deref(),
+            app.screen().get(preview("cover")).name().as_deref(),
             Some("Agregar imagen")
         );
 
-        app.click(preview("portada"));
+        app.click(preview("cover"));
         let request = app.file_pick_request().expect("the panel is open");
         assert_eq!(request.title, "Elegir portada");
-        app.on_file_pick(Some(foto.clone()));
+        app.on_file_pick(Some(photo.clone()));
         app.run_until_idle();
         assert_eq!(
-            app.app().portada.actual,
-            Some(ImageSource::Path(foto.clone()))
+            app.app().cover.actual,
+            Some(ImageSource::Path(photo.clone()))
         );
         assert_eq!(
-            app.screen().get(preview("portada")).name().as_deref(),
+            app.screen().get(preview("cover")).name().as_deref(),
             Some("Cambiar imagen")
         );
         assert!(
             app.messages()
-                .contains(&Msg::ImagenElegida(Campo::Portada, Some(foto)))
+                .contains(&Msg::ImagePicked(ImageField::Cover, Some(photo)))
         );
 
-        let before = app.app().foto.clone();
+        let before = app.app().photo.clone();
         app.on_file_pick(None);
-        app.click(preview("foto"));
-        assert_eq!(app.app().foto, before, "cancelled");
+        app.click(preview("photo"));
+        assert_eq!(app.app().photo, before, "cancelled");
 
         app.drop_files(preview("logo"), [dir.join("nota.txt")]);
         assert_eq!(
@@ -6716,47 +6700,47 @@ mod tests {
             Some("Tipo no permitido: png, jpg, jpeg, webp")
         );
         assert!(app.app().logo.actual.is_some(), "the logo stays");
-        app.screen().get(By::test_id("multimedia.logo.error"));
+        app.screen().get(By::test_id("media.logo.error"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn cargar_url_puts_a_downloaded_image_in_the_avatar() {
+    fn load_url_puts_a_downloaded_image_in_the_avatar() {
         const URL: &str = "https://kai.test/ana.png";
-        let mut app = TestApp::builder(Demo::at(Seccion::Multimedia))
+        let mut app = TestApp::builder(Demo::at(Section::Multimedia))
             .images(FakeImageLoader::new().with(URL, png([20, 120, 220, 255])))
             .build();
-        let image = By::test_id("multimedia.avatar_url.image");
+        let image = By::test_id("media.avatar_url.image");
         assert!(app.screen().query(image.clone()).is_none(), "the icon");
 
-        let result = app.call("multimedia.cargar_url", json!({"url": URL}));
+        let result = app.call("media.load_url", json!({"url": URL}));
         assert!(result.is_ok(), "{result:?}");
         app.run_until_idle();
         assert_eq!(app.app().avatar_url.as_deref(), Some(URL));
         app.screen().get(image.clone());
         assert_eq!(app.app().url, URL, "the field shows it");
 
-        app.type_text(By::test_id("multimedia.url"), " ");
-        app.click(By::test_id("multimedia.cargar"));
+        app.type_text(By::test_id("media.url"), " ");
+        app.click(By::test_id("media.load"));
         assert_eq!(app.app().avatar_url.as_deref(), Some(URL), "trimmed");
-        app.invoke(CargarUrl { url: String::new() }).unwrap();
+        app.invoke(LoadUrl { url: String::new() }).unwrap();
         assert!(app.screen().query(image).is_none(), "back to the icon");
     }
 
     #[test]
     fn the_table_shows_an_avatar_by_each_name() {
-        let app = TestApp::new(Demo::at(Seccion::Tabla));
+        let app = TestApp::new(Demo::at(Section::Table));
         let screen = app.screen();
-        let row = screen.within(screen.get_by_test_id("tabla.clientes.row.0"));
-        let nombre = super::cliente(1).nombre;
-        row.get(By::role(Role::Image).name(&nombre));
+        let row = screen.within(screen.get_by_test_id("table.clients.row.0"));
+        let name = super::client(1).name;
+        row.get(By::role(Role::Image).name(&name));
         let names: Vec<_> = row
             .all(By::role(Role::Cell))
             .iter()
             .filter_map(|cell| cell.name())
             .collect();
         assert_eq!(
-            names[2], nombre,
+            names[2], name,
             "after the chevron and N.º; the avatar stays out of the cell's name"
         );
     }
@@ -6764,71 +6748,77 @@ mod tests {
     #[test]
     fn the_toolbar_search_filters_and_the_headers_sort_the_table() {
         let mut app = TestApp::new(Demo::default());
-        let table = By::test_id("tabla.clientes");
+        let table = By::test_id("table.clients");
         let count = |app: &TestApp<Demo>| app.screen().get(table.clone()).node().row_count;
         let cells = |app: &TestApp<Demo>, row: usize| -> Vec<String> {
             let screen = app.screen();
             screen
-                .within(screen.get_by_test_id(&format!("tabla.clientes.row.{row}")))
+                .within(screen.get_by_test_id(&format!("table.clients.row.{row}")))
                 .all(By::role(Role::Cell))
                 .iter()
                 .filter_map(|cell| cell.name())
                 .collect()
         };
         // Return in the search goes to the table.
-        app.type_text(By::test_id("barra.buscar"), "temuco");
+        app.type_text(By::test_id("bar.find"), "temuco");
         app.press(Key::Enter, Modifiers::NONE);
-        assert_eq!(app.app().seccion, Seccion::Tabla);
-        let temuco = (1..=super::CLIENTES)
-            .map(super::cliente)
+        assert_eq!(app.app().section, Section::Table);
+        let temuco = (1..=super::CLIENT_COUNT)
+            .map(super::client)
             .filter(|c| {
-                [c.nombre.as_str(), c.ciudad, c.plan]
+                [c.name.as_str(), c.city, c.plan]
                     .iter()
                     .any(|text| text.to_lowercase().contains("temuco"))
             })
             .count();
-        assert!(temuco > 0 && temuco < super::CLIENTES as usize);
+        assert!(temuco > 0 && temuco < super::CLIENT_COUNT as usize);
         assert_eq!(count(&app), Some(temuco));
         assert_eq!(cells(&app, 0)[3], "Temuco");
         assert!(
             app.screen()
-                .get_by_test_id("tabla.total")
+                .get_by_test_id("table.total")
                 .name()
                 .unwrap()
                 .contains("de 10000 con «temuco»")
         );
 
         // A sortable header sorts, and again reverses.
-        let monto = || By::role(Role::ColumnHeader).name("Monto");
-        app.click(monto());
-        assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Ascending)));
+        let amount_header = || By::role(Role::ColumnHeader).name("Monto");
+        app.click(amount_header());
+        assert_eq!(
+            app.app().table_view.sort,
+            Some((4, SortDirection::Ascending))
+        );
         let amount = |row: Vec<String>| -> u32 { row[5].trim_start_matches("$ ").parse().unwrap() };
         assert!(amount(cells(&app, 0)) <= amount(cells(&app, 1)));
-        app.click(monto());
-        assert_eq!(app.app().tabla.sort, Some((4, SortDirection::Descending)));
+        app.click(amount_header());
+        assert_eq!(
+            app.app().table_view.sort,
+            Some((4, SortDirection::Descending))
+        );
         assert!(amount(cells(&app, 0)) >= amount(cells(&app, 1)));
 
         // A click selects a client, which keeps its place through sorting.
-        app.click(By::test_id("tabla.clientes.row.1"));
-        let chosen = app.app().tabla.rows()[1];
-        assert_eq!(app.app().cliente, Some(chosen));
-        app.click(monto());
-        assert_eq!(app.app().cliente, Some(chosen));
-        let name = app.app().clientes[chosen].nombre.clone();
+        app.click(By::test_id("table.clients.row.1"));
+        let chosen = app.app().table_view.rows()[1];
+        assert_eq!(app.app().client, Some(chosen));
+        app.click(amount_header());
+        assert_eq!(app.app().client, Some(chosen));
+        let name = app.app().clients[chosen].name.clone();
         assert_eq!(
-            app.screen().get_by_test_id("tabla.seleccion").name(),
+            app.screen().get_by_test_id("table.selection").name(),
             Some(format!("Seleccionado: {name}"))
         );
 
         // Clearing the search shows the ten thousand again.
-        app.click(By::test_id("barra.buscar.clear"));
+        app.click(By::test_id("bar.find.clear"));
         assert_eq!(count(&app), Some(10_000));
     }
 
     #[test]
     fn exporting_saves_the_rows_the_table_shows_where_the_person_says() {
-        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
-        app.type_text(By::test_id("barra.buscar"), "temuco");
+        let mut app = TestApp::new(Demo::at(Section::Table));
+        app.type_text(By::test_id("bar.find"), "temuco");
         app.click(By::role(Role::ColumnHeader).name("Monto"));
         app.click(By::role(Role::Button).name("Exportar"));
         let request = app.file_save_request().cloned().expect("the save panel");
@@ -6840,9 +6830,9 @@ mod tests {
         let path = dir.join("clientes.xlsx");
         app.on_file_save(Some(path.clone()));
         app.run_until_idle();
-        assert!(!app.app().exportando);
+        assert!(!app.app().exporting);
         assert!(std::fs::read(&path).unwrap().starts_with(b"PK"));
-        let rows = app.app().tabla.len();
+        let rows = app.app().table_view.len();
         assert!(rows > 0 && rows < 10_000);
         app.screen().get(By::text("Excel exportado"));
         app.screen()
@@ -6850,7 +6840,7 @@ mod tests {
 
         // The command does the same, from the menu, the palette or an agent.
         std::fs::remove_file(&path).unwrap();
-        assert!(app.perform("tabla.exportar"));
+        assert!(app.perform("table.export"));
         app.run_until_idle();
         assert!(path.exists());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -6858,8 +6848,8 @@ mod tests {
 
     #[test]
     fn the_columns_button_hides_a_column_and_the_search_still_looks_in_it() {
-        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
-        let table = By::test_id("tabla.clientes");
+        let mut app = TestApp::new(Demo::at(Section::Table));
+        let table = By::test_id("table.clients");
         app.click(By::role(Role::Button).name("Columnas"));
         let items: Vec<_> = app
             .screen()
@@ -6883,7 +6873,7 @@ mod tests {
             ["Detalle", "N.º", "Nombre", "Plan", "Monto", "Acciones"]
         );
 
-        app.type_text(By::test_id("barra.buscar"), "temuco");
+        app.type_text(By::test_id("bar.find"), "temuco");
         let count = app.screen().get(table).node().row_count.unwrap();
         assert!(
             count > 0 && count < 10_000,
@@ -6893,28 +6883,28 @@ mod tests {
 
     #[test]
     fn a_client_row_opens_its_detail_and_the_export_leaves_it_out() {
-        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
-        app.click(By::test_id("tabla.clientes.row.0"));
+        let mut app = TestApp::new(Demo::at(Section::Table));
+        app.click(By::test_id("table.clients.row.0"));
         app.press(Key::ArrowRight, Modifiers::NONE);
-        let cliente = super::cliente(1);
+        let client = super::client(1);
         let detail = app.screen().get(By::role(Role::Region));
         assert!(
             detail
                 .name()
                 .unwrap()
-                .starts_with(&format!("1 {}", cliente.nombre))
+                .starts_with(&format!("1 {}", client.name))
         );
-        let text = By::text(format!("Cliente N.º 1 de {}", cliente.ciudad));
+        let text = By::text(format!("Cliente N.º 1 de {}", client.city));
         assert_eq!(app.screen().all(text.clone()).len(), 1);
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("tabla.ficha.1")));
+        assert!(app.is_focused(By::test_id("table.card.1")));
         app.press(Key::Space, Modifiers::NONE);
         assert_eq!(app.screen().all(text).len(), 2, "and the toast");
         let sheet = app
             .app()
-            .tabla
-            .export(&app.app().clientes, &super::columnas());
+            .table_view
+            .export(&app.app().clients, &super::table_columns());
         assert_eq!(
             sheet.columns,
             ["N.º", "Nombre", "Ciudad", "Plan", "Monto"],
@@ -6924,19 +6914,19 @@ mod tests {
 
     #[test]
     fn the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause() {
-        let mut app = TestApp::new(Demo::at(Seccion::Tabla));
-        let table = By::test_id("tabla.clientes");
+        let mut app = TestApp::new(Demo::at(Section::Table));
+        let table = By::test_id("table.clients");
         let count = |app: &TestApp<Demo>| app.screen().get(table.clone()).node().row_count;
-        let filtrar = By::role(Role::Button).name("Filtrar");
+        let filter_rows = By::role(Role::Button).name("Filtrar");
         assert!(
             app.screen()
                 .query(By::role(Role::SearchInput).name("Filtrar Ciudad"))
                 .is_none()
         );
 
-        app.click(filtrar.clone());
+        app.click(filter_rows.clone());
         assert_eq!(
-            app.screen().get(filtrar.clone()).node().control_state,
+            app.screen().get(filter_rows.clone()).node().control_state,
             Some(ControlState::On)
         );
         let screen = app.screen();
@@ -6957,44 +6947,44 @@ mod tests {
             "N.º is not filterable"
         );
 
-        app.type_text(By::test_id("tabla.clientes.filter.2"), "temuco");
+        app.type_text(By::test_id("table.clients.filter.2"), "temuco");
         assert_eq!(count(&app), Some(10_000), "the table waits for a pause");
-        app.advance(super::PAUSA_FILTRO);
-        app.type_text(By::test_id("tabla.clientes.filter.3"), "pro");
-        app.advance(super::PAUSA_FILTRO);
+        app.advance(super::FILTER_PAUSE);
+        app.type_text(By::test_id("table.clients.filter.3"), "pro");
+        app.advance(super::FILTER_PAUSE);
         let expected = app
             .app()
-            .clientes
+            .clients
             .iter()
-            .filter(|c| c.ciudad == "Temuco" && c.plan == "Pro")
+            .filter(|c| c.city == "Temuco" && c.plan == "Pro")
             .count();
         assert!(expected > 0);
         assert_eq!(count(&app), Some(expected));
         assert!(
             app.screen()
-                .get_by_test_id("tabla.total")
+                .get_by_test_id("table.total")
                 .name()
                 .unwrap()
                 .contains("filtrados")
         );
 
         // Turning the fields off clears the filters.
-        app.click(filtrar);
-        assert!(!app.app().tabla.filtering);
-        assert!(app.app().tabla.filters.is_empty());
+        app.click(filter_rows);
+        assert!(!app.app().table_view.filtering);
+        assert!(app.app().table_view.filters.is_empty());
         assert_eq!(count(&app), Some(10_000));
     }
 
     #[test]
     fn dialogs_trap_focus_and_confirming_shows_a_toast() {
-        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
+        let mut app = TestApp::new(Demo::at(Section::Dialogs));
         let dialog = || By::role(Role::Dialog);
-        app.click(By::test_id("dialogos.guardar"));
+        app.click(By::test_id("dialogs.save"));
         assert_eq!(
             app.screen().get(dialog()).name().as_deref(),
             Some("¿Guardar los cambios?")
         );
-        assert!(app.is_focused(By::test_id("dialogo.cancel")));
+        assert!(app.is_focused(By::test_id("dialog.cancel")));
         for _ in 0..3 {
             app.press(Key::Tab, Modifiers::NONE);
             let focused = app.session().focused().unwrap();
@@ -7006,11 +6996,11 @@ mod tests {
         }
         app.press(Key::Escape, Modifiers::NONE);
         assert!(app.screen().query(dialog()).is_none());
-        assert!(app.is_focused(By::test_id("dialogos.guardar")));
+        assert!(app.is_focused(By::test_id("dialogs.save")));
         assert!(app.app().toasts.is_empty(), "cancel shows nothing");
 
-        app.click(By::test_id("dialogos.eliminar"));
-        let default = By::test_id("dialogo.default");
+        app.click(By::test_id("dialogs.delete"));
+        let default = By::test_id("dialog.default");
         assert_eq!(
             app.screen().get(default.clone()).name().as_deref(),
             Some("Eliminar")
@@ -7018,105 +7008,102 @@ mod tests {
         app.click(default);
         assert!(app.screen().query(dialog()).is_none());
         let screen = app.screen();
-        let toast = screen.get_by_test_id("kai.aviso.1");
+        let toast = screen.get_by_test_id("kai.toast.1");
         assert_eq!(toast.role(), Role::Status);
         screen.within(toast).get(By::text("Borrador eliminado"));
     }
 
     #[test]
     fn toasts_close_on_their_own_or_with_their_button() {
-        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
-        app.click(By::test_id("avisos.exito"));
-        app.click(By::test_id("avisos.error"));
+        let mut app = TestApp::new(Demo::at(Section::Dialogs));
+        app.click(By::test_id("toasts.success"));
+        app.click(By::test_id("toasts.error"));
         assert_eq!(
-            app.screen().get_by_test_id("kai.aviso.1").role(),
+            app.screen().get_by_test_id("kai.toast.1").role(),
             Role::Status
         );
         assert_eq!(
-            app.screen().get_by_test_id("kai.aviso.2").role(),
+            app.screen().get_by_test_id("kai.toast.2").role(),
             Role::Alert,
             "errors are read at once"
         );
-        app.screen().get_by_test_id("kai.aviso.2.action");
+        app.screen().get_by_test_id("kai.toast.2.action");
         app.advance(crate::components::TOAST_DURATION);
-        assert!(app.screen().query(By::test_id("kai.aviso.1")).is_none());
+        assert!(app.screen().query(By::test_id("kai.toast.1")).is_none());
         assert!(
-            app.screen().query(By::test_id("kai.aviso.2")).is_some(),
+            app.screen().query(By::test_id("kai.toast.2")).is_some(),
             "an error stays until closed"
         );
-        app.click(By::test_id("kai.aviso.2.close"));
+        app.click(By::test_id("kai.toast.2.close"));
         assert!(app.app().toasts.is_empty());
 
         assert_eq!(
-            app.call("avisos.mostrar", json!({"variante": "advertencia"})),
+            app.call("toasts.show", json!({"kind": "warning"})),
             Ok(json!(null))
         );
         assert_eq!(
             app.app().toasts[0].variant,
             crate::components::AlertVariant::Warning
         );
-        assert!(
-            app.call("avisos.mostrar", json!({"variante": "rojo"}))
-                .is_err()
-        );
-        app.click(By::test_id("kai.aviso.3.close"));
+        assert!(app.call("toasts.show", json!({"kind": "red"})).is_err());
+        app.click(By::test_id("kai.toast.3.close"));
         assert!(app.app().toasts.is_empty());
         assert_eq!(app.session().next_deadline(), None, "its timer is gone too");
     }
 
     #[test]
     fn the_palette_link_opens_the_palette() {
-        let mut app = TestApp::new(Demo::at(Seccion::Dialogos));
-        let link = By::test_id("dialogos.paleta");
+        let mut app = TestApp::new(Demo::at(Section::Dialogs));
+        let link = By::test_id("dialogs.palette");
         assert_eq!(
             app.screen().get(link.clone()).name().as_deref(),
             Some("Abrir la paleta (⇧⌘P)")
         );
         app.click(link.clone());
-        app.screen().get_by_test_id("kai.paleta");
-        assert!(app.is_focused(By::test_id("kai.paleta.buscar")));
+        app.screen().get_by_test_id("kai.palette");
+        assert!(app.is_focused(By::test_id("kai.palette.find")));
         app.press(Key::Escape, Modifiers::NONE);
-        assert!(app.screen().query(By::test_id("kai.paleta")).is_none());
+        assert!(app.screen().query(By::test_id("kai.palette")).is_none());
         assert!(app.is_focused(link));
     }
 
     #[test]
     fn the_all_checkbox_is_mixed_and_sets_every_permission() {
-        let mut app = TestApp::new(Demo::at(Seccion::Seleccion));
-        let todos = By::test_id("seleccion.todos");
+        let mut app = TestApp::new(Demo::at(Section::Selection));
+        let all_items = By::test_id("selection.all");
         let state = |app: &TestApp<Demo>, by: By| app.screen().get(by).node().control_state;
-        assert_eq!(state(&app, todos.clone()), Some(ControlState::Mixed));
-        app.click(todos.clone());
-        assert_eq!(app.app().permisos, [true; 3]);
-        assert_eq!(state(&app, todos.clone()), Some(ControlState::On));
-        app.click(todos.clone());
-        assert_eq!(app.app().permisos, [false; 3]);
-        app.click(By::test_id("seleccion.permiso.1"));
-        assert_eq!(state(&app, todos.clone()), Some(ControlState::Mixed));
-        assert!(!app.is_enabled(By::test_id("seleccion.administrar")));
-        assert!(!app.is_enabled(By::test_id("seleccion.bluetooth")));
+        assert_eq!(state(&app, all_items.clone()), Some(ControlState::Mixed));
+        app.click(all_items.clone());
+        assert_eq!(app.app().permissions, [true; 3]);
+        assert_eq!(state(&app, all_items.clone()), Some(ControlState::On));
+        app.click(all_items.clone());
+        assert_eq!(app.app().permissions, [false; 3]);
+        app.click(By::test_id("selection.permiso.1"));
+        assert_eq!(state(&app, all_items.clone()), Some(ControlState::Mixed));
+        assert!(!app.is_enabled(By::test_id("selection.administrar")));
+        assert!(!app.is_enabled(By::test_id("selection.bluetooth")));
 
-        app.click(By::test_id("seleccion.pais"));
+        app.click(By::test_id("selection.country"));
         app.click(By::role(Role::MenuItem).name("Perú"));
-        assert_eq!(app.app().pais, Some(2));
-        app.click(By::test_id("seleccion.alineacion.2"));
-        assert_eq!(app.app().alineacion, 2);
-        app.click(By::test_id("seleccion.wifi"));
+        assert_eq!(app.app().country, Some(2));
+        app.click(By::test_id("selection.alineacion.2"));
+        assert_eq!(app.app().alignment, 2);
+        app.click(By::test_id("selection.wifi"));
         assert!(!app.app().wifi);
     }
 
     #[test]
-    fn scripts_and_agents_change_the_section_with_ui_ir_a() {
+    fn scripts_and_agents_change_the_section_with_ui_go_to() {
         let mut app = TestApp::new(Demo::default());
-        for seccion in Seccion::ALL.into_iter().rev() {
+        for section in Section::ALL.into_iter().rev() {
             assert_eq!(
-                app.call("ui.ir_a", json!({"seccion": seccion.key()})),
+                app.call("ui.go_to", json!({"section": section.key()})),
                 Ok(json!(null))
             );
-            assert_eq!(app.app().seccion, seccion);
-            app.screen().get(By::test_id(landmark(seccion)));
+            assert_eq!(app.app().section, section);
+            app.screen().get(By::test_id(landmark(section)));
         }
-        app.call("ui.ir_a", json!({"seccion": "botones"})).unwrap();
+        app.call("ui.go_to", json!({"section": "buttons"})).unwrap();
         assert_eq!(
             app.screen()
                 .get(sidebar_row("Botones"))
@@ -7124,9 +7111,9 @@ mod tests {
                 .control_state,
             Some(ControlState::On)
         );
-        assert!(app.call("ui.ir_a", json!({"seccion": "mapas"})).is_err());
-        assert!(app.call("ui.ir_a", json!({})).is_err());
-        assert_eq!(app.app().seccion, Seccion::Botones);
+        assert!(app.call("ui.go_to", json!({"section": "maps"})).is_err());
+        assert!(app.call("ui.go_to", json!({})).is_err());
+        assert_eq!(app.app().section, Section::Buttons);
     }
 
     /// ⌃⌘S, the toolbar button and `ui.alternar_sidebar` collapse it to
@@ -7152,7 +7139,7 @@ mod tests {
             Role::SidebarItem,
             "rows keep their names in the rail"
         );
-        let toggle = By::test_id("barra.sidebar");
+        let toggle = By::test_id("bar.sidebar");
         assert_eq!(
             app.screen().get(toggle.clone()).name().as_deref(),
             Some("Mostrar barra lateral")
@@ -7163,7 +7150,7 @@ mod tests {
             app.screen().get(toggle).name().as_deref(),
             Some("Ocultar barra lateral")
         );
-        assert_eq!(app.call("ui.alternar_sidebar", json!({})), Ok(json!(null)));
+        assert_eq!(app.call("ui.toggle_sidebar", json!({})), Ok(json!(null)));
         assert!(app.app().sidebar_collapsed);
 
         let narrow = TestApp::builder(Demo::default())
@@ -7181,24 +7168,24 @@ mod tests {
     /// sector, even over a window width that would collapse the sidebar.
     #[test]
     fn dev_restarts_keep_section_sidebar_and_sector() {
-        let mut before = Demo::at(Seccion::Mapa);
-        before.seleccionar("AOP26000002");
+        let mut before = Demo::at(Section::Map);
+        before.select_area("AOP26000002");
         let state = before.dev_state().unwrap();
 
         let mut after = Demo::default();
         after.restore_dev_state(state);
         let app = TestApp::builder(after).viewport(560.0, 700.0).build();
-        assert_eq!(app.app().seccion, Seccion::Mapa);
+        assert_eq!(app.app().section, Section::Map);
         assert!(!app.app().sidebar_collapsed);
         assert_eq!(app.app().area.as_deref(), Some("AOP26000002"));
-        assert!(app.screen().query(By::test_id("mapa")).is_some());
+        assert!(app.screen().query(By::test_id("map")).is_some());
 
         let mut older = Demo::default();
-        older.restore_dev_state(json!({ "seccion": "tabla", "otra_cosa": 1 }));
-        assert_eq!(older.seccion, Seccion::Tabla);
+        older.restore_dev_state(json!({ "section": "table", "other_thing": 1 }));
+        assert_eq!(older.section, Section::Table);
         assert!(!older.sized, "nothing said about the sidebar");
         let mut broken = Demo::default();
-        broken.restore_dev_state(json!({ "seccion": "no_existe" }));
+        broken.restore_dev_state(json!({ "section": "missing" }));
         assert_eq!(broken, Demo::default());
     }
 
@@ -7209,28 +7196,28 @@ mod tests {
         let short = |demo| TestApp::builder(demo).viewport(1024.0, 400.0).build();
         let password =
             |app: &TestApp<Demo>| app.screen().get(By::test_id("form.password")).bounds().y;
-        let top = |app: &TestApp<Demo>| app.screen().get(By::test_id("form.limpiar")).bounds().y;
-        let campos = password(&short(Demo::at(Seccion::Campos)));
+        let top = |app: &TestApp<Demo>| app.screen().get(By::test_id("form.clear")).bounds().y;
+        let fields_list = password(&short(Demo::at(Section::Fields)));
         let mut app = short(Demo::default());
         let at_rest = top(&app);
         for _ in 0..20 {
             app.press(Key::Tab, Modifiers::NONE);
-            if app.is_focused(By::test_id("form.limpiar")) {
+            if app.is_focused(By::test_id("form.clear")) {
                 break;
             }
         }
         let scrolled = top(&app);
         assert!(scrolled < at_rest, "focusing «Limpiar» scrolls to it");
         app.click(sidebar_row("Campos"));
-        assert_eq!(password(&app), campos);
+        assert_eq!(password(&app), fields_list);
         app.click(sidebar_row("Inicio"));
         assert_eq!(top(&app), at_rest);
         // Also after scrolling a long section with the wheel.
         app.click(sidebar_row("Tabla"));
-        let table = |app: &TestApp<Demo>| app.screen().get_by_test_id("tabla").bounds().y;
+        let table = |app: &TestApp<Demo>| app.screen().get_by_test_id("table").bounds().y;
         let fresh = table(&app);
         // Over the caption, outside the table's own scroll.
-        app.scroll_wheel(By::test_id("tabla.total"), -200.0);
+        app.scroll_wheel(By::test_id("table.total"), -200.0);
         assert!(table(&app) < fresh);
         app.click(sidebar_row("Badges y alertas"));
         app.click(sidebar_row("Tabla"));
@@ -7240,7 +7227,7 @@ mod tests {
     #[test]
     fn return_in_the_name_field_submits_through_the_default_button() {
         let mut app = TestApp::new(Demo::default());
-        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.type_text(By::test_id("form.name"), "Ana");
         app.press(Key::Enter, Modifiers::NONE);
         assert_eq!(app.messages().last(), Some(&Msg::Submit));
         assert_eq!(app.app().submissions, ["Ana"]);
@@ -7249,12 +7236,12 @@ mod tests {
     #[test]
     fn tab_moves_through_the_form_in_order_showing_the_ring() {
         let mut app = TestApp::new(Demo::default());
-        app.click(By::test_id("form.nombre"));
-        assert!(app.is_focused(By::test_id("form.nombre")));
+        app.click(By::test_id("form.name"));
+        assert!(app.is_focused(By::test_id("form.name")));
         assert!(!app.focus_visible(), "a click does not show the ring");
 
         app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("form.correo")));
+        assert!(app.is_focused(By::test_id("form.email")));
         assert!(app.focus_visible());
 
         let shift = Modifiers {
@@ -7262,12 +7249,12 @@ mod tests {
             ..Modifiers::NONE
         };
         app.press(Key::Tab, shift);
-        assert!(app.is_focused(By::test_id("form.nombre")));
+        assert!(app.is_focused(By::test_id("form.name")));
     }
 
     #[test]
     fn the_password_eye_toggles_and_leaves_focus_in_the_field() {
-        let mut app = TestApp::new(Demo::at(Seccion::Campos));
+        let mut app = TestApp::new(Demo::at(Section::Fields));
         app.type_text(By::test_id("form.password"), "abc");
         assert!(!app.app().show_password);
         app.click(By::test_id("form.password.toggle"));
@@ -7283,64 +7270,64 @@ mod tests {
         assert_eq!(
             ids,
             [
-                "contador.incrementar",
-                "contador.sumar",
-                "contador.reiniciar",
-                "form.enviar",
-                "form.limpiar",
-                "form.alternar_contrasena",
-                "form.ultimo_envio",
-                "ui.ir_a",
-                "ui.alternar_sidebar",
-                "avisos.mostrar",
-                "multimedia.cargar_url",
-                "mapa.set_view",
-                "mapa.fit_bounds",
-                "areas.seleccionar",
-                "areas.editar_geometria",
-                "mapa.get_view",
-                "botones.simular_espera",
-                "tabla.exportar",
+                "counter.increment",
+                "counter.add",
+                "counter.reset",
+                "form.submit",
+                "form.clear",
+                "form.toggle_password",
+                "form.last_submission",
+                "ui.go_to",
+                "ui.toggle_sidebar",
+                "toasts.show",
+                "media.load_url",
+                "map.set_view",
+                "map.fit_bounds",
+                "areas.select",
+                "areas.edit_geometry",
+                "map.get_view",
+                "buttons.simulate_wait",
+                "table.export",
                 "format.bold",
                 "format.italic",
                 "para.bullets",
                 "insert.table",
                 "insert.picture",
-                "documento.abrir",
-                "documento.guardar",
-                "documento.exportar_pdf",
-                "documento.buscar",
+                "document.open",
+                "document.save",
+                "document.export_pdf",
+                "document.find",
                 "edit.undo",
                 "edit.redo",
-                "kai.paleta",
+                "kai.palette",
             ]
         );
         assert_eq!(
-            app.available::<Reiniciar>(),
+            app.available::<Reset>(),
             Availability::disabled("El contador ya está en cero")
         );
-        app.click(By::test_id("barra.sumar"));
-        assert!(app.available::<Reiniciar>().is_enabled());
-        assert!(!app.available::<Enviar>().is_enabled());
-        app.type_text(By::test_id("form.nombre"), "Ana");
-        assert!(app.available::<Enviar>().is_enabled());
+        app.click(By::test_id("bar.add"));
+        assert!(app.available::<Reset>().is_enabled());
+        assert!(!app.available::<Submit>().is_enabled());
+        app.type_text(By::test_id("form.name"), "Ana");
+        assert!(app.available::<Submit>().is_enabled());
     }
 
     #[test]
     fn invoke_runs_enabled_actions_and_reports_disabled_ones() {
         let mut app = TestApp::new(Demo::default());
-        let error = app.invoke(Reiniciar).unwrap_err();
+        let error = app.invoke(Reset).unwrap_err();
         assert_eq!(error.message, "El contador ya está en cero");
         assert_eq!(app.messages(), [], "a disabled action sends nothing");
 
-        app.invoke(Incrementar).unwrap();
-        app.invoke(Incrementar).unwrap();
+        app.invoke(Increment).unwrap();
+        app.invoke(Increment).unwrap();
         assert_eq!(app.app().clicks, 2);
         let screen = app.screen();
         screen
-            .within(screen.get_by_test_id("contador"))
+            .within(screen.get_by_test_id("counter"))
             .get(By::role(Role::Status).name("2"));
-        app.invoke(Reiniciar).unwrap();
+        app.invoke(Reset).unwrap();
         assert_eq!(app.messages(), [Msg::Increment, Msg::Increment, Msg::Reset]);
         assert_eq!(app.app().clicks, 0);
     }
@@ -7364,14 +7351,14 @@ mod tests {
         assert_eq!(
             model[0].items[1],
             MenuEntry {
-                id: "contador.reiniciar",
+                id: "counter.reset",
                 title: "Reiniciar",
                 enabled: false,
                 shortcut: Some(KeyEquivalent::cmd(Key::Char('0'))),
             }
         );
-        let ver: Vec<_> = model[2].items.iter().map(|item| item.id).collect();
-        assert_eq!(ver, ["ui.alternar_sidebar", PALETTE]);
+        let view_menu: Vec<_> = model[2].items.iter().map(|item| item.id).collect();
+        assert_eq!(view_menu, ["ui.toggle_sidebar", PALETTE]);
         assert_eq!(
             model[2].items[0].shortcut,
             Some(KeyEquivalent::ctrl_cmd(Key::Char('s')))
@@ -7407,7 +7394,7 @@ mod tests {
     #[test]
     fn command_shortcuts_do_not_steal_copy_in_a_field() {
         let mut app = TestApp::new(Demo::default());
-        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.type_text(By::test_id("form.name"), "Ana");
         let typed = app.messages().len();
         app.press(Key::A, CMD);
         app.press(Key::C, CMD);
@@ -7421,7 +7408,7 @@ mod tests {
     #[test]
     fn a_button_follows_its_command() {
         let mut app = TestApp::new(Demo::default());
-        let reset = || By::test_id("contador.reiniciar");
+        let reset = || By::test_id("counter.reset");
         assert!(!app.is_enabled(reset()));
         assert_eq!(
             app.screen().get(reset()).node().description.as_deref(),
@@ -7433,7 +7420,7 @@ mod tests {
         );
         app.click(reset());
         assert_eq!(app.messages(), []);
-        app.click(By::test_id("barra.sumar"));
+        app.click(By::test_id("bar.add"));
         assert!(app.is_enabled(reset()));
         assert_eq!(app.screen().get(reset()).node().description, None);
         app.click(reset());
@@ -7448,11 +7435,11 @@ mod tests {
     };
 
     fn row(id: &str) -> By {
-        By::test_id(format!("kai.paleta.{id}"))
+        By::test_id(format!("kai.palette.{id}"))
     }
 
     fn search() -> By {
-        By::test_id("kai.paleta.buscar")
+        By::test_id("kai.palette.find")
     }
 
     #[test]
@@ -7467,10 +7454,10 @@ mod tests {
             .get(By::role(Role::Dialog).name("Paleta de comandos"))
             .test_id()
             .map(str::to_owned);
-        assert_eq!(dialog.as_deref(), Some("kai.paleta"));
+        assert_eq!(dialog.as_deref(), Some("kai.palette"));
         let rows = |app: &TestApp<Demo>| -> Vec<String> {
             let screen = app.screen();
-            let panel = screen.get(By::test_id("kai.paleta"));
+            let panel = screen.get(By::test_id("kai.palette"));
             screen
                 .within(panel)
                 .all(By::role(Role::Row))
@@ -7484,7 +7471,7 @@ mod tests {
             "every app action, not kai.* or queries"
         );
         app.type_text(search(), "REIN");
-        assert_eq!(rows(&app), ["kai.paleta.contador.reiniciar"]);
+        assert_eq!(rows(&app), ["kai.palette.counter.reset"]);
         assert_eq!(app.value(search()), "REIN");
         app.type_text(search(), "zzz");
         assert_eq!(rows(&app), Vec::<String>::new());
@@ -7495,18 +7482,15 @@ mod tests {
     fn disabled_command_stays_disabled_in_button_palette_and_menu() {
         let mut app = TestApp::new(Demo::default());
         app.press(Key::Char('p'), CMD_SHIFT);
-        let reset = row("contador.reiniciar");
-        assert!(!app.is_enabled(By::test_id("contador.reiniciar")));
+        let reset = row("counter.reset");
+        assert!(!app.is_enabled(By::test_id("counter.reset")));
         assert!(!app.is_enabled(reset.clone()));
         assert_eq!(
             app.screen().get(reset).node().description.as_deref(),
             Some("El contador ya está en cero")
         );
         let menu = menu_model(app.commands());
-        let entry = menu[0]
-            .items
-            .iter()
-            .find(|item| item.id == "contador.reiniciar");
+        let entry = menu[0].items.iter().find(|item| item.id == "counter.reset");
         assert_eq!(entry.map(|item| item.enabled), Some(false));
     }
 
@@ -7520,7 +7504,7 @@ mod tests {
         assert!(app.session().palette_open());
 
         app.press(Key::Escape, Modifiers::NONE);
-        app.click(By::test_id("barra.sumar"));
+        app.click(By::test_id("bar.add"));
         app.press(Key::Char('p'), CMD_SHIFT);
         assert_eq!(app.value(search()), "", "a new palette starts empty");
         app.type_text(search(), "rein");
@@ -7550,7 +7534,7 @@ mod tests {
     #[test]
     fn command_z_undoes_typing_in_a_field_and_the_app_hears_it() {
         let mut app = TestApp::new(Demo::default());
-        let name = By::test_id("form.nombre");
+        let name = By::test_id("form.name");
         app.type_text(name.clone(), "Ana María");
         let command = Modifiers {
             command: true,
@@ -7585,8 +7569,8 @@ mod tests {
             let row = row.map(|row| (row, node(row).role(), node(row).is_selected()));
             (row, update.focus == crate::a11y::node_id(search))
         };
-        let first = app.screen().get(row("contador.incrementar")).id();
-        let second = app.screen().get(row("contador.reiniciar")).id();
+        let first = app.screen().get(row("counter.increment")).id();
+        let second = app.screen().get(row("counter.reset")).id();
         assert_eq!(
             active(&app),
             (
@@ -7614,7 +7598,7 @@ mod tests {
         assert!(app.is_focused(search()));
         assert_eq!(
             app.screen()
-                .get(row("contador.incrementar"))
+                .get(row("counter.increment"))
                 .node()
                 .control_state,
             Some(crate::element::ControlState::Off)
@@ -7624,19 +7608,19 @@ mod tests {
     #[test]
     fn escape_gives_focus_back_and_app_ids_do_not_change() {
         let mut app = TestApp::new(Demo::default());
-        let name = By::test_id("form.nombre");
+        let name = By::test_id("form.name");
         app.click(name.clone());
-        let reset_id = app.screen().get(By::test_id("contador.reiniciar")).id();
+        let reset_id = app.screen().get(By::test_id("counter.reset")).id();
         app.press(Key::Char('p'), CMD_SHIFT);
         assert!(!app.is_focused(name.clone()));
         assert_eq!(
-            app.screen().get(By::test_id("contador.reiniciar")).id(),
+            app.screen().get(By::test_id("counter.reset")).id(),
             reset_id
         );
         app.press(Key::Escape, Modifiers::NONE);
         assert!(!app.session().palette_open());
         assert!(app.is_focused(name));
-        assert!(app.screen().query(By::test_id("kai.paleta")).is_none());
+        assert!(app.screen().query(By::test_id("kai.palette")).is_none());
 
         app.press(Key::Char('p'), CMD_SHIFT);
         app.press(Key::Char('p'), CMD_SHIFT);
@@ -7655,7 +7639,7 @@ mod tests {
                 .by_id(focused)
                 .and_then(|found| found.test_id());
             assert!(
-                test_id.is_some_and(|id| id.starts_with("kai.paleta.")),
+                test_id.is_some_and(|id| id.starts_with("kai.palette.")),
                 "focus left the palette: {test_id:?}"
             );
         }
@@ -7665,7 +7649,7 @@ mod tests {
     fn clicks_run_a_row_or_close_on_the_backdrop() {
         let mut app = TestApp::new(Demo::default());
         app.press(Key::Char('p'), CMD_SHIFT);
-        app.click(row("contador.incrementar"));
+        app.click(row("counter.increment"));
         assert_eq!(app.messages(), [Msg::Increment]);
         assert!(!app.session().palette_open());
 
@@ -7732,46 +7716,46 @@ mod tests {
     }
 
     fn type_name(app: &mut TestApp<Demo>) {
-        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.type_text(By::test_id("form.name"), "Ana");
     }
 
     fn cases() -> Vec<Case> {
         vec![
             Case {
-                id: "contador.incrementar",
+                id: "counter.increment",
                 setup: |_| {},
-                invoke: |app| app.invoke(Incrementar).unwrap(),
+                invoke: |app| app.invoke(Increment).unwrap(),
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("barra.sumar"),
-                    Via::Button("contador.incrementar"),
+                    Via::Button("bar.add"),
+                    Via::Button("counter.increment"),
                     Via::Key(Key::Char('i'), CMD),
                     Via::Menu,
                     Via::Palette("Incrementar"),
                 ],
             },
             Case {
-                id: "contador.reiniciar",
-                setup: |app| app.invoke(Incrementar).unwrap(),
-                invoke: |app| app.invoke(Reiniciar).unwrap(),
+                id: "counter.reset",
+                setup: |app| app.invoke(Increment).unwrap(),
+                invoke: |app| app.invoke(Reset).unwrap(),
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("contador.reiniciar"),
+                    Via::Button("counter.reset"),
                     Via::Key(Key::Char('0'), CMD),
                     Via::Menu,
                     Via::Palette("Reiniciar"),
                 ],
             },
             Case {
-                id: "form.enviar",
+                id: "form.submit",
                 setup: type_name,
-                invoke: |app| app.invoke(Enviar).unwrap(),
+                invoke: |app| app.invoke(Submit).unwrap(),
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("form.enviar"),
+                    Via::Button("form.submit"),
                     // Return in «Nombre»: «Enviar» is the default button.
                     Via::Key(Key::Enter, Modifiers::NONE),
                     Via::Menu,
@@ -7779,22 +7763,22 @@ mod tests {
                 ],
             },
             Case {
-                id: "form.limpiar",
+                id: "form.clear",
                 setup: type_name,
-                invoke: |app| app.invoke(Limpiar).unwrap(),
+                invoke: |app| app.invoke(ClearForm).unwrap(),
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("form.limpiar"),
+                    Via::Button("form.clear"),
                     Via::Menu,
                     Via::Palette("Limpiar"),
                 ],
             },
             Case {
-                id: "form.alternar_contrasena",
+                id: "form.toggle_password",
                 // The password field is in «Campos».
                 setup: |app| app.click(By::test_id("nav.1")),
-                invoke: |app| app.invoke(AlternarContrasena).unwrap(),
+                invoke: |app| app.invoke(TogglePasswordAction).unwrap(),
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
@@ -7827,32 +7811,32 @@ mod tests {
     fn disabled_actions_do_nothing_from_any_via() {
         let disabled = [
             Case {
-                id: "contador.reiniciar",
+                id: "counter.reset",
                 setup: |_| {},
                 invoke: |app| {
-                    let error = app.invoke(Reiniciar).unwrap_err();
+                    let error = app.invoke(Reset).unwrap_err();
                     assert_eq!(error.message, "El contador ya está en cero");
                 },
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("contador.reiniciar"),
+                    Via::Button("counter.reset"),
                     Via::Key(Key::Char('0'), CMD),
                     Via::Menu,
                     Via::Palette("Reiniciar"),
                 ],
             },
             Case {
-                id: "form.enviar",
-                setup: |app| app.click(By::test_id("form.nombre")),
+                id: "form.submit",
+                setup: |app| app.click(By::test_id("form.name")),
                 invoke: |app| {
-                    let error = app.invoke(Enviar).unwrap_err();
+                    let error = app.invoke(Submit).unwrap_err();
                     assert_eq!(error.message, "Falta el nombre");
                 },
                 vias: vec![
                     Via::Invoke,
                     Via::Json,
-                    Via::Button("form.enviar"),
+                    Via::Button("form.submit"),
                     Via::Key(Key::Enter, Modifiers::NONE),
                     Via::Menu,
                     Via::Palette("Enviar"),
@@ -7875,27 +7859,30 @@ mod tests {
     fn json_calls_run_actions_and_queries() {
         let mut app = TestApp::new(Demo::default());
         assert_eq!(
-            app.call("contador.sumar", json!({"cantidad": 3})),
+            app.call("counter.add", json!({"count": 3})),
             Ok(json!(null))
         );
         assert_eq!(app.app().clicks, 3);
         assert_eq!(app.messages(), [Msg::Add(3)]);
-        let error = app.call("contador.sumar", json!({})).unwrap_err();
+        let error = app.call("counter.add", json!({})).unwrap_err();
         assert_eq!(
             error.message,
-            "entrada inválida para contador.sumar: missing field `cantidad`"
+            "entrada inválida para counter.add: missing field `count`"
         );
-        assert!(app.call("contador.sumar", json!({"cantidad": -1})).is_err());
+        assert!(app.call("counter.add", json!({"count": -1})).is_err());
 
-        assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!(null)));
-        let error = app.call("form.enviar", json!({})).unwrap_err();
+        assert_eq!(app.call("form.last_submission", json!({})), Ok(json!(null)));
+        let error = app.call("form.submit", json!({})).unwrap_err();
         assert_eq!(error.message, "Falta el nombre");
-        app.type_text(By::test_id("form.nombre"), "Ana");
+        app.type_text(By::test_id("form.name"), "Ana");
         // «Enviar» answers with «Último envío», read after its update.
-        assert_eq!(app.call("form.enviar", json!({})), Ok(json!("Ana")));
-        assert_eq!(app.call("form.ultimo_envio", json!({})), Ok(json!("Ana")));
-        assert_eq!(app.call("form.limpiar", json!({})), Ok(json!(null)));
-        assert!(app.call("contador.nada", json!({})).is_err());
+        assert_eq!(app.call("form.submit", json!({})), Ok(json!("Ana")));
+        assert_eq!(
+            app.call("form.last_submission", json!({})),
+            Ok(json!("Ana"))
+        );
+        assert_eq!(app.call("form.clear", json!({})), Ok(json!(null)));
+        assert!(app.call("counter.nothing", json!({})).is_err());
 
         let exposed: Vec<&str> = app
             .commands()
@@ -7906,32 +7893,32 @@ mod tests {
         assert_eq!(
             exposed,
             [
-                "contador.incrementar",
-                "contador.sumar",
-                "contador.reiniciar",
-                "form.enviar",
-                "form.limpiar",
-                "form.ultimo_envio",
-                "ui.ir_a",
-                "ui.alternar_sidebar",
-                "avisos.mostrar",
-                "multimedia.cargar_url",
-                "mapa.set_view",
-                "mapa.fit_bounds",
-                "areas.seleccionar",
-                "areas.editar_geometria",
-                "mapa.get_view",
-                "botones.simular_espera",
-                "tabla.exportar",
+                "counter.increment",
+                "counter.add",
+                "counter.reset",
+                "form.submit",
+                "form.clear",
+                "form.last_submission",
+                "ui.go_to",
+                "ui.toggle_sidebar",
+                "toasts.show",
+                "media.load_url",
+                "map.set_view",
+                "map.fit_bounds",
+                "areas.select",
+                "areas.edit_geometry",
+                "map.get_view",
+                "buttons.simulate_wait",
+                "table.export",
                 "format.bold",
                 "format.italic",
                 "para.bullets",
                 "insert.table",
                 "insert.picture",
-                "documento.abrir",
-                "documento.guardar",
-                "documento.exportar_pdf",
-                "documento.buscar",
+                "document.open",
+                "document.save",
+                "document.export_pdf",
+                "document.find",
                 "edit.undo",
                 "edit.redo",
             ]
@@ -7950,8 +7937,8 @@ mod tests {
         use crate::testing::MemoryClipboard;
         use std::time::{Duration, Instant};
 
-        let mut demo = Demo::at(Seccion::Mapa);
-        demo.vista = MapView::new(PLAZA_DE_ARMAS, 15.0);
+        let mut demo = Demo::at(Section::Map);
+        demo.view = MapView::new(MAIN_SQUARE, 15.0);
         let mut session = Session::new(
             demo,
             Theme::kai(Density::Comfortable),
@@ -7971,7 +7958,7 @@ mod tests {
         }
         let map = session
             .tree()
-            .find_test_id("mapa.vista")
+            .find_test_id("map.view")
             .map(|map| map.id)
             .unwrap();
         let bounds = session.layout().bounds(map).unwrap();
@@ -8026,17 +8013,17 @@ mod tests {
 
     #[test]
     fn the_map_follows_gestures_and_agents() {
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
-        let vista = By::test_id("mapa.vista");
-        app.drag_and_hold(vista.clone(), -100.0, 0.0);
-        let [Msg::MapaMovido(moved)] = app.messages() else {
+        let mut app = TestApp::new(Demo::at(Section::Map));
+        let view = By::test_id("map.view");
+        app.drag_and_hold(view.clone(), -100.0, 0.0);
+        let [Msg::MapMoved(moved)] = app.messages() else {
             panic!("{:?}", app.messages());
         };
-        assert!(moved.center.lon > PLAZA_DE_ARMAS.lon, "{moved:?}");
-        assert_eq!(app.app().vista, *moved);
+        assert!(moved.center.lon > MAIN_SQUARE.lon, "{moved:?}");
+        assert_eq!(app.app().view, *moved);
         assert_eq!(
-            app.call("mapa.get_view", json!({})),
-            Ok(serde_json::to_value(app.app().vista).unwrap())
+            app.call("map.get_view", json!({})),
+            Ok(serde_json::to_value(app.app().view).unwrap())
         );
 
         let terminal = MapView::new(LatLon::new(-36.155, -71.82), 15.0);
@@ -8045,8 +8032,8 @@ mod tests {
             "zoom": 15,
             "animate": false,
         });
-        assert_eq!(app.call("mapa.set_view", call), Ok(json!(null)));
-        assert_eq!(app.app().vista, terminal);
+        assert_eq!(app.call("map.set_view", call), Ok(json!(null)));
+        assert_eq!(app.app().view, terminal);
         assert!(!app.session().animating(), "it jumps");
         app.screen()
             .get(By::role(Role::Status).name("-36.1550, -71.8200 · zoom 15.0"));
@@ -8054,34 +8041,34 @@ mod tests {
             .screen()
             .get(By::role(Role::Image).name("Plaza de Armas"))
             .bounds();
-        let map = app.screen().get(vista.clone()).bounds();
+        let map = app.screen().get(view.clone()).bounds();
         assert!(
             pin.y + pin.height < map.y + map.height / 2.0,
             "the plaza is north of the terminal"
         );
 
-        app.click(By::test_id("mapa.volver"));
+        app.click(By::test_id("map.volver"));
         assert!(app.session().animating(), "it glides back");
         app.advance(Duration::from_secs(1));
-        assert_eq!(app.app().vista, VISTA_INICIAL);
+        assert_eq!(app.app().view, INITIAL_VIEW);
         assert!(
             !app.messages()
                 .iter()
                 .skip(1)
-                .any(|msg| matches!(msg, Msg::MapaMovido(_))),
+                .any(|msg| matches!(msg, Msg::MapMoved(_))),
             "the app's moves are not reported back"
         );
     }
 
     /// Where `at` falls in the window on the map of «Mapa».
     fn on_map(app: &TestApp<Demo>, at: LatLon) -> crate::geometry::Point {
-        let id = app.screen().get_by_test_id("mapa.vista").id();
+        let id = app.screen().get_by_test_id("map.view").id();
         let area = app.session().layout().node(id).unwrap().padding_box;
         let size = Size {
             width: area.width,
             height: area.height,
         };
-        let local = crate::geo::Camera::new(app.app().vista, size).to_local(at);
+        let local = crate::geo::Camera::new(app.app().view, size).to_local(at);
         crate::geometry::Point {
             x: area.x + local.x,
             y: area.y + local.y,
@@ -8091,17 +8078,17 @@ mod tests {
     #[test]
     fn sectors_are_chosen_from_the_list_the_map_and_agents() {
         use crate::style::Cursor;
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
+        let mut app = TestApp::new(Demo::at(Section::Map));
         let screen = app.screen();
-        let lista = screen.get(By::role(Role::List).name("Sectores"));
-        let nombres: Vec<String> = screen
-            .within(lista)
+        let list_view = screen.get(By::role(Role::List).name("Sectores"));
+        let names: Vec<String> = screen
+            .within(list_view)
             .all(By::role(Role::Button))
             .iter()
             .filter_map(|row| row.name())
             .collect();
         assert_eq!(
-            nombres,
+            names,
             [
                 "Plaza de Armas",
                 "Catillo",
@@ -8111,74 +8098,74 @@ mod tests {
             ]
         );
 
-        let catillo = sector_inicial("AOP26000002").unwrap();
-        app.click(By::test_id("mapa.sector.AOP26000002"));
+        let catillo_ring = initial_sector("AOP26000002").unwrap();
+        app.click(By::test_id("map.sector.AOP26000002"));
         assert_eq!(app.app().area.as_deref(), Some("AOP26000002"));
         assert!(app.session().animating(), "it glides to the sector");
         app.advance(Duration::from_secs(1));
-        let vista = app.app().vista;
-        assert!(vista.zoom > VISTA_INICIAL.zoom, "{vista:?}");
-        let centro = catillo.capa.centroid();
-        assert!((vista.center.lat - centro.lat).abs() < 1e-3, "{vista:?}");
-        assert!((vista.center.lon - centro.lon).abs() < 1e-3, "{vista:?}");
+        let view = app.app().view;
+        assert!(view.zoom > INITIAL_VIEW.zoom, "{view:?}");
+        let middle = catillo_ring.layer.centroid();
+        assert!((view.center.lat - middle.lat).abs() < 1e-3, "{view:?}");
+        assert!((view.center.lon - middle.lon).abs() < 1e-3, "{view:?}");
         app.screen()
             .get(By::text("Sector Catillo · AOP26000002 · 191,7 ha"));
         assert_eq!(
             app.screen()
-                .get_by_test_id("mapa.sector.AOP26000002")
+                .get_by_test_id("map.sector.AOP26000002")
                 .node()
                 .control_state,
             Some(ControlState::On)
         );
 
-        let todos = SECTORES
+        let all_items = SECTORS
             .iter()
-            .map(|sector| sector.capa.bounds())
+            .map(|sector| sector.layer.bounds())
             .reduce(LatLonBounds::union)
             .unwrap();
         assert_eq!(
-            app.call("mapa.fit_bounds", json!({ "bounds": todos })),
+            app.call("map.fit_bounds", json!({ "bounds": all_items })),
             Ok(json!(null))
         );
         app.advance(Duration::from_secs(1));
-        let terminal = sector_inicial("AOP26000005").unwrap().capa.centroid();
-        let punto = on_map(&app, terminal);
-        app.move_pointer(punto);
+        let terminal = initial_sector("AOP26000005").unwrap().layer.centroid();
+        let point_value = on_map(&app, terminal);
+        app.move_pointer(point_value);
         assert_eq!(app.mouse_cursor(), Cursor::Pointer);
-        app.click_point(punto);
+        app.click_point(point_value);
         assert_eq!(app.app().area.as_deref(), Some("AOP26000005"));
         assert!(
             app.messages()
-                .contains(&Msg::SeleccionarArea("AOP26000005".to_owned()))
+                .contains(&Msg::SelectArea("AOP26000005".to_owned()))
         );
 
         assert_eq!(
-            app.call("areas.seleccionar", json!({ "code": "AOP99" })),
+            app.call("areas.select", json!({ "code": "AOP99" })),
             Ok(json!(null))
         );
         assert_eq!(app.app().area.as_deref(), Some("AOP26000005"), "unknown");
         assert_eq!(
-            app.call("areas.seleccionar", json!({ "code": "AOP26000001" })),
+            app.call("areas.select", json!({ "code": "AOP26000001" })),
             Ok(json!(null))
         );
         assert_eq!(app.app().area.as_deref(), Some("AOP26000001"));
 
         app.click(By::role(Role::Switch).name("Sectores"));
-        assert!(!app.app().mostrar_areas, "{:?}", app.messages().last());
+        assert!(!app.app().show_areas, "{:?}", app.messages().last());
         app.advance(Duration::from_secs(1));
-        let plaza = on_map(&app, PLAZA_DE_ARMAS);
-        app.move_pointer(plaza);
+        let square = on_map(&app, MAIN_SQUARE);
+        app.move_pointer(square);
         assert_eq!(app.mouse_cursor(), Cursor::Default, "no sectors drawn");
     }
 
-    const CATILLO: &str = "AOP26000002";
+    const CATILLO_POLYGON: &str = "AOP26000002";
 
-    fn anillo(app: &TestApp<Demo>, code: &str) -> Vec<LatLon> {
-        app.app().sector(code).unwrap().anillo()
+    fn ring_points(app: &TestApp<Demo>, code: &str) -> Vec<LatLon> {
+        app.app().sector(code).unwrap().ring_points()
     }
 
-    fn borrador(app: &TestApp<Demo>) -> Vec<LatLon> {
-        app.app().edicion.as_ref().unwrap().1.ring().to_vec()
+    fn draft_area(app: &TestApp<Demo>) -> Vec<LatLon> {
+        app.app().editing.as_ref().unwrap().1.ring().to_vec()
     }
 
     #[track_caller]
@@ -8193,114 +8180,120 @@ mod tests {
     }
 
     /// Select Catillo, press «Editar sector» and let the map frame it.
-    fn editar_catillo(app: &mut TestApp<Demo>) {
-        app.click(By::test_id(format!("mapa.sector.{CATILLO}")));
-        app.click(By::test_id("mapa.editar"));
+    fn edit_catillo(app: &mut TestApp<Demo>) {
+        app.click(By::test_id(format!("map.sector.{CATILLO_POLYGON}")));
+        app.click(By::test_id("map.edit"));
         app.advance(Duration::from_secs(1));
-        assert!(app.app().edicion.is_some(), "{:?}", app.messages().last());
+        assert!(app.app().editing.is_some(), "{:?}", app.messages().last());
     }
 
-    fn vertice(n: usize) -> By {
-        By::test_id(format!("mapa.vista.vertex.{n}"))
+    fn vertex(n: usize) -> By {
+        By::test_id(format!("map.view.vertex.{n}"))
     }
 
     /// The selected sector takes a color from the palette or typed; while
     /// the hex is incomplete, and with «Sin color», it shows its type's.
     #[test]
     fn the_selected_sector_changes_color_with_the_color_field() {
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
-        let campo = By::role(Role::Group).name("Color del sector");
-        assert!(app.screen().query(campo.clone()).is_none(), "no sector yet");
-        app.click(By::test_id(format!("mapa.sector.{CATILLO}")));
-        let catillo = |app: &TestApp<Demo>| app.app().sector(CATILLO).unwrap().clone();
-        let del_tipo = catillo(&app).color();
-        assert_eq!(app.value(By::test_id("mapa.color.hex")), del_tipo.to_hex());
+        let mut app = TestApp::new(Demo::at(Section::Map));
+        let image_field = By::role(Role::Group).name("Color del sector");
+        assert!(
+            app.screen().query(image_field.clone()).is_none(),
+            "no sector yet"
+        );
+        app.click(By::test_id(format!("map.sector.{CATILLO_POLYGON}")));
+        let catillo_ring = |app: &TestApp<Demo>| app.app().sector(CATILLO_POLYGON).unwrap().clone();
+        let for_kind = catillo_ring(&app).color();
+        assert_eq!(app.value(By::test_id("map.color.hex")), for_kind.to_hex());
 
         app.click(By::role(Role::Radio).name("Violeta"));
-        assert_eq!(catillo(&app).color, "#7c3aed");
-        assert_eq!(catillo(&app).swatch(), "bg-[#7c3aed]");
+        assert_eq!(catillo_ring(&app).color, "#7c3aed");
+        assert_eq!(catillo_ring(&app).swatch(), "bg-[#7c3aed]");
 
-        app.click(By::test_id("mapa.color.clear"));
-        app.type_text(By::test_id("mapa.color.hex"), "#12");
-        assert_eq!(catillo(&app).color(), del_tipo);
-        app.screen().get(By::test_id("mapa.color.error"));
-        app.type_text(By::test_id("mapa.color.hex"), "3456");
-        assert_eq!(catillo(&app).color(), super::Color::hex(0x123456));
+        app.click(By::test_id("map.color.clear"));
+        app.type_text(By::test_id("map.color.hex"), "#12");
+        assert_eq!(catillo_ring(&app).color(), for_kind);
+        app.screen().get(By::test_id("map.color.error"));
+        app.type_text(By::test_id("map.color.hex"), "3456");
+        assert_eq!(catillo_ring(&app).color(), super::Color::hex(0x123456));
 
-        app.click(By::test_id("mapa.color.clear"));
-        assert_eq!(catillo(&app).color(), del_tipo);
-        app.click(By::test_id("mapa.editar"));
+        app.click(By::test_id("map.color.clear"));
+        assert_eq!(catillo_ring(&app).color(), for_kind);
+        app.click(By::test_id("map.edit"));
         assert!(
-            app.screen().query(campo).is_none(),
+            app.screen().query(image_field).is_none(),
             "hidden while the outline is edited"
         );
     }
 
     #[test]
     fn a_sector_is_edited_on_the_map_and_kept_only_on_finish() {
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
-        let editar = By::test_id("mapa.editar");
+        let mut app = TestApp::new(Demo::at(Section::Map));
+        let edit_sector = By::test_id("map.edit");
         assert!(
-            app.screen().get(editar.clone()).node().disabled,
+            app.screen().get(edit_sector.clone()).node().disabled,
             "nothing selected"
         );
-        editar_catillo(&mut app);
-        assert!(app.screen().get(editar.clone()).node().disabled, "editing");
-        let antes = anillo(&app, CATILLO);
-        let vista = app.app().vista;
-        for (n, at) in antes.iter().enumerate() {
-            let handle = app.screen().get(vertice(n)).bounds();
-            let punto = on_map(&app, *at);
+        edit_catillo(&mut app);
+        assert!(
+            app.screen().get(edit_sector.clone()).node().disabled,
+            "editing"
+        );
+        let before_change = ring_points(&app, CATILLO_POLYGON);
+        let view = app.app().view;
+        for (n, at) in before_change.iter().enumerate() {
+            let handle = app.screen().get(vertex(n)).bounds();
+            let point_value = on_map(&app, *at);
             assert!(
-                (handle.x + handle.width / 2.0 - punto.x).abs() < 0.5
-                    && (handle.y + handle.height / 2.0 - punto.y).abs() < 0.5,
-                "vertex {n}: {handle:?} vs {punto:?}"
+                (handle.x + handle.width / 2.0 - point_value.x).abs() < 0.5
+                    && (handle.y + handle.height / 2.0 - point_value.y).abs() < 0.5,
+                "vertex {n}: {handle:?} vs {point_value:?}"
             );
         }
-        let superficie = |app: &TestApp<Demo>| {
+        let surface_area = |app: &TestApp<Demo>| {
             app.screen()
-                .get_by_test_id("mapa.superficie")
+                .get_by_test_id("map.superficie")
                 .name()
                 .unwrap()
         };
-        assert_eq!(superficie(&app), "Superficie 191,7 ha");
+        assert_eq!(surface_area(&app), "Superficie 191,7 ha");
 
-        app.drag_and_hold(vertice(0), -30.0, 20.0);
-        assert_eq!(app.app().vista, vista, "the map stays put");
-        let movido = borrador(&app);
-        assert_ne!(movido[0], antes[0]);
-        assert_eq!(movido[1..], antes[1..]);
+        app.drag_and_hold(vertex(0), -30.0, 20.0);
+        assert_eq!(app.app().view, view, "the map stays put");
+        let moved_view = draft_area(&app);
+        assert_ne!(moved_view[0], before_change[0]);
+        assert_eq!(moved_view[1..], before_change[1..]);
         assert_eq!(
-            anillo(&app, CATILLO),
-            antes,
+            ring_points(&app, CATILLO_POLYGON),
+            before_change,
             "the sector waits for «Terminar»"
         );
-        assert_ne!(superficie(&app), "Superficie 191,7 ha");
+        assert_ne!(surface_area(&app), "Superficie 191,7 ha");
 
-        app.click(By::test_id("mapa.sector.AOP26000001"));
+        app.click(By::test_id("map.sector.AOP26000001"));
         assert_eq!(
             app.app().area.as_deref(),
-            Some(CATILLO),
+            Some(CATILLO_POLYGON),
             "no switching mid-edit"
         );
 
-        app.click(By::test_id("mapa.vista.midpoint.0"));
-        assert_eq!(borrador(&app).len(), 5);
-        app.click(By::test_id("mapa.terminar"));
-        assert!(app.app().edicion.is_none());
-        let guardado = anillo(&app, CATILLO);
-        assert_eq!(guardado.len(), 5);
-        assert_same_ring(&[guardado[0]], &[movido[0]]);
-        assert!(!app.screen().get(editar.clone()).node().disabled);
+        app.click(By::test_id("map.view.midpoint.0"));
+        assert_eq!(draft_area(&app).len(), 5);
+        app.click(By::test_id("map.finish"));
+        assert!(app.app().editing.is_none());
+        let saved_one = ring_points(&app, CATILLO_POLYGON);
+        assert_eq!(saved_one.len(), 5);
+        assert_same_ring(&[saved_one[0]], &[moved_view[0]]);
+        assert!(!app.screen().get(edit_sector.clone()).node().disabled);
 
-        editar_catillo(&mut app);
-        app.drag_and_hold(vertice(1), 15.0, 0.0);
+        edit_catillo(&mut app);
+        app.drag_and_hold(vertex(1), 15.0, 0.0);
         app.press(Key::Escape, Modifiers::NONE);
-        assert!(app.app().edicion.is_none(), "Esc cancels");
-        assert_same_ring(&anillo(&app, CATILLO), &guardado);
+        assert!(app.app().editing.is_none(), "Esc cancels");
+        assert_same_ring(&ring_points(&app, CATILLO_POLYGON), &saved_one);
 
-        editar_catillo(&mut app);
-        app.drag_and_hold(vertice(1), 15.0, 0.0);
+        edit_catillo(&mut app);
+        app.drag_and_hold(vertex(1), 15.0, 0.0);
         app.press(
             Key::Char('z'),
             Modifiers {
@@ -8308,40 +8301,40 @@ mod tests {
                 ..Modifiers::NONE
             },
         );
-        assert_same_ring(&borrador(&app), &guardado);
-        app.click(By::test_id("mapa.cancelar"));
-        assert!(app.app().edicion.is_none());
-        assert_same_ring(&anillo(&app, CATILLO), &guardado);
+        assert_same_ring(&draft_area(&app), &saved_one);
+        app.click(By::test_id("map.cancel"));
+        assert!(app.app().editing.is_none());
+        assert_same_ring(&ring_points(&app, CATILLO_POLYGON), &saved_one);
     }
 
     #[test]
     fn crossing_edges_block_finish_until_fixed() {
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
-        editar_catillo(&mut app);
-        let antes = anillo(&app, CATILLO);
-        let terminar = By::test_id("mapa.terminar");
-        assert!(!app.screen().get(terminar.clone()).node().disabled);
-        assert!(app.screen().all(By::test_id("mapa.cruce")).is_empty());
+        let mut app = TestApp::new(Demo::at(Section::Map));
+        edit_catillo(&mut app);
+        let before_change = ring_points(&app, CATILLO_POLYGON);
+        let finish_edit = By::test_id("map.finish");
+        assert!(!app.screen().get(finish_edit.clone()).node().disabled);
+        assert!(app.screen().all(By::test_id("map.cruce")).is_empty());
 
-        let (sur_oeste, sur_este, nor_este) = (
-            on_map(&app, antes[0]),
-            on_map(&app, antes[1]),
-            on_map(&app, antes[2]),
+        let (south_west, south_east, north_east) = (
+            on_map(&app, before_change[0]),
+            on_map(&app, before_change[1]),
+            on_map(&app, before_change[2]),
         );
-        let al_este = (
-            sur_este.x - sur_oeste.x + 30.0,
-            (nor_este.y - sur_oeste.y) / 2.0,
+        let to_the_east = (
+            south_east.x - south_west.x + 30.0,
+            (north_east.y - south_west.y) / 2.0,
         );
-        app.drag_and_hold(vertice(0), al_este.0, al_este.1);
-        assert!(borrador(&app)[0] != antes[0]);
-        assert!(app.screen().get(terminar.clone()).node().disabled);
+        app.drag_and_hold(vertex(0), to_the_east.0, to_the_east.1);
+        assert!(draft_area(&app)[0] != before_change[0]);
+        assert!(app.screen().get(finish_edit.clone()).node().disabled);
         assert_eq!(
-            app.screen().get_by_test_id("mapa.cruce").name().as_deref(),
+            app.screen().get_by_test_id("map.cruce").name().as_deref(),
             Some("Los bordes se cruzan")
         );
         app.press(Key::Enter, Modifiers::NONE);
         assert!(
-            app.app().edicion.is_some(),
+            app.app().editing.is_some(),
             "Return does not take a crossed draft"
         );
 
@@ -8352,52 +8345,58 @@ mod tests {
                 ..Modifiers::NONE
             },
         );
-        assert!(!app.screen().get(terminar).node().disabled);
+        assert!(!app.screen().get(finish_edit).node().disabled);
         app.press(Key::Enter, Modifiers::NONE);
-        assert!(app.app().edicion.is_none(), "Return finishes from a vertex");
-        assert_same_ring(&anillo(&app, CATILLO), &antes);
+        assert!(app.app().editing.is_none(), "Return finishes from a vertex");
+        assert_same_ring(&ring_points(&app, CATILLO_POLYGON), &before_change);
     }
 
     #[test]
     fn agents_replace_a_sector_outline_with_a_valid_ring() {
-        let mut app = TestApp::new(Demo::at(Seccion::Mapa));
-        let antes = anillo(&app, CATILLO);
+        let mut app = TestApp::new(Demo::at(Section::Map));
+        let before_change = ring_points(&app, CATILLO_POLYGON);
         let error = |result: Result<serde_json::Value, CommandError>| {
             result.expect_err("debería fallar").message
         };
         let bow_tie = json!({
-            "code": CATILLO,
+            "code": CATILLO_POLYGON,
             "coordinates": [[-71.84, -36.15], [-71.82, -36.13], [-71.82, -36.15], [-71.84, -36.13]],
         });
-        let message = error(app.call("areas.editar_geometria", bow_tie));
+        let message = error(app.call("areas.edit_geometry", bow_tie));
         assert!(message.contains("se cruzan"), "{message}");
         let unknown = json!({
             "code": "AOP99",
             "coordinates": [[-71.84, -36.15], [-71.82, -36.15], [-71.82, -36.13]],
         });
-        let message = error(app.call("areas.editar_geometria", unknown));
+        let message = error(app.call("areas.edit_geometry", unknown));
         assert!(message.contains("AOP99"), "{message}");
-        let short = json!({ "code": CATILLO, "coordinates": [[-71.84, -36.15], [-71.82, -36.15]] });
-        assert!(error(app.call("areas.editar_geometria", short)).contains("al menos 3"));
-        assert_eq!(anillo(&app, CATILLO), antes, "nothing changed");
+        let short =
+            json!({ "code": CATILLO_POLYGON, "coordinates": [[-71.84, -36.15], [-71.82, -36.15]] });
+        assert!(error(app.call("areas.edit_geometry", short)).contains("al menos 3"));
+        assert_eq!(
+            ring_points(&app, CATILLO_POLYGON),
+            before_change,
+            "nothing changed"
+        );
 
         let triangle = json!({
-            "code": CATILLO,
+            "code": CATILLO_POLYGON,
             "coordinates": [[-71.84, -36.15], [-71.82, -36.15], [-71.83, -36.13], [-71.84, -36.15]],
         });
-        assert_eq!(
-            app.call("areas.editar_geometria", triangle),
-            Ok(json!(null))
-        );
+        assert_eq!(app.call("areas.edit_geometry", triangle), Ok(json!(null)));
         assert_same_ring(
-            &anillo(&app, CATILLO),
+            &ring_points(&app, CATILLO_POLYGON),
             &[
                 LatLon::new(-36.15, -71.84),
                 LatLon::new(-36.15, -71.82),
                 LatLon::new(-36.13, -71.83),
             ],
         );
-        assert_eq!(app.app().area.as_deref(), Some(CATILLO), "and selects it");
+        assert_eq!(
+            app.app().area.as_deref(),
+            Some(CATILLO_POLYGON),
+            "and selects it"
+        );
     }
 
     fn agent(client: &str) -> Origin {
@@ -8415,58 +8414,58 @@ mod tests {
     #[test]
     fn agents_confirm_destructive_actions_in_a_dialog() {
         let mut app = TestApp::new(Demo::default());
-        app.invoke(Incrementar).unwrap();
-        app.invoke(Incrementar).unwrap();
+        app.invoke(Increment).unwrap();
+        app.invoke(Increment).unwrap();
 
-        let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        let reply = app.agent_call("Cursor", "counter.reset", json!({}));
         assert_eq!(reply.result(), None, "waits for the person");
         assert_eq!(app.app().clicks, 2);
         let screen = app.screen();
         let dialog = screen.get(By::role(Role::Dialog).name("¿Permitir «Reiniciar»?"));
         screen
             .within(dialog)
-            .get(By::text("Cursor quiere ejecutar contador.reiniciar."));
-        assert!(app.is_focused(By::test_id("kai.confirmar.rechazar")));
+            .get(By::text("Cursor quiere ejecutar counter.reset."));
+        assert!(app.is_focused(By::test_id("kai.confirm.deny")));
         assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
-        assert!(!app.perform("contador.incrementar"), "the dialog is modal");
+        assert!(!app.perform("counter.increment"), "the dialog is modal");
         app.press(Key::Char('p'), CMD_SHIFT);
         assert!(!app.session().palette_open());
 
-        app.click(By::test_id("kai.confirmar.rechazar"));
+        app.click(By::test_id("kai.confirm.deny"));
         assert_eq!(reply.result(), denied());
         assert_eq!(app.app().clicks, 2);
         assert!(app.screen().query(By::role(Role::Dialog)).is_none());
         let last = app.audit_log().last().unwrap();
-        assert_eq!(last.command, "contador.reiniciar");
+        assert_eq!(last.command, "counter.reset");
         assert_eq!(last.origin, agent("Cursor"));
         assert_eq!(last.outcome, Outcome::Denied);
 
-        let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        let reply = app.agent_call("Cursor", "counter.reset", json!({}));
         app.press(Key::Escape, Modifiers::NONE);
         assert_eq!(reply.result(), denied(), "Escape rejects");
         assert_eq!(app.app().clicks, 2);
 
-        let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
-        app.click(By::test_id("kai.confirmar.una_vez"));
+        let reply = app.agent_call("Cursor", "counter.reset", json!({}));
+        app.click(By::test_id("kai.confirm.once"));
         assert_eq!(reply.result(), DONE);
         assert_eq!(app.app().clicks, 0);
         assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Done);
 
-        app.invoke(Incrementar).unwrap();
-        let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        app.invoke(Increment).unwrap();
+        let reply = app.agent_call("Cursor", "counter.reset", json!({}));
         assert_eq!(reply.result(), None, "allowed once asks again");
-        app.click(By::test_id("kai.confirmar.sesion"));
+        app.click(By::test_id("kai.confirm.session"));
         assert_eq!(reply.result(), DONE);
-        app.invoke(Incrementar).unwrap();
-        let reply = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        app.invoke(Increment).unwrap();
+        let reply = app.agent_call("Cursor", "counter.reset", json!({}));
         assert_eq!(reply.result(), DONE, "allowed for the session");
         assert_eq!(app.app().clicks, 0);
     }
 
     #[test]
     fn an_agent_wait_command_answers_only_after_the_task_finishes() {
-        let mut app = TestApp::new(Demo::at(Seccion::Botones));
-        let reply = app.agent_call("Cursor", "botones.simular_espera", json!({}));
+        let mut app = TestApp::new(Demo::at(Section::Buttons));
+        let reply = app.agent_call("Cursor", "buttons.simulate_wait", json!({}));
         assert!(
             reply.result().is_none(),
             "queda abierta mientras corre la espera"
@@ -8474,16 +8473,16 @@ mod tests {
         assert!(app.tasks_pending());
         app.run_until_idle();
         assert_eq!(reply.result(), Some(Ok(json!(null))));
-        assert_eq!(app.app().espera, Some("comando"));
+        assert_eq!(app.app().wait_ms, Some("command"));
         assert_eq!(app.audit_log().last().unwrap().outcome, Outcome::Done);
     }
 
     #[test]
     fn agent_calls_wait_behind_the_dialog_and_can_be_cancelled() {
         let mut app = TestApp::new(Demo::default());
-        app.invoke(Incrementar).unwrap();
-        let reset = app.agent_call("Cursor", "contador.reiniciar", json!({}));
-        let add = app.agent_call("Cursor", "contador.incrementar", json!({}));
+        app.invoke(Increment).unwrap();
+        let reset = app.agent_call("Cursor", "counter.reset", json!({}));
+        let add = app.agent_call("Cursor", "counter.increment", json!({}));
         assert_eq!((reset.result(), add.result()), (None, None));
         assert_eq!(app.app().clicks, 1);
 
@@ -8500,13 +8499,13 @@ mod tests {
         assert_eq!(
             outcomes,
             [
-                ("contador.reiniciar", Outcome::Cancelled),
-                ("contador.incrementar", Outcome::Done),
+                ("counter.reset", Outcome::Cancelled),
+                ("counter.increment", Outcome::Done),
             ]
         );
 
-        let first = app.agent_call("Cursor", "contador.reiniciar", json!({}));
-        let second = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        let first = app.agent_call("Cursor", "counter.reset", json!({}));
+        let second = app.agent_call("Cursor", "counter.reset", json!({}));
         app.cancel_agent_call(second.id());
         assert!(second.result().unwrap().is_err());
         assert_eq!(first.result(), None);
@@ -8518,22 +8517,22 @@ mod tests {
     #[test]
     fn agent_calls_fail_before_asking_when_they_cannot_run() {
         let mut app = TestApp::new(Demo::default());
-        let hidden = app.agent_call("Cursor", "form.alternar_contrasena", json!({}));
+        let hidden = app.agent_call("Cursor", "form.toggle_password", json!({}));
         assert_eq!(
             hidden.result(),
             Some(Err(CommandError::new(
-                "form.alternar_contrasena no está expuesto a agentes"
+                "form.toggle_password no está expuesto a agentes"
             )))
         );
-        let reset = app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        let reset = app.agent_call("Cursor", "counter.reset", json!({}));
         assert_eq!(
             reset.result(),
             Some(Err(CommandError::new("El contador ya está en cero")))
         );
-        let bad = app.agent_call("Cursor", "contador.sumar", json!({"cantidad": "dos"}));
+        let bad = app.agent_call("Cursor", "counter.add", json!({"count": "two"}));
         assert!(bad.result().unwrap().is_err());
         assert!(!app.session().confirmation_open());
-        let query = app.agent_call("Cursor", "form.ultimo_envio", json!({}));
+        let query = app.agent_call("Cursor", "form.last_submission", json!({}));
         assert_eq!(query.result(), DONE);
         assert_eq!(app.audit_log().len(), 3, "queries are not audited");
         assert!(
@@ -8546,19 +8545,19 @@ mod tests {
     #[test]
     fn people_and_scripts_never_see_the_dialog() {
         let mut app = TestApp::new(Demo::default());
-        app.invoke(Incrementar).unwrap();
-        app.click(By::test_id("contador.reiniciar"));
+        app.invoke(Increment).unwrap();
+        app.click(By::test_id("counter.reset"));
         assert_eq!(app.app().clicks, 0);
         assert!(!app.session().confirmation_open());
         assert!(app.audit_log().is_empty(), "the person is not audited");
 
-        app.call("contador.sumar", json!({"cantidad": 3})).unwrap();
-        app.call("contador.reiniciar", json!({})).unwrap();
+        app.call("counter.add", json!({"count": 3})).unwrap();
+        app.call("counter.reset", json!({})).unwrap();
         assert!(!app.session().confirmation_open());
         let entries: Vec<_> = app.audit_log().entries().collect();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].origin, Origin::Script);
-        assert_eq!(entries[0].input, json!({"cantidad": 3}));
+        assert_eq!(entries[0].input, json!({"count": 3}));
         assert_eq!(entries[1].outcome, Outcome::Done);
     }
 
@@ -8571,8 +8570,8 @@ mod tests {
             .get(By::role(Role::Status).name("Agente: Cursor"));
         assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
         app.on_confirmation(Confirm::AllowOnce);
-        app.agent_call("Cursor", "contador.incrementar", json!({}));
-        app.agent_call("Cursor", "contador.reiniciar", json!({}));
+        app.agent_call("Cursor", "counter.increment", json!({}));
+        app.agent_call("Cursor", "counter.reset", json!({}));
         assert_eq!(app.app().clicks, 0);
         app.screen()
             .get(By::role(Role::Status).name("Agente: Cursor · Reiniciar"));
@@ -8598,7 +8597,7 @@ mod tests {
                 .is_none()
         );
 
-        app.hover(By::test_id("barra.sumar"));
+        app.hover(By::test_id("bar.add"));
         let screen = app.screen();
         let panel = screen.get(By::test_id("kai.inspector.panel"));
         let shown: Vec<String> = screen
@@ -8613,12 +8612,12 @@ mod tests {
             "the icon is under the pointer: {shown}"
         );
         assert!(
-            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [barra.sumar]"),
+            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [bar.add]"),
             "{shown}"
         );
         let outline = screen.get(By::test_id("kai.inspector.outline")).bounds();
         let icon = screen
-            .within(screen.get(By::test_id("barra.sumar")))
+            .within(screen.get(By::test_id("bar.add")))
             .get(By::role(Role::Image))
             .bounds();
         assert_eq!(
@@ -8632,18 +8631,18 @@ mod tests {
         );
         assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
 
-        app.click(By::test_id("barra.sumar"));
+        app.click(By::test_id("bar.add"));
         assert_eq!(app.app().clicks, 1, "the inspector takes no clicks");
 
         app.press(Key::Char('p'), CMD_SHIFT);
-        assert!(app.is_focused(By::test_id("kai.paleta.buscar")));
+        assert!(app.is_focused(By::test_id("kai.palette.find")));
         app.press(Key::Escape, Modifiers::NONE);
         assert!(!app.session().palette_open());
         assert!(app.session().inspector_open());
 
         app.press(Key::Char('i'), CMD_OPTION);
         assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
-        assert!(app.dump().contains("[barra.sumar]"));
+        assert!(app.dump().contains("[bar.add]"));
     }
 
     #[test]
@@ -8651,18 +8650,18 @@ mod tests {
         let mut app = TestApp::new(Demo::default());
         app.click(By::role(Role::Button).name("Incrementar"));
         app.press(Key::Char('i'), CMD);
-        assert!(app.perform("contador.incrementar"));
-        app.invoke(Incrementar).unwrap();
-        app.call("contador.sumar", json!({"cantidad": 2})).unwrap();
-        let button = app.screen().get(By::test_id("contador.incrementar")).id();
+        assert!(app.perform("counter.increment"));
+        app.invoke(Increment).unwrap();
+        app.call("counter.add", json!({"count": 2})).unwrap();
+        let button = app.screen().get(By::test_id("counter.increment")).id();
         app.accessibility_action(&accesskit::ActionRequest {
             action: accesskit::Action::Click,
             target_tree: accesskit::TreeId::ROOT,
             target_node: crate::a11y::node_id(button),
             data: None,
         });
-        app.agent_call("kai-test", "contador.reiniciar", json!({}));
-        app.click(By::test_id("kai.confirmar.una_vez"));
+        app.agent_call("kai-test", "counter.reset", json!({}));
+        app.click(By::test_id("kai.confirm.once"));
 
         assert_eq!(
             app.messages(),
@@ -8729,7 +8728,7 @@ mod tests {
             }
         }
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert!(!names.contains(&"form.alternar_contrasena"));
+        assert!(!names.contains(&"form.toggle_password"));
         assert!(
             client.close(),
             "el servidor termina cuando el cliente se va"
@@ -8748,20 +8747,20 @@ mod tests {
             .screen()
             .get(By::role(Role::Status).name(format!("Agente: {MCP_CLIENT}")));
         client
-            .call_tool("contador.sumar", json!({"cantidad": 3}))
+            .call_tool("counter.add", json!({"count": 3}))
             .unwrap();
         client
             .app()
             .screen()
             .get(By::role(Role::Status).name(format!("Agente: {MCP_CLIENT} · Sumar")));
 
-        let reset = client.send_call("contador.reiniciar", json!({}));
+        let reset = client.send_call("counter.reset", json!({}));
         let screen = client.app().screen();
         let dialog = screen.get(By::role(Role::Dialog).name("¿Permitir «Reiniciar»?"));
         screen.within(dialog).get(By::text(format!(
-            "{MCP_CLIENT} quiere ejecutar contador.reiniciar."
+            "{MCP_CLIENT} quiere ejecutar counter.reset."
         )));
-        client.app().click(By::test_id("kai.confirmar.rechazar"));
+        client.app().click(By::test_id("kai.confirm.deny"));
         let result = client.finish(reset).unwrap();
         assert_eq!(result["isError"], json!(true));
         assert_eq!(
@@ -8773,7 +8772,7 @@ mod tests {
         assert_eq!(last.origin, agent(MCP_CLIENT));
         assert_eq!(last.outcome, Outcome::Denied);
 
-        let reset = client.send_call("contador.reiniciar", json!({}));
+        let reset = client.send_call("counter.reset", json!({}));
         client.cancel(reset);
         assert!(!client.app().confirmation_open());
         assert_eq!(client.app().app().clicks, 3);
@@ -8781,7 +8780,7 @@ mod tests {
         assert_eq!(last, Outcome::Cancelled);
 
         client.app().on_confirmation(Confirm::AllowOnce);
-        let result = client.call_tool("contador.reiniciar", json!({})).unwrap();
+        let result = client.call_tool("counter.reset", json!({})).unwrap();
         assert_eq!(result["isError"], json!(false));
         assert_eq!(client.app().app().clicks, 0);
         let last = client.app().audit_log().last().unwrap().clone();
@@ -8799,21 +8798,21 @@ mod tests {
         let mut client = app.mcp_client();
 
         let result = client
-            .call_tool("contador.sumar", json!({"cantidad": 2}))
+            .call_tool("counter.add", json!({"count": 2}))
             .unwrap();
         assert_eq!(result["isError"], json!(false));
         assert_eq!(client.app().app().clicks, 2);
         let screen = client.app().screen();
         screen
-            .within(screen.get_by_test_id("contador"))
+            .within(screen.get_by_test_id("counter"))
             .get(By::role(Role::Status).name("2"));
 
-        let reset = client.send_call("contador.reiniciar", json!({}));
+        let reset = client.send_call("counter.reset", json!({}));
         assert!(client.app().confirmation_open());
-        client.app().click(By::test_id("kai.confirmar.una_vez"));
+        client.app().click(By::test_id("kai.confirm.once"));
         assert_eq!(client.finish(reset).unwrap()["isError"], json!(false));
         assert_eq!(client.app().app().clicks, 0);
-        let result = client.call_tool("contador.reiniciar", json!({})).unwrap();
+        let result = client.call_tool("counter.reset", json!({})).unwrap();
         assert_eq!(result["isError"], json!(true));
         assert_eq!(
             result["content"][0]["text"],
@@ -8822,26 +8821,26 @@ mod tests {
         );
 
         let result = client
-            .call_tool("contador.sumar", json!({"cantidad": "dos"}))
+            .call_tool("counter.add", json!({"count": "two"}))
             .unwrap();
         assert_eq!(result["isError"], json!(true));
         assert!(
             result["content"][0]["text"]
                 .as_str()
                 .unwrap()
-                .starts_with("entrada inválida para contador.sumar")
+                .starts_with("entrada inválida para counter.add")
         );
 
         let error = client
-            .call_tool("form.alternar_contrasena", json!({}))
+            .call_tool("form.toggle_password", json!({}))
             .unwrap_err();
         assert!(error["message"].as_str().unwrap().contains("desconocida"));
         assert_eq!(client.app().app().clicks, 0);
 
-        client.app().type_text(By::test_id("form.nombre"), "Ana");
-        let result = client.call_tool("form.enviar", json!({})).unwrap();
+        client.app().type_text(By::test_id("form.name"), "Ana");
+        let result = client.call_tool("form.submit", json!({})).unwrap();
         assert_eq!(result["structuredContent"], json!({"result": "Ana"}));
-        let result = client.call_tool("form.ultimo_envio", json!({})).unwrap();
+        let result = client.call_tool("form.last_submission", json!({})).unwrap();
         assert_eq!(result["structuredContent"], json!({"result": "Ana"}));
         assert_eq!(result["content"][0]["text"], json!(r#"{"result":"Ana"}"#));
         assert!(client.close());
@@ -8892,35 +8891,35 @@ mod tests {
             .iter()
             .filter_map(|command| command["id"].as_str())
             .collect();
-        assert!(ids.contains(&"contador.sumar") && ids.contains(&"form.ultimo_envio"));
+        assert!(ids.contains(&"counter.add") && ids.contains(&"form.last_submission"));
         assert!(ids.iter().all(|id| !id.starts_with("kai.")), "{ids:?}");
     }
 
     #[test]
     fn actions_with_input_stay_out_of_menus_and_palette() {
         let mut app = TestApp::new(Demo::default());
-        let sumar = app.commands().iter().find(|c| c.id == "contador.sumar");
-        assert!(sumar.is_some_and(|c| c.needs_input));
+        let add_amount = app.commands().iter().find(|c| c.id == "counter.add");
+        assert!(add_amount.is_some_and(|c| c.needs_input));
         let menu = menu_model(app.commands());
         assert!(
             menu.iter()
                 .flat_map(|g| &g.items)
-                .all(|e| e.id != "contador.sumar")
+                .all(|e| e.id != "counter.add")
         );
         app.press(Key::Char('p'), CMD_SHIFT);
         app.type_text(search(), "Sumar");
-        assert!(app.screen().query(row("contador.sumar")).is_none());
+        assert!(app.screen().query(row("counter.add")).is_none());
         assert!(app.screen().query(By::text("Sin resultados")).is_some());
     }
 
     #[test]
     fn query_reads_the_model_without_msg() {
         let mut app = TestApp::new(Demo::default());
-        assert_eq!(app.query(Saludo), Ok(None));
-        app.type_text(By::test_id("form.nombre"), "Ana");
-        app.invoke(Enviar).unwrap();
+        assert_eq!(app.query(LastSubmission), Ok(None));
+        app.type_text(By::test_id("form.name"), "Ana");
+        app.invoke(Submit).unwrap();
         let sent = app.messages().len();
-        assert_eq!(app.query(Saludo), Ok(Some("Ana".to_owned())));
+        assert_eq!(app.query(LastSubmission), Ok(Some("Ana".to_owned())));
         assert_eq!(app.messages().len(), sent, "a query sends nothing");
     }
 
@@ -8940,7 +8939,7 @@ mod tests {
             &mut StyleCache::default(),
             &mut text,
         );
-        let content = Screen::new(&layout).get_by_test_id("contenido").id();
+        let content = Screen::new(&layout).get_by_test_id("content").id();
         let card = card_header_of(demo, title);
         let top = layout.bounds(card).unwrap().y - layout.bounds(content).unwrap().y;
         ScrollOffsets::from([(
@@ -9090,7 +9089,7 @@ mod tests {
                 &mut StyleCache::default(),
                 &mut text,
             );
-            let content = Screen::new(&layout).get_by_test_id("contenido");
+            let content = Screen::new(&layout).get_by_test_id("content");
             let top = content.bounds().y + 28.0;
             crop(&full, (top * SCALE) as u32, (height * SCALE) as u32)
         };
@@ -9114,11 +9113,11 @@ mod tests {
         };
         let demo = Demo {
             clicks: 3,
-            ..Demo::at(Seccion::Botones)
+            ..Demo::at(Section::Buttons)
         };
         let filled = Demo {
             password: "kai-2026".to_owned(),
-            ..Demo::at(Seccion::Campos)
+            ..Demo::at(Section::Fields)
         };
         for (generation, appearance, name) in [
             (AppKitGeneration::Aqua11, Appearance::Light, "light"),
@@ -9163,7 +9162,7 @@ mod tests {
                                 &demo,
                                 wide,
                                 &Interaction {
-                                    focused: Some(find(&demo, By::test_id("botones.secondary"))),
+                                    focused: Some(find(&demo, By::test_id("buttons.secondary"))),
                                     focus_visible: true,
                                     ..Interaction::default()
                                 },
@@ -9250,7 +9249,7 @@ mod tests {
         // Control sizes card: Kai, mix C light and dark.
         let clicks = Demo {
             clicks: 3,
-            ..Demo::at(Seccion::Botones)
+            ..Demo::at(Section::Buttons)
         };
         for (name, theme) in [
             ("kai", Theme::kai(Density::Comfortable)),
@@ -9641,7 +9640,7 @@ mod tests {
         );
 
         let buttons = Demo {
-            seccion: Seccion::Botones,
+            section: Section::Buttons,
             ..typed
         };
         snapshot(
@@ -9651,7 +9650,7 @@ mod tests {
             wide,
             2.0,
             &Interaction {
-                focused: Some(find(&buttons, By::test_id("botones.secondary"))),
+                focused: Some(find(&buttons, By::test_id("buttons.secondary"))),
                 // Reached with Tab: the ring is drawn.
                 focus_visible: true,
                 ..Interaction::default()
@@ -9666,7 +9665,7 @@ mod tests {
         let title = "Variantes de TextField";
         let masked = Demo {
             password: "kai-2026".to_owned(),
-            ..Demo::at(Seccion::Campos)
+            ..Demo::at(Section::Fields)
         };
         snapshot(
             out,
@@ -9679,7 +9678,7 @@ mod tests {
         );
         let mut filled = Demo {
             show_password: true,
-            ..Demo::at(Seccion::Campos)
+            ..Demo::at(Section::Fields)
         };
         for (field, value) in [
             (Field::Search, "zapatillas"),
@@ -9706,19 +9705,19 @@ mod tests {
             &scrolled_to(&out.theme, &filled, fields_view, title),
         );
 
-        for (name, seccion) in [
-            ("demo-seleccion", Seccion::Seleccion),
-            ("demo-contenedores", Seccion::Contenedores),
-            ("demo-tabla", Seccion::Tabla),
-            ("demo-mapa", Seccion::Mapa),
-            ("demo-mapa-areas", Seccion::Mapa),
-            ("demo-graficos", Seccion::Graficos),
-            ("demo-documento", Seccion::Documento),
+        for (name, section) in [
+            ("demo-seleccion", Section::Selection),
+            ("demo-contenedores", Section::Containers),
+            ("demo-tabla", Section::Table),
+            ("demo-mapa", Section::Map),
+            ("demo-mapa-areas", Section::Map),
+            ("demo-graficos", Section::Charts),
+            ("demo-documento", Section::Document),
         ] {
-            let mut demo = Demo::at(seccion);
-            if seccion == Seccion::Tabla {
-                demo.apply(Msg::Tabla(ViewChange::Sort(4, SortDirection::Descending)));
-                let second = demo.tabla.rows()[1];
+            let mut demo = Demo::at(section);
+            if section == Section::Table {
+                demo.apply(Msg::Table(ViewChange::Sort(4, SortDirection::Descending)));
+                let second = demo.table_view.rows()[1];
                 demo.apply(Msg::SelectRow(second));
             }
             if name == "demo-mapa" {
@@ -9728,15 +9727,15 @@ mod tests {
         }
 
         // The view the map reports once it has framed Catillo.
-        let mut seleccion = TestApp::builder(Demo::at(Seccion::Mapa))
+        let mut selection_view = TestApp::builder(Demo::at(Section::Map))
             .viewport(wide.width, wide.height)
             .build();
-        seleccion.click(By::test_id("mapa.sector.AOP26000002"));
-        seleccion.advance(Duration::from_secs(1));
+        selection_view.click(By::test_id("map.sector.AOP26000002"));
+        selection_view.advance(Duration::from_secs(1));
         snapshot(
             out,
             "demo-mapa-seleccion",
-            seleccion.app(),
+            selection_view.app(),
             wide,
             2.0,
             &Interaction::default(),
@@ -9744,26 +9743,26 @@ mod tests {
         );
 
         // Catillo being edited, its north east corner pulled out.
-        let mut edicion = TestApp::builder(Demo::at(Seccion::Mapa))
+        let mut editing = TestApp::builder(Demo::at(Section::Map))
             .viewport(wide.width, wide.height)
             .build();
-        edicion.click(By::test_id("mapa.sector.AOP26000002"));
-        edicion.click(By::test_id("mapa.editar"));
-        edicion.advance(Duration::from_secs(1));
-        edicion.drag_and_hold(By::test_id("mapa.vista.vertex.2"), 40.0, -30.0);
+        editing.click(By::test_id("map.sector.AOP26000002"));
+        editing.click(By::test_id("map.edit"));
+        editing.advance(Duration::from_secs(1));
+        editing.drag_and_hold(By::test_id("map.view.vertex.2"), 40.0, -30.0);
         snapshot(
             out,
             "demo-mapa-edicion",
-            edicion.app(),
+            editing.app(),
             wide,
             2.0,
             &Interaction::default(),
             &none,
         );
 
-        let mut media = Demo::at(Seccion::Multimedia);
-        media.apply(Msg::ImagenElegida(
-            Campo::Logo,
+        let mut media = Demo::at(Section::Multimedia);
+        media.apply(Msg::ImagePicked(
+            ImageField::Logo,
             Some("/no/existe/logo.gif".into()),
         ));
         snapshot(
@@ -9775,7 +9774,7 @@ mod tests {
             &Interaction::default(),
             &none,
         );
-        let banner = find(&media, By::test_id("multimedia.portada.preview"));
+        let banner = find(&media, By::test_id("media.cover.preview"));
         let tree = build_view(&media);
         snapshot(
             out,
@@ -9790,7 +9789,7 @@ mod tests {
             },
             &scrolled_to(&out.theme, &media, wide, "Campos de imagen"),
         );
-        let logo = find(&media, By::test_id("multimedia.logo.preview"));
+        let logo = find(&media, By::test_id("media.logo.preview"));
         snapshot(
             out,
             "demo-multimedia-hover",
@@ -9804,8 +9803,8 @@ mod tests {
             &scrolled_to(&out.theme, &media, wide, "Campos de imagen"),
         );
 
-        let mut dialog = Demo::at(Seccion::Dialogos);
-        dialog.apply(Msg::OpenDialog(Dialogo::Eliminar));
+        let mut dialog = Demo::at(Section::Dialogs);
+        dialog.apply(Msg::OpenDialog(DemoDialog::Delete));
         snapshot(
             out,
             "demo-dialogo",
@@ -9815,9 +9814,9 @@ mod tests {
             &Interaction::default(),
             &none,
         );
-        let mut toasts = Demo::at(Seccion::Dialogos);
-        for variante in VarianteAviso::ALL {
-            toasts.apply(Msg::ShowToast(variante));
+        let mut toasts = Demo::at(Section::Dialogs);
+        for kind in ToastKind::ALL {
+            toasts.apply(Msg::ShowToast(kind));
         }
         snapshot(
             out,
@@ -9831,10 +9830,10 @@ mod tests {
 
         // Two buttons waiting on their tasks and the dots alone, with the
         // wave caught mid-jump.
-        let botones = Demo::at(Seccion::Botones);
-        let mut tree = build_view(&botones);
-        for test_id in ["espera.primary", "espera.outlined", "espera.recargar"] {
-            let id = find(&botones, By::test_id(test_id));
+        let buttons_view = Demo::at(Section::Buttons);
+        let mut tree = build_view(&buttons_view);
+        for test_id in ["wait.primary", "wait.outlined", "wait.reload"] {
+            let id = find(&buttons_view, By::test_id(test_id));
             tree.find_mut(id).unwrap().busy = true;
         }
         let image = snapshot::render_with_background(
@@ -9844,7 +9843,7 @@ mod tests {
                 logical: wide,
                 scale: 2.0,
                 interaction: &Interaction::default(),
-                scroll: &scrolled_to(&out.theme, &botones, wide, "Acciones con espera"),
+                scroll: &scrolled_to(&out.theme, &buttons_view, wide, "Acciones con espera"),
             },
             BackgroundEffect::NONE,
             0.3,
@@ -9852,7 +9851,7 @@ mod tests {
         .expect("snapshot render");
         write_shot(out, "demo-botones-cargando", &image);
 
-        let mut rail = Demo::at(Seccion::Tabla);
+        let mut rail = Demo::at(Section::Table);
         rail.apply(Msg::ToggleSidebar);
         snapshot(
             out,

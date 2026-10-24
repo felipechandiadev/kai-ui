@@ -114,7 +114,7 @@ Insertar tabla 2×2, imagen inline o wrap simple. Reutilizar `ImageSource` / atl
 
 Abrir/guardar .docx (`wordcraft-docx`) y exportar PDF (`wordcraft-pdf` / `craft-pdf`) con `Effects::pick_file` / `save_file`. Fuera del hilo de paint.
 
-**Hecho (23-oct-2026):** `pending_load` + `DocumentCmd::TakeDocument` → clone del modelo → `Effects::perform` encode/write. Demo Datos→Documento fila Archivo (Abrir / Guardar / Exportar PDF); Actions + MCP `documento.abrir` / `documento.guardar` / `documento.exportar_pdf`. TestApp `on_file_pick` / `on_file_save`.
+**Hecho (23-oct-2026):** `pending_load` + `DocumentCmd::TakeDocument` → clone del modelo → `Effects::perform` encode/write. Demo Datos→Documento fila Archivo (Abrir / Guardar / Exportar PDF); Actions + MCP `document.open` / `document.save` / `document.export_pdf`. TestApp `on_file_pick` / `on_file_save`.
 
 ### Pendiente hacia la paridad Word / Pages
 
@@ -124,7 +124,7 @@ Track changes, mail merge, ecuaciones y citas (Zotero) están en la ruta del wid
 
 - Tests del mapeo display list → `DrawOp` y del hit-test (índice de run / caret), como `charts::tests`.
 - `TestApp`: tipear, ⌘B, undo; ⌘C/X/V clipboard (plano + HTML bold); IME preedit vía unit tests del editor; scroll multi-página + tipar tras scroll; query a11y por `label`; find/replace/comment/proofing + `a11y_structure_summary`.
-- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.ir_a` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `documento.abrir|guardar|exportar_pdf` / schema MCP.
+- Sección **Documento** en Datos (junto a Tabla, Mapa, Gráficos): shell tipo Pages (ribbon + Archivo + canvas `flex-1 min-h-0` / `bg-under-page`, sin card `h-96`), markdown seed multi-página. Cobertura en `the_demo_shows_every_component` y `ui.go_to` (`documento`). Comandos `format.*` / `edit.*` / `insert.*` / `document.open|guardar|exportar_pdf` / schema MCP.
 - Captura `demo-documento` (`#[ignore]`, GPU) cuando el patrón de capturas lo permita.
 
 ## 8. Criterios de aceptación
@@ -152,7 +152,7 @@ Track changes, mail merge, ecuaciones y citas (Zotero) están en la ruta del wid
 - **RTF:** solo paste si el port lo aporta (MemClip / host custom). **arboard no lee/escribe RTF** — techo SO documentado.
 - **Interno mismo Session:** si el texto del port coincide con el fragmento WordCraft, se reutiliza el fragmento rico sin reimportar.
 - **Tests:** `clipboard_table_html_roundtrip_across_editors`, `clipboard_picture_html_roundtrip_across_editors`, paste HTML table/img externo, paste RGBA crudo.
-- **Paste Special (Paso 6):** `DocumentCmd::{PastePlain,PasteMerge,PasteKeepSource}` → `edit.pasteText` / `pasteMerge` / `paste` con host `ClipboardPort` (`apply_pending_cmd_clipboard`). Ribbon Inicio: Pegar / Pegar texto / Pegar combinar. Demo fila `documento.paso6`.
+- **Paste Special (Paso 6):** `DocumentCmd::{PastePlain,PasteMerge,PasteKeepSource}` → `edit.pasteText` / `pasteMerge` / `paste` con host `ClipboardPort` (`apply_pending_cmd_clipboard`). Ribbon Inicio: Pegar / Pegar texto / Pegar combinar. Demo fila `document.paso6`.
 - **Fuera de alcance (deuda):** export RTF en copy; mathml; copy de subconjunto de celdas como `<table>` (sigue aplanado a párrafos); `set_image` en copy hacia hosts que solo lean bitmap sin HTML; menú contextual Paste Special con preview.
 
 ## 9. Estado
@@ -191,7 +191,7 @@ Slice útil (no AccessKit perfecto). Prioridad: estructura a11y → find/replace
 ### Find / Replace
 
 - `DocumentCmd::{Find, FindNext, FindPrevious, Replace, ReplaceAll}` → `edit.find` / `findNext` / `findPrevious` / `replace` / `replaceAll` (params reales WordCraft).
-- Demo: barra bajo el ribbon (`documento.findbar`) con query / replace + botones; estado en `documento.edit.status` desde `DocumentChange::{status, find_match_count}`.
+- Demo: barra bajo el ribbon (`document.findbar`) con query / replace + botones; estado en `document.edit.status` desde `DocumentChange::{status, find_match_count}`.
 
 ### Comments
 
@@ -211,7 +211,7 @@ Slice útil (no AccessKit perfecto). Prioridad: estructura a11y → find/replace
 1. `cargo +1.95 run --example demo --features document`
 2. Datos → **Documento**.
 3. VoiceOver / Accessibility Inspector: foco en el editor → valor = plain text; description = resumen.
-4. Barra Find: buscar una palabra del informe → Siguiente / Reemplazar; ver `documento.edit.status`.
+4. Barra Find: buscar una palabra del informe → Siguiente / Reemplazar; ver `document.edit.status`.
 5. Draft de comentario → **Nuevo comentario**; Revisar → Siguiente/Anterior comentario.
 6. Revisar → **Revisar al escribir** (toggle) y **Ortografía**; tipar un typo y ver subrayado.
 
@@ -230,7 +230,7 @@ Slice útil (no el universo Word). Prioridad ejecutada: benches → Paste Specia
 
 - `DocumentCmd::{PastePlain, PasteMerge, PasteKeepSource}` sobre el clipboard host (no solo clip WC interno).
 - Ribbon Inicio: `edit.paste` / `edit.pasteText` / `edit.pasteMerge`.
-- Demo: botones Texto / Combinar / Mantener en `documento.paso6`.
+- Demo: botones Texto / Combinar / Mantener en `document.paso6`.
 
 ### Wrap flotante de imágenes
 
@@ -242,7 +242,7 @@ Slice útil (no el universo Word). Prioridad ejecutada: benches → Paste Specia
 
 - `DocumentCmd::TableStyle { style }` → `table.style` (p. ej. `GridTable1Light`, `TableGrid`).
 - Nueva pestaña ribbon **Tabla** (`MVP_TABLE`): style / look / shading / borders / selectTable (`why_disabled` greya fuera de tabla).
-- Demo: GridLight / TableGrid en `documento.paso6`.
+- Demo: GridLight / TableGrid en `document.paso6`.
 
 ### Headers / footers editables
 

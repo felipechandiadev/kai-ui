@@ -4,7 +4,7 @@
 //!
 //! Conventions for domain types: a RUT is a `string` with a `pattern`,
 //! money is an integer in pesos (never `f64`), and enums use
-//! `#[serde(tag = "tipo")]` so their schema is a readable `oneOf`.
+//! `#[serde(tag = "kind_name")]` so their schema is a readable `oneOf`.
 //! Subschemas are inlined: no `$ref` for clients to resolve.
 
 use schemars::JsonSchema;
@@ -172,37 +172,37 @@ mod tests {
     }
 
     #[derive(JsonSchema)]
-    #[serde(tag = "tipo")]
+    #[serde(tag = "kind")]
     #[allow(dead_code)]
-    enum Medio {
-        Efectivo,
-        Transferencia { banco: String },
+    enum PaymentMethod {
+        Cash,
+        Transfer { bank: String },
     }
 
     #[derive(JsonSchema)]
     #[serde(deny_unknown_fields)]
     #[allow(dead_code)]
-    struct Pagar {
+    struct Pay {
         rut: Rut,
         /// Pesos.
-        monto: u64,
-        medio: Medio,
+        amount: u64,
+        method: PaymentMethod,
     }
 
     #[test]
     fn domain_types_follow_the_conventions_inline() {
-        let schema = input_schema::<Pagar>();
+        let schema = input_schema::<Pay>();
         let properties = &schema["properties"];
         assert_eq!(properties["rut"]["type"], "string");
         assert!(properties["rut"]["pattern"].is_string());
-        assert_eq!(properties["monto"]["type"], "integer");
-        assert_eq!(properties["monto"]["minimum"], 0);
-        let variants = properties["medio"]["oneOf"].as_array().expect("oneOf");
+        assert_eq!(properties["amount"]["type"], "integer");
+        assert_eq!(properties["amount"]["minimum"], 0);
+        let variants = properties["method"]["oneOf"].as_array().expect("oneOf");
         let tags: Vec<&Value> = variants
             .iter()
-            .map(|variant| &variant["properties"]["tipo"]["const"])
+            .map(|variant| &variant["properties"]["kind"]["const"])
             .collect();
-        assert_eq!(tags, [&json!("Efectivo"), &json!("Transferencia")]);
+        assert_eq!(tags, [&json!("Cash"), &json!("Transfer")]);
         assert!(!schema.to_string().contains("$ref"), "{schema:#}");
     }
 }

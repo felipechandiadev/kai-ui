@@ -1549,13 +1549,13 @@ mod tests {
         assert_eq!(format!("{batch:?}"), "Effects::none()");
 
         let timers = Effects::batch([
-            Effects::after(std::time::Duration::from_secs(1), Msg::Clicked).keyed("uno"),
-            Effects::cancel("dos"),
+            Effects::after(std::time::Duration::from_secs(1), Msg::Clicked).keyed("one"),
+            Effects::cancel("two"),
         ]);
         assert!(!timers.is_none());
         assert_eq!(
             format!("{timers:?}"),
-            r#"[after(1s, Clicked, key: Some("uno")), cancel("dos")]"#
+            r#"[after(1s, Clicked, key: Some("one")), cancel("two")]"#
         );
     }
     #[test]
@@ -1599,23 +1599,23 @@ mod tests {
             div()
                 .class("flex h-10 px-3 border")
                 .delegates_focus()
-                .test_id("contorno")
+                .test_id("outline")
                 .children([
-                    icon(Icon::Search).class("size-5").test_id("lupa"),
-                    input("", "Buscar").class("flex-1").test_id("buscar"),
+                    icon(Icon::Search).class("size-5").test_id("magnifier"),
+                    input("", "Buscar").class("flex-1").test_id("find"),
                 ]),
             div()
                 .class("flex h-10")
                 .delegates_focus()
-                .test_id("inactivo")
+                .test_id("inactive")
                 .child(input("", "Inactivo").disabled(true)),
             input("abc", "Rápido")
                 .select_on_focus(true)
-                .test_id("rapido"),
+                .test_id("quick"),
         ]);
         tree.assign_ids();
         let id = |test_id| tree.find_test_id(test_id).unwrap().id;
-        let (outline, glyph, search) = (id("contorno"), id("lupa"), id("buscar"));
+        let (outline, glyph, search) = (id("outline"), id("magnifier"), id("find"));
         let layout = compute(&tree);
         let bounds = layout.bounds(glyph).unwrap();
         let path = layout.hit_path(Point {
@@ -1625,7 +1625,7 @@ mod tests {
         assert_eq!(path.last(), Some(&glyph));
         assert_eq!(pointer_target(&layout, &path), Some(search));
 
-        let idle = id("inactivo");
+        let idle = id("inactive");
         let bounds = layout.bounds(idle).unwrap();
         let path = layout.hit_path(Point {
             x: bounds.x + bounds.width - 1.0,
@@ -1634,7 +1634,7 @@ mod tests {
         assert_eq!(path.last(), Some(&idle));
         assert_eq!(pointer_target(&layout, &path), None, "no enabled input");
 
-        assert!(selects_on_focus(&tree, id("rapido")));
+        assert!(selects_on_focus(&tree, id("quick")));
         assert!(!selects_on_focus(&tree, search));
         assert!(!selects_on_focus(&tree, outline));
     }

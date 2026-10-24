@@ -287,7 +287,7 @@ mod tests {
             div().class("flex flex-col gap-2 p-4").children([
                 search_field(&self.query, Msg::Query)
                     .on_submit(Msg::Submit)
-                    .test_id("buscar")
+                    .test_id("find")
                     .build(),
                 button("Cancelar", ButtonVariant::Text)
                     .on_click(Msg::Cancel)
@@ -300,19 +300,19 @@ mod tests {
     fn typing_searches_and_the_clear_button_or_escape_empty_it() {
         let mut app = TestApp::new(Search::default());
         app.screen().get(By::role(Role::SearchInput).name("Buscar"));
-        assert!(app.screen().query(By::test_id("buscar.clear")).is_none());
+        assert!(app.screen().query(By::test_id("find.clear")).is_none());
 
-        app.type_text(By::test_id("buscar"), "áreas");
+        app.type_text(By::test_id("find"), "áreas");
         assert_eq!(app.app().query, "áreas");
         app.press(Key::Enter, Modifiers::NONE);
         assert_eq!(app.app().submitted, 1);
 
-        app.click(By::test_id("buscar.clear"));
+        app.click(By::test_id("find.clear"));
         assert_eq!(app.app().query, "");
-        assert!(app.is_focused(By::test_id("buscar")), "focus stays");
-        assert!(app.screen().query(By::test_id("buscar.clear")).is_none());
+        assert!(app.is_focused(By::test_id("find")), "focus stays");
+        assert!(app.screen().query(By::test_id("find.clear")).is_none());
 
-        app.type_text(By::test_id("buscar"), "x");
+        app.type_text(By::test_id("find"), "x");
         app.press(Key::Escape, Modifiers::NONE);
         assert_eq!(app.app().query, "");
         assert_eq!(app.app().cancelled, 0, "Escape cleared the field");

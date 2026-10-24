@@ -100,7 +100,7 @@ Estimaciones de orden de magnitud, en días de trabajo como el de las sesiones c
 1. **Alcance enorme para el estado actual.** Once crates, CLI con firma y notarización, router, varias ventanas, plugins, stores, i18n, recarga en caliente y MCP stdio + HTTP, con un catálogo de widgets todavía corto (Button, TextField, Card, Stat, Badge, Alert, IconButton, Switch). El propio 09 reconoce que menús, edición de texto y VoiceOver son lo primero que se compara con una app nativa. Riesgo: construir la plataforma alrededor de un núcleo que todavía no aguanta una app real.
 2. **MCP como principio nº 1.** La abstracción valiosa es el registro; MCP es un protocolo que cambia rápido. 09 lo aísla bien en `kai-mcp`, pero el discurso y los valores por defecto (feature `mcp` activa en plantillas) lo ponen por encima del registro.
 3. **«Solo lectura» no es inofensivo.** `expose = "all-read-only"` por defecto permite exfiltrar datos personales si el agente obedece una inyección de prompt. Para apps de clientes y ventas el defecto debe ser `none` o una lista explícita.
-4. **Semántica de `ReadOnly` inconsistente.** En el ejemplo de 09, `clientes.buscar` se declara `ReadOnly` («no cambia el modelo») pero cambia `filtro` y la ruta (09 §4.2 y §11). Falta distinguir **consultas** (sin efectos) de **acciones** (con `Msg`), y definir `Safety` sobre los datos de dominio, no sobre el estado de la UI.
+4. **Semántica de `ReadOnly` inconsistente.** En el ejemplo de 09, `clients.find` se declara `ReadOnly` («no cambia el modelo») pero cambia `filtro` y la ruta (09 §4.2 y §11). Falta distinguir **consultas** (sin efectos) de **acciones** (con `Msg`), y definir `Safety` sobre los datos de dominio, no sobre el estado de la UI.
 5. **`Reply<T>` dentro del `Msg`.** El `Msg` deja de ser dato: no se puede serializar, comparar ni reproducir, que es justo lo que permite un log de mensajes o depuración tipo *time travel*. Como `Msg: Clone`, duplicar un `Reply` es trivial; 09 lo resuelve con «error en debug».
 6. **Fases que mezclan cosas sin relación.** F1 junta `rsx!` y el registro de comandos (independientes; `rsx!` es caro en macros, soporte de rust-analyzer y mensajes de error). F2 junta manifiesto, CLI, bundle, firma, notarización, servidor MCP y un puente stdio por socket Unix (complejo).
 7. **El ejecutor async se decide tarde.** Queda abierto hasta F4, pero los `Reply` asíncronos y `rmcp` lo necesitan antes, y `rmcp` usa Tokio. En la práctica ya está decidido.
@@ -195,7 +195,7 @@ Conclusión: el `WidgetId` es un id **interno y técnico** para conservar estado
    // API propuesta
    div().key(cliente.id.to_string()).test_id(format!("cliente.{}", cliente.id))
    ```
-4. **Formato**: minúsculas, segmentos separados por `.`, sin espacios: `form.enviar`, `cliente.42.borrar`. Los ids `kai.*` quedan reservados para el framework.
+4. **Formato**: minúsculas, segmentos separados por `.`, sin espacios: `form.submit`, `client.42.delete`. Los ids `kai.*` quedan reservados para el framework.
 5. **Preferencia en tests**: primero rol + nombre (prueba lo que ve el usuario y empuja la accesibilidad); `test_id` cuando el nombre es dinámico, traducido o ambiguo; nunca clases ni posición.
 6. **Exposición**: el `test_id` se publica en el árbol AccessKit como `author_id`. Verificado en el código de `accesskit_macos` 0.27.1: `author_id` se devuelve como `accessibilityIdentifier`, el identificador que usan XCUITest y Appium (driver mac2).
 7. **Privacidad**: un `test_id` no debe contener datos personales (usar ids internos, no nombres ni RUT), porque es visible para cualquier herramienta de accesibilidad.
@@ -259,7 +259,7 @@ impl<Msg> Effects<Msg> {
 | | `Query` | `Action` |
 |---|---|---|
 | Efecto | Ninguno: función pura sobre `&App` | Produce un `Msg` que pasa por `update` |
-| Ejemplo | `clientes.buscar` (devuelve resultados sin tocar el filtro de la UI) | `clientes.crear`, `clientes.borrar`, `ui.filtrar` |
+| Ejemplo | `clients.find` (devuelve resultados sin tocar el filtro de la UI) | `clients.create`, `clients.delete`, `ui.filter` |
 | Seguridad | Implícita: solo lectura de datos | `Safety::Mutating` o `Safety::Destructive` |
 | Hilo | UI (rápida) o instantánea del modelo | UI, serializada con el resto de mensajes |
 | Respuesta | El valor devuelto | `output(&App)` opcional, evaluado después de `update` |
@@ -394,7 +394,7 @@ Reglas de la pista C:
 
 1. **Kai es genérico, DSP es dominio.** En Kai viven `map`, `marker`, capas, editor de geometrías, `TileSource` y comandos `mapa.*` genéricos. Áreas, incidencias y PostGIS viven en DSP desktop.
 2. **Nada de mapas antes de M1b** (hito de identificación y pruebas): cada pieza nace con `test_id`, fuente de teselas falsa y tests con `TestApp` ([10](10-mapas.md) §4.9).
-3. **La cámara no la controla el `Model` durante el gesto**: es estado de UI por `WidgetId` (como el scroll) y emite un `Msg` al terminar; `mapa.set_view` sí pasa por el `Model`.
+3. **La cámara no la controla el `Model` durante el gesto**: es estado de UI por `WidgetId` (como el scroll) y emite un `Msg` al terminar; `map.set_view` sí pasa por el `Model`.
 4. **El ejecutor de carga de teselas** es el mismo Tokio en hilo de servicio de los Pasos 12 y 15.
 5. **Atribución siempre visible** en el widget, por la política de OSM. DSP web hoy la oculta (`attributionControl={false}`); en desktop no es opcional.
 6. **Detrás de la feature `maps`**; se extrae a `kai-maps` solo cuando la frontera esté probada por uso.
@@ -461,7 +461,7 @@ Reglas de la pista C:
     - Un panel (`kai.inspector.panel`), en la mitad de la ventana que queda libre, muestra rol, id, nombre accesible, `test_id`, bounds y clases. Si un clic iría a otro control, agrega «clic → Button … [header.sumar]».
     - Al abrirse imprime el árbol completo con `devtools::dump`; `TestApp::dump()` devuelve el mismo texto y `TestApp::hover(by)` mueve el puntero sin hacer clic.
     - Los `WidgetId` del volcado son los hashes reales, los mismos que usa AccessKit.
-  - **Tests:** `parse`, la línea del log, los percentiles, el volcado de un árbol chico, el origen de cada vía en la demo (`messages_record_where_they_came_from`), y el inspector sobre `header.sumar` (`the_inspector_describes_what_is_under_the_pointer`).
+  - **Tests:** `parse`, la línea del log, los percentiles, el volcado de un árbol chico, el origen de cada vía en la demo (`messages_record_where_they_came_from`), y el inspector sobre `header.add` (`the_inspector_describes_what_is_under_the_pointer`).
   - **Prueba manual:** con el inspector abierto desde el arranque (un cambio local, no commiteado), el panel aparece en la ventana real sobre el contenido. Falta abrirlo con ⌘⌥I y recorrer controles con el puntero, porque Computer Use no tenía permisos de Accesibilidad.
 
 ### Etapa 1 — Identificación y pruebas (hito M1b: se puede probar por diseño)
@@ -486,7 +486,7 @@ Reglas de la pista C:
   - `test_id_is_exposed_as_author_id` en `a11y.rs`.
 - **Hecho cuando**: los cuatro tests pasan; con Accessibility Inspector de Xcode se ve el `test_id` como identificador del botón «Enviar» de la demo.
 - **Riesgos**: falsos positivos de duplicados en listas legítimas sin key; el error indica cómo resolverlo (añadir `key`).
-- **Estado**: hecho salvo la revisión con Accessibility Inspector. Las rutas se escriben `root > 2 > 0[key="ana"]`. En debug, `build_view` imprime cada problema una sola vez (no hace panic). `TextField::test_id` ponía el id en el input y `<id>.mostrar` en el ojo de contraseña; desde el Paso 5 el id es de la raíz, el input es `<id>.input` y el ojo `<id>.toggle`. Ids en la demo: `form.nombre`, `form.correo`, `form.password`, `form.enviar`, `form.limpiar` y `header.sumar`; en la galería, `gallery.<sección>.<fila>.<tamaño>`.
+- **Estado**: hecho salvo la revisión con Accessibility Inspector. Las rutas se escriben `root > 2 > 0[key="ana"]`. En debug, `build_view` imprime cada problema una sola vez (no hace panic). `TextField::test_id` ponía el id en el input y `<id>.mostrar` en el ojo de contraseña; desde el Paso 5 el id es de la raíz, el input es `<id>.input` y el ojo `<id>.toggle`. Ids en la demo: `form.name`, `form.email`, `form.password`, `form.submit`, `form.clear` y `header.add`; en la galería, `gallery.<sección>.<fila>.<tamaño>`.
 
 #### Paso 3 — Consultas
 
@@ -585,7 +585,7 @@ Reglas de la pista C:
 - **Hecho cuando**: [05](05-widgets-y-tema.md) documenta las sub-partes de cada componente y todos tienen su test.
 - **Estado**: hecho, con estos cambios de diseño:
   - **Mecanismo general**: `Element` tiene `.part("nombre")` y `.parts_root()`, que también sirven para los componentes de una app. `assign_ids` deriva los ids con las reglas de §6.4, y `Element::find_test_id` busca en el árbol sin layout.
-  - **`TextField`**: el id pasa del input a la raíz, que delega el foco. `TestApp` resuelve esa raíz a su input en `value`, `is_focused` e `is_enabled`, así que `By::test_id("form.nombre")` sigue funcionando; `By::label("Nombre")` devuelve el input (`form.nombre.input`). El ojo de contraseña es `x.toggle`; se suman `x.floating`, `x.shell` y `x.placeholder`.
+  - **`TextField`**: el id pasa del input a la raíz, que delega el foco. `TestApp` resuelve esa raíz a su input en `value`, `is_focused` e `is_enabled`, así que `By::test_id("form.name")` sigue funcionando; `By::label("Nombre")` devuelve el input (`form.name.input`). El ojo de contraseña es `x.toggle`; se suman `x.floating`, `x.shell` y `x.placeholder`.
   - **`Role::Switch`**: la pista de un switch se publica como `Switch` de AccessKit con `Toggled`, y en `switch_labeled` toma como nombre el texto del label. `Role::Alert` no se agregó (ver §6.4).
   - **Demo**: ids nuevos `contador` y `form` en sus cards, `form.notificaciones` en el switch y `contenido` en el área con scroll.
   - **Tests**: `parts_derive_from_the_nearest_explicit_test_id`, `explicit_test_id_wins_over_part`, `assign_ids_twice_keeps_derived_ids` y `parts_without_owner_get_no_test_id` en `element.rs`; `text_field_parts`, `card_parts`, `stat_parts`, `alert_parts` y `switch_parts_and_role` en `components.rs`; `labeled_switch_is_a_switch_named_after_its_label` en `a11y.rs`. La línea base de capturas no cambió.
@@ -626,7 +626,7 @@ Reglas de la pista C:
           .query::<Saludo>();
   }
   ```
-  - Ids con espacio de nombres; `kai.*` reservado (`kai.paleta`, `kai.cerrar_ventana`).
+  - Ids con espacio de nombres; `kai.*` reservado (`kai.palette`, `kai.close_window`).
   - Colisión de ids o atajos: error al construir el registro en debug, con ambos orígenes.
   - Disponibilidad evaluada tras cada `update` (como `view`); se guarda la última para menús y paleta.
 - **Tests**: duplicados de id y de atajo; disponibilidad recalculada tras `update`; `Query` sin `Msg`.
@@ -635,10 +635,10 @@ Reglas de la pista C:
 - **Estado**: hecho, con §7.2 recortado.
   - **Módulo `kai::commands`**: `Action` y `Query` como traits, `Availability` (`Enabled`, `Disabled { reason }`, `Hidden`), `Safety` (`Mutating`, `Destructive`), `CommandError` y `CommandRegistry<A>`. Todo vive en `mod.rs` y `registry.rs`; no hizo falta separar `query.rs` ni `action.rs`.
   - **Recortes**: no hay serde, esquemas ni `output` (llegan en los Pasos 9 y 11). Una acción sin parámetros necesita `Default` para registrarse: el registro guarda `fn() -> Msg` hecho con `T::default().into_msg()`. Los atajos son `KeyEquivalent` (`Shortcut::cmd(Key::Char('i'))`) y no caracteres.
-  - **Registro**: `App::commands` (también en `SimpleApp`) declara las entradas con `.shortcut(..)` y `.menu(..)`; `CommandRegistry::of` suma `kai.paleta` (⇧⌘P, menú «Ver»). `Action::Command` sigue siendo un `&'static str`, pero ahora es el id de un comando registrado.
+  - **Registro**: `App::commands` (también en `SimpleApp`) declara las entradas con `.shortcut(..)` y `.menu(..)`; `CommandRegistry::of` suma `kai.palette` (⇧⌘P, menú «Ver»). `Action::Command` sigue siendo un `&'static str`, pero ahora es el id de un comando registrado.
   - **Validación en debug**, reportada una vez por hilo: ids repetidos con los dos `type_name`, atajos repetidos, `kai.*` usado por la app, ids mal formados y atajos reservados para la edición (⌘A/C/X/V/Z y ⇧⌘Z). Por eso ningún comando, ni el menú, le quita ⌘C a un campo; la excepción «salvo que el comando lo declare» del Paso 8 no se implementó.
   - **Disponibilidad**: `Session` recalcula los estados tras cada `update`, igual que `view`, y avisa a la ventana por `Outbox.commands` cuando cambian.
-  - **Demo**: `contador.incrementar` (⌘I), `contador.reiniciar` (⌘0, deshabilitado con 0 clics), `form.enviar` (deshabilitado sin nombre), `form.limpiar`, `form.alternar_contrasena` y la consulta `form.ultimo_envio`.
+  - **Demo**: `counter.increment` (⌘I), `counter.reset` (⌘0, deshabilitado con 0 clics), `form.submit` (deshabilitado sin nombre), `form.clear`, `form.toggle_password` y la consulta `form.last_submission`.
   - **Tests**: `duplicate_command_ids_are_reported_with_both_types`, `duplicate_shortcuts_are_reported`, `kai_ids_and_editing_shortcuts_are_reserved`, `availability_and_messages_follow_the_model` y `query_runs_without_msg` en el registro; `availability_follows_update` y `query_runs_without_msg` en la demo.
 
 #### Paso 8 — Consumidores locales del registro
@@ -649,7 +649,7 @@ Reglas de la pista C:
 - **Diseño**:
   - **Atajos**: se resuelven en la ruta de equivalentes de teclado antes que el foco; no roban Cmd+A/C/X/V/Z cuando un campo de texto tiene foco, salvo que el comando lo declare.
   - **Menú nativo**: barra de menús desde el registro (título, atajo, atenuado si `Disabled`, oculto si `Hidden`), actualizada tras cada `update`. Decidir entre `objc2-app-kit` (ya en el árbol de dependencias por la pista B) y `muda`.
-  - **Paleta** (Cmd+Shift+P, comando `kai.paleta`): búsqueda por título, id y descripción; comandos sin parámetros en este paso.
+  - **Paleta** (Cmd+Shift+P, comando `kai.palette`): búsqueda por título, id y descripción; comandos sin parámetros en este paso.
   - **`Element::on_command(Accion)`**: el elemento se deshabilita solo si la acción no está disponible; su nombre accesible por defecto es el título; su `test_id` por defecto es el id del comando.
 - **Tests** (con `TestApp`): una acción `Disabled` atenúa el botón y no aparece habilitada en la paleta; el atajo dispara el mismo `Msg` que el botón; un atajo no roba Cmd+C dentro de un campo.
 - **Hecho cuando**: una acción deshabilitada se ve atenuada a la vez en el menú, el botón y la paleta.
@@ -658,7 +658,7 @@ Reglas de la pista C:
   - **`Element::on_command(Accion)`**: pone el `Msg` como `on_click` y guarda el id. Antes de `assign_ids`, `build_view_with` aplica el estado: `Disabled` y `Hidden` deshabilitan el elemento, el motivo pasa a ser la descripción accesible, el `test_id` por defecto es el id del comando y el nombre por defecto es el título si el elemento no tiene texto. En la demo solo «Reiniciar» usa `on_command`; el resto queda para el Paso 10.
   - **Menú nativo con muda 0.19** (solo macOS; la 0.21 pide Rust 1.90). Comparte objc2 0.6 y objc2-app-kit 0.3 con winit. `kai::menu::menu_model` es puro y se prueba en cualquier plataforma: agrupa las acciones por menú, en orden de registro, sin `Hidden` ni consultas. `NativeMenu` arma el menú de la app (Acerca de, Ocultar, Ocultar otros, Mostrar todo, Salir) más un menú por grupo, y tras cada cambio solo conmuta `enabled` si la estructura no cambió. Los ítems llegan al bucle como `UserEvent::Menu(id)`.
   - **Sin menú Edición**: los ítems predefinidos de Copiar y Pegar le quitarían ⌘C y ⌘V a los campos de Kai, que hacen su propia edición.
-  - **Paleta**: `components::command_palette` es un fondo `absolute inset-0 z-50` con un panel (`Role::Group`, «Paleta de comandos»), la búsqueda `kai.paleta.buscar` y una fila por acción (`kai.paleta.<id>`) con título, motivo si está deshabilitada y atajo. `Session` la agrega como último hijo de la raíz, así que los `WidgetId` de la app no cambian. Mientras está abierta, el foco y Tab quedan dentro de ella y el único atajo activo es el suyo. El texto de la búsqueda se copia del editor, porque el input no tiene `on_input`. Las flechas mueven la selección; Return ejecuta la fila seleccionada si está habilitada y cierra; Esc cierra y devuelve el foco; un clic en una fila la ejecuta y un clic en el fondo cierra. Las filas son controles sin `Msg`: `Element::command` basta para que sean enfocables y reciban clics.
+  - **Paleta**: `components::command_palette` es un fondo `absolute inset-0 z-50` con un panel (`Role::Group`, «Paleta de comandos»), la búsqueda `kai.palette.find` y una fila por acción (`kai.palette.<id>`) con título, motivo si está deshabilitada y atajo. `Session` la agrega como último hijo de la raíz, así que los `WidgetId` de la app no cambian. Mientras está abierta, el foco y Tab quedan dentro de ella y el único atajo activo es el suyo. El texto de la búsqueda se copia del editor, porque el input no tiene `on_input`. Las flechas mueven la selección; Return ejecuta la fila seleccionada si está habilitada y cierra; Esc cierra y devuelve el foco; un clic en una fila la ejecuta y un clic en el fondo cierra. Las filas son controles sin `Msg`: `Element::command` basta para que sean enfocables y reciban clics.
   - **Tests**: `command_shortcuts_come_after_controls` en `responder.rs`; en la demo, `command_shortcut_sends_the_same_msg_as_the_button`, `disabled_command_shortcut_sends_nothing`, `command_shortcuts_do_not_steal_copy_in_a_field`, `a_button_follows_its_command`, `menu_bar_follows_the_registry` y siete de la paleta. `disabled_command_stays_disabled_in_button_palette_and_menu` prueba el «hecho cuando». En `menu.rs`, `menus_group_actions_in_registration_order`, `enabling_an_item_keeps_the_structure` y, solo en macOS, `shortcuts_map_to_accelerators`. La línea base de capturas no cambió.
   - **Pendiente a mano** en la ventana real: ⌘I, ⌘0 con 0 clics, ⇧⌘P y ⌘C en un campo, para descartar que el menú y la ruta de teclas disparen dos veces. También revisar la paleta con VoiceOver; desde el Paso 13 es un `Role::Dialog` modal (S5).
 
@@ -688,7 +688,7 @@ Reglas de la pista C:
 - **Diseño**: incrementar, reiniciar, enviar, limpiar y mostrar/ocultar contraseña pasan a acciones; los botones usan `on_command`.
 - **Hecho cuando**: todas funcionan igual desde botón, atajo, menú y paleta, con tests para cada vía, y las capturas no cambian.
 - **Estado**: hecho; la línea base de capturas sigue 6/6.
-  - **Demo**: `header.sumar` y «Incrementar» usan `on_command(Incrementar)`, «Limpiar» `on_command(Limpiar)`, «Enviar» `on_command(Enviar)` (sigue siendo el botón por defecto) y el ojo del campo de contraseña `AlternarContrasena`. Los botones del muestrario y el `on_submit` del correo siguen con `Msg` directos porque no son acciones de la app.
+  - **Demo**: `header.add` y «Incrementar» usan `on_command(Incrementar)`, «Limpiar» `on_command(Limpiar)`, «Enviar» `on_command(Enviar)` (sigue siendo el botón por defecto) y el ojo del campo de contraseña `AlternarContrasena`. Los botones del muestrario y el `on_submit` del correo siguen con `Msg` directos porque no son acciones de la app.
   - **`TextField::password_command(revelada, Accion)`**: como `password`, pero el ojo lleva el id del comando, así que se deshabilita con él y figura en el registro.
   - **Partes**: `bind_commands` no le pone el id del comando como `test_id` a un elemento con `part`; el ojo sigue siendo `form.password.toggle`. El estado (deshabilitado, motivo, nombre) sí se aplica.
   - **Tests**: `every_action_does_the_same_from_every_via` recorre una tabla con las cinco acciones y sus vías (invocación, cada botón, atajo, Return en un campo para «Enviar», menú y paleta), cada una en una app nueva, y compara el modelo resultante y los `Msg` con los de `invoke`. `disabled_actions_do_nothing_from_any_via` hace lo mismo con «Reiniciar» en cero y «Enviar» sin nombre: ninguna vía envía `Msg`.
@@ -715,7 +715,7 @@ Reglas de la pista C:
     - **Sin `Default`:** la acción es su propia entrada.
     - **Acciones sin parámetros:** siguen siendo structs unitarios. Aceptan `{}` o `null` y se publican como objeto vacío cerrado. Las demás usan `#[serde(deny_unknown_fields)]`.
     - **Esquema raíz:** pierde `title` y `description`, porque el comando tiene los suyos. El texto de los campos para agentes va en `#[schemars(description = ..)]`.
-    - **Errores de entrada:** son `CommandError` con el id y el mensaje de serde (`entrada inválida para contador.sumar: missing field \`cantidad\``).
+    - **Errores de entrada:** son `CommandError` con el id y el mensaje de serde (`entrada inválida para counter.add: missing field \`cantidad\``).
   - **Registro**:
     - Cada entrada guarda `decode` o `run_query` sobre `serde_json::Value`, sus esquemas y `needs_input` (si `{}` no basta).
     - `message_from` y `run_query` son las entradas por JSON.
@@ -724,7 +724,7 @@ Reglas de la pista C:
   - **Documento**: `kai::commands::describe::<App>()` y `describe_json` devuelven `{ "$schema", "format": 1, "commands": [...] }`. Cada comando lleva id, título, descripción, tipo, seguridad, `inputSchema` y, en las consultas, `outputSchema`. Los comandos van en orden de registro, sin `kai.*`.
     - `mcp-schema.json`, en la raíz del crate, es el snapshot de la demo: `mcp_schema_matches_snapshot` muestra las líneas distintas y `KAI_UPDATE_SCHEMA=1 cargo test mcp_schema` lo reescribe.
     - `cargo run -- --describe-commands` imprime lo mismo, y la fixture externa también acepta el flag.
-  - **Demo**: la acción `contador.sumar { cantidad: u32 }` no tiene botón ni menú; solo la llaman scripts y agentes.
+  - **Demo**: la acción `counter.add { cantidad: u32 }` no tiene botón ni menú; solo la llaman scripts y agentes.
   - **Diferido al Paso 12**: la respuesta de las acciones (§7.3) y la exposición (§7.4). Quedaron como `.returns::<Q>()` y `.expose()`; ver el Paso 12.
   - **Tests**:
     - en `schema.rs`: unitarios como objeto cerrado, errores legibles, esquemas sin `$schema` ni `title`, y la convención de RUT, montos y enum con `tag`, en línea;
@@ -755,7 +755,7 @@ Reglas de la pista C:
     - Cada `tools/call` es una `Invocation { id: InvocationId, command, input }` que llega al hilo de UI como `UserEvent::Mcp` por el `EventLoopProxy`. Ahí corre `Session::call` y la respuesta vuelve por un `oneshot`.
     - Los errores del comando (`CommandError`: no disponible, entrada inválida) vuelven como resultado con `isError`. Una herramienta no expuesta o inexistente es un error JSON-RPC.
   - **Runtime:** `kai::runtime::run_with_mcp(app, theme)`. Las llamadas que llegan antes de que exista la ventana esperan en una cola. Cuando el cliente cierra stdin, la app termina (desde el Paso 13, `UserEvent::Mcp(Event::Closed)`). Stdout queda para el protocolo; un test revisa que `runtime.rs`, `session.rs`, `session/calls.rs` y `mcp/` no impriman ahí.
-  - **Demo:** `--mcp` (con `--features mcp`; sin la feature, error claro). Expone todo menos `form.alternar_contrasena`; `form.enviar` responde con `form.ultimo_envio`.
+  - **Demo:** `--mcp` (con `--features mcp`; sin la feature, error claro). Expone todo menos `form.toggle_password`; `form.submit` responde con `form.last_submission`.
   - **Tests:** `TestApp::mcp_client()` conecta un cliente JSON-RPC por un `tokio::io::duplex` al mismo servidor; las llamadas corren en el `TestApp`. En la demo, `mcp_lists_the_exposed_commands_as_tools` compara la lista con `describe`, y `mcp_tool_calls_run_on_the_app` cubre la acción con entrada reflejada en la UI, la acción no disponible, la entrada inválida, la herramienta no expuesta y las respuestas estructuradas. CI suma clippy y tests con `--features mcp`.
   - **Prueba de humo:** con líneas JSON-RPC por stdin, el binario responde a `initialize`, `tools/list` y `tools/call`, y termina con código 0 al cerrarse stdin.
   - **Pendiente:** probarlo con Cursor y con Claude Desktop, mirando la ventana. Si algún cliente rechaza los nombres con punto, se agrega el alias `clientes_buscar` (§12).
@@ -782,13 +782,13 @@ Reglas de la pista C:
   assert_eq!(app.audit_log().last().unwrap().command, "demo.limpiar_todo");
   ```
 - **Hecho cuando**: rechazar no toca el modelo; aceptar queda en la auditoría; el diálogo se encuentra por `get_by_role(Role::Dialog)`.
-- **Estado**: hecho, salvo la prueba a mano con Cursor o Claude Desktop (guía en [14](14-mcp.md)). Decisiones: en la demo, la acción `Destructive` es `contador.reiniciar`. La auditoría registra solo las llamadas por JSON (agentes, scripts y tests), rechazadas incluidas, con su origen. Lo que la persona hace en la ventana no se confirma ni se audita.
+- **Estado**: hecho, salvo la prueba a mano con Cursor o Claude Desktop (guía en [14](14-mcp.md)). Decisiones: en la demo, la acción `Destructive` es `counter.reset`. La auditoría registra solo las llamadas por JSON (agentes, scripts y tests), rechazadas incluidas, con su origen. Lo que la persona hace en la ventana no se confirma ni se audita.
   - **`Dialog` (S5):** `Role::Dialog` en `element.rs`, que AccessKit publica como `Dialog` modal y con el título como nombre. `components::dialog(title, body, actions)` arma el fondo (`absolute inset-0 z-50`) con las partes `panel`, `title`, `body` y `actions`. La paleta del Paso 8 usa el mismo rol.
   - **Auditoría (`src/commands/audit.rs`):** cada `AuditEntry` guarda la fecha, el `Origin` (`Agent { client }` o `Script`), el id del comando, la entrada redactada, el `Outcome` (`Done`, `Failed`, `Denied`, `Cancelled`) y la duración. `AuditLog` guarda las últimas 500 (`AUDIT_CAPACITY`). Solo se auditan las acciones; las consultas no cambian nada. `redact` reemplaza por `•••` los campos marcados `writeOnly` en el esquema de entrada, también dentro de objetos, listas y `oneOf`/`anyOf`/`allOf`, así que un secreto se marca con `#[schemars(extend("writeOnly" = true))]`.
   - **Sesión (`src/session/calls.rs`):** `Session::call` es el camino de scripts y tests (`Origin::Script`, sin confirmación). `Session::agent_call` es el de agentes:
     - Un comando no expuesto se rechaza.
-    - Una acción `Destructive` que la persona no permitió para la sesión se valida primero, para que una entrada mala o una acción no disponible fallen sin preguntar. Si pasa, se abre el diálogo `kai.confirmar`.
-    - El diálogo muestra «¿Permitir «título»?», el cliente, el id, la descripción y los datos resumidos y redactados. Tiene tres botones: `kai.confirmar.sesion`, `.una_vez` y `.rechazar`. El foco empieza en Rechazar.
+    - Una acción `Destructive` que la persona no permitió para la sesión se valida primero, para que una entrada mala o una acción no disponible fallen sin preguntar. Si pasa, se abre el diálogo `kai.confirm`.
+    - El diálogo muestra «¿Permitir «título»?», el cliente, el id, la descripción y los datos resumidos y redactados. Tiene tres botones: `kai.confirm.session`, `.una_vez` y `.rechazar`. El foco empieza en Rechazar.
     - Mientras está abierto, Esc rechaza, los clics fuera del panel no hacen nada, los atajos y el menú quedan apagados, y las demás llamadas de agentes esperan en cola, en orden.
     - Rechazar responde «La persona rechazó «título»» como error de herramienta, sin tocar el modelo.
     - `cancel_agent_call` cierra el diálogo, o saca la llamada de la cola, como `Cancelled`.
@@ -797,7 +797,7 @@ Reglas de la pista C:
     - si pasan 30 s (`mcp::TIMEOUT`), manda `Cancel` y responde «… no terminó en 30 s (¿esperaba confirmación?)»;
     - si el cliente manda `notifications/cancelled`, manda `Cancel`.
   - **Tests:** `TestApp` suma `agent_call` (devuelve un `AgentReply`), `cancel_agent_call`, `on_confirmation(Confirm::{Ask, AllowOnce, AllowForSession, Deny})`, `agent_connected`, `confirmation_open` y `audit_log`. `McpClient` suma `send_call`, que vuelve cuando el diálogo está abierto o llegó la respuesta, junto con `finish` y `cancel`; el cliente de prueba se llama `kai-test` (`MCP_CLIENT`). En la demo hay seis tests de confirmación: diálogo, cola y cancelación, fallo antes de preguntar, personas y scripts sin diálogo, indicador, y el recorrido por MCP.
-  - **Prueba de humo:** por stdin, `contador.sumar` y luego `contador.reiniciar` abren el diálogo en la ventana real. `notifications/cancelled` lo cierra sin respuesta y la siguiente llamada corre. La app termina con código 0 al cerrarse stdin.
+  - **Prueba de humo:** por stdin, `counter.add` y luego `counter.reset` abren el diálogo en la ventana real. `notifications/cancelled` lo cierra sin respuesta y la siguiente llamada corre. La app termina con código 0 al cerrarse stdin.
   - **Pendiente:** probarlo con Cursor y con Claude Desktop. Hay que ver si 30 s alcanzan para decidir con calma o si el plazo debe ser configurable, y si el cliente muestra bien el error de rechazo.
 
 ### Etapa 4 — App guía real (hito M3)
@@ -815,7 +815,7 @@ Reglas de la pista C:
   4. **Notificaciones** por websocket (contador de no leídas) como primera suscripción.
 - **Backlog de widgets** ✅ (cada uno con convención de `test_id`, rol accesible y tests con `TestApp`; todos aparecen en la demo, y `the_demo_shows_every_component` falla si un constructor público de `components` no está):
   - `Select`/pop-up (`components::select`), segmented control (`components::segmented`, sirve para Punto · Línea · Área), checkbox (`components::checkbox`, con estado mixto) y badge de estado (`badge`).
-  - Sidebar de secciones (`components::Sidebar`): grupos titulados, iconos y badges, el foco hace scroll hasta la fila, y se pliega a un riel de iconos de 48 pt con tooltips (`collapsed`, `on_toggle`; comando `ui.alternar_sidebar` en la demo).
+  - Sidebar de secciones (`components::Sidebar`): grupos titulados, iconos y badges, el foco hace scroll hasta la fila, y se pliega a un riel de iconos de 48 pt con tooltips (`collapsed`, `on_toggle`; comando `ui.toggle_sidebar` en la demo).
   - Toolbar dibujada por Kai (`components::toolbar` y sus piezas), search field (`components::search_field`) y textarea (`components::text_area`, con alto automático y contador).
   - `Dialog` completo (`components::Dialog`: `Element::modal` atrapa el foco, Esc cancela y el foco vuelve a quien lo abrió; la confirmación de agentes lo usa) y `Toast` (`components::toast_stack`, con cierre automático por `Effects::after` y `TestApp::advance`; se pausa con el puntero o el foco encima y los de error no se cierran solos).
   - Tabla y lista virtualizada (`components::Table` y `virtual_list`: la `Session` materializa solo las filas visibles; orden, selección y roles `Table`/`Row`/`Cell`; probadas con 10 000 filas). Pendiente para datos remotos: `on_rows_needed`, que avise a la app qué filas se ven para pedir páginas a una API ([15](15-tablas-con-muchos-registros.md)).
@@ -823,7 +823,7 @@ Reglas de la pista C:
     - **Columnas con valor tipado** (`Column::text/number/date/boolean`, `format`, `render` con un componente que conserva el valor, `actions` sin valor) y **`TableView`** pura: búsqueda global (también en columnas ocultas), filtros por columna (texto sin acentos, `>`, `<`, `a..b`, prefijo de fecha, «sí»/«no») y orden estable. Selección y filas expandidas por índice del registro.
     - **Modo filtro**: un campo por columna `filterable` bajo el encabezado; apagarlo borra los filtros. En la demo, botón Filtrar y pausa de 250 ms al tipear.
     - **Ocultar columnas**: menú de checks que queda abierto (`MenuItemCheckBox`), con clic derecho, Ctrl+clic o `ShowContextMenu` en el encabezado, y `column_menu` para un botón «Columnas». Nunca se ocultan todas.
-    - **Excel**: `TableView::export` da la `Sheet` de lo que se ve (búsqueda, filtros y orden; sin ocultas ni acciones) y `xlsx::write` la guarda con `rust_xlsxwriter`; la ruta la pide `Effects::save_file` (`NSSavePanel`). Comando `tabla.exportar` en la demo (menú Archivo, paleta y agentes).
+    - **Excel**: `TableView::export` da la `Sheet` de lo que se ve (búsqueda, filtros y orden; sin ocultas ni acciones) y `xlsx::write` la guarda con `rust_xlsxwriter`; la ruta la pide `Effects::save_file` (`NSSavePanel`). Comando `table.export` en la demo (menú Archivo, paleta y agentes).
     - **Filas expandibles**: `expandable(detalle, alto)`, chevron, → y ←, varias abiertas, panel `Region` con paradas de Tab propias; `virtual_rows` con alto variable (`Heights`).
     - **Scroll horizontal en el motor**: `overflow-x-*` y `overflow-y-*`, offsets en dos ejes, `reveal` mínimo, Mayús+rueda, barra horizontal y `scroll_x` en AccessKit. La tabla se desplaza a lo ancho cuando las columnas no caben (`min_width`).
     - **Columnas fijas**: `sticky left-*`/`right-*` horizontal en el layout (pinta y recibe clics encima, y `reveal` no deja nada debajo) y `Column::pin(Pin::Start | Pin::End)`; las acciones quedan fijas al final por defecto.
@@ -837,7 +837,7 @@ Reglas de la pista C:
     - **Pendiente:** el botón de color con popover (antes hace falta un popover genérico) y el panel nativo de macOS (`NSColorPanel`).
   - `DotProgress` (`components::DotProgress`, `dot_progress`): puntos en ola como `DotProgress` `wave` de la web, en tamaños Sm, Md y Lg y en el color del texto. Usa la primera animación calculada al pintar (`Motion`, ver [04](04-renderer-y-texto.md)), que respeta `reduce_motion`. Rol `ProgressIndicator`.
   - **Botón ocupado automático**: la sesión recuerda qué lanzó cada tarea de `Effects::perform` (un control o un comando) y lo marca `busy` hasta que la tarea, y las que su `Msg` encadene, terminan. El botón conserva su color y su ancho, toma el cursor de espera, oculta el texto bajo los puntos y no recibe clics. Un comando ocupado queda «En curso» en el menú, la paleta y para agentes. Se desactiva con `busy_feedback(false)`, y `Button::loading(true)` lo fuerza. Detalle en [03](03-eventos-y-estado.md) y [05](05-widgets-y-tema.md).
-    - **Demo:** la card «Acciones con espera» de Botones tiene un botón por variante (1,5 s), «Guardar y recargar» con dos tareas encadenadas, uno con `busy_feedback(false)`, el comando `botones.simular_espera` (menú Botones) con su botón, un botón con `loading(true)` y los tres tamaños de `DotProgress`. La captura es `demo-botones-cargando`.
+    - **Demo:** la card «Acciones con espera» de Botones tiene un botón por variante (1,5 s), «Guardar y recargar» con dos tareas encadenadas, uno con `busy_feedback(false)`, el comando `buttons.simulate_wait` (menú Botones) con su botón, un botón con `loading(true)` y los tres tamaños de `DotProgress`. La captura es `demo-botones-cargando`.
   - **Accesibilidad y usabilidad** (sin prueba manual; cada punto con tests de `TestApp` o de AccessKit):
     - **Preferencias del Mac:** `platform::prefs::read` lee de `NSWorkspace` reducir movimiento, aumentar contraste y reducir transparencia, y de `NSApplication` el acceso completo por teclado. El runtime las aplica al arrancar y al activar la ventana (`Session::set_system_prefs`), superpuestas al tema de la app. Las clases las usan con `motion-reduce:`, `contrast-more:` y `transparency-reduce:` ([05](05-widgets-y-tema.md)).
     - **Paleta:** la fila elegida es el `active_descendant` de la búsqueda, así VoiceOver la lee mientras el foco sigue en el campo ([08](08-accesibilidad.md)).
@@ -855,12 +855,12 @@ Reglas de la pista C:
   - **Select:** el botón termina en un `ChevronDown` en todos los temas, como un desplegable.
   - **Imágenes editables** (`MediaSlot`): la imagen es el único control, sin botón «Agregar» ni de cámara. Bajo el puntero toma el vidrio de elección para que se note que se puede hacer clic: borde `choice` y una capa `<id>.tint` con `group-hover:bg-choice/20` encima de la imagen (con `pointer-events-none`, así el clic y el archivo arrastrado llegan a la vista previa). Con imagen suma la pastilla `<id>.hint` con una cámara. Arrastrar un archivo sobre ella también usa `choice` (`drag:border-choice drag:ring-choice`). El nombre accesible y el tooltip dicen la acción: «Agregar imagen» o «Cambiar imagen».
 - **Edición de texto** ✅: navegación por palabra y línea (Option/Cmd + flechas, Option/Cmd + Backspace), doble y triple clic.
-- **Comandos de la app** (ejemplos): `areas.crear`, `areas.editar_geometria`, `areas.archivar` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.cerrar` (`Destructive`), consultas `areas.listar`, `incidencias.buscar` (`Query` puras sobre el modelo cargado), `ui.ir_a(seccion)` (acción de UI).
+- **Comandos de la app** (ejemplos): `areas.crear`, `areas.edit_geometry`, `areas.archive` (`Destructive`), `incidencias.crear`, `incidencias.set_ubicacion`, `requerimientos.close` (`Destructive`), consultas `areas.listar`, `incidencias.find` (`Query` puras sobre el modelo cargado), `ui.go_to(seccion)` (acción de UI).
 - **Pruebas**: el core se simula con un servidor HTTP falso en proceso (respuestas fijas por ruta) para que los tests de `TestApp` no dependan de Postgres; un job aparte, opcional, corre contra el core real con el seed de DSP.
 - **Hecho cuando**: un usuario de DSP crea y edita un área y registra una incidencia con ubicación desde la app de escritorio, con tests de flujo para cada tarea.
 - **Estado: empezado (login y Áreas de solo lectura).** `dsp-27/desktop/` es un crate Rust que usa Kai por ruta.
   - **Login:** contra `POST /api/auth/login`, con el token en el llavero de macOS (crate `keyring`). Al abrir, la sesión se valida con `GET /api/auth/me`; un 401 la borra. En desarrollo, `DSP_DESKTOP_LLAVERO=memoria` evita el llavero.
-  - **Shell:** toolbar de Kai, menú Sesión y el comando `sesion.cerrar`.
+  - **Shell:** toolbar de Kai, menú Sesión y el comando `session.close`.
   - **Áreas de operación:** mapa de Parral a ancho completo (el extracto PMTiles de Kai) con las áreas de `GET /territory/areas` y un panel lateral con la lista. La fila elegida usa `CHOICE_ACTIVE`, se despliega con su detalle y encuadra el área; el color de cada área se cambia con `ColorField` y la paleta de DSP.
   - **Red:** HTTP con `ureq` dentro de `Effects::perform`; la URL sale de `DSP_API_URL`.
   - **Desarrollo:** `npm run dev:core-desktop` levanta el core y la app con `kai dev` (Paso 18).
@@ -921,9 +921,9 @@ Reglas de la pista C:
 
 - **Objetivo**: que el mapa sea operable por menú, paleta, tests y agentes.
 - **Depende de**: Pasos 9, 12–13 y 15c.
-- **Diseño**: [10](10-mapas.md) §4.6, con la separación consulta/acción de §7.2: `mapa.get_view` y `mapa.screen_to_latlon` son consultas; `mapa.set_view` y `mapa.fit_bounds` son acciones de UI; las acciones de dominio (`areas.editar_geometria`, `incidencias.set_ubicacion`) son de la app y validan la geometría de entrada.
+- **Diseño**: [10](10-mapas.md) §4.6, con la separación consulta/acción de §7.2: `map.get_view` y `map.screen_to_latlon` son consultas; `map.set_view` y `map.fit_bounds` son acciones de UI; las acciones de dominio (`areas.edit_geometry`, `incidencias.set_ubicacion`) son de la app y validan la geometría de entrada.
 - **Hecho cuando**: `TestApp::invoke(SetView { .. })` mueve la cámara y un cliente MCP llama `incidencias.set_ubicacion` con un punto y la UI lo refleja.
-- **Estado: empezado.** La demo expone `mapa.set_view`, `mapa.get_view`, `mapa.fit_bounds`, `areas.seleccionar` y `areas.editar_geometria { code, coordinates }`, con tests por `TestApp::invoke`. La última valida la geometría al deserializar y devuelve un error de herramienta si es inválida. Faltan `mapa.screen_to_latlon` e `incidencias.set_ubicacion`.
+- **Estado: empezado.** La demo expone `map.set_view`, `map.get_view`, `map.fit_bounds`, `areas.select` y `areas.edit_geometry { code, coordinates }`, con tests por `TestApp::invoke`. La última valida la geometría al deserializar y devuelve un error de herramienta si es inválida. Faltan `map.screen_to_latlon` e `incidencias.set_ubicacion`.
 
 #### Paso 16 — Persistencia
 
@@ -1006,7 +1006,7 @@ Reglas de la pista C:
   - **Qué observa:** sale de `cargo metadata`. Por cada paquete sin `source` (el proyecto y sus dependencias por ruta, Kai incluido) mira `src/`, `assets/`, `build.rs` y `Cargo.toml`. Salta las entradas ocultas y las carpetas `target`.
   - **Ciclo:** `cargo build --message-format=json-render-diagnostics`; la ruta del binario sale de los mensajes `compiler-artifact` y los errores salen en la terminal como siempre.
     - Si la compilación falla, la versión anterior sigue abierta («error de compilación; sigue la versión anterior»).
-    - Si compila, `kai dev` escribe `guardar-y-salir` en el stdin de la app. Si no sale en 3 s, la cierra a la fuerza. Luego abre la nueva («reiniciado en 2,3 s»).
+    - Si compila, `kai dev` escribe `save-and-quit` en el stdin de la app. Si no sale en 3 s, la cierra a la fuerza. Luego abre la nueva («reiniciado en 2,3 s»).
     - Si la persona cierra la ventana, sigue observando y la vuelve a abrir con el próximo cambio. Ctrl+C termina todo.
   - **Estado entre reinicios:** en `<target>/kai-dev/estado.json`, que se borra al empezar cada sesión. Lo maneja `src/dev_state.rs`, solo en debug y con `KAI_DEV_STATE`.
     - Guarda la posición y el tamaño lógicos de la ventana (en macOS, la esquina del contenido, que es la que toma `with_position`), si tenía el foco, y lo que devuelva la app.
@@ -1134,12 +1134,12 @@ Reglas de la pista C:
 | Runtime async de servicio | Tokio en hilo de servicio, `smol`, pool propio | **Decidido en el Paso 12: Tokio `current_thread` en un hilo de servicio**, solo con la feature `mcp`; la UI sigue en winit. Las tareas de la app (Paso 15) usan un pool propio de 4 hilos `std`, sin Tokio | Pasos 12 y 15 |
 | SDK MCP | `rmcp`, implementación propia | **Decidido en el Paso 12: `rmcp` 3.5** (`server` y `transport-io`, sin macros): MSRV 1.88, Apache-2.0, spec 2025-06-18 y posteriores, stdio de servidor | Paso 12 |
 | JSON Schema | `schemars`, manual | **Decidido en el Paso 11: `schemars` 1.2**, dialecto 2020-12, subesquemas en línea, RUT como `string` con `pattern`, montos enteros, enums con `tag`; snapshot en `mcp-schema.json` | Paso 11 |
-| Nombres de herramienta | `clientes.buscar`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
+| Nombres de herramienta | `clients.find`, alias `clientes_buscar` | Ids con punto; alias automático solo si un cliente objetivo lo rechaza | Paso 12 |
 | Menú nativo | `objc2-app-kit` propio, `muda` | **Decidido en el Paso 8: `muda` 0.19**, que ya usa el mismo objc2 que winit y trae los ítems predefinidos; `objc2-app-kit` propio solo si muda limita (submenús dinámicos, validación por la cadena de responders) | Paso 8 |
 | Validación de clases | Solo ejecución, `tw!`, `rsx!` | `tw!` primero; `rsx!` opcional después | Paso 26 (o antes) |
 | Deshacer | Inversos por acción, instantáneas del modelo | Inversos declarados para acciones de agente; instantáneas solo si el modelo es pequeño | Paso 25 |
 | Recarga en caliente | Reiniciar con estado de ventana, parcheo en vivo | **Decidido en el Paso 18: reiniciar con estado** (`kai dev`, ventana y `App::dev_state`); parcheo en vivo fuera de alcance | Paso 18 |
-| Cámara del mapa | Controlada por el `Model`, estado de UI con `Msg` al terminar el gesto | Estado de UI durante el gesto; `Msg` al terminar; `mapa.set_view` por el `Model` | Paso 15b |
+| Cámara del mapa | Controlada por el `Model`, estado de UI con `Msg` al terminar el gesto | Estado de UI durante el gesto; `Msg` al terminar; `map.set_view` por el `Model` | Paso 15b |
 | Fuente de teselas en producción (DSP) | OSM estándar, proveedor comercial, PMTiles propio | **PMTiles propio de la región** (extracto vectorial de Protomaps, leído localmente); OSM raster queda como opción para otras regiones | Paso 15b / M3 |
 | Primer corte de DSP desktop | Áreas + flujo operativo, otro módulo | Áreas + flujo operativo + notificaciones (ejercitan mapa, formularios, tablas, async y websockets) | Paso 14 |
 | Nombre y publicación | `kai`/`kai-*` en crates.io, privado | Decidir con licencia en el Paso 21; mientras tanto `publish = false` | Paso 21 |
@@ -1247,7 +1247,7 @@ Reglas de la pista C:
 
 **Etapa 4 — App guía**
 - [x] Widgets previos al P14: checkbox (On, Off y mixto), segmented control (grupo de foco con flechas) y `Select` (lista de la `Session`, teclado completo con búsqueda por tipeo, `AXPopUpButton` y `AXMenu`). Falta revisarlos con VoiceOver.
-- [x] Sidebar de secciones (`components::sidebar`): un grupo de foco que selecciona, donde ↑/↓ eligen la fila, como en Finder o Mail. AccessKit la publica como `AXOutline` con filas. La demo pasó a ser un shell con sidebar y `ui.ir_a`. Falta revisarla con VoiceOver.
+- [x] Sidebar de secciones (`components::sidebar`): un grupo de foco que selecciona, donde ↑/↓ eligen la fila, como en Finder o Mail. AccessKit la publica como `AXOutline` con filas. La demo pasó a ser un shell con sidebar y `ui.go_to`. Falta revisarla con VoiceOver.
 - [x] Backlog de widgets del P14: toolbar, search field, textarea, `Dialog`, toasts, tabla y lista virtualizadas, edición por palabra y línea, `Avatar`, `MediaSlot` y `ColorField`, cada uno con ids y tests y en la demo.
 - [x] Lenguaje de color de la selección: token `choice`, `CHOICE_ACTIVE` y `CHOICE_HOVER` en sidebar, select (sin check y con `ChevronDown`), paleta, segmented, toolbar, tabla, `ColorField` y `MediaSlot`.
 - [x] `DotProgress` (animación al pintar con `Motion`) y botón ocupado automático por tarea de `Effects::perform`, con comandos «En curso», `busy:`/`group-busy:` y `busy` en AccessKit. Falta verlo a mano en la ventana y con VoiceOver.
@@ -1258,7 +1258,7 @@ Reglas de la pista C:
 - [ ] P15 Efectos async, cancelación, reloj controlado en `TestApp`. Parcial: pool de tareas, `perform`/`perform_async`, `keyed`/`cancel`, `after`, `subscriptions`/`every`, `.completes(invocation)` MCP (§7.3), paneles de archivos (hoja), archivos arrastrados y `run_until_idle`/`advance`. Faltan suscripciones de red y el test de frame durante una llamada de red.
 - [ ] P15b Mapa raster con capas de áreas y atribución (mapas M1). Parcial: mapa vectorial con áreas de DSP, sin raster.
 - [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b). Parcial: edición de polígonos existentes (`polygon_editor`).
-- [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2). Empezado: `mapa.set_view/get_view/fit_bounds`, `areas.seleccionar` y `areas.editar_geometria`.
+- [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2). Empezado: `map.set_view/get_view/fit_bounds`, `areas.select` y `areas.edit_geometry`.
 - [ ] P16 `Store` con migración y guardado atómico.
 
 **Etapa 5 — Manifiesto y CLI**

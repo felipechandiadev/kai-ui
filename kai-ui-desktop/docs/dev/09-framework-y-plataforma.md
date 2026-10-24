@@ -109,7 +109,7 @@ Hoy `ui_engine.rs` tiene un `enum Command` (`SetFocus`, `SetPressed`, `Activate`
 |---|---|---|---|
 | Intención de plataforma (tecla, clic, IME, acción AccessKit) | `Intent` (ya existe) | interno de `kai-platform` | `Intent::PointerDown(id)` |
 | Reducción sobre el estado de UI | **`UiCommand`** (renombrar el `enum Command` actual) | `pub(crate)` en `kai-core` | `UiCommand::SetFocus(..)` |
-| Acción de la app, con id, esquema y seguridad | **`Command`** (trait público) | API pública de `kai-commands` | `clientes.buscar` |
+| Acción de la app, con id, esquema y seguridad | **`Command`** (trait público) | API pública de `kai-commands` | `clients.find` |
 
 El renombrado de `ui_engine::Command` a `UiCommand` se hace en F0, antes de publicar nada; esta guía no lo aplica al código.
 
@@ -117,7 +117,7 @@ El renombrado de `ui_engine::Command` a `UiCommand` se hace en F0, antes de publ
 
 Un comando es una acción tipada que la app sabe hacer, con:
 
-- **id** estable y con espacio de nombres: `clientes.buscar`, `clientes.crear`, `ventana.preferencias`. Los ids `kai.*` quedan reservados para comandos del framework (`kai.deshacer`, `kai.paleta`, `kai.cerrar_ventana`).
+- **id** estable y con espacio de nombres: `clients.find`, `clients.create`, `window.preferencias`. Los ids `kai.*` quedan reservados para comandos del framework (`kai.deshacer`, `kai.palette`, `kai.close_window`).
 - **título y descripción** para personas y agentes. La descripción sale del comentario `///` del tipo.
 - **esquema de entrada y de salida** derivados del tipo Rust (JSON Schema vía `schemars`, candidato). Un comando sin parámetros tiene esquema vacío.
 - **nivel de seguridad**: `ReadOnly` (no cambia el modelo), `Mutating` (lo cambia de forma reversible o esperable) o `Destructive` (borra, envía, paga o es irreversible: **exige confirmación del usuario** cuando lo invoca un agente, y opcionalmente desde la UI).
@@ -233,7 +233,7 @@ impl App for Clientes {
 |---|---|
 | Barra de menús de macOS | título, menú, atajo, disponibilidad (atenuado), `Hidden` |
 | Atajos | se resuelven antes que el campo con foco: extensión de `ui_engine.rs::text_key_commands`, que hoy fija Cmd+A/C/X/V |
-| Paleta (Cmd+Shift+P, `kai.paleta`) | búsqueda por título/id/descripción; si el comando tiene parámetros, formulario generado desde el esquema |
+| Paleta (Cmd+Shift+P, `kai.palette`) | búsqueda por título/id/descripción; si el comando tiene parámetros, formulario generado desde el esquema |
 | Botones y elementos | `Element::on_command(BorrarCliente { id })`: se deshabilitan solos si el comando no está disponible y respetan la confirmación |
 | Accesibilidad | el nombre accesible de un control con `on_command` es el título del comando |
 | Tests y scripts | `TestApp::invoke(cmd)` y el cliente MCP en proceso (sección 10) |
@@ -635,7 +635,7 @@ El trait `Command` y el registro se definen en la sección 4 ([4.2](#42-qué-es-
 // API propuesta
 fn menu(&self) -> Menu {
     Menu::standard()                                  // Acerca de, Ocultar, Salir, Edición
-        .submenu("Archivo", |m| m.command::<CrearCliente>().separator().command_id("kai.cerrar_ventana"))
+        .submenu("Archivo", |m| m.command::<CrearCliente>().separator().command_id("kai.close_window"))
         .submenu("Clientes", |m| m.command::<BuscarClientes>().command::<BorrarCliente>())
         .submenu("Ventana", |m| m.command_id("ventana.preferencias"))
 }
@@ -740,7 +740,7 @@ locales/
   2. Los iconos propios de cada app se declaran en `assets/icons/` y `kai build` (o un `build.rs` generado) produce un enum `AppIcon` con el mismo formato (solo los hijos del `<svg>`, trazo aplicado al rasterizar en `render/icons.rs`).
   3. **`kai icons add <nombre-lucide>`** (Paso 19, hecho): copia desde el catálogo versionado del crate `kai` a `assets/icons/` de la app (también `kai icons add ./mi.svg --name foo`). Uso en Rust: `icon_svg(include_str!("../assets/icons/foo.svg"))`. El enum `AppIcon` vía `build.rs` sigue siendo propuesta; `gen-icons.mjs` se mantiene para el propio Kai.
 - **Fuentes.** Los archivos de `[fonts] files` se incrustan (`include_bytes!`) y se cargan en el `FontSystem` antes del primer frame; `ui = "system"` mantiene `fonts.rs`. La licencia de cada fuente se copia al bundle, igual que `assets/icons/LICENSE`.
-- **Traducciones.** Archivos Fluent (`.ftl`) por idioma, accesibles con `t!("clientes.titulo")` en `rsx!`; el idioma inicial sale del sistema y `[i18n] default`. Las cadenas de accesibilidad (por ejemplo "Mostrar contraseña" en el TextField) pasan al catálogo de `kai-widgets`.
+- **Traducciones.** Archivos Fluent (`.ftl`) por idioma, accesibles con `t!("clients.title")` en `rsx!`; el idioma inicial sale del sistema y `[i18n] default`. Las cadenas de accesibilidad (por ejemplo "Mostrar contraseña" en el TextField) pasan al catálogo de `kai-widgets`.
 - **Empaquetado.** En desarrollo se leen de disco (permite recargar); en `--release`, las fuentes y SVG se incrustan y `assets/data/**` se copia a `Contents/Resources/`.
 
 ## 10. CLI `kai` y plantilla de proyecto
@@ -757,7 +757,7 @@ locales/
 | `kai icons add/list` | Gestión del catálogo de iconos (sección 9). |
 | `kai commands list [--json]` | Lista el registro: id, título, seguridad, atajo, menú, si se expone por MCP y por qué (`expose`/`allow`/`deny`). |
 | `kai mcp list [--json]` | Imprime lo que vería un cliente: `tools` con `inputSchema` y salida, `resources`, `prompts`. Ejecuta el binario con `--mcp-describe`, que vuelca el registro sin abrir ventana ni red. Sirve para revisar cambios de esquema en PR. |
-| `kai mcp inspect` | Cliente interactivo contra la instancia de `kai dev`: listar, leer recursos, llamar herramientas (`kai mcp call clientes.buscar '{"consulta":"ana"}'`) y ver notificaciones. |
+| `kai mcp inspect` | Cliente interactivo contra la instancia de `kai dev`: listar, leer recursos, llamar herramientas (`kai mcp call clients.find '{"consulta":"ana"}'`) y ver notificaciones. |
 | `kai mcp diff <ref>` | Compara el esquema MCP actual con el de un commit o versión publicada y marca cambios incompatibles (sección 13). |
 
 ### Pruebas de comandos como cliente MCP
@@ -1109,8 +1109,8 @@ resources
 
 Puntos a observar:
 
-- Un agente que llama `clientes.crear` produce el mismo `Msg::Crear` que Cmd+N o el botón «Nuevo»: la ventana navega al nuevo cliente, el recurso `kai://clientes/seleccion` cambia de revisión y los suscriptores reciben la notificación.
-- `clientes.borrar` desaparece de `tools/list` cuando no hay clientes (`existe` devuelve `Disabled`) y el servidor notifica `listChanged`; invocado por un agente, abre el diálogo de confirmación en la ventana principal.
+- Un agente que llama `clients.create` produce el mismo `Msg::Crear` que Cmd+N o el botón «Nuevo»: la ventana navega al nuevo cliente, el recurso `kai://clientes/seleccion` cambia de revisión y los suscriptores reciben la notificación.
+- `clients.delete` desaparece de `tools/list` cuando no hay clientes (`existe` devuelve `Disabled`) y el servidor notifica `listChanged`; invocado por un agente, abre el diálogo de confirmación en la ventana principal.
 - La ventana de preferencias comparte el modelo, pero tiene su propio foco y scroll y no se expone a MCP (`mcp = false`).
 - Requiere piezas que no existen: `rsx!`, `Router`, `Task`, `WindowKey`, registro de comandos, `Reply`, recursos, `on_command`, menús, componentes con props y `Task::set_theme`.
 
@@ -1144,14 +1144,14 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 - **Terminado cuando:**
   - `kai new demo && kai bundle && kai sign && kai notarize` produce una `.app` que Gatekeeper abre en otro Mac sin avisos.
   - Un cliente MCP real (Claude Desktop o Cursor) configurado con el binario y `--mcp` lista y llama las herramientas de la app de la sección 11 (con datos locales), y la UI muestra el resultado de cada llamada.
-  - Llamar `clientes.borrar` desde el cliente abre el diálogo de confirmación en la app; rechazarlo devuelve error de herramienta y no cambia el modelo; aceptarlo queda en la auditoría.
+  - Llamar `clients.delete` desde el cliente abre el diálogo de confirmación en la app; rechazarlo devuelve error de herramienta y no cambia el modelo; aceptarlo queda en la auditoría.
   - `kai mcp list --json` coincide con lo que recibe el cliente, y el test de la sección 10 pasa en CI sin ventana.
 
 ### F3 — Router, varias ventanas y MCP completo
 
 - `kai-router` con `#[derive(Routable)]`; `WindowState` por ventana con `Device` y atlas compartidos; `[[window]]`, `Task::window`, deep links; AccessKit por ventana.
 - MCP: Streamable HTTP en localhost con token y validación de `Origin`; `Scope` por ventana y sesión; suscripción a recursos con notificación de cambios; `listChanged` dinámico; prompts; `kai.navegar` y la ruta como recurso; `kai dev --mcp`.
-- **Terminado cuando:** el ejemplo de la sección 11 funciona con dos ventanas (foco independiente, densidad compartida, Cmd+[ y Cmd+]); un cliente suscrito a `kai://clientes/seleccion` recibe la notificación al navegar desde la UI; `clientes.borrar` desaparece de la lista del cliente cuando no hay clientes; una petición HTTP sin token o con `Origin` ajeno se rechaza (test); VoiceOver recorre las dos ventanas.
+- **Terminado cuando:** el ejemplo de la sección 11 funciona con dos ventanas (foco independiente, densidad compartida, Cmd+[ y Cmd+]); un cliente suscrito a `kai://clientes/seleccion` recibe la notificación al navegar desde la UI; `clients.delete` desaparece de la lista del cliente cuando no hay clientes; una petición HTTP sin token o con `Origin` ajeno se rechaza (test); VoiceOver recorre las dos ventanas.
 
 ### F4 — Servicios, stores, plugins y deshacer
 
@@ -1172,7 +1172,7 @@ Cada fase conserva el gate de [README](README.md): `cargo fmt`, `check`, `test` 
 
 - **SDK MCP.** `rmcp` (candidato) frente a implementación propia; criterios en 4.8. Fijar la versión del spec soportada y cómo se negocia con clientes más nuevos o más viejos.
 - **Esquemas.** `schemars` es el candidato para JSON Schema; decidir el dialecto que se publica, cómo se representan enums y tipos propios (`Rut`, montos) y si los esquemas se generan en compilación o al arrancar.
-- **Nombres de herramienta.** Ids con punto (`clientes.buscar`) frente a alias con guion bajo si algún cliente los rechaza; verificar con los clientes objetivo en F2.
+- **Nombres de herramienta.** Ids con punto (`clients.find`) frente a alias con guion bajo si algún cliente los rechaza; verificar con los clientes objetivo en F2.
 - **Modelo de hilos.** El servidor corre en un runtime async de fondo y la ejecución se serializa en el hilo de UI. Queda por decidir el ejecutor ([00](00-vision-y-arquitectura.md) excluye Tokio como runtime de UI, no necesariamente en un hilo de servicio), el plazo máximo de una lectura en el hilo de UI y si los recursos grandes se sirven desde instantáneas (`Arc` del modelo) para no bloquear frames.
 - **`rsx!` frente a builders** y **validación de clases en compilación** (puede exigir un crate `kai-tw` sin tema ni `taffy`).
 - **Menús nativos.** Implementación propia sobre AppKit frente a un crate (`muda`, usado por Tauri); `craft-quit` como referencia de cierre ([07](07-integracion-craft-libs.md)).

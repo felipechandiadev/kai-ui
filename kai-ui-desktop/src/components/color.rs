@@ -229,11 +229,11 @@ mod tests {
     use crate::theme::{AppKitGeneration, Appearance, Theme};
     use crate::ui_engine::{Key, Modifiers};
 
-    const AZUL: Color = Color::hex(0x1e73ae);
-    const VERDE: Color = Color::hex(0x2d6a4f);
+    const BLUE: Color = Color::hex(0x1e73ae);
+    const GREEN: Color = Color::hex(0x2d6a4f);
 
     #[derive(Default)]
-    struct Tipo {
+    struct Kind {
         color: String,
         disabled: bool,
     }
@@ -243,7 +243,7 @@ mod tests {
         Color(String),
     }
 
-    impl SimpleApp for Tipo {
+    impl SimpleApp for Kind {
         type Msg = Msg;
         fn title(&self) -> String {
             "Tipo de área".into()
@@ -254,56 +254,56 @@ mod tests {
         fn view(&self) -> Element<Msg> {
             div().class("flex flex-col p-4 w-96").child(
                 color_field("Color", &self.color, Msg::Color)
-                    .palette([("Azul", AZUL), ("Verde", VERDE)])
+                    .palette([("Azul", BLUE), ("Verde", GREEN)])
                     .allow_empty(true)
                     .disabled(self.disabled)
-                    .test_id("tipo.color")
+                    .test_id("kind.color")
                     .build(),
             )
         }
     }
 
-    fn app(color: &str) -> TestApp<Tipo> {
-        TestApp::new(Tipo {
+    fn app(color: &str) -> TestApp<Kind> {
+        TestApp::new(Kind {
             color: color.into(),
             disabled: false,
         })
     }
 
-    fn pressed(app: &TestApp<Tipo>, by: By) -> bool {
+    fn pressed(app: &TestApp<Kind>, by: By) -> bool {
         app.screen().get(by).node().control_state == Some(ControlState::On)
     }
 
     #[test]
     fn picking_a_suggestion_writes_its_hex_and_marks_it() {
         let mut app = app("");
-        let azul = By::role(Role::Radio).name("Azul");
-        let clear = By::test_id("tipo.color.clear");
-        assert!(!pressed(&app, azul.clone()));
+        let blue = By::role(Role::Radio).name("Azul");
+        let clear = By::test_id("kind.color.clear");
+        assert!(!pressed(&app, blue.clone()));
         assert!(pressed(&app, clear.clone()));
 
-        app.click(azul.clone());
+        app.click(blue.clone());
         assert_eq!(app.app().color, "#1e73ae");
-        assert!(pressed(&app, azul));
+        assert!(pressed(&app, blue));
         assert!(!pressed(&app, clear));
-        assert_eq!(app.value(By::test_id("tipo.color.hex")), "#1e73ae");
+        assert_eq!(app.value(By::test_id("kind.color.hex")), "#1e73ae");
         assert_eq!(
             app.screen()
-                .get(By::test_id("tipo.color.swatch"))
+                .get(By::test_id("kind.color.swatch"))
                 .name()
                 .as_deref(),
             Some("Color #1e73ae")
         );
 
-        app.click(By::test_id("tipo.color.clear"));
+        app.click(By::test_id("kind.color.clear"));
         assert_eq!(app.app().color, "");
     }
 
     #[test]
     fn typing_keeps_a_partial_hex_and_shows_the_error_until_it_is_a_color() {
         let mut app = app("");
-        let error = By::test_id("tipo.color.error");
-        app.type_text(By::test_id("tipo.color.hex"), "#2d6a");
+        let error = By::test_id("kind.color.error");
+        app.type_text(By::test_id("kind.color.hex"), "#2d6a");
         assert_eq!(app.app().color, "#2d6a", "the field keeps what was typed");
         assert_eq!(
             app.screen().get(error.clone()).name().as_deref(),
@@ -311,9 +311,9 @@ mod tests {
         );
         assert_eq!(app.screen().get(error.clone()).role(), Role::Alert);
 
-        app.type_text(By::test_id("tipo.color.hex"), "4F");
+        app.type_text(By::test_id("kind.color.hex"), "4F");
         assert_eq!(app.app().color, "#2d6a4F");
-        assert_eq!(Color::parse_hex(&app.app().color), Some(VERDE));
+        assert_eq!(Color::parse_hex(&app.app().color), Some(GREEN));
         assert!(app.screen().query(error).is_none());
         assert!(
             pressed(&app, By::role(Role::Radio).name("Verde")),
@@ -326,9 +326,9 @@ mod tests {
         let mut app = app("#1e73ae");
         let screen = app.screen();
         let palette = screen.get(By::role(Role::RadioGroup).name("Color: colores sugeridos"));
-        assert_eq!(palette.test_id(), Some("tipo.color.palette"));
-        let azul = screen.get(By::role(Role::Radio).name("Azul"));
-        assert_eq!(azul.node().description.as_deref(), Some("#1e73ae"));
+        assert_eq!(palette.test_id(), Some("kind.color.palette"));
+        let blue = screen.get(By::role(Role::Radio).name("Azul"));
+        assert_eq!(blue.node().description.as_deref(), Some("#1e73ae"));
         assert_eq!(
             screen
                 .all(By::role(Role::Radio))
@@ -347,12 +347,12 @@ mod tests {
 
     #[test]
     fn a_disabled_field_takes_no_picks() {
-        let mut app = TestApp::new(Tipo {
+        let mut app = TestApp::new(Kind {
             color: "#1e73ae".into(),
             disabled: true,
         });
         assert!(!app.is_enabled(By::role(Role::Radio).name("Verde")));
-        assert!(!app.is_enabled(By::test_id("tipo.color.hex")));
+        assert!(!app.is_enabled(By::test_id("kind.color.hex")));
         app.click(By::role(Role::Radio).name("Verde"));
         assert_eq!(app.app().color, "#1e73ae");
     }
@@ -365,7 +365,7 @@ mod tests {
             Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Dark),
         ] {
             for value in ["", "#1e73ae", "#zz"] {
-                let app = TestApp::builder(Tipo {
+                let app = TestApp::builder(Kind {
                     color: value.into(),
                     disabled: false,
                 })

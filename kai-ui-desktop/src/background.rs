@@ -11,7 +11,7 @@
 //!
 //! Static effects render once and are cached by the renderer; animated
 //! ones redraw only while the window is visible and active
-//! (`docs/dev/04-renderer-y-texto.md`).
+//! (`docs/dev/04-renderer-y-text_value.md`).
 
 use std::time::{Duration, Instant};
 

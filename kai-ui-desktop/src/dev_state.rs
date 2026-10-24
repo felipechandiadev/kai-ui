@@ -3,7 +3,7 @@
 //!
 //! Only in debug builds and with `KAI_DEV_STATE=<file>`: at startup the
 //! runtime reads the file and places the window; a line
-//! `guardar-y-salir` on stdin makes it write the file and quit.
+//! `save-and-quit` on stdin makes it write the file and quit.
 //!
 //! [`App::dev_state`]: crate::runtime::App::dev_state
 
@@ -15,7 +15,7 @@ use serde_json::Value;
 /// Environment variable with the path of the state file.
 pub const ENV: &str = "KAI_DEV_STATE";
 /// Line on stdin that asks the app to save its state and quit.
-pub const SAVE_AND_QUIT: &str = "guardar-y-salir";
+pub const SAVE_AND_QUIT: &str = "save-and-quit";
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DevState {
@@ -79,7 +79,7 @@ mod tests {
                 height: 720.0,
             }),
             focused: false,
-            app: Some(json!({ "seccion": "mapa" })),
+            app: Some(json!({ "section": "mapa" })),
         };
         write(&path, &state).unwrap();
         assert_eq!(read(&path), Some(state));

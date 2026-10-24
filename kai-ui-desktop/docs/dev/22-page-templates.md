@@ -61,9 +61,9 @@ Grupo sidebar **Plantillas**:
 
 | Sección | `test_id` | Qué muestra |
 |---|---|---|
-| Lista + detalle | `plantilla.lista` | MasterDetail + PageHeader + crumbs |
-| Formulario | `plantilla.formulario` | FormPage comfortable, spans 6/6/12 |
-| Vista de datos | `plantilla.datos` | DataPage compact, métricas + filas densas |
+| Lista + detalle | `template.items` | MasterDetail + PageHeader + crumbs |
+| Formulario | `template.form` | FormPage comfortable, spans 6/6/12 |
+| Vista de datos | `template.data` | DataPage compact, métricas + filas densas |
 
 Cómo verlo: `cargo run` (tema AppKit) → sidebar **Plantillas**.
 
