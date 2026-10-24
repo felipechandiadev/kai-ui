@@ -603,11 +603,7 @@ impl DocumentEditor {
     }
 
     fn clear_ime_preedit(&mut self) -> bool {
-        if self.ime_preedit.take().is_some() {
-            true
-        } else {
-            false
-        }
+        self.ime_preedit.take().is_some()
     }
 
     fn insert_str(&mut self, text: &str) -> bool {
@@ -1407,10 +1403,8 @@ fn clipboard_html_enriched(session: &Session) -> Option<String> {
         session.doc.body_fragment()
     } else if let Some(f) = fully_selected_table_fragment(session) {
         f
-    } else if let Some(f) = session.clipboard.clone() {
-        f
     } else {
-        return None;
+        session.clipboard.clone()?
     };
 
     let mut doc = frag.to_document();
@@ -2549,9 +2543,11 @@ mod tests {
     #[test]
     fn paste_special_plain_and_merge_via_host_clipboard() {
         let mut ed = DocumentEditor::new("");
-        let mut clip = MemClip::default();
-        clip.text = Some("solo texto plano".into());
-        clip.html = Some("<p><b>HTML</b> rico</p>".into());
+        let mut clip = MemClip {
+            text: Some("solo texto plano".into()),
+            html: Some("<p><b>HTML</b> rico</p>".into()),
+            ..Default::default()
+        };
         assert!(ed.clipboard_paste_special(&mut clip, &DocumentCmd::PastePlain));
         let plain = ed.plain_text();
         assert!(

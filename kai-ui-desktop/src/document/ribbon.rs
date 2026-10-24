@@ -425,14 +425,14 @@ pub fn ribbon_chrome_for(session: &mut Session, mode: RibbonMode) -> RibbonChrom
             wordcraft_doc::props::Align::Justify => pressed.push("para.justify".into()),
             wordcraft_doc::props::Align::Distribute => {}
         }
-        if let Some(n) = resolved.numbering.filter(|n| n.num != 0) {
-            if let Some(level) = session.doc.numbering.level(n.num, n.level) {
-                use wordcraft_doc::section::NumFormat;
-                if level.format == NumFormat::Bullet {
-                    pressed.push("para.bullets".into());
-                } else if level.format != NumFormat::None {
-                    pressed.push("para.numbering".into());
-                }
+        if let Some(n) = resolved.numbering.filter(|n| n.num != 0)
+            && let Some(level) = session.doc.numbering.level(n.num, n.level)
+        {
+            use wordcraft_doc::section::NumFormat;
+            if level.format == NumFormat::Bullet {
+                pressed.push("para.bullets".into());
+            } else if level.format != NumFormat::None {
+                pressed.push("para.numbering".into());
             }
         }
     }

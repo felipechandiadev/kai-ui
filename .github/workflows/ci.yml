@@ -44,6 +44,9 @@ jobs:
       # Experimental MCP server (13, Paso 12): in-process client over a pipe.
       - run: cargo clippy --locked --all-targets --features mcp -- -D warnings
       - run: cargo test --locked --features mcp
+      # Mini Word editor (docs/dev/16): WordCraft, off by default.
+      - run: cargo clippy --locked --all-targets --features document -- -D warnings
+      - run: cargo test --locked --features document
       - run: cargo doc --locked --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
