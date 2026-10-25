@@ -575,4 +575,53 @@ mod tests {
         let spec = bar_spec(&[4.0, 12.0]);
         assert_eq!(spec.accessible_description(), "c0 4, c1 12");
     }
+
+    /// A bar chart in an app: named and described for assistive tech, and
+    /// a click on a slot sends its category.
+    #[test]
+    fn clicking_a_bar_selects_its_category() {
+        use crate::element::Element;
+        use crate::runtime::{App, Effects};
+        use crate::testing::{By, TestApp};
+
+        #[derive(Default)]
+        struct Months {
+            month: Option<usize>,
+        }
+
+        impl App for Months {
+            type Msg = usize;
+            fn title(&self) -> String {
+                "Meses".into()
+            }
+            fn update(&mut self, month: usize) -> Effects<usize> {
+                self.month = Some(month);
+                Effects::none()
+            }
+            fn view(&self) -> Element<usize> {
+                super::chart(ChartKind::Bar)
+                    .categories(["Ene", "Feb", "Mar", "Abr", "May", "Jun"])
+                    .series("Clics", &[4.0, 12.0, 7.0, 15.0, 9.0, 11.0])
+                    .selected(self.month)
+                    .on_select(|month| month)
+                    .label("Clics por mes")
+                    .test_id("plot")
+                    .class("h-48 w-full")
+            }
+        }
+
+        let mut app = TestApp::new(Months::default());
+        let plot = app.screen().get(By::test_id("plot"));
+        assert_eq!(plot.name().as_deref(), Some("Clics por mes"));
+        assert_eq!(
+            plot.node().description.as_deref(),
+            Some("Ene 4, Feb 12, Mar 7, Abr 15, May 9, Jun 11")
+        );
+        let (width, height) = (plot.bounds().width, plot.bounds().height);
+        app.click_at(By::test_id("plot"), width * 0.08, height * 0.5);
+        assert_eq!(app.messages(), [0]);
+        assert_eq!(app.app().month, Some(0));
+        app.click_at(By::test_id("plot"), width * 0.92, height * 0.5);
+        assert_eq!(app.app().month, Some(5));
+    }
 }

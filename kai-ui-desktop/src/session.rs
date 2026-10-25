@@ -13,6 +13,8 @@ mod busy_tests;
 mod calls;
 #[cfg(test)]
 mod commands_tests;
+#[cfg(test)]
+mod devtools_tests;
 #[cfg(all(test, feature = "document"))]
 mod document_tests;
 #[cfg(test)]

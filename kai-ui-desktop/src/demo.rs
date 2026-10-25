@@ -5480,26 +5480,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clicking_a_bar_selects_its_category() {
-        let mut app = TestApp::new(Demo::at(Section::Charts));
-        let plot = app.screen().get(By::test_id("charts.bars.plot"));
-        assert_eq!(plot.name().as_deref(), Some("Clics por mes"));
-        assert_eq!(
-            plot.node().description.as_deref(),
-            Some("Ene 4, Feb 12, Mar 7, Abr 15, May 9, Jun 11")
-        );
-        let width = plot.bounds().width;
-        let height = plot.bounds().height;
-        app.click_at(By::test_id("charts.bars.plot"), width * 0.08, height * 0.5);
-        assert_eq!(app.messages(), [Msg::Month(0)]);
-        assert_eq!(app.app().month, Some(0));
-        app.screen().get(By::text("Seleccionado: Ene (4)"));
-        app.click_at(By::test_id("charts.bars.plot"), width * 0.92, height * 0.5);
-        assert_eq!(app.app().month, Some(5));
-        app.screen().get(By::text("Seleccionado: Jun (11)"));
-    }
-
     /// Every public constructor of `components` shows up in the demo,
     /// found by role, name or test id in some section (an overlay after
     /// the click that opens it). Items that only feed a constructor (data,
@@ -6186,44 +6166,6 @@ mod tests {
     }
 
     #[test]
-    fn toasts_close_on_their_own_or_with_their_button() {
-        let mut app = TestApp::new(Demo::at(Section::Dialogs));
-        app.click(By::test_id("toasts.success"));
-        app.click(By::test_id("toasts.error"));
-        assert_eq!(
-            app.screen().get_by_test_id("kai.toast.1").role(),
-            Role::Status
-        );
-        assert_eq!(
-            app.screen().get_by_test_id("kai.toast.2").role(),
-            Role::Alert,
-            "errors are read at once"
-        );
-        app.screen().get_by_test_id("kai.toast.2.action");
-        app.advance(crate::components::TOAST_DURATION);
-        assert!(app.screen().query(By::test_id("kai.toast.1")).is_none());
-        assert!(
-            app.screen().query(By::test_id("kai.toast.2")).is_some(),
-            "an error stays until closed"
-        );
-        app.click(By::test_id("kai.toast.2.close"));
-        assert!(app.app().toasts.is_empty());
-
-        assert_eq!(
-            app.call("toasts.show", json!({"kind": "warning"})),
-            Ok(json!(null))
-        );
-        assert_eq!(
-            app.app().toasts[0].variant,
-            crate::components::AlertVariant::Warning
-        );
-        assert!(app.call("toasts.show", json!({"kind": "red"})).is_err());
-        app.click(By::test_id("kai.toast.3.close"));
-        assert!(app.app().toasts.is_empty());
-        assert_eq!(app.session().next_deadline(), None, "its timer is gone too");
-    }
-
-    #[test]
     fn the_all_checkbox_is_mixed_and_sets_every_permission() {
         let mut app = TestApp::new(Demo::at(Section::Selection));
         let all_items = By::test_id("selection.all");
@@ -6379,12 +6321,6 @@ mod tests {
         app.click(sidebar_row("Tabla"));
         assert_eq!(table(&app), fresh);
     }
-
-    const CMD_SHIFT: Modifiers = Modifiers {
-        command: true,
-        shift: true,
-        ..Modifiers::NONE
-    };
 
     /// Frames of the «Mapa» section while a drag pans Parral at zoom 15:
     /// view, layout with real text, tiles, labels and paint. Under 4 ms per
@@ -6858,74 +6794,6 @@ mod tests {
             Some(CATILLO_POLYGON),
             "and selects it"
         );
-    }
-
-    const CMD_OPTION: Modifiers = Modifiers {
-        command: true,
-        option: true,
-        ..Modifiers::NONE
-    };
-
-    #[test]
-    fn the_inspector_describes_what_is_under_the_pointer() {
-        let mut app = TestApp::new(Demo::default());
-        assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
-        app.press(Key::Char('i'), CMD_OPTION);
-        assert!(app.session().inspector_open());
-        assert_eq!(app.messages(), [], "⌘⌥I is not ⌘I");
-        app.screen().get(By::test_id("kai.inspector.panel"));
-        assert!(
-            app.screen()
-                .query(By::test_id("kai.inspector.outline"))
-                .is_none()
-        );
-
-        app.hover(By::test_id("bar.add"));
-        let screen = app.screen();
-        let panel = screen.get(By::test_id("kai.inspector.panel"));
-        let shown: Vec<String> = screen
-            .within(panel)
-            .all(By::role(Role::Label))
-            .iter()
-            .filter_map(|line| line.name())
-            .collect();
-        let shown = shown.join("\n");
-        assert!(
-            shown.starts_with("Image #"),
-            "the icon is under the pointer: {shown}"
-        );
-        assert!(
-            shown.contains("clic → Button #") && shown.contains("«Sumar clic» [bar.add]"),
-            "{shown}"
-        );
-        let outline = screen.get(By::test_id("kai.inspector.outline")).bounds();
-        let icon = screen
-            .within(screen.get(By::test_id("bar.add")))
-            .get(By::role(Role::Image))
-            .bounds();
-        assert_eq!(
-            (outline.x, outline.y, outline.width, outline.height),
-            (
-                icon.x.round(),
-                icon.y.round(),
-                icon.width.round(),
-                icon.height.round()
-            )
-        );
-        assert_eq!(app.session().unknown_classes(), Vec::<&str>::new());
-
-        app.click(By::test_id("bar.add"));
-        assert_eq!(app.app().clicks, 1, "the inspector takes no clicks");
-
-        app.press(Key::Char('p'), CMD_SHIFT);
-        assert!(app.is_focused(By::test_id("kai.palette.find")));
-        app.press(Key::Escape, Modifiers::NONE);
-        assert!(!app.session().palette_open());
-        assert!(app.session().inspector_open());
-
-        app.press(Key::Char('i'), CMD_OPTION);
-        assert!(app.screen().query(By::test_id("kai.inspector")).is_none());
-        assert!(app.dump().contains("[bar.add]"));
     }
 
     /// Lines that differ between `expected` and `actual`, numbered; `None`

@@ -43,9 +43,8 @@ Líneas de cada prueba entre paréntesis (total ≈ 5 000).
 | `session/focus_tests.rs` (8; el segmentado y los diálogos con apps mínimas locales, el aviso tras confirmar ya lo prueba `components/toast.rs`) | `return_in_name_field_activates_the_default_button` (31), `return_in_the_name_field_submits_through_the_default_button` (9), `demo_focus_order_follows_document_order_and_skips_disabled` (70), `tab_moves_through_the_form_in_order_showing_the_ring` (19), `the_password_eye_toggles_and_leaves_focus_in_the_field` (11), `clicked_buttons_show_no_focus_ring_but_fields_keep_their_focus_look` (71), `background_effects_are_one_segmented_tab_stop` (51), `dialogs_trap_focus_and_confirming_shows_a_toast` (38) |
 | `session/layout_tests.rs` (2) | `field_rows_stack_in_a_narrow_window` (66), `mix_c_buttons_line_up_with_fields_in_an_items_end_row` (65) |
 | `session/document_tests.rs` (feature `document`, 16, sobre `testing::document_app::Writer`); `editor_inserts_unicode_and_selects_text` va a `text_field.rs` | `document_types_bold_and_undo`, `document_pointer_drag_selects_text`, `document_shift_arrows_extend_selection`, `document_clipboard_copy_cut_paste_plain`, `document_clipboard_copy_preserves_bold_via_html`, `document_multipage_scrolls_and_keeps_hit_target`, `document_inserts_table_and_picture_from_toolbar`, `document_ribbon_bold_and_insert_table`, `document_contextual_tabs_follow_table_and_picture`, `document_ribbon_collapses_with_the_window_width`, `document_new_comment_asks_for_its_text`, `document_ribbon_shows_bold_pressed_and_cut_disabled`, `document_ribbon_layout_review_view_tabs`, `document_save_docx_via_file_panel`, `document_open_docx_via_file_panel`, `document_export_pdf_via_file_panel`, `editor_inserts_unicode_and_selects_text` (≈ 500 en total) |
-| `components/table` (6) | `the_toolbar_search_filters_and_the_headers_sort_the_table` (70), `exporting_saves_the_rows_the_table_shows_where_the_person_says` (31), `the_columns_button_hides_a_column_and_the_search_still_looks_in_it` (35), `a_client_row_opens_its_detail_and_the_export_leaves_it_out` (31), `the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause` (63), `the_table_shows_an_avatar_by_each_name` (18) |
 | `session/map_tests.rs` (3, ya existe) | `the_map_follows_gestures_and_agents` (64), `a_sector_is_edited_on_the_map_and_kept_only_on_finish` (81), `crossing_edges_block_finish_until_fixed` (44) |
-| Componentes sueltos (6) | `toasts_close_on_their_own_or_with_their_button` → `components/toast.rs`; `the_all_checkbox_is_mixed_and_sets_every_permission` → checkbox; `clicking_a_bar_selects_its_category` → `charts`; `image_fields_take_picked_and_dropped_files_and_refuse_others`, `load_url_puts_a_downloaded_image_in_the_avatar` → `media`/image field; `the_inspector_describes_what_is_under_the_pointer` → `devtools` |
+| Componentes sueltos (3) | `clicking_a_bar_selects_its_category` → `charts` (app mínima); `the_inspector_describes_what_is_under_the_pointer` → `session/devtools_tests.rs` (sobre `Sample`); `toasts_close_on_their_own_or_with_their_button` se descarta: `components/toast.rs` ya cubre roles, cierre automático, errores que se quedan y el botón de cerrar |
 | `background` (2) | `background_panel_messages_drive_the_window_background` (37); `background_env_parses_kind_and_motion_and_warns_on_unknown_values` (24, junto con `background_from_env`, que sale de la demo) |
 
 ### Navegación: la cubren el router y `kai-build` (7)
@@ -73,6 +72,24 @@ está cubierta, se descarta; si no, se añade allí:
 `agents_replace_a_sector_outline_with_a_valid_ring` (valida los anillos de los
 sectores de Parral, que solo existen en la demo) y `mcp_schema_matches_snapshot`
 (`mcp-schema.json` es lo que la demo publica a los agentes; se va con ella).
+
+También se quedan con la demo las pruebas de componentes que en realidad
+prueban cómo la demo los conecta; las piezas ya tienen sus pruebas en
+`components/table.rs`, `components/table/view.rs`, `components/media.rs` y
+`components.rs`:
+
+- Tabla (6): `the_toolbar_search_filters_and_the_headers_sort_the_table`,
+  `exporting_saves_the_rows_the_table_shows_where_the_person_says`,
+  `the_columns_button_hides_a_column_and_the_search_still_looks_in_it`,
+  `a_client_row_opens_its_detail_and_the_export_leaves_it_out`,
+  `the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause`
+  (la pausa, `FILTER_PAUSE`, es de la demo) y
+  `the_table_shows_an_avatar_by_each_name`.
+- `the_all_checkbox_is_mixed_and_sets_every_permission` (la lógica de
+  «Todos» es de la demo; el checkbox mixto ya se prueba en `components.rs`).
+- `image_fields_take_picked_and_dropped_files_and_refuse_others` y
+  `load_url_puts_a_downloaded_image_in_the_avatar` (el comando
+  `media.load_url` y los títulos de los paneles son de la demo).
 
 ### Capturas y benchmarks (8, `#[ignore]`)
 
