@@ -4914,7 +4914,7 @@ mod tests {
 
     use super::{
         DemoDialog, INITIAL_VIEW, ImageField, ImageSource, LatLon, LatLonBounds, LoadUrl,
-        MAIN_SQUARE, MapView, SECTORS, SimulateWait, ToastKind, ViewChange, initial_sector,
+        MAIN_SQUARE, MapView, SECTORS, ToastKind, ViewChange, initial_sector,
     };
 
     use cosmic_text::{
@@ -4925,9 +4925,9 @@ mod tests {
     use serde_json::json;
 
     use crate::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
-    use crate::commands::{Availability, CommandError, DIALECT, describe_json};
+    use crate::commands::{CommandError, DIALECT, describe_json};
     use crate::components::SortDirection;
-    use crate::element::{ControlState, FocusOrder, Kind, Role, WidgetId};
+    use crate::element::{ControlState, Kind, Role, WidgetId};
     use crate::geometry::{Rect, Size};
     use crate::layout::testing::FixedMeasure;
     use crate::layout::{Interaction, Layout, LayoutInput, ScrollOffsets, StyleCache};
@@ -5123,176 +5123,6 @@ mod tests {
         assert!(demo.name.is_empty());
         demo.apply(Msg::Reset);
         assert_eq!(demo.clicks, 0);
-    }
-
-    #[test]
-    fn return_in_name_field_activates_the_default_button() {
-        use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch};
-
-        let return_key = Intent::Text(TextIntent::KeyDown {
-            key: Key::Enter,
-            modifiers: Modifiers::NONE,
-            repeat: false,
-        });
-        let mut demo = Demo::default();
-        let name = find(&demo, By::test_id("form.name.input"));
-        let order = FocusOrder::from_tree(&build_view(&demo));
-        let mut model = UiModel::default();
-        dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
-        let empty = dispatch(&mut model, &order, return_key.clone());
-        assert_eq!(empty.activated, None, "«Enviar» is disabled without a name");
-
-        demo.apply(Msg::NameChanged("Ana".to_owned()));
-        let send = find(&demo, By::test_id("form.submit"));
-        let order = FocusOrder::from_tree(&build_view(&demo));
-        let result = dispatch(&mut model, &order, return_key.clone());
-        assert_eq!(result.activated.map(|a| a.widget), Some(send));
-
-        // «Correo» keeps its on_submit.
-        let email = find(&demo, By::test_id("form.email.input"));
-        dispatch(&mut model, &order, Intent::SetFocus(Some(email)));
-        let result = dispatch(&mut model, &order, return_key);
-        assert_eq!(result.activated, None);
-        assert_eq!(result.text_actions.len(), 1);
-    }
-
-    #[test]
-    fn clicked_buttons_show_no_focus_ring_but_fields_keep_their_focus_look() {
-        use crate::ui_engine::{Intent, Key, Modifiers, TextIntent, UiModel, dispatch};
-
-        let tab = |shift| {
-            Intent::Text(TextIntent::KeyDown {
-                key: Key::Tab,
-                modifiers: Modifiers {
-                    shift,
-                    ..Modifiers::NONE
-                },
-                repeat: false,
-            })
-        };
-        let demo = Demo::default();
-        let tree = build_view(&demo);
-        let order = FocusOrder::from_tree(&tree);
-        let theme = Theme::kai(Density::Comfortable);
-        let mut styles = StyleCache::default();
-        let mut compute = |model: &UiModel| {
-            Layout::compute(
-                &tree,
-                &LayoutInput {
-                    viewport: Size {
-                        width: 1024.0,
-                        height: 768.0,
-                    },
-                    theme: &theme,
-                    interaction: &Interaction {
-                        focused: *model.focused.get(),
-                        focus_visible: *model.focus_visible.get(),
-                        ..Interaction::default()
-                    },
-                    scroll: &ScrollOffsets::new(),
-                },
-                &mut styles,
-                &mut FixedMeasure,
-            )
-        };
-        let button = find(&demo, By::role(Role::Button).name("Incrementar"));
-        let ring = |layout: &Layout| layout.node(button).unwrap().style.ring.width;
-        let mut model = UiModel::default();
-
-        dispatch(&mut model, &order, Intent::PointerDown(Some(button)));
-        dispatch(&mut model, &order, Intent::PointerUp(Some(button)));
-        assert_eq!(*model.focused.get(), Some(button));
-        assert_eq!(ring(&compute(&model)), 0.0, "mouse click: no ring");
-
-        dispatch(&mut model, &order, tab(false));
-        dispatch(&mut model, &order, tab(true));
-        assert_eq!(*model.focused.get(), Some(button));
-        assert_eq!(ring(&compute(&model)), 2.0, "Tab: ring");
-
-        // A clicked text field looks exactly as one reached with Tab.
-        let name = find(&demo, By::label("Nombre"));
-        let path = tree.path_to(name).unwrap();
-        let field_look = |layout: &Layout| {
-            path.iter()
-                .map(|id| format!("{:?}", layout.node(*id).unwrap().style))
-                .collect::<Vec<_>>()
-        };
-        let unfocused = field_look(&compute(&UiModel::default()));
-        dispatch(&mut model, &order, Intent::PointerDown(Some(name)));
-        assert!(!*model.focus_visible.get());
-        let clicked = field_look(&compute(&model));
-        dispatch(&mut model, &order, Intent::SetFocus(Some(name)));
-        assert!(*model.focus_visible.get());
-        assert_eq!(clicked, field_look(&compute(&model)));
-        assert_ne!(clicked, unfocused, "the focused field is highlighted");
-    }
-
-    #[test]
-    fn demo_focus_order_follows_document_order_and_skips_disabled() {
-        // Toolbar items (one stop), its search, the sidebar (one stop),
-        // the background effects (one stop; «Animado» starts disabled),
-        // «Incrementar» («Reiniciar» starts disabled) and the form
-        // («Enviar» starts disabled).
-        let home_view = [
-            "bar.sidebar",
-            "bar.find.input",
-            "nav.0",
-            "background.efecto.0",
-            "counter.increment",
-            "form.name.input",
-            "form.email.input",
-            "form.role",
-            "form.terms",
-            "form.notificaciones.track",
-            "form.clear",
-        ];
-        assert_eq!(tab_stops(&mut TestApp::new(Demo::default())), home_view);
-
-        let fields_list = tab_stops(&mut TestApp::new(Demo::at(Section::Fields)));
-        assert_eq!(
-            fields_list[2], "nav.1",
-            "the sidebar enters at the selection"
-        );
-        let password = fields_list
-            .iter()
-            .position(|stop| stop == "form.password.input");
-        assert_eq!(
-            fields_list[password.unwrap() + 1],
-            "form.password.toggle",
-            "the eye follows its field"
-        );
-
-        let mut glow = Demo::default();
-        glow.apply(Msg::SetBackground(BackgroundKind::Glow));
-        let stops = tab_stops(&mut TestApp::new(glow));
-        assert_eq!(
-            stops.len(),
-            home_view.len() + 1,
-            "with an effect «Animado» joins"
-        );
-        assert_eq!(stops[4], "Animado");
-    }
-
-    /// Tab stops from the start of the window until they wrap around:
-    /// each one's `test_id`, or its name without one.
-    fn tab_stops(app: &mut TestApp<Demo>) -> Vec<String> {
-        let mut stops: Vec<String> = Vec::new();
-        for _ in 0..60 {
-            app.press(Key::Tab, Modifiers::NONE);
-            let focused = app.session().focused().expect("Tab focuses something");
-            let screen = app.screen();
-            let found = screen.by_id(focused).unwrap();
-            let stop = found
-                .test_id()
-                .map(str::to_owned)
-                .or_else(|| found.name())
-                .unwrap_or_default();
-            if stops.first() == Some(&stop) {
-                return stops;
-            }
-            stops.push(stop);
-        }
-        panic!("Tab does not wrap around: {stops:?}");
     }
 
     /// The background panel sets the effect and its motion; the app hands
@@ -5639,32 +5469,6 @@ mod tests {
         app.click(By::test_id("form.clear"));
         assert_eq!((app.app().role, app.app().terms), (None, false));
         app.screen().get(By::text("Elegir rol"));
-    }
-
-    /// The effect is a segmented control: one Tab stop, arrows move between
-    /// effects and Space applies the focused one.
-    #[test]
-    fn background_effects_are_one_segmented_tab_stop() {
-        let mut app = TestApp::new(Demo::default());
-        let segment = |name: &str| By::role(Role::Radio).name(name);
-        // Header button, sidebar, its collapse button, then the effects.
-        for _ in 0..4 {
-            app.press(Key::Tab, Modifiers::NONE);
-        }
-        assert!(app.is_focused(segment("Ninguno")));
-        app.press(Key::ArrowRight, Modifiers::NONE);
-        app.press(Key::Space, Modifiers::NONE);
-        assert_eq!(app.app().background, BackgroundKind::Mesh);
-        app.press(Key::Tab, Modifiers::NONE);
-        let focused = app.session().focused().unwrap();
-        let segments: Vec<_> = app
-            .screen()
-            .all(By::role(Role::Radio))
-            .iter()
-            .map(|segment| segment.id())
-            .collect();
-        assert_eq!(segments.len(), 4);
-        assert!(!segments.contains(&focused), "Tab leaves the group");
     }
 
     fn sidebar_row(name: &str) -> By {
@@ -6268,65 +6072,6 @@ mod tests {
         app.click_at(By::test_id("charts.bars.plot"), width * 0.92, height * 0.5);
         assert_eq!(app.app().month, Some(5));
         app.screen().get(By::text("Seleccionado: Jun (11)"));
-    }
-
-    #[test]
-    fn waiting_buttons_show_the_dots_until_their_task_ends() {
-        let mut app = TestApp::new(Demo::at(Section::Buttons));
-        let primary = By::test_id("wait.primary");
-        let width = app.screen().get(primary.clone()).bounds().width;
-        app.click(primary.clone());
-        assert!(app.is_busy(primary.clone()));
-        assert!(!app.is_busy(By::test_id("wait.secondary")));
-        assert_eq!(app.screen().get(primary.clone()).bounds().width, width);
-        assert_eq!(
-            app.screen().get(primary.clone()).name().as_deref(),
-            Some("Primary")
-        );
-        app.click(primary.clone());
-        let waits = app.messages().iter();
-        assert_eq!(waits.filter(|msg| **msg == Msg::Wait("Primary")).count(), 1);
-        app.run_until_idle();
-        assert!(!app.is_busy(primary));
-        app.screen().get(By::text("Terminó: Primary"));
-        assert!(app.is_busy(By::test_id("wait.cargando")), "loading(true)");
-    }
-
-    #[test]
-    fn a_chained_save_and_a_background_sync_in_the_demo() {
-        let mut app = TestApp::new(Demo::at(Section::Buttons));
-        app.click(By::test_id("wait.reload"));
-        app.run_next_tasks();
-        assert!(app.messages().contains(&Msg::Reload));
-        assert!(app.is_busy(By::test_id("wait.reload")));
-        app.run_until_idle();
-        assert!(!app.is_busy(By::test_id("wait.reload")));
-        app.screen().get(By::text("Terminó: guardar y recargar"));
-
-        let sync = By::test_id("wait.sync");
-        app.click(sync.clone());
-        app.click(sync.clone());
-        assert!(!app.is_busy(sync));
-        app.screen().get(By::text("Sincronizando (2)…"));
-        app.run_until_idle();
-        assert_eq!(app.app().syncing, 0);
-    }
-
-    #[test]
-    fn the_wait_command_is_in_course_everywhere_while_it_runs() {
-        const ID: &str = <SimulateWait as crate::commands::Action>::ID;
-        let mut app = TestApp::new(Demo::at(Section::Buttons));
-        let bound = By::test_id(ID);
-        assert!(app.perform(ID));
-        assert!(app.is_busy(bound.clone()));
-        assert_eq!(
-            app.available::<SimulateWait>(),
-            Availability::disabled(crate::session::COMMAND_BUSY)
-        );
-        assert!(!app.perform(ID));
-        app.run_until_idle();
-        assert!(!app.is_busy(bound));
-        assert_eq!(app.available::<SimulateWait>(), Availability::Enabled);
     }
 
     /// Every public constructor of `components` shows up in the demo,
@@ -7015,44 +6760,6 @@ mod tests {
     }
 
     #[test]
-    fn dialogs_trap_focus_and_confirming_shows_a_toast() {
-        let mut app = TestApp::new(Demo::at(Section::Dialogs));
-        let dialog = || By::role(Role::Dialog);
-        app.click(By::test_id("dialogs.save"));
-        assert_eq!(
-            app.screen().get(dialog()).name().as_deref(),
-            Some("¿Guardar los cambios?")
-        );
-        assert!(app.is_focused(By::test_id("dialog.cancel")));
-        for _ in 0..3 {
-            app.press(Key::Tab, Modifiers::NONE);
-            let focused = app.session().focused().unwrap();
-            let screen = app.screen();
-            let inside = screen
-                .within(screen.get(dialog()))
-                .all(By::role(Role::Button));
-            assert!(inside.iter().any(|button| button.id() == focused));
-        }
-        app.press(Key::Escape, Modifiers::NONE);
-        assert!(app.screen().query(dialog()).is_none());
-        assert!(app.is_focused(By::test_id("dialogs.save")));
-        assert!(app.app().toasts.is_empty(), "cancel shows nothing");
-
-        app.click(By::test_id("dialogs.delete"));
-        let default = By::test_id("dialog.default");
-        assert_eq!(
-            app.screen().get(default.clone()).name().as_deref(),
-            Some("Eliminar")
-        );
-        app.click(default);
-        assert!(app.screen().query(dialog()).is_none());
-        let screen = app.screen();
-        let toast = screen.get_by_test_id("kai.toast.1");
-        assert_eq!(toast.role(), Role::Status);
-        screen.within(toast).get(By::text("Borrador eliminado"));
-    }
-
-    #[test]
     fn toasts_close_on_their_own_or_with_their_button() {
         let mut app = TestApp::new(Demo::at(Section::Dialogs));
         app.click(By::test_id("toasts.success"));
@@ -7245,45 +6952,6 @@ mod tests {
         app.click(sidebar_row("Badges y alertas"));
         app.click(sidebar_row("Tabla"));
         assert_eq!(table(&app), fresh);
-    }
-
-    #[test]
-    fn return_in_the_name_field_submits_through_the_default_button() {
-        let mut app = TestApp::new(Demo::default());
-        app.type_text(By::test_id("form.name"), "Ana");
-        app.press(Key::Enter, Modifiers::NONE);
-        assert_eq!(app.messages().last(), Some(&Msg::Submit));
-        assert_eq!(app.app().submissions, ["Ana"]);
-    }
-
-    #[test]
-    fn tab_moves_through_the_form_in_order_showing_the_ring() {
-        let mut app = TestApp::new(Demo::default());
-        app.click(By::test_id("form.name"));
-        assert!(app.is_focused(By::test_id("form.name")));
-        assert!(!app.focus_visible(), "a click does not show the ring");
-
-        app.press(Key::Tab, Modifiers::NONE);
-        assert!(app.is_focused(By::test_id("form.email")));
-        assert!(app.focus_visible());
-
-        let shift = Modifiers {
-            shift: true,
-            ..Modifiers::NONE
-        };
-        app.press(Key::Tab, shift);
-        assert!(app.is_focused(By::test_id("form.name")));
-    }
-
-    #[test]
-    fn the_password_eye_toggles_and_leaves_focus_in_the_field() {
-        let mut app = TestApp::new(Demo::at(Section::Fields));
-        app.type_text(By::test_id("form.password"), "abc");
-        assert!(!app.app().show_password);
-        app.click(By::test_id("form.password.toggle"));
-        assert!(app.app().show_password);
-        assert!(app.is_focused(By::test_id("form.password")));
-        assert_eq!(app.value(By::test_id("form.password")), "abc");
     }
 
     #[cfg(feature = "document")]

@@ -133,6 +133,10 @@ impl App for Busy {
                 .on_command(Export)
                 .test_id("export"),
             button("Clic", ButtonVariant::Secondary).on_click(Msg::Click),
+            Button::new("Cargando")
+                .loading(true)
+                .build()
+                .test_id("loading"),
             text(format!("{} guardados", self.saved)).role(Role::Status),
         ])
     }
@@ -238,6 +242,13 @@ fn a_busy_command_blocks_its_buttons_the_menu_the_palette_and_agents() {
         "a click goes through the command"
     );
     app.run_until_idle();
+}
+
+#[test]
+fn loading_shows_the_dots_without_a_task() {
+    let app = TestApp::new(Busy::default());
+    assert!(!app.tasks_pending());
+    assert!(app.is_busy(by("loading")), "loading(true)");
 }
 
 #[test]

@@ -22,6 +22,7 @@ use crate::ui_engine::Key;
 pub(crate) struct Sample {
     pub clicks: u32,
     pub name: String,
+    pub email: String,
     pub password: String,
     pub show_password: bool,
     pub submissions: Vec<String>,
@@ -35,6 +36,7 @@ pub(crate) enum Msg {
     Add(u32),
     Reset,
     NameChanged(String),
+    EmailChanged(String),
     PasswordChanged(String),
     Submit,
     Clear,
@@ -50,6 +52,7 @@ impl Sample {
 
     fn clear_form(&mut self) {
         self.name.clear();
+        self.email.clear();
         self.password.clear();
     }
 }
@@ -233,6 +236,7 @@ impl App for Sample {
             Msg::Add(amount) => self.clicks = self.clicks.saturating_add(amount),
             Msg::Reset => self.clicks = 0,
             Msg::NameChanged(name) => self.name = name,
+            Msg::EmailChanged(email) => self.email = email,
             Msg::PasswordChanged(password) => self.password = password,
             Msg::Submit => {
                 if self.can_submit() {
@@ -278,6 +282,13 @@ impl App for Sample {
                     .test_id("form.name")
                     .field_icon(FieldKind::Name)
                     .on_input(Msg::NameChanged)
+                    .build(),
+                // Its own on_submit wins over the default button.
+                TextField::new("Correo", &self.email)
+                    .test_id("form.email")
+                    .field_icon(FieldKind::Email)
+                    .on_input(Msg::EmailChanged)
+                    .on_submit(Msg::Submit)
                     .build(),
                 TextField::new("Contraseña", &self.password)
                     .test_id("form.password")

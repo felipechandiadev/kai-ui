@@ -14,6 +14,8 @@ mod calls;
 #[cfg(test)]
 mod commands_tests;
 #[cfg(test)]
+mod focus_tests;
+#[cfg(test)]
 mod map_tests;
 #[cfg(all(test, feature = "mcp"))]
 mod mcp_tests;
