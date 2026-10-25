@@ -1824,4 +1824,24 @@ mod tests {
             "reduce_motion keeps the caret visible"
         );
     }
+
+    /// cosmic-text's editor, under the field: Unicode in, selection out.
+    #[test]
+    fn editor_inserts_unicode_and_selects_text() {
+        use cosmic_text::{Action, Attrs, Buffer, Editor, Motion, Selection, Shaping};
+        let mut font_system = FontSystem::new();
+        let mut buffer = Buffer::new(&mut font_system, Metrics::new(15.0, 22.0));
+        buffer.set_text("", &Attrs::new(), Shaping::Advanced, None);
+        let mut editor = Editor::new(buffer);
+        editor.insert_string("Kai 😀", None);
+        editor.shape_as_needed(&mut font_system, false);
+        editor.action(&mut font_system, Action::Motion(Motion::BufferStart));
+        let anchor = editor.cursor();
+        editor.set_selection(Selection::Normal(anchor));
+        editor.action(&mut font_system, Action::Motion(Motion::BufferEnd));
+        assert_eq!(editor.copy_selection().as_deref(), Some("Kai 😀"));
+        editor.insert_string("Kai UI", None);
+        let value = editor.with_buffer(|buffer| buffer.lines[0].text().to_owned());
+        assert_eq!(value, "Kai UI");
+    }
 }

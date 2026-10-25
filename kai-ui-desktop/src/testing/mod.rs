@@ -20,6 +20,8 @@
 //! ```
 
 mod app;
+#[cfg(all(test, feature = "document"))]
+pub(crate) mod document_app;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod query;

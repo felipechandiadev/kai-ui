@@ -13,8 +13,12 @@ mod busy_tests;
 mod calls;
 #[cfg(test)]
 mod commands_tests;
+#[cfg(all(test, feature = "document"))]
+mod document_tests;
 #[cfg(test)]
 mod focus_tests;
+#[cfg(test)]
+mod layout_tests;
 #[cfg(test)]
 mod map_tests;
 #[cfg(all(test, feature = "mcp"))]
