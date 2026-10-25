@@ -23,6 +23,8 @@ mod app;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod query;
+#[cfg(test)]
+pub(crate) mod sample_app;
 
 pub use app::{AgentReply, Confirm, MemoryClipboard, TestApp, TestAppBuilder};
 #[cfg(feature = "mcp")]

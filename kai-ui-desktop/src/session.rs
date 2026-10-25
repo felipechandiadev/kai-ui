@@ -7,12 +7,20 @@
 //! GPU. Nothing here knows about winit.
 
 #[cfg(test)]
+mod agents_tests;
+#[cfg(test)]
 mod busy_tests;
 mod calls;
 #[cfg(test)]
+mod commands_tests;
+#[cfg(test)]
 mod map_tests;
+#[cfg(all(test, feature = "mcp"))]
+mod mcp_tests;
 #[cfg(test)]
 mod pages_tests;
+#[cfg(test)]
+mod palette_tests;
 #[cfg(test)]
 mod router_tests;
 #[cfg(test)]
