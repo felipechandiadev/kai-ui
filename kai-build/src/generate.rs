@@ -459,7 +459,7 @@ pub fn generate(tree: &AppTree) -> String {
         };
         writeln!(
             w,
-            "    impl kai::router::HasPage<{s}> for AppRoot {{\n        fn page(&self) -> Option<&{s}> {{\n            self.{f}{get}\n        }}\n\n        fn page_msg(msg: <{s} as Page>::Msg) -> RootMsg {{\n            RootMsg::{v}(msg)\n        }}\n    }}\n",
+            "    impl kai::router::HasPage<{s}> for AppRoot {{\n        fn page(&self) -> Option<&{s}> {{\n            self.{f}{get}\n        }}\n\n        fn page_state(&self) -> &crate::state::State {{\n            &self.state\n        }}\n\n        fn page_msg(msg: <{s} as Page>::Msg) -> RootMsg {{\n            RootMsg::{v}(msg)\n        }}\n    }}\n",
             s = screen(page),
             f = slot(page),
             v = variant(page)

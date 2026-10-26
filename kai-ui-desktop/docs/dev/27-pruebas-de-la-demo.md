@@ -178,7 +178,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Sección | Estado | Pruebas |
 |---|---|---|
 | Botones (`/buttons`) | ✅ | `the_buttons_count_clicks_and_danger_resets_them`, `a_waiting_button_says_when_its_task_ends`, `the_section_command_runs_from_its_button_and_from_agents` |
-| Inicio, Campos, Selección, Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Inicio (`/home`) | ✅ (sin el fondo) | `the_counter_follows_its_button_shortcut_and_commands`, `typing_a_name_enables_send_and_the_click_submits_it`, `the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them` |
+| Campos, Selección, Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
@@ -195,5 +196,17 @@ Diferencias con `demo.rs`:
   (`session/pages_tests.rs`) y
   `the_section_command_runs_from_its_button_and_from_agents` (la demo,
   `buttons.simulate_wait`).
+- Consultas por página: `PageQuery` (lee la página y el estado
+  compartido), `CommandRegistry::page_query` y
+  `CommandBuilder::returns_page` (`form.submit` contesta con
+  `form.last_submission`). `kai::commands::Key` se reexporta para que las
+  apps declaren atajos.
+- Inicio queda **sin** lo que la raíz generada todavía no permite:
+  - la tarjeta «Fondo de ventana» (`App::background` es de la raíz; una
+    página no puede cambiarlo);
+  - la cuenta de envíos en la fila de la barra lateral (`SectionMeta` es
+    constante, sin badge);
+  - la barra de herramientas (`bar.add`, `bar.find`) y los clics en el
+    título de la ventana.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

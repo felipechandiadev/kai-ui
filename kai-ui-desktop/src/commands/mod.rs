@@ -24,6 +24,8 @@ use serde::de::DeserializeOwned;
 use crate::element::KeyEquivalent;
 use crate::runtime::App;
 
+/// The keys of a [`Shortcut`], for apps outside this crate.
+pub use crate::ui_engine::Key;
 pub use audit::{AUDIT_CAPACITY, AuditEntry, AuditLog, Origin, Outcome, REDACTED, redact};
 pub use registry::{CommandBuilder, CommandRegistry};
 pub use schema::{DIALECT, describe, describe_json};
@@ -181,6 +183,26 @@ pub trait PageAction: Clone + DeserializeOwned + JsonSchema + 'static {
     }
 
     fn into_msg(self) -> <Self::Page as crate::router::Page>::Msg;
+}
+
+/// A [`Query`] of a [`Page`](crate::router::Page): it reads the page and
+/// the shared state. Declared with [`CommandRegistry::page_query`]; it
+/// fails while the page is not open.
+pub trait PageQuery: DeserializeOwned + JsonSchema + 'static {
+    type Page: crate::router::Page;
+    type Output: Serialize + JsonSchema;
+    const ID: &'static str;
+    const TITLE: &'static str;
+
+    fn description() -> &'static str {
+        ""
+    }
+
+    fn run(
+        page: &Self::Page,
+        state: &<Self::Page as crate::router::Page>::State,
+        input: Self,
+    ) -> Result<Self::Output, CommandError>;
 }
 
 /// A command that reads the app and changes nothing: no message, no

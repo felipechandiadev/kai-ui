@@ -443,6 +443,10 @@ impl HasPage<sales::Sales> for AppRoot {
         self.sales.as_ref()
     }
 
+    fn page_state(&self) -> &State {
+        &self.state
+    }
+
     fn page_msg(msg: sales::Msg) -> RootMsg {
         RootMsg::Sales(msg)
     }

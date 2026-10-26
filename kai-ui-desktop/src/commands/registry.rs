@@ -4,8 +4,8 @@ use serde_json::{Map, Value, json};
 
 use super::schema::{decode, input_schema, output_schema};
 use super::{
-    Action, Availability, CommandError, CommandKind, CommandState, PALETTE, PageAction, Query,
-    Safety, Shortcut,
+    Action, Availability, CommandError, CommandKind, CommandState, PALETTE, PageAction, PageQuery,
+    Query, Safety, Shortcut,
 };
 use crate::element::KeyEquivalent;
 use crate::router::HasPage;
@@ -94,6 +94,13 @@ impl<A: App> CommandBuilder<'_, A> {
         self
     }
 
+    /// [`CommandBuilder::returns`] with a page's query.
+    pub fn returns_page<Q: PageQuery>(self) -> Self {
+        self.entry.returns = Some(Q::ID);
+        self.entry.output_schema = Some(output_schema::<Q::Output>);
+        self
+    }
+
     /// Answer whoever called this action (a script, an agent) with the
     /// output of query `Q`, run without input after `update`.
     pub fn returns<Q: Query<App = A>>(self) -> Self {
@@ -128,6 +135,18 @@ fn page_message_of<A: HasPage<T::Page>, T: PageAction>(
     let action = decode::<T>(T::ID, input)?;
     action.validate()?;
     Ok(A::page_msg(action.into_msg()))
+}
+
+fn run_page_query_of<A: HasPage<T::Page>, T: PageQuery>(
+    app: &A,
+    input: Value,
+) -> Result<Value, CommandError> {
+    let page = app
+        .page()
+        .ok_or_else(|| CommandError::new(format!("{} no está disponible", T::ID)))?;
+    let output = T::run(page, app.page_state(), decode::<T>(T::ID, input)?)?;
+    serde_json::to_value(output)
+        .map_err(|error| CommandError::new(format!("salida inválida de {}: {error}", T::ID)))
 }
 
 fn run_query_of<T: Query>(app: &T::App, input: Value) -> Result<Value, CommandError> {
@@ -258,6 +277,32 @@ impl<A: App> CommandRegistry<A> {
             run_query: None,
             input_schema: Some(input_schema::<T>),
             output_schema: None,
+            needs_input: decode::<T>(T::ID, empty()).is_err(),
+            exposed: false,
+            returns: None,
+        })
+    }
+
+    /// A page's query (see [`PageQuery`]), from
+    /// [`Page::commands`](crate::router::Page::commands).
+    pub fn page_query<T: PageQuery>(&mut self) -> CommandBuilder<'_, A>
+    where
+        A: HasPage<T::Page>,
+    {
+        self.push(Entry {
+            id: T::ID,
+            title: T::TITLE,
+            description: T::description(),
+            kind: CommandKind::Query,
+            safety: None,
+            shortcut: None,
+            menu: None,
+            origin: type_name::<T>(),
+            available: always,
+            decode: None,
+            run_query: Some(run_page_query_of::<A, T>),
+            input_schema: Some(input_schema::<T>),
+            output_schema: Some(output_schema::<T::Output>),
             needs_input: decode::<T>(T::ID, empty()).is_err(),
             exposed: false,
             returns: None,

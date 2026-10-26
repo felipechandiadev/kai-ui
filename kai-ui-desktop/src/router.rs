@@ -396,6 +396,8 @@ pub trait Page: Sized + 'static {
 pub trait HasPage<P: Page>: App {
     /// The page, while it is open.
     fn page(&self) -> Option<&P>;
+    /// The state every page shares, for the page's queries.
+    fn page_state(&self) -> &P::State;
     /// The root's message that carries `msg` to the page.
     fn page_msg(msg: P::Msg) -> Self::Msg;
 }
