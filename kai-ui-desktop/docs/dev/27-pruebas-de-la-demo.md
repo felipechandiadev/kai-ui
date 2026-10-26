@@ -181,7 +181,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Inicio (`/home`) | ✅ (sin el fondo) | `the_counter_follows_its_button_shortcut_and_commands`, `typing_a_name_enables_send_and_the_click_submits_it`, `the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them` |
 | Campos (`/fields`) | ✅ | `the_fields_take_what_is_typed_and_their_ids_reach_the_controls`, `the_eye_shows_and_hides_each_secret_on_its_own` |
 | Selección (`/selection`) | ✅ | `the_all_checkbox_is_mixed_and_sets_every_permission` |
-| Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Contenedores (`/containers`) | ✅ | `the_card_counts_its_actions_and_the_tabs_show_one_panel_at_a_time` |
+| Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
@@ -212,5 +213,8 @@ Diferencias con `demo.rs`:
     título de la ventana.
 - El ojo de «Contraseña» usa un mensaje de la página (`password`), no el
   comando `form.toggle_password`, que tampoco se exponía a agentes.
+- Las estadísticas de Contenedores cuentan lo de la propia sección
+  (aceptadas, descartadas, pestaña abierta); en `demo.rs` leían la tabla y
+  los avisos de otras secciones.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.
