@@ -180,7 +180,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Botones (`/buttons`) | ✅ | `the_buttons_count_clicks_and_danger_resets_them`, `a_waiting_button_says_when_its_task_ends`, `the_section_command_runs_from_its_button_and_from_agents` |
 | Inicio (`/home`) | ✅ (sin el fondo) | `the_counter_follows_its_button_shortcut_and_commands`, `typing_a_name_enables_send_and_the_click_submits_it`, `the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them` |
 | Campos (`/fields`) | ✅ | `the_fields_take_what_is_typed_and_their_ids_reach_the_controls`, `the_eye_shows_and_hides_each_secret_on_its_own` |
-| Selección, Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Selección (`/selection`) | ✅ | `the_all_checkbox_is_mixed_and_sets_every_permission` |
+| Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
