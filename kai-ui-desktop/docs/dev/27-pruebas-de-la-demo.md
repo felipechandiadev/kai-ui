@@ -166,3 +166,34 @@ citan `snapshot_demo` se actualizan cuando se muevan.
 
 La regla durante la mudanza: **una prueba no se debilita al moverla.** Si en
 la app mínima pierde una aserción, se documenta en el commit.
+
+## 4. La demo nueva (`kai-ui-desktop/demo`)
+
+Crate aparte, `kai-demo`, con la raíz generada por `kai-build`: una carpeta
+por sección en `demo/src/sections/`. La raíz no puede vivir dentro del
+crate `kai` (el código generado nombra `kai::…`), por eso no va en
+`src/sections/`. `scripts/check.sh` le pasa fmt, clippy y tests. `demo.rs`
+sigue funcionando hasta que todas las secciones estén aquí.
+
+| Sección | Estado | Pruebas |
+|---|---|---|
+| Botones (`/buttons`) | ✅ | `the_buttons_count_clicks_and_danger_resets_them`, `a_waiting_button_says_when_its_task_ends`, `the_section_command_runs_from_its_button_and_from_agents` |
+| Inicio, Campos, Selección, Contenedores, Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+
+Diferencias con `demo.rs`:
+
+- Cada sección guarda su estado; el contador de clics de «Botones» es suyo
+  (antes era el de Inicio).
+- ~~**Hueco:** una sección no puede registrar comandos~~ ✅ Comandos por
+  página: `PageAction` (como `Action`, pero lee la página y produce su
+  mensaje), `Page::commands` para declararlos con
+  `CommandRegistry::page_action`, `HasPage<P>` (la raíz generada lo
+  implementa por cada página y llama a `commands` de todas) y
+  `Element::on_page_command` para el botón. Un comando de página está
+  oculto mientras su página no está abierta; una sección sigue abierta al
+  cambiar a otra. Lo prueban `a_page_command_runs_while_its_page_is_open`
+  (`session/pages_tests.rs`) y
+  `the_section_command_runs_from_its_button_and_from_agents` (la demo,
+  `buttons.simulate_wait`).
+- `TestApp::unknown_classes()` es pública para que las apps externas
+  comprueben sus clases.

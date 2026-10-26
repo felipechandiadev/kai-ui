@@ -155,6 +155,34 @@ pub trait Action: Clone + DeserializeOwned + JsonSchema + 'static {
     fn into_msg(self) -> <Self::App as App>::Msg;
 }
 
+/// An [`Action`] of a [`Page`](crate::router::Page): it reads the page and
+/// produces one of its messages. The page declares it in
+/// [`Page::commands`](crate::router::Page::commands) with
+/// [`CommandRegistry::page_action`]; it can run while the page is open
+/// and is hidden while it is not.
+pub trait PageAction: Clone + DeserializeOwned + JsonSchema + 'static {
+    type Page: crate::router::Page;
+    /// As [`Action::ID`]; `kai.*` is reserved.
+    const ID: &'static str;
+    const TITLE: &'static str;
+    const SAFETY: Safety = Safety::Mutating;
+
+    fn description() -> &'static str {
+        ""
+    }
+
+    fn available(_page: &Self::Page) -> Availability {
+        Availability::Enabled
+    }
+
+    /// As [`Action::validate`].
+    fn validate(&self) -> Result<(), CommandError> {
+        Ok(())
+    }
+
+    fn into_msg(self) -> <Self::Page as crate::router::Page>::Msg;
+}
+
 /// A command that reads the app and changes nothing: no message, no
 /// `update`.
 pub trait Query: DeserializeOwned + JsonSchema + 'static {

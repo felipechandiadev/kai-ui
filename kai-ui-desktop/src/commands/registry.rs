@@ -4,9 +4,11 @@ use serde_json::{Map, Value, json};
 
 use super::schema::{decode, input_schema, output_schema};
 use super::{
-    Action, Availability, CommandError, CommandKind, CommandState, PALETTE, Query, Safety, Shortcut,
+    Action, Availability, CommandError, CommandKind, CommandState, PALETTE, PageAction, Query,
+    Safety, Shortcut,
 };
 use crate::element::KeyEquivalent;
+use crate::router::HasPage;
 use crate::runtime::App;
 use crate::ui_engine::Key;
 
@@ -115,6 +117,19 @@ fn message_of<T: Action>(input: Value) -> Result<<T::App as App>::Msg, CommandEr
     Ok(action.into_msg())
 }
 
+/// A page action runs only while its page is open.
+fn page_available<A: HasPage<T::Page>, T: PageAction>(app: &A) -> Availability {
+    app.page().map_or(Availability::Hidden, T::available)
+}
+
+fn page_message_of<A: HasPage<T::Page>, T: PageAction>(
+    input: Value,
+) -> Result<A::Msg, CommandError> {
+    let action = decode::<T>(T::ID, input)?;
+    action.validate()?;
+    Ok(A::page_msg(action.into_msg()))
+}
+
 fn run_query_of<T: Query>(app: &T::App, input: Value) -> Result<Value, CommandError> {
     let output = T::run(app, decode::<T>(T::ID, input)?)?;
     serde_json::to_value(output)
@@ -214,6 +229,32 @@ impl<A: App> CommandRegistry<A> {
             origin: type_name::<T>(),
             available: T::available,
             decode: Some(message_of::<T>),
+            run_query: None,
+            input_schema: Some(input_schema::<T>),
+            output_schema: None,
+            needs_input: decode::<T>(T::ID, empty()).is_err(),
+            exposed: false,
+            returns: None,
+        })
+    }
+
+    /// A page's action (see [`PageAction`]), from
+    /// [`Page::commands`](crate::router::Page::commands).
+    pub fn page_action<T: PageAction>(&mut self) -> CommandBuilder<'_, A>
+    where
+        A: HasPage<T::Page>,
+    {
+        self.push(Entry {
+            id: T::ID,
+            title: T::TITLE,
+            description: T::description(),
+            kind: CommandKind::Action,
+            safety: Some(T::SAFETY),
+            shortcut: None,
+            menu: None,
+            origin: type_name::<T>(),
+            available: page_available::<A, T>,
+            decode: Some(page_message_of::<A, T>),
             run_query: None,
             input_schema: Some(input_schema::<T>),
             output_schema: None,

@@ -1,10 +1,12 @@
 //! An app of sections and pages with a root written by hand: what
 //! `kai-build` will generate from `src/sections/` (docs/dev/26, R3).
 
-use crate::commands::CommandRegistry;
+use crate::commands::{Availability, CommandRegistry, PageAction};
 use crate::components::{ButtonVariant, Sidebar, TextField, button};
 use crate::element::{Element, div, text};
-use crate::router::{Context, NavState, Navigable, Navigate, Page, Router, SectionSidebar};
+use crate::router::{
+    Context, HasPage, NavState, Navigable, Navigate, Page, Router, SectionSidebar,
+};
 use crate::runtime::{App, Effects};
 use crate::testing::{By, Key, Modifiers, TestApp};
 
@@ -203,6 +205,29 @@ mod sales {
         fn title(&self, _: &State) -> String {
             "Ventas".into()
         }
+
+        fn commands<A: HasPage<Self>>(registry: &mut CommandRegistry<A>) {
+            registry.page_action::<ClearTotal>().menu("Ventas");
+        }
+    }
+
+    /// `sales.clear`: a page's command, available once the total loads.
+    #[derive(Clone, serde::Deserialize, schemars::JsonSchema)]
+    pub struct ClearTotal;
+
+    impl PageAction for ClearTotal {
+        type Page = Sales;
+        const ID: &'static str = "sales.clear";
+        const TITLE: &'static str = "Poner el total a cero";
+        fn available(page: &Sales) -> Availability {
+            match page.total {
+                Some(_) => Availability::Enabled,
+                None => Availability::disabled("El total aún se está cargando"),
+            }
+        }
+        fn into_msg(self) -> Msg {
+            Msg::Loaded(0)
+        }
     }
 }
 
@@ -330,6 +355,7 @@ impl App for AppRoot {
 
     fn commands(registry: &mut CommandRegistry<Self>) {
         registry.navigation();
+        sales::Sales::commands(registry);
     }
 
     /// The first page opens here, so its `init` effects run.
@@ -409,6 +435,16 @@ impl App for AppRoot {
                 .class("w-56"),
             div().class("flex-1").child(page),
         ])
+    }
+}
+
+impl HasPage<sales::Sales> for AppRoot {
+    fn page(&self) -> Option<&sales::Sales> {
+        self.sales.as_ref()
+    }
+
+    fn page_msg(msg: sales::Msg) -> RootMsg {
+        RootMsg::Sales(msg)
     }
 }
 
@@ -543,4 +579,29 @@ fn the_focus_stays_on_the_row_the_arrows_chose() {
     app.press(Key::ArrowUp, Modifiers::NONE);
     assert_eq!(app.route(), Some("/customers"));
     assert!(app.is_focused(By::test_id("nav.0")));
+}
+
+/// A page's command is hidden until its page opens, follows the page's
+/// availability, and keeps working while another section is shown (the
+/// section page stays alive).
+#[test]
+fn a_page_command_runs_while_its_page_is_open() {
+    let mut app = crm();
+    let error = app.call("sales.clear", serde_json::json!({})).unwrap_err();
+    assert_eq!(error.message, "sales.clear no está disponible");
+
+    app.navigate("/sales");
+    assert_eq!(
+        app.call("sales.clear", serde_json::json!({}))
+            .unwrap_err()
+            .message,
+        "El total aún se está cargando"
+    );
+    app.run_until_idle();
+    app.navigate("/customers");
+    assert_eq!(
+        app.call("sales.clear", serde_json::json!({})),
+        Ok(serde_json::json!(null))
+    );
+    assert_eq!(app.app().sales.as_ref().unwrap().total, Some(0));
 }

@@ -384,6 +384,20 @@ pub trait Page: Sized + 'static {
     fn view(&self, state: &Self::State) -> Element<Self::Msg>;
     /// User-visible title (window title, breadcrumbs); may be Spanish.
     fn title(&self, state: &Self::State) -> String;
+
+    /// The page's commands, with
+    /// [`CommandRegistry::page_action`](crate::commands::CommandRegistry::page_action).
+    /// The root calls it once, from its own `App::commands`.
+    fn commands<A: HasPage<Self>>(_registry: &mut crate::commands::CommandRegistry<A>) {}
+}
+
+/// A root that holds page `P` (the one `kai-build` generates does): what
+/// the page's commands read and send.
+pub trait HasPage<P: Page>: App {
+    /// The page, while it is open.
+    fn page(&self) -> Option<&P>;
+    /// The root's message that carries `msg` to the page.
+    fn page_msg(msg: P::Msg) -> Self::Msg;
 }
 
 /// What a page can do beyond its own model: change the shared state and

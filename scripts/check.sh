@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Full check of the Rust crates: fmt, clippy (warnings are errors), tests
-# in the three feature modes, docs, fixtures, kai-build and kai-cli.
+# in the three feature modes, docs, fixtures, the demo, kai-build and
+# kai-cli.
 # Prints one line per step and only shows the output of what fails.
 #
 #   scripts/check.sh          everything
@@ -39,6 +40,9 @@ if [[ "${1:-}" != "quick" ]]; then
   step "doc" env RUSTDOCFLAGS="-D warnings" bash -c "cd '$ROOT/kai-ui-desktop' && ${CARGO[*]} doc --locked --no-deps"
   step "fixture external-app" desktop check --locked --manifest-path fixtures/external-app/Cargo.toml --target-dir target
   step "fixture sections-app" desktop test --locked --manifest-path fixtures/sections-app/Cargo.toml --target-dir target
+  step "demo fmt" desktop fmt --check --manifest-path demo/Cargo.toml
+  step "demo clippy" desktop clippy --locked --all-targets --manifest-path demo/Cargo.toml --target-dir target -- -D warnings
+  step "demo test" desktop test --locked --manifest-path demo/Cargo.toml --target-dir target
   for crate in kai-build kai-cli; do
     step "$crate fmt" bash -c "cd '$ROOT/$crate' && ${CARGO[*]} fmt --check"
     step "$crate clippy" bash -c "cd '$ROOT/$crate' && ${CARGO[*]} clippy --locked --all-targets -- -D warnings"

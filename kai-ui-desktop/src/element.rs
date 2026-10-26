@@ -1163,6 +1163,18 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// [`Element::on_command`] for a page's command
+    /// ([`PageAction`](crate::commands::PageAction)), in the page's view.
+    pub fn on_page_command<C>(mut self, command: C) -> Self
+    where
+        C: crate::commands::PageAction,
+        C::Page: crate::router::Page<Msg = Msg>,
+    {
+        self.command = Some(C::ID);
+        self.handlers.on_click = Some(command.into_msg());
+        self
+    }
+
     /// Run command `id` on click as the menu bar does, without a message:
     /// for commands the app has no [`Action`](crate::commands::Action)
     /// for, such as the palette (`kai.paleta`). Availability, name and

@@ -270,6 +270,12 @@ impl<A: App> TestApp<A> {
         self.session.app()
     }
 
+    /// Classes in the views shown so far that no style rule recognized:
+    /// typos and Tailwind utilities Kai does not support.
+    pub fn unknown_classes(&self) -> Vec<&str> {
+        self.session.unknown_classes()
+    }
+
     #[cfg(test)]
     pub(crate) fn session(&self) -> &Session<A> {
         &self.session

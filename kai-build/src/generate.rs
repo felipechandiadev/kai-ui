@@ -116,7 +116,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("}\n\n");
 
     // The parameter's type is the page's: it may or may not be `Copy`.
-    w.push_str("#[allow(clippy::clone_on_copy)]\npub mod app {\n");
+    w.push_str("#[allow(clippy::clone_on_copy, clippy::match_single_binding)]\npub mod app {\n");
     w.push_str("    use kai::element::{Element, div};\n");
     w.push_str("    use kai::router::{Context, NavState, Navigable, Navigate, Page, Router, SectionMeta, SectionSidebar};\n");
     w.push_str("    use kai::runtime::{App, Effects};\n\n");
@@ -366,7 +366,16 @@ pub fn generate(tree: &AppTree) -> String {
 
     // --- App -----------------------------------------------------------------
     w.push_str("    impl App for AppRoot {\n        type Msg = RootMsg;\n\n");
-    w.push_str("        fn commands(registry: &mut kai::commands::CommandRegistry<Self>) {\n            registry.navigation();\n            registry.sidebar();\n        }\n\n");
+    w.push_str("        fn commands(registry: &mut kai::commands::CommandRegistry<Self>) {\n            registry.navigation();\n            registry.sidebar();\n");
+    for (_, page) in &all {
+        writeln!(
+            w,
+            "            <{} as Page>::commands(registry);",
+            screen(page)
+        )
+        .unwrap();
+    }
+    w.push_str("        }\n\n");
     w.push_str("        fn init(&mut self) -> Effects<RootMsg> {\n            self.open_current()\n        }\n\n");
     w.push_str("        fn route(&self) -> Option<String> {\n            Some(<Route as kai::router::Route>::path(self.router.current()))\n        }\n\n");
     w.push_str("        /// `kai dev` reopens the route that was on screen.\n");
@@ -442,6 +451,21 @@ pub fn generate(tree: &AppTree) -> String {
     );
     w.push_str("            ])\n        }\n    }\n\n");
 
+    for (_, page) in &all {
+        let get = if page.is_section_root() {
+            ".as_ref()"
+        } else {
+            ".as_ref().map(|(_, page)| page)"
+        };
+        writeln!(
+            w,
+            "    impl kai::router::HasPage<{s}> for AppRoot {{\n        fn page(&self) -> Option<&{s}> {{\n            self.{f}{get}\n        }}\n\n        fn page_msg(msg: <{s} as Page>::Msg) -> RootMsg {{\n            RootMsg::{v}(msg)\n        }}\n    }}\n",
+            s = screen(page),
+            f = slot(page),
+            v = variant(page)
+        )
+        .unwrap();
+    }
     w.push_str("    impl kai::router::CollapsibleSidebar for AppRoot {\n        fn toggle_sidebar() -> RootMsg {\n            RootMsg::ToggleSidebar\n        }\n    }\n\n");
     w.push_str("    impl Navigable for AppRoot {\n");
     w.push_str(
