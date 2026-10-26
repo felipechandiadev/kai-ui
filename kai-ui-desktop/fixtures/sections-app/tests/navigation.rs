@@ -75,3 +75,41 @@ fn kai_dev_reopens_the_route_on_screen_and_ignores_an_unknown_one() {
     older.restore_dev_state(kai::serde_json::json!({ "path": "/gone" }));
     assert_eq!(TestApp::new(older).route(), Some("/customers"));
 }
+
+#[test]
+fn the_app_reopens_at_the_last_section_it_showed() {
+    use kai::router::LastSection;
+    use kai::store::Store;
+
+    let dir = std::env::temp_dir().join(format!("kai-last-section-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = || Store::at(&dir);
+
+    let fresh = TestApp::new(app::app(State::sample()).with_store(store()));
+    assert_eq!(fresh.route(), Some("/customers"));
+
+    let mut first = TestApp::new(app::app(State::sample()).with_store(store()));
+    first.navigate("/customers/1");
+    first.run_until_idle();
+    assert_eq!(store().load::<LastSection>().unwrap(), None, "same section");
+    first.click(By::test_id("sections.1"));
+    first.run_until_idle();
+    assert_eq!(
+        store().load::<LastSection>().unwrap(),
+        Some(LastSection {
+            path: "/sales".into()
+        })
+    );
+
+    let second = TestApp::new(app::app(State::sample()).with_store(store()));
+    assert_eq!(second.route(), Some("/sales"));
+
+    store()
+        .save(&LastSection {
+            path: "/gone".into(),
+        })
+        .unwrap();
+    let older = TestApp::new(app::app(State::sample()).with_store(store()));
+    assert_eq!(older.route(), Some("/customers"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

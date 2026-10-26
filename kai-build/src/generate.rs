@@ -256,6 +256,8 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        pub router: Router<Route>,\n");
     w.push_str("        pub state: crate::state::State,\n");
     w.push_str("        sidebar: SectionSidebar,\n");
+    w.push_str("        /// Where the last section is kept between runs; none in tests.\n");
+    w.push_str("        store: Option<kai::store::Store>,\n");
     for (_, page) in &all {
         if page.is_section_root() {
             writeln!(w, "        {}: Option<{}>,", slot(page), screen(page)).unwrap();
@@ -273,6 +275,7 @@ pub fn generate(tree: &AppTree) -> String {
 
     w.push_str("    #[derive(Clone, Debug)]\n    pub enum RootMsg {\n");
     w.push_str("        Navigate(Navigate),\n        Sidebar(usize),\n");
+    w.push_str("        LastSectionSaved(Result<(), kai::store::StoreError>),\n");
     for (_, page) in &all {
         writeln!(
             w,
@@ -293,11 +296,21 @@ pub fn generate(tree: &AppTree) -> String {
         "            let start = <Route as kai::router::Route>::parse(SECTION_PATHS[first])\n",
     );
     w.push_str("                .expect(\"the path of a section parses\");\n");
-    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n");
+    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n                store: None,\n");
     for (_, page) in &all {
         writeln!(w, "                {}: None,", slot(page)).unwrap();
     }
     w.push_str("            }\n        }\n\n");
+
+    w.push_str("        /// Keep the section on screen in `store` and start at the one\n        /// saved there, if it still exists.\n");
+    w.push_str("        pub fn with_store(mut self, store: kai::store::Store) -> Self {\n");
+    w.push_str("            match store.load::<kai::router::LastSection>() {\n");
+    w.push_str("                Ok(Some(last)) => {\n                    if let Some(route) = <Route as kai::router::Route>::parse(&last.path) {\n                        self.router = Router::new(route);\n                    }\n                }\n");
+    w.push_str("                Ok(None) => {}\n");
+    w.push_str("                Err(error) => eprintln!(\"Última sección ignorada ({}): {error}\", store.dir().display()),\n");
+    w.push_str(
+        "            }\n            self.store = Some(store);\n            self\n        }\n\n",
+    );
 
     w.push_str("        /// Make sure the page of the current route is alive.\n");
     w.push_str("        fn open_current(&mut self) -> Effects<RootMsg> {\n");
@@ -328,7 +341,12 @@ pub fn generate(tree: &AppTree) -> String {
 
     w.push_str("        /// Carry out navigation, drop pages with parameters no longer\n        /// shown, and open the new page.\n");
     w.push_str("        fn navigate(&mut self, requests: Vec<Navigate>) -> Effects<RootMsg> {\n");
+    w.push_str("            let section = self.router.current().section();\n");
     w.push_str("            for request in requests {\n                self.router.apply(request);\n            }\n");
+    w.push_str("            let mut saved = Effects::none();\n");
+    w.push_str("            if let Some(store) = &self.store\n                && self.router.current().section() != section\n            {\n");
+    w.push_str("                let last = kai::router::LastSection {\n                    path: SECTION_PATHS[self.router.current().section()].into(),\n                };\n");
+    w.push_str("                saved = store.save_effect(&last, RootMsg::LastSectionSaved);\n            }\n");
     for (_, page) in &all {
         if !page.is_section_root() {
             writeln!(
@@ -340,7 +358,7 @@ pub fn generate(tree: &AppTree) -> String {
             .unwrap();
         }
     }
-    w.push_str("            self.open_current()\n        }\n    }\n\n");
+    w.push_str("            Effects::batch([self.open_current(), saved])\n        }\n    }\n\n");
 
     // --- App -----------------------------------------------------------------
     w.push_str("    impl App for AppRoot {\n        type Msg = RootMsg;\n\n");
@@ -373,7 +391,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            let mut cx = Context::new(&mut self.state);\n");
     w.push_str("            let effects = match msg {\n");
     w.push_str("                RootMsg::Navigate(request) => {\n                    drop(cx);\n                    return self.navigate(vec![request]);\n                }\n");
-    w.push_str("                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
+    w.push_str("                RootMsg::LastSectionSaved(result) => {\n                    if let Err(error) = result {\n                        eprintln!(\"No se pudo guardar la última sección: {error}\");\n                    }\n                    Effects::none()\n                }\n                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
     for (_, page) in &all {
         let get = if page.is_section_root() {
             "page"
@@ -428,7 +446,9 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("    pub fn app(state: crate::state::State) -> AppRoot {\n        AppRoot::new(state)\n    }\n\n");
     w.push_str("    /// Open the window and run the app until it is closed.\n");
     w.push_str("    pub fn run(\n        state: crate::state::State,\n        theme: kai::theme::Theme,\n    ) -> Result<(), Box<dyn std::error::Error>> {\n");
-    w.push_str("        kai::runtime::run(AppRoot::new(state), theme)\n    }\n}\n");
+    w.push_str("        // The package name identifies the app's data folder.\n");
+    w.push_str("        let root = match kai::store::Store::for_app(env!(\"CARGO_PKG_NAME\")) {\n            Ok(store) => AppRoot::new(state).with_store(store),\n            Err(error) => {\n                eprintln!(\"Sin carpeta de datos: {error}\");\n                AppRoot::new(state)\n            }\n        };\n");
+    w.push_str("        kai::runtime::run(root, theme)\n    }\n}\n");
 
     out
 }

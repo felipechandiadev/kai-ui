@@ -84,7 +84,12 @@ pasar la demo a ella:
   `restore_dev_state`; una ruta que ya no existe se ignora. Lo prueba
   `kai_dev_reopens_the_route_on_screen_and_ignores_an_unknown_one`
   (`fixtures/sections-app`).
-- **Recordar la última sección** entre ejecuciones (`Store`).
+- ~~**Recordar la última sección** entre ejecuciones~~ ✅ `run` abre un
+  `Store` con el nombre del paquete y `AppRoot::with_store` arranca en la
+  sección guardada (`kai::router::LastSection`), si aún existe; cada
+  cambio de sección se guarda fuera del hilo de UI. Sin `with_store` (las
+  pruebas) no se guarda nada. Lo prueba
+  `the_app_reopens_at_the_last_section_it_showed` (`fixtures/sections-app`).
 - ~~**`kai.navigate` con una ruta desconocida contesta `Ok`**~~ ✅ Ahora
   contesta «No hay ninguna vista en …»: `Navigable::has_route` (la raíz de
   `kai-build` la genera con `Route::parse`) y `Action::validate`, que el
