@@ -201,3 +201,74 @@ fn coming_back_restores_the_scroll_and_the_focus() {
     assert_eq!(app.session().scroll(), &scrolled);
     assert!(app.is_focused(By::test_id("customers.find")));
 }
+
+/// Two views with two fields each, in the same places: their ids match.
+struct TwoForms {
+    router: Router<Page>,
+}
+
+impl App for TwoForms {
+    type Msg = Msg;
+
+    fn commands(registry: &mut CommandRegistry<Self>) {
+        registry.navigation();
+    }
+
+    fn title(&self) -> String {
+        "Formularios".into()
+    }
+
+    fn route(&self) -> Option<String> {
+        Some(self.router.current().path())
+    }
+
+    fn update(&mut self, msg: Msg) -> Effects<Msg> {
+        if let Msg::Navigate(to) = msg {
+            self.router.apply(to);
+        }
+        Effects::none()
+    }
+
+    fn view(&self) -> Element<Msg> {
+        let field = |label: &str, test_id: &str| {
+            TextField::new(label, "")
+                .on_input(Msg::Query)
+                .test_id(test_id)
+                .build()
+        };
+        let fields = match self.router.current() {
+            Page::Sales => [field("Desde", "sales.from"), field("Hasta", "sales.to")],
+            _ => [
+                field("Buscar", "customers.find"),
+                field("Nota", "customers.note"),
+            ],
+        };
+        div().class("flex flex-col w-full h-full").children(fields)
+    }
+}
+
+impl Navigable for TwoForms {
+    fn nav_state(&self) -> NavState {
+        self.router.state()
+    }
+
+    fn navigate(request: Navigate) -> Msg {
+        Msg::Navigate(request)
+    }
+}
+
+/// The focus a view kept comes back even when the focus left in the other
+/// view has an id that, by position, names another control here.
+#[test]
+fn the_kept_focus_wins_over_a_control_that_only_shares_its_id() {
+    let mut app = TestApp::new(TwoForms {
+        router: Router::new(Page::Customers),
+    });
+    app.click(By::test_id("customers.find"));
+    app.navigate("/sales");
+    app.click(By::test_id("sales.to"));
+    assert!(app.perform("kai.back"));
+    assert_eq!(app.route(), Some("/customers"));
+    assert!(app.is_focused(By::test_id("customers.find")));
+    assert!(!app.is_focused(By::test_id("customers.note")));
+}

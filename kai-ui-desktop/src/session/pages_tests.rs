@@ -6,7 +6,7 @@ use crate::components::{ButtonVariant, Sidebar, TextField, button};
 use crate::element::{Element, div, text};
 use crate::router::{Context, NavState, Navigable, Navigate, Page, Router, SectionSidebar};
 use crate::runtime::{App, Effects};
-use crate::testing::{By, TestApp};
+use crate::testing::{By, Key, Modifiers, TestApp};
 
 // --- src/state.rs ----------------------------------------------------------
 
@@ -483,4 +483,60 @@ fn the_sidebar_follows_the_route_and_the_title_the_page() {
     assert_eq!(app.app().router.current().section(), 1);
     assert!(app.perform("kai.back"));
     assert_eq!(app.route(), Some("/customers"));
+}
+
+/// Agents and scripts change the view with `kai.navigate`, and the
+/// sidebar follows; a path no route takes leaves the view as it was.
+#[test]
+fn kai_navigate_shows_a_route_and_the_sidebar_follows() {
+    let mut app = crm();
+    let row = |app: &TestApp<AppRoot>, index: usize| {
+        app.screen()
+            .get(By::test_id(format!("nav.{index}")))
+            .node()
+            .control_state
+    };
+    assert_eq!(
+        app.call("kai.navigate", serde_json::json!({"path": "/sales"})),
+        Ok(serde_json::json!(null))
+    );
+    assert_eq!(app.route(), Some("/sales"));
+    assert_eq!(row(&app, 1), Some(crate::element::ControlState::On));
+    assert_eq!(row(&app, 0), Some(crate::element::ControlState::Off));
+    // «Ventas» loads its total in a task: the call stays in course till then.
+    app.run_until_idle();
+
+    app.call("kai.navigate", serde_json::json!({"path": "/customers/1"}))
+        .unwrap();
+    assert_eq!(app.app().title(), "Bruno Díaz");
+
+    let _ = app.call("kai.navigate", serde_json::json!({"path": "/nowhere"}));
+    assert_eq!(app.route(), Some("/customers/1"), "an unknown path");
+    assert!(app.call("kai.navigate", serde_json::json!({})).is_err());
+}
+
+/// The arrows walk the sidebar's rows and each one shows its section.
+#[test]
+fn the_arrows_walk_the_sidebar_sections() {
+    let mut app = crm();
+    app.click(By::test_id("nav.0"));
+    assert!(app.is_focused(By::test_id("nav.0")));
+    app.press(Key::ArrowDown, Modifiers::NONE);
+    assert_eq!(app.route(), Some("/sales"));
+    assert!(app.is_focused(By::test_id("nav.1")));
+    app.screen().get(By::test_id("sales.total"));
+    app.press(Key::ArrowUp, Modifiers::NONE);
+    assert_eq!(app.route(), Some("/customers"));
+}
+
+/// Coming back to a section with ↑ keeps the focus on the row ↑ chose,
+/// not the one the route kept (↓ had already moved it to «Ventas»).
+#[test]
+fn the_focus_stays_on_the_row_the_arrows_chose() {
+    let mut app = crm();
+    app.click(By::test_id("nav.0"));
+    app.press(Key::ArrowDown, Modifiers::NONE);
+    app.press(Key::ArrowUp, Modifiers::NONE);
+    assert_eq!(app.route(), Some("/customers"));
+    assert!(app.is_focused(By::test_id("nav.0")));
 }

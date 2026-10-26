@@ -126,6 +126,13 @@ pub(crate) struct Outbox {
     pub save_file: Option<SaveFile>,
 }
 
+/// What tells a control apart beyond its positional [`WidgetId`].
+type ControlSignature = (Option<Role>, Option<String>, Option<String>);
+
+fn control_signature<Msg>(element: &Element<Msg>) -> ControlSignature {
+    (element.role, element.label.clone(), element.test_id.clone())
+}
+
 /// Scroll and focus of a route left ([`Session::follow_route`]).
 struct RouteMemory {
     scroll: ScrollOffsets,
@@ -202,6 +209,9 @@ pub(crate) struct Session<A: App> {
     route_memory: HashMap<String, RouteMemory>,
     /// Focus to restore after the next rebuild, on entering a route.
     route_focus: Option<WidgetId>,
+    /// The focus as the route changed, and the control it was on: it stays
+    /// put when the new view has that same control.
+    route_left_focus: Option<(WidgetId, ControlSignature)>,
     /// Pending [`Effects::after`] timers, in the order they were asked for.
     timers: Vec<Timer<A::Msg>>,
     /// Active [`App::subscriptions`], diffed after `init` and each `update`.
@@ -670,6 +680,7 @@ impl<A: App> Session<A> {
             route: None,
             route_memory: HashMap::new(),
             route_focus: None,
+            route_left_focus: None,
             timers: Vec::new(),
             subs: Vec::new(),
             tasks: Tasks::default(),
@@ -1785,6 +1796,10 @@ impl<A: App> Session<A> {
         if route == self.route {
             return;
         }
+        self.route_left_focus = self.ui.focused.get().and_then(|focus| {
+            let element = self.tree.find(focus)?;
+            Some((focus, control_signature(element)))
+        });
         if let Some(left) = self.route.take() {
             if self.route_memory.len() >= ROUTE_MEMORY {
                 self.route_memory.clear();
@@ -3488,8 +3503,23 @@ impl<A: App> Session<A> {
         let started = Instant::now();
         self.step_maps();
         self.rebuild();
+        // The route's focus comes back unless the focus is on a control
+        // both views share (a sidebar row the arrows just chose): that one
+        // stays where the person put it. Ids are positional, so the same id
+        // alone is not the same control.
+        let stays = self
+            .route_left_focus
+            .take()
+            .is_some_and(|(left, signature)| {
+                *self.ui.focused.get() == Some(left)
+                    && self
+                        .tree
+                        .find(left)
+                        .is_some_and(|element| control_signature(element) == signature)
+            });
         if let Some(focus) = self.route_focus.take()
             && self.tree.find(focus).is_some()
+            && !stays
         {
             self.relayout();
             self.apply_intent(Intent::SetFocus(Some(focus)));

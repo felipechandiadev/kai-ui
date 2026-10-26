@@ -31,7 +31,7 @@ de comandos, paleta, agentes y MCP la comparten.
 
 Líneas de cada prueba entre paréntesis (total ≈ 5 000).
 
-### Framework (≈ 80 pruebas)
+### Framework (65, ya fuera de la demo)
 
 | Destino | Pruebas |
 |---|---|
@@ -43,23 +43,49 @@ Líneas de cada prueba entre paréntesis (total ≈ 5 000).
 | `session/focus_tests.rs` (8; el segmentado y los diálogos con apps mínimas locales, el aviso tras confirmar ya lo prueba `components/toast.rs`) | `return_in_name_field_activates_the_default_button` (31), `return_in_the_name_field_submits_through_the_default_button` (9), `demo_focus_order_follows_document_order_and_skips_disabled` (70), `tab_moves_through_the_form_in_order_showing_the_ring` (19), `the_password_eye_toggles_and_leaves_focus_in_the_field` (11), `clicked_buttons_show_no_focus_ring_but_fields_keep_their_focus_look` (71), `background_effects_are_one_segmented_tab_stop` (51), `dialogs_trap_focus_and_confirming_shows_a_toast` (38) |
 | `session/layout_tests.rs` (2) | `field_rows_stack_in_a_narrow_window` (66), `mix_c_buttons_line_up_with_fields_in_an_items_end_row` (65) |
 | `session/document_tests.rs` (feature `document`, 16, sobre `testing::document_app::Writer`); `editor_inserts_unicode_and_selects_text` va a `text_field.rs` | `document_types_bold_and_undo`, `document_pointer_drag_selects_text`, `document_shift_arrows_extend_selection`, `document_clipboard_copy_cut_paste_plain`, `document_clipboard_copy_preserves_bold_via_html`, `document_multipage_scrolls_and_keeps_hit_target`, `document_inserts_table_and_picture_from_toolbar`, `document_ribbon_bold_and_insert_table`, `document_contextual_tabs_follow_table_and_picture`, `document_ribbon_collapses_with_the_window_width`, `document_new_comment_asks_for_its_text`, `document_ribbon_shows_bold_pressed_and_cut_disabled`, `document_ribbon_layout_review_view_tabs`, `document_save_docx_via_file_panel`, `document_open_docx_via_file_panel`, `document_export_pdf_via_file_panel`, `editor_inserts_unicode_and_selects_text` (≈ 500 en total) |
-| `session/map_tests.rs` (3, ya existe) | `the_map_follows_gestures_and_agents` (64), `a_sector_is_edited_on_the_map_and_kept_only_on_finish` (81), `crossing_edges_block_finish_until_fixed` (44) |
 | Componentes sueltos (3) | `clicking_a_bar_selects_its_category` → `charts` (app mínima); `the_inspector_describes_what_is_under_the_pointer` → `session/devtools_tests.rs` (sobre `Sample`); `toasts_close_on_their_own_or_with_their_button` se descarta: `components/toast.rs` ya cubre roles, cierre automático, errores que se quedan y el botón de cerrar |
-| `background` (2) | `background_panel_messages_drive_the_window_background` (37); `background_env_parses_kind_and_motion_and_warns_on_unknown_values` (24, junto con `background_from_env`, que sale de la demo) |
 
-### Navegación: la cubren el router y `kai-build` (7)
+### Navegación (7): se quedan con la demo hasta R5
 
-Estas pruebas hablan de `Section`, que desaparece. Cada una se comprueba
-contra `router_tests.rs`/`pages_tests.rs` y `fixtures/sections-app`. Si ya
-está cubierta, se descarta; si no, se añade allí:
-
+Prueban la navegación hecha a mano en la demo (`Section`, `ui.go_to`,
+`DevState`, `DemoPreferences`), que R5 reemplaza por el router; mientras
+la demo la use, la siguen protegiendo:
 `the_sidebar_shows_one_section_at_a_time`, `the_sidebar_groups_every_section`,
 `the_sidebar_collapses_to_a_rail_by_shortcut_button_or_command`,
 `scripts_and_agents_change_the_section_with_ui_go_to`,
 `each_section_opens_at_the_top`, `dev_restarts_keep_section_sidebar_and_sector`,
 `preferences_survive_a_restart`.
 
-### Demo (9): se reescriben en el crate nuevo
+Comparadas con lo que ya prueban `router_tests.rs`, `pages_tests.rs` y
+`fixtures/sections-app`:
+
+| Lo que comprueba la demo | En la raíz con router |
+|---|---|
+| un clic en la barra lateral muestra una sección | `a_section_keeps_its_state_and_the_sidebar_switches_sections` (sections-app) |
+| ↑/↓ recorren las secciones | **nueva:** `the_arrows_walk_the_sidebar_sections` |
+| cada sección abre arriba | `coming_back_restores_the_scroll_and_the_focus` («a new route starts at the top») |
+| `ui.go_to` desde scripts y agentes | **nueva:** `kai_navigate_shows_a_route_and_the_sidebar_follows` |
+| grupos de la barra lateral | `sidebar_rows_are_one_selecting_stop_counted_across_groups` (componente) |
+
+Corregido de paso: al volver a una sección con ↑ en la barra lateral, el
+router restauraba el foco que había guardado para esa ruta, que ya estaba
+en la fila de abajo. Ahora el foco se queda si sigue en el mismo control
+en las dos vistas (mismo id, rol, nombre y `test_id`; los ids son
+posicionales). Lo prueban `the_focus_stays_on_the_row_the_arrows_chose` y
+`the_kept_focus_wins_over_a_control_that_only_shares_its_id`.
+
+Lo que la raíz generada **todavía no tiene** y R5 debe resolver antes de
+pasar la demo a ella:
+
+- **Barra lateral plegable a riel** (⌃⌘S, botón, comando y ventana estrecha).
+  El componente lo admite (`components/sidebar.rs`); la raíz no lo usa.
+- **Mantener la ruta en los reinicios de `kai dev`** (`App::dev_state`).
+- **Recordar la última sección** entre ejecuciones (`Store`).
+- **`kai.navigate` con una ruta desconocida contesta `Ok`** sin navegar
+  (`Router::apply` devuelve `false` y nadie lo mira); `ui.go_to` rechazaba
+  una sección desconocida, así que un agente se entera de menos.
+
+### Demo (24): se reescriben en el crate nuevo
 
 `update_follows_messages_and_view_reflects_the_model`,
 `test_ids_are_unique_and_point_at_the_controls`,
@@ -90,6 +116,20 @@ prueban cómo la demo los conecta; las piezas ya tienen sus pruebas en
 - `image_fields_take_picked_and_dropped_files_and_refuse_others` y
   `load_url_puts_a_downloaded_image_in_the_avatar` (el comando
   `media.load_url` y los títulos de los paneles son de la demo).
+- Mapa (3): `the_map_follows_gestures_and_agents`,
+  `a_sector_is_edited_on_the_map_and_kept_only_on_finish` y
+  `crossing_edges_block_finish_until_fixed`. Los gestos, el deslizamiento
+  sin eco, el salto sin animación y el editor de polígonos (arrastre, ⌘Z,
+  punto medio, bordes cruzados, Return y Escape) ya se prueban en
+  `maps/tests.rs` y `maps/camera.rs`; lo que queda es de la demo: los
+  comandos `map.*`, los sectores de Parral, la superficie y la regla de no
+  guardar un borrador cruzado. (`session/map_tests.rs` prueba
+  `Element::map`, no el mapa.)
+- Fondo (2): `background_panel_messages_drive_the_window_background` y
+  `background_env_parses_kind_and_motion_and_warns_on_unknown_values`.
+  Prueban el panel «Fondo de ventana» y `background_from_env` (`KAI_BG`,
+  `KAI_BG_ANIM`), que son de la demo; `BackgroundKind::parse` y «sin efecto,
+  nada que animar» ya se prueban en `background.rs`.
 
 ### Capturas y benchmarks (8, `#[ignore]`)
 

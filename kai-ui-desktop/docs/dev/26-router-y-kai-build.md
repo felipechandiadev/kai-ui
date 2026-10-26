@@ -140,7 +140,7 @@ Con la ruta, el runtime:
 
 | Qué | Cómo |
 |---|---|
-| Scroll y foco por ruta | Guarda offsets y foco al salir de una ruta y los restaura al volver (atrás devuelve a donde estabas). |
+| Scroll y foco por ruta | Guarda offsets y foco al salir de una ruta y los restaura al volver (atrás devuelve a donde estabas). El foco no se restaura si sigue en un control que está en las dos vistas (la fila de la barra lateral que se acaba de elegir). |
 | Accesibilidad | Anuncia el título de la nueva vista (AccessKit). |
 | Comandos | `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑), `kai.navigate { path }` para agentes; deshabilitados cuando no aplican (`can_go_back`). |
 | Persistencia | La última ruta en el `Store` de la app, si la app lo pide. |
