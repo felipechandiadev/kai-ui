@@ -56,3 +56,22 @@ fn a_section_keeps_its_state_and_the_sidebar_switches_sections() {
     assert!(app.perform("kai.back"));
     assert_eq!(app.value(By::test_id("customers.find")), "car");
 }
+
+#[test]
+fn kai_dev_reopens_the_route_on_screen_and_ignores_an_unknown_one() {
+    use kai::runtime::App as _;
+
+    let mut before = crm();
+    before.navigate("/customers/1");
+    let state = before.app().dev_state().unwrap();
+
+    let mut after = app::app(State::sample());
+    after.restore_dev_state(state);
+    let after = TestApp::new(after);
+    assert_eq!(after.route(), Some("/customers/1"));
+    after.screen().get(By::test_id("customer.name"));
+
+    let mut older = app::app(State::sample());
+    older.restore_dev_state(kai::serde_json::json!({ "path": "/gone" }));
+    assert_eq!(TestApp::new(older).route(), Some("/customers"));
+}

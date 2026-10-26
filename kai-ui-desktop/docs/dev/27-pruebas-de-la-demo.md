@@ -79,7 +79,11 @@ pasar la demo a ella:
 
 - **Barra lateral plegable a riel** (⌃⌘S, botón, comando y ventana estrecha).
   El componente lo admite (`components/sidebar.rs`); la raíz no lo usa.
-- **Mantener la ruta en los reinicios de `kai dev`** (`App::dev_state`).
+- ~~**Mantener la ruta en los reinicios de `kai dev`**~~ ✅ La raíz
+  generada guarda `{"path": …}` en `App::dev_state` y la reabre en
+  `restore_dev_state`; una ruta que ya no existe se ignora. Lo prueba
+  `kai_dev_reopens_the_route_on_screen_and_ignores_an_unknown_one`
+  (`fixtures/sections-app`).
 - **Recordar la última sección** entre ejecuciones (`Store`).
 - ~~**`kai.navigate` con una ruta desconocida contesta `Ok`**~~ ✅ Ahora
   contesta «No hay ninguna vista en …»: `Navigable::has_route` (la raíz de

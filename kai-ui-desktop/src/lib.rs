@@ -53,6 +53,11 @@ macro_rules! include_app {
     };
 }
 
+/// For the code `kai-build` generates (`dev_state`), so apps need not
+/// depend on `serde_json` themselves.
+#[doc(hidden)]
+pub use serde_json;
+
 // --- Hidden internals ----------------------------------------------------
 // TODO(frontera): pass each of these to `pub(crate)` once captures/tests
 // only touch them through `kai::testing` (or a dedicated feature). Apps

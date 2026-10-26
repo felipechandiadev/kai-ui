@@ -347,6 +347,10 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        fn commands(registry: &mut kai::commands::CommandRegistry<Self>) {\n            registry.navigation();\n        }\n\n");
     w.push_str("        fn init(&mut self) -> Effects<RootMsg> {\n            self.open_current()\n        }\n\n");
     w.push_str("        fn route(&self) -> Option<String> {\n            Some(<Route as kai::router::Route>::path(self.router.current()))\n        }\n\n");
+    w.push_str("        /// `kai dev` reopens the route that was on screen.\n");
+    w.push_str("        fn dev_state(&self) -> Option<kai::serde_json::Value> {\n            Some(kai::serde_json::json!({ \"path\": <Route as kai::router::Route>::path(self.router.current()) }))\n        }\n\n");
+    w.push_str("        /// A path an older build saved and this one lacks is ignored.\n");
+    w.push_str("        fn restore_dev_state(&mut self, state: kai::serde_json::Value) {\n            if let Some(route) = state\n                .get(\"path\")\n                .and_then(|path| path.as_str())\n                .and_then(<Route as kai::router::Route>::parse)\n            {\n                self.router = Router::new(route);\n            }\n        }\n\n");
 
     w.push_str("        fn title(&self) -> String {\n            match self.router.current() {\n");
     for (_, page) in &all {
