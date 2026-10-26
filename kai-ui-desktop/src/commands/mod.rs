@@ -146,6 +146,12 @@ pub trait Action: Clone + DeserializeOwned + JsonSchema + 'static {
         Availability::Enabled
     }
 
+    /// Reject an input that decodes but makes no sense (a path with no
+    /// route); the error reaches whoever called the action.
+    fn validate(&self) -> Result<(), CommandError> {
+        Ok(())
+    }
+
     fn into_msg(self) -> <Self::App as App>::Msg;
 }
 

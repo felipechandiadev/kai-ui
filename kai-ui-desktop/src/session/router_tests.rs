@@ -110,6 +110,10 @@ impl Navigable for Crm {
         self.router.state()
     }
 
+    fn has_route(path: &str) -> bool {
+        <Page as Route>::parse(path).is_some()
+    }
+
     fn navigate(request: Navigate) -> Msg {
         Msg::Navigate(request)
     }
@@ -155,11 +159,15 @@ fn the_commands_walk_the_history_and_say_when_they_cannot() {
     assert!(app.perform("kai.up"));
     assert_eq!(app.route(), Some("/customers"));
 
-    // Agents and tests go by path; an unknown one changes nothing.
+    // Agents and tests go by path; an unknown one is an error that
+    // changes nothing.
     app.navigate("/sales");
     assert_eq!(app.route(), Some("/sales"));
     app.screen().get(By::test_id("sales"));
-    app.navigate("/nowhere");
+    let error = app
+        .call("kai.navigate", serde_json::json!({ "path": "/nowhere" }))
+        .unwrap_err();
+    assert_eq!(error.message, "No hay ninguna vista en /nowhere");
     assert_eq!(app.route(), Some("/sales"));
 }
 
@@ -250,6 +258,10 @@ impl App for TwoForms {
 impl Navigable for TwoForms {
     fn nav_state(&self) -> NavState {
         self.router.state()
+    }
+
+    fn has_route(path: &str) -> bool {
+        <Page as Route>::parse(path).is_some()
     }
 
     fn navigate(request: Navigate) -> Msg {

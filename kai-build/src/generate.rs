@@ -417,6 +417,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str(
         "        fn nav_state(&self) -> NavState {\n            self.router.state()\n        }\n\n",
     );
+    w.push_str("        fn has_route(path: &str) -> bool {\n            <Route as kai::router::Route>::parse(path).is_some()\n        }\n\n");
     w.push_str("        fn navigate(request: Navigate) -> RootMsg {\n            RootMsg::Navigate(request)\n        }\n    }\n\n");
 
     w.push_str("    /// The app on `state`, for tests (`TestApp::new(app::app(state))`).\n");

@@ -29,7 +29,7 @@ use std::marker::PhantomData;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::commands::{Action, Availability, Safety};
+use crate::commands::{Action, Availability, CommandError, Safety};
 use crate::components::{SidebarGroup, SidebarItem};
 use crate::element::Element;
 use crate::icons::Icon;
@@ -53,7 +53,8 @@ pub enum Navigate {
     Back,
     Forward,
     Up,
-    /// To the route whose path this is; an unknown path changes nothing.
+    /// To the route whose path this is; an unknown path changes nothing
+    /// (`kai.navigate` rejects it before).
     To(String),
 }
 
@@ -172,6 +173,9 @@ impl<R: Route> Router<R> {
 /// An app with routes: what its navigation commands read and send.
 pub trait Navigable: App {
     fn nav_state(&self) -> NavState;
+    /// Whether `path` is a route of the app (usually
+    /// `Route::parse(path).is_some()`); `kai.navigate` rejects the rest.
+    fn has_route(path: &str) -> bool;
     /// The app's message that carries out `request` (usually
     /// `Msg::Navigate(request)`, applied with [`Router::apply`]).
     fn navigate(request: Navigate) -> Self::Msg;
@@ -302,6 +306,16 @@ impl<A: Navigable> Action for GoTo<A> {
     const TITLE: &'static str = "Ir a…";
     fn description() -> &'static str {
         "Muestra la vista de una ruta, como /customers/42"
+    }
+    fn validate(&self) -> Result<(), CommandError> {
+        if A::has_route(&self.path) {
+            Ok(())
+        } else {
+            Err(CommandError::new(format!(
+                "No hay ninguna vista en {}",
+                self.path
+            )))
+        }
     }
     fn into_msg(self) -> A::Msg {
         A::navigate(Navigate::To(self.path))

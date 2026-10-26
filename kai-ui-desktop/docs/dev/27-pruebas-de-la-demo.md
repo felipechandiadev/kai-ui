@@ -81,9 +81,10 @@ pasar la demo a ella:
   El componente lo admite (`components/sidebar.rs`); la raíz no lo usa.
 - **Mantener la ruta en los reinicios de `kai dev`** (`App::dev_state`).
 - **Recordar la última sección** entre ejecuciones (`Store`).
-- **`kai.navigate` con una ruta desconocida contesta `Ok`** sin navegar
-  (`Router::apply` devuelve `false` y nadie lo mira); `ui.go_to` rechazaba
-  una sección desconocida, así que un agente se entera de menos.
+- ~~**`kai.navigate` con una ruta desconocida contesta `Ok`**~~ ✅ Ahora
+  contesta «No hay ninguna vista en …»: `Navigable::has_route` (la raíz de
+  `kai-build` la genera con `Route::parse`) y `Action::validate`, que el
+  registro llama tras decodificar la entrada.
 
 ### Demo (24): se reescriben en el crate nuevo
 

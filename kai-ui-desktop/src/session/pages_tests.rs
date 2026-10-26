@@ -417,6 +417,10 @@ impl Navigable for AppRoot {
         self.router.state()
     }
 
+    fn has_route(path: &str) -> bool {
+        <Route as crate::router::Route>::parse(path).is_some()
+    }
+
     fn navigate(request: Navigate) -> RootMsg {
         RootMsg::Navigate(request)
     }

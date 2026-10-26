@@ -104,7 +104,9 @@ fn empty() -> Value {
 }
 
 fn message_of<T: Action>(input: Value) -> Result<<T::App as App>::Msg, CommandError> {
-    decode::<T>(T::ID, input).map(T::into_msg)
+    let action = decode::<T>(T::ID, input)?;
+    action.validate()?;
+    Ok(action.into_msg())
 }
 
 fn run_query_of<T: Query>(app: &T::App, input: Value) -> Result<Value, CommandError> {
