@@ -77,8 +77,12 @@ posicionales). Lo prueban `the_focus_stays_on_the_row_the_arrows_chose` y
 Lo que la raíz generada **todavía no tiene** y R5 debe resolver antes de
 pasar la demo a ella:
 
-- **Barra lateral plegable a riel** (⌃⌘S, botón, comando y ventana estrecha).
-  El componente lo admite (`components/sidebar.rs`); la raíz no lo usa.
+- ~~**Barra lateral plegable a riel**~~ ✅ Comando del framework
+  `kai.toggle_sidebar` (⌃⌘S, menú «Ver»; `CommandRegistry::sidebar` y el
+  trait `CollapsibleSidebar`), botón al pie de la barra, ventana de menos
+  de 640 pt y `dev_state`. Lo prueba `the_sidebar_collapses_to_a_rail`
+  (`fixtures/sections-app`). De paso, los comandos de navegación se
+  registran como del framework y ya no sale «kai.* son del framework».
 - ~~**Mantener la ruta en los reinicios de `kai dev`**~~ ✅ La raíz
   generada guarda `{"path": …}` en `App::dev_state` y la reabre en
   `restore_dev_state`; una ruta que ya no existe se ignora. Lo prueba

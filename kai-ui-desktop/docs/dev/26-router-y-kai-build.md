@@ -142,7 +142,7 @@ Con la ruta, el runtime:
 |---|---|
 | Scroll y foco por ruta | Guarda offsets y foco al salir de una ruta y los restaura al volver (atrás devuelve a donde estabas). El foco no se restaura si sigue en un control que está en las dos vistas (la fila de la barra lateral que se acaba de elegir). |
 | Accesibilidad | Anuncia el título de la nueva vista (AccessKit). |
-| Comandos | `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑), `kai.navigate { path }` para agentes; deshabilitados cuando no aplican (`can_go_back`). |
+| Comandos | `kai.back` (⌘[), `kai.forward` (⌘]), `kai.up` (⌘↑), `kai.navigate { path }` para agentes, `kai.toggle_sidebar` (⌃⌘S); deshabilitados cuando no aplican (`can_go_back`). |
 | Persistencia | La última ruta en el `Store` de la app, si la app lo pide. |
 | Tests | `TestApp::navigate(path)` y `TestApp::route()`. |
 
@@ -150,8 +150,10 @@ Con la ruta, el runtime:
 con lo de arriba: `Route::section()` se deja para R3 (la barra lateral es de
 las secciones); los comandos son `Action`s genéricas (`GoBack<A>`…) que la
 app activa con `registry.navigation()` e implementando `Navigable`
-(`nav_state()` y `navigate(Navigate) -> Msg`). Un path desconocido en
-`kai.navigate` no cambia nada (no es error). Falta el anuncio a VoiceOver.
+(`nav_state()`, `has_route(path)` y `navigate(Navigate) -> Msg`). Un
+path desconocido en `kai.navigate` es un error («No hay ninguna vista en
+…») y no cambia nada. `registry.sidebar()` con `CollapsibleSidebar` suma
+`kai.toggle_sidebar` (⌃⌘S, menú «Ver»). Falta el anuncio a VoiceOver.
 
 ## 4. Páginas y secciones
 

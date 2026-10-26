@@ -258,6 +258,9 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        sidebar: SectionSidebar,\n");
     w.push_str("        /// Where the last section is kept between runs; none in tests.\n");
     w.push_str("        store: Option<kai::store::Store>,\n");
+    w.push_str("        sidebar_collapsed: bool,\n");
+    w.push_str("        /// The first window size has set `sidebar_collapsed`.\n");
+    w.push_str("        sized: bool,\n");
     for (_, page) in &all {
         if page.is_section_root() {
             writeln!(w, "        {}: Option<{}>,", slot(page), screen(page)).unwrap();
@@ -276,6 +279,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("    #[derive(Clone, Debug)]\n    pub enum RootMsg {\n");
     w.push_str("        Navigate(Navigate),\n        Sidebar(usize),\n");
     w.push_str("        LastSectionSaved(Result<(), kai::store::StoreError>),\n");
+    w.push_str("        ToggleSidebar,\n        InitialWidth { narrow: bool },\n");
     for (_, page) in &all {
         writeln!(
             w,
@@ -296,7 +300,7 @@ pub fn generate(tree: &AppTree) -> String {
         "            let start = <Route as kai::router::Route>::parse(SECTION_PATHS[first])\n",
     );
     w.push_str("                .expect(\"the path of a section parses\");\n");
-    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n                store: None,\n");
+    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n                store: None,\n                sidebar_collapsed: false,\n                sized: false,\n");
     for (_, page) in &all {
         writeln!(w, "                {}: None,", slot(page)).unwrap();
     }
@@ -362,13 +366,16 @@ pub fn generate(tree: &AppTree) -> String {
 
     // --- App -----------------------------------------------------------------
     w.push_str("    impl App for AppRoot {\n        type Msg = RootMsg;\n\n");
-    w.push_str("        fn commands(registry: &mut kai::commands::CommandRegistry<Self>) {\n            registry.navigation();\n        }\n\n");
+    w.push_str("        fn commands(registry: &mut kai::commands::CommandRegistry<Self>) {\n            registry.navigation();\n            registry.sidebar();\n        }\n\n");
     w.push_str("        fn init(&mut self) -> Effects<RootMsg> {\n            self.open_current()\n        }\n\n");
     w.push_str("        fn route(&self) -> Option<String> {\n            Some(<Route as kai::router::Route>::path(self.router.current()))\n        }\n\n");
     w.push_str("        /// `kai dev` reopens the route that was on screen.\n");
-    w.push_str("        fn dev_state(&self) -> Option<kai::serde_json::Value> {\n            Some(kai::serde_json::json!({ \"path\": <Route as kai::router::Route>::path(self.router.current()) }))\n        }\n\n");
+    w.push_str("        fn dev_state(&self) -> Option<kai::serde_json::Value> {\n            Some(kai::serde_json::json!({\n                \"path\": <Route as kai::router::Route>::path(self.router.current()),\n                \"sidebar_collapsed\": self.sidebar_collapsed,\n            }))\n        }\n\n");
     w.push_str("        /// A path an older build saved and this one lacks is ignored.\n");
-    w.push_str("        fn restore_dev_state(&mut self, state: kai::serde_json::Value) {\n            if let Some(route) = state\n                .get(\"path\")\n                .and_then(|path| path.as_str())\n                .and_then(<Route as kai::router::Route>::parse)\n            {\n                self.router = Router::new(route);\n            }\n        }\n\n");
+    w.push_str("        fn restore_dev_state(&mut self, state: kai::serde_json::Value) {\n            if let Some(route) = state\n                .get(\"path\")\n                .and_then(|path| path.as_str())\n                .and_then(<Route as kai::router::Route>::parse)\n            {\n                self.router = Router::new(route);\n            }\n            if let Some(collapsed) = state.get(\"sidebar_collapsed\").and_then(|c| c.as_bool()) {\n                self.sidebar_collapsed = collapsed;\n                // The first window size must not undo it.\n                self.sized = true;\n            }\n        }\n\n");
+
+    w.push_str("        /// A narrow window starts with the sidebar as a rail.\n");
+    w.push_str("        fn resized(&self, size: kai::geometry::Size) -> Option<RootMsg> {\n            (!self.sized).then_some(RootMsg::InitialWidth { narrow: size.width < 640.0 })\n        }\n\n");
 
     w.push_str("        fn title(&self) -> String {\n            match self.router.current() {\n");
     for (_, page) in &all {
@@ -391,7 +398,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            let mut cx = Context::new(&mut self.state);\n");
     w.push_str("            let effects = match msg {\n");
     w.push_str("                RootMsg::Navigate(request) => {\n                    drop(cx);\n                    return self.navigate(vec![request]);\n                }\n");
-    w.push_str("                RootMsg::LastSectionSaved(result) => {\n                    if let Err(error) = result {\n                        eprintln!(\"No se pudo guardar la última sección: {error}\");\n                    }\n                    Effects::none()\n                }\n                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
+    w.push_str("                RootMsg::LastSectionSaved(result) => {\n                    if let Err(error) = result {\n                        eprintln!(\"No se pudo guardar la última sección: {error}\");\n                    }\n                    Effects::none()\n                }\n                RootMsg::ToggleSidebar => {\n                    self.sidebar_collapsed = !self.sidebar_collapsed;\n                    Effects::none()\n                }\n                RootMsg::InitialWidth { narrow } => {\n                    self.sidebar_collapsed = narrow;\n                    self.sized = true;\n                    Effects::none()\n                }\n                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
     for (_, page) in &all {
         let get = if page.is_section_root() {
             "page"
@@ -429,12 +436,13 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            let selected = self.sidebar.row_of(self.router.current().section()).unwrap_or(0);\n");
     w.push_str("            div().class(\"flex flex-row w-full h-full\").children([\n");
     w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
-    w.push_str("                    .test_id(\"sections\")\n                    .build()\n                    .class(\"w-56\"),\n");
+    w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" }),\n");
     w.push_str(
         "                div().class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
     );
     w.push_str("            ])\n        }\n    }\n\n");
 
+    w.push_str("    impl kai::router::CollapsibleSidebar for AppRoot {\n        fn toggle_sidebar() -> RootMsg {\n            RootMsg::ToggleSidebar\n        }\n    }\n\n");
     w.push_str("    impl Navigable for AppRoot {\n");
     w.push_str(
         "        fn nav_state(&self) -> NavState {\n            self.router.state()\n        }\n\n",

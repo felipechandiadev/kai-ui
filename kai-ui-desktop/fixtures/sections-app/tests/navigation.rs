@@ -113,3 +113,44 @@ fn the_app_reopens_at_the_last_section_it_showed() {
     assert_eq!(older.route(), Some("/customers"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ⌃⌘S, the button at the bottom and `kai.toggle_sidebar` collapse the
+/// sidebar to a rail and back; a narrow window starts with it collapsed,
+/// and `kai dev` keeps it over the first window size.
+#[test]
+fn the_sidebar_collapses_to_a_rail() {
+    use kai::runtime::App as _;
+    use kai::testing::{Key, Modifiers};
+
+    let width = |app: &TestApp<app::AppRoot>| {
+        app.screen().get(By::test_id("sections")).bounds().width
+    };
+    let mut app = crm();
+    assert!(width(&app) > 48.0);
+    let ctrl_cmd = Modifiers {
+        control: true,
+        command: true,
+        ..Modifiers::NONE
+    };
+    app.press(Key::Char('s'), ctrl_cmd);
+    assert_eq!(width(&app), 48.0);
+    app.click(By::test_id("sections.1"));
+    assert_eq!(app.route(), Some("/sales"), "the rail still navigates");
+    app.click(By::test_id("sections.toggle"));
+    assert!(width(&app) > 48.0);
+    assert!(app.perform("kai.toggle_sidebar"));
+    assert_eq!(width(&app), 48.0);
+
+    let narrow = TestApp::builder(app::app(State::sample()))
+        .viewport(560.0, 700.0)
+        .build();
+    assert_eq!(width(&narrow), 48.0);
+
+    let state = app.app().dev_state().unwrap();
+    let mut restarted = app::app(State::sample());
+    restarted.restore_dev_state(state);
+    let restarted = TestApp::builder(restarted)
+        .viewport(1024.0, 700.0)
+        .build();
+    assert_eq!(width(&restarted), 48.0);
+}

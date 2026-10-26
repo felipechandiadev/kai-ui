@@ -74,6 +74,12 @@ impl<A: App> CommandBuilder<'_, A> {
         self
     }
 
+    /// Mark it as the framework's, so `kai.*` is allowed.
+    fn framework(self) -> Self {
+        self.entry.origin = "kai";
+        self
+    }
+
     /// Menu bar menu that lists it.
     pub fn menu(self, menu: &'static str) -> Self {
         self.entry.menu = Some(menu);
@@ -160,18 +166,34 @@ impl<A: App> CommandRegistry<A> {
     {
         use crate::router::{GoBack, GoForward, GoTo, GoUp};
         self.action::<GoBack<A>>()
+            .framework()
             .shortcut(KeyEquivalent::cmd(Key::Char('[')))
             .menu("Ir")
             .expose();
         self.action::<GoForward<A>>()
+            .framework()
             .shortcut(KeyEquivalent::cmd(Key::Char(']')))
             .menu("Ir")
             .expose();
         self.action::<GoUp<A>>()
+            .framework()
             .shortcut(KeyEquivalent::cmd(Key::ArrowUp))
             .menu("Ir")
             .expose();
-        self.action::<GoTo<A>>().expose();
+        self.action::<GoTo<A>>().framework().expose();
+    }
+
+    /// `kai.toggle_sidebar` (⌃⌘S, menu «Ver»): collapse the sidebar to a
+    /// rail of icons or expand it.
+    pub fn sidebar(&mut self)
+    where
+        A: crate::router::CollapsibleSidebar,
+    {
+        self.action::<crate::router::ToggleSidebar<A>>()
+            .framework()
+            .shortcut(KeyEquivalent::ctrl_cmd(Key::Char('s')))
+            .menu("Ver")
+            .expose();
     }
 
     fn push(&mut self, entry: Entry<A>) -> CommandBuilder<'_, A> {

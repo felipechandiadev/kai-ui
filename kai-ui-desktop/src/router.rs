@@ -182,6 +182,13 @@ pub trait Navigable: App {
     fn navigate(request: Navigate) -> Self::Msg;
 }
 
+/// An app whose sidebar collapses to a rail of icons
+/// ([`CommandRegistry::sidebar`](crate::commands::CommandRegistry::sidebar)).
+pub trait CollapsibleSidebar: App {
+    /// The app's message that collapses or expands it.
+    fn toggle_sidebar() -> Self::Msg;
+}
+
 /// `kai.back`: the previous route.
 #[derive(Deserialize, JsonSchema)]
 #[serde(bound = "", deny_unknown_fields)]
@@ -233,7 +240,17 @@ macro_rules! clone_without_app {
         }
     )*};
 }
-clone_without_app!(GoBack, GoForward, GoUp);
+/// `kai.toggle_sidebar`: the sidebar as a rail of icons or expanded.
+#[derive(Deserialize, JsonSchema)]
+#[serde(bound = "", deny_unknown_fields)]
+#[schemars(bound = "")]
+pub struct ToggleSidebar<A> {
+    #[serde(skip)]
+    #[schemars(skip)]
+    app: PhantomData<fn() -> A>,
+}
+
+clone_without_app!(GoBack, GoForward, GoUp, ToggleSidebar);
 
 impl<A> Clone for GoTo<A> {
     fn clone(&self) -> Self {
@@ -298,6 +315,18 @@ impl<A: Navigable> Action for GoUp<A> {
     }
     fn into_msg(self) -> A::Msg {
         A::navigate(Navigate::Up)
+    }
+}
+
+impl<A: CollapsibleSidebar> Action for ToggleSidebar<A> {
+    type App = A;
+    const ID: &'static str = "kai.toggle_sidebar";
+    const TITLE: &'static str = "Mostrar u ocultar barra lateral";
+    fn description() -> &'static str {
+        "Colapsa la barra lateral a un riel de íconos o la expande"
+    }
+    fn into_msg(self) -> A::Msg {
+        A::toggle_sidebar()
     }
 }
 
