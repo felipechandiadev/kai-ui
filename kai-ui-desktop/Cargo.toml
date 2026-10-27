@@ -5,15 +5,11 @@ edition = "2024"
 rust-version = "1.95"
 publish = false
 
-# Library + demo binary (docs/dev/12-modelo-appkit.md, Paso 1). The library is
-# `kai` so examples and tests can write `use kai::...`.
+# The library, as `kai` so examples, tests and apps write `use kai::...`.
+# The demo is its own crate in `demo/` (docs/dev/27-pruebas-de-la-demo.md).
 [lib]
 name = "kai"
 path = "src/lib.rs"
-
-[[bin]]
-name = "kai-ui-desktop-prototype"
-path = "src/main.rs"
 
 [features]
 # Enables PNG read/write in `kai::snapshot` outside the crate's own tests.

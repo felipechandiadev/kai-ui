@@ -169,6 +169,13 @@ la app mínima pierde una aserción, se documenta en el commit.
 
 ## 4. La demo nueva (`kai-ui-desktop/demo`)
 
+**Estado: completa.** `src/demo.rs`, `src/main.rs` (el binario
+`kai-ui-desktop-prototype`), `examples/demo.rs` y `mcp-schema.json` de la
+raíz se borraron; `kai.toml` pasó a `demo/` (`[dev] bin = "kai-demo"`) y
+`demo/.cargo/config.toml` hace que compile en `kai-ui-desktop/target`.
+`demo/src/main.rs` conserva `KAI_THEME`, `KAI_MIX`, `KAI_LABEL`,
+`KAI_HOVER`, `--describe-commands` y `--mcp` (feature `mcp` de la demo).
+
 Crate aparte, `kai-demo`, con la raíz generada por `kai-build`: una carpeta
 por sección en `demo/src/sections/`. La raíz no puede vivir dentro del
 crate `kai` (el código generado nombra `kai::…`), por eso no va en

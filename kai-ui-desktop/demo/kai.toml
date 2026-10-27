@@ -1,4 +1,4 @@
-# Manifiesto Kai del crate de desarrollo (docs/dev/13, Paso 17 / corte A1).
+# Manifiesto Kai de la demo (docs/dev/13, Paso 17 / corte A1).
 # Sin secretos. El runtime aún no lo carga; lo usan `kai doctor`, `kai dev` y `kai test`.
 
 [app]
@@ -21,5 +21,5 @@ enabled = false
 expose = "none"
 
 [dev]
-bin = "kai-ui-desktop-prototype"
+bin = "kai-demo"
 # features = ["mcp"]

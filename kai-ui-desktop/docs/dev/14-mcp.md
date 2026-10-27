@@ -7,11 +7,11 @@
 ## 1. Compilar
 
 ```sh
-cd kai-ui-desktop
+cd kai-ui-desktop/demo
 cargo build --features mcp
 ```
 
-El binario queda en `target/debug/kai-ui-desktop-prototype`. Sin la feature, `--mcp` termina con «--mcp necesita compilar con --features mcp».
+El binario de la demo queda en `kai-ui-desktop/target/debug/kai-demo` (la demo compila en el `target/` de `kai-ui-desktop`, `demo/.cargo/config.toml`). Sin la feature, `--mcp` termina con «--mcp necesita compilar con --features mcp».
 
 Antes de configurar un cliente se puede probar a mano. Se mandan líneas JSON-RPC por stdin; las respuestas salen por stdout y los registros de la app por stderr:
 
@@ -21,7 +21,7 @@ Antes de configurar un cliente se puede probar a mano. Se mandan líneas JSON-RP
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"contador.sumar","arguments":{"cantidad":5}}}'
-  sleep 3 ) | target/debug/kai-ui-desktop-prototype --mcp 2>/dev/null
+  sleep 3 ) | ../target/debug/kai-demo --mcp 2>/dev/null
 ```
 
 La ventana se abre, el contador sube a 5 y, cuando `sleep` termina y se cierra stdin, la app sale con código 0.
@@ -36,7 +36,7 @@ La misma entrada sirve en Cursor (`~/.cursor/mcp.json`, o `.cursor/mcp.json` en 
 {
   "mcpServers": {
     "kai-demo": {
-      "command": "/Users/felipe/dev/kai-ui/kai-ui-desktop/target/debug/kai-ui-desktop-prototype",
+      "command": "/Users/felipe/dev/kai-ui/kai-ui-desktop/target/debug/kai-demo",
       "args": ["--mcp"]
     }
   }

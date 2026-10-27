@@ -5,7 +5,8 @@
 //! built from [`element`] and [`components`], styled with classes resolved
 //! against a [`theme`]. Colors are [`Color`] / [`color::Color`] (parse hex
 //! with [`Color::parse_hex`]) — do not use the hidden `render` module.
-//! The demo binary (`cargo run`) and `examples/` use this crate as `kai`.
+//! The demo (`demo/`, an app built from folders by `kai-build`) and
+//! `examples/` use this crate as `kai`.
 //! See `docs/dev/12-modelo-appkit.md` (Paso 1) and
 //! `docs/dev/13-hoja-de-ruta-plataforma.md` (Paso 0 / frontera pública).
 //!
@@ -66,8 +67,6 @@ pub use serde_json;
 
 #[doc(hidden)]
 pub mod a11y;
-#[doc(hidden)]
-pub mod demo;
 #[doc(hidden)]
 pub mod devtools;
 #[doc(hidden)]

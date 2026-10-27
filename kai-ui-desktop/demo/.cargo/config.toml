@@ -1,0 +1,4 @@
+# The demo builds into kai-ui-desktop/target, shared with the framework, so
+# `kai dev` and `cargo run` here do not compile everything a second time.
+[build]
+target-dir = "../target"

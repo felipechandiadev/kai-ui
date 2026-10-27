@@ -38,10 +38,10 @@ Guías de diseño en `kai-ui-desktop/docs/dev/`; componentes en
 R0 nombres en inglés ✅ · R1 `Element::map`/`Effects::map` ✅ ·
 R2 `kai::router` (Route, Router, comandos ⌘[ ⌘] ⌘↑, scroll y foco por
 ruta) ✅ · R3 `Page`/`Context`/`SectionMeta` ✅ · R4 `kai-build` +
-`kai::include_app!()` + `kai new section` ✅ · **R5 pendiente**: pasar la
-demo (`src/demo.rs`, ~9 600 líneas) a `src/sections/`, una carpeta por
-sección, sin perder pruebas. Falta también el anuncio de cambio de vista a
-VoiceOver.
+`kai::include_app!()` + `kai new section` ✅ · R5 ✅ la demo es el crate
+`demo/` (una carpeta por sección en `demo/src/sections/`, raíz generada
+por `kai-build`; `cargo run` o `kai dev` desde `demo/`); `src/demo.rs` ya no
+existe (docs/dev/27). Falta el anuncio de cambio de vista a VoiceOver.
 
 Convenciones de `kai-build`: cada `page.rs` define `pub struct Screen`
 (implementa `kai::router::Page`); cada `section.rs`,

@@ -38,7 +38,7 @@ Ejecuta 400 iteraciones de `view` + `Layout::compute` + `paint` sobre la demo, c
 
 ### Nota sobre el binario
 
-Si `CARGO_TARGET_DIR` está definido, el binario no está en `kai-ui-desktop/target/debug/`: ejecutar con `cargo run` o desde `"$CARGO_TARGET_DIR/debug/kai-ui-desktop-prototype"`. Un binario antiguo en `kai-ui-desktop/target/debug/` no refleja los cambios.
+Si `CARGO_TARGET_DIR` está definido, el binario no está en `kai-ui-desktop/target/debug/`: ejecutar la demo con `cargo run` en `kai-ui-desktop/demo` o desde `"$CARGO_TARGET_DIR/debug/kai-demo"`. Un binario antiguo en `kai-ui-desktop/target/debug/` no refleja los cambios.
 
 ## Integración de capacidades de aplicación
 
