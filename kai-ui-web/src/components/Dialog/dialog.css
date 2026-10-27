@@ -7,6 +7,9 @@
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
+  max-width: calc(100vw - 2rem);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /** Encabezado fijo en columna flex: no se encoge y queda por encima del scroll (mapas, z-index). */

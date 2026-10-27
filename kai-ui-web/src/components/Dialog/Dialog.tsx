@@ -1,13 +1,15 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Button } from '../Button/Button';
+import IconButton from '../IconButton/IconButton';
 import './dialog.css';
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
   title?: string;
+  /** Texto secundario bajo el título. */
+  description?: string;
   children: React.ReactNode;
   // Preset sizes. 'custom' allows using maxWidth prop.
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'custom';
@@ -116,6 +118,7 @@ const Dialog: React.FC<DialogProps> = ({
   open,
   onClose,
   title,
+  description,
   children,
   size = 'md',
   customSize,
@@ -139,7 +142,7 @@ const Dialog: React.FC<DialogProps> = ({
   actionsJustify = 'between',
   showCloseButton = false,
   headerTransparent = false,
-  closeButtonText = 'cerrar',
+  closeButtonText = 'Cerrar',
   onCloseButtonClick,
   'data-test-id': dataTestId,
 }) => {
@@ -235,7 +238,7 @@ const Dialog: React.FC<DialogProps> = ({
       ? typeof maxWidth === 'number'
         ? `${maxWidth}px`
         : maxWidth
-      : undefined,
+      : (maxWidth ? (typeof maxWidth === 'number' ? `${maxWidth}px` : maxWidth) : 'calc(100vw - 2rem)'),
     minWidth: minWidth ? (typeof minWidth === 'number' ? `${minWidth}px` : minWidth) : undefined,
     height: height ? (typeof height === 'number' ? `${height}px` : height) : undefined,
     maxHeight: maxHeight ? (typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight) : undefined,
@@ -289,22 +292,30 @@ const Dialog: React.FC<DialogProps> = ({
               headerTransparent ? ' fs-dialog__header--transparent' : ''
             }`}
           >
-            <h2
-              className="title m-0 flex-1 text-left text-lg font-semibold text-foreground"
-              data-test-id="dialog-title"
-            >
-              {title}
-            </h2>
+            <div className="min-w-0 flex-1">
+              <h2
+                className="title m-0 text-left text-lg font-semibold text-foreground"
+                data-test-id="dialog-title"
+              >
+                {title}
+              </h2>
+              {description ? (
+                <p className="m-0 mt-0.5 text-left text-sm text-muted-foreground" data-test-id="dialog-description">
+                  {description}
+                </p>
+              ) : null}
+            </div>
             {showCloseButton && (
               <div className="flex justify-end w-auto">
-                <Button
+                <IconButton
+                  icon="X"
                   variant="outlined"
                   size="sm"
                   onClick={handleCloseButtonClick}
                   className="ml-2"
-                >
-                  {closeButtonText}
-                </Button>
+                  ariaLabel={closeButtonText}
+                  data-test-id="dialog-close-button"
+                />
               </div>
             )}
           </div>
