@@ -5510,7 +5510,7 @@ mod tests {
             include_str!("maps/editor.rs"),
             include_str!("document/mod.rs"),
         ];
-        const NOT_WIDGETS: [&str; 34] = [
+        const NOT_WIDGETS: [&str; 35] = [
             "ChartSpec",
             "ChartSeries",
             "MapSpec",
@@ -5537,6 +5537,7 @@ mod tests {
             "MenuFrame",
             "DocumentSpec",
             "DocumentChange",
+            "ExportDoc",
             "DocumentCmdRequest",
             "DocumentPaint",
             "DocumentGlyph",

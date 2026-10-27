@@ -1188,7 +1188,7 @@ impl<Msg: 'static> DocumentRibbon<Msg> {
 
         let mut root = div()
             .class(&themed(
-                "flex flex-col gap-0 w-full rounded-md border border-border bg-card px-2 py-1.5",
+                "flex flex-col gap-0 w-full rounded-md border border-border bg-background px-2 py-1.5",
                 // Glass (macOS 26+): panel flotante muy redondeado, sin borde,
                 // con relleno de control y sombra suave en lugar de marco.
                 "flex flex-col gap-0 w-full rounded-md border border-separator bg-window px-2 py-1.5 \

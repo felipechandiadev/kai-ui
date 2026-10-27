@@ -149,10 +149,28 @@ pub(crate) struct DocumentLoadRequest {
     pub bytes: std::sync::Arc<[u8]>,
 }
 
-/// Clone del modelo WordCraft listo para encode off-thread (Eq por `Arc`).
+/// The document as it was at [`DocumentCmd::TakeDocument`], cheap to
+/// clone and `Send`: encode it off the UI thread
+/// ([`Effects::perform`](crate::runtime::Effects::perform)) with
+/// [`ExportDoc::docx_bytes`] or [`ExportDoc::pdf_bytes`]. Equal when it
+/// is the same snapshot.
 #[cfg(feature = "document")]
 #[derive(Clone)]
-pub(crate) struct ExportDoc(pub(crate) std::sync::Arc<wordcraft_doc::Document>);
+pub struct ExportDoc(pub(crate) std::sync::Arc<wordcraft_doc::Document>);
+
+#[cfg(feature = "document")]
+impl ExportDoc {
+    /// The document as a `.docx` file.
+    pub fn docx_bytes(&self) -> Result<Vec<u8>, String> {
+        wordcraft_docx::write(&self.0).map_err(|e| e.to_string())
+    }
+
+    /// The document as a PDF, with its pages as the editor lays them out.
+    pub fn pdf_bytes(&self) -> Result<Vec<u8>, String> {
+        wordcraft_pdf::export(&self.0, &wordcraft_pdf::PdfOptions::default())
+            .map_err(|e| e.to_string())
+    }
+}
 
 #[cfg(feature = "document")]
 impl PartialEq for ExportDoc {
@@ -308,9 +326,9 @@ pub struct DocumentChange {
     /// Coincidencias del último `edit.find` / findNext (0 si no hay búsqueda).
     #[cfg(feature = "document")]
     pub find_match_count: usize,
-    /// Tras [`DocumentCmd::TakeDocument`]: modelo para encode off-thread.
+    /// After [`DocumentCmd::TakeDocument`]: the document to save.
     #[cfg(feature = "document")]
-    pub(crate) export: Option<ExportDoc>,
+    pub export: Option<ExportDoc>,
 }
 
 /// Editor de documento. Dale tamaño con clases y un nombre accesible con
