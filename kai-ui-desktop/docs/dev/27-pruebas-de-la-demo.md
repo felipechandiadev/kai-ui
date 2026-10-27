@@ -190,7 +190,7 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Documento (`/document`) | ✅ | `a_saved_docx_opens_again_and_names_the_window`, `the_pdf_export_writes_a_pdf_and_keeps_the_docx_name`, `command_f_shows_the_find_bar_and_the_comment_button_asks_for_text` |
 | Diálogos y avisos (`/dialogs`) | ✅ | `a_dialog_covers_the_window_traps_the_focus_and_its_answer_shows_a_toast`, `toasts_close_on_their_own_but_an_error_waits_with_its_retry`, `the_palette_button_opens_the_palette` |
 | Lista + detalle (`/template-list`), Formulario (`/template-form`), Vista de datos (`/template-data`) | ✅ | `the_list_shows_the_chosen_client_in_the_detail`, `the_form_saves_and_clears_its_fields`, `the_data_view_shows_its_metrics_and_orders` |
-| Catálogo vivo | pendiente | |
+| Catálogo vivo (`/catalog`) | ✅ | `the_catalog_themes_the_window_while_it_is_open` |
 
 Diferencias con `demo.rs`:
 
@@ -269,5 +269,9 @@ Diferencias con `demo.rs`:
   `bg-background` y `appkit:bg-selection`. Sus botones muestran un aviso en
   vez de tocar el contador de Inicio. Diálogos y avisos pasa al orden 600
   para que «Superposiciones» quede al final de la barra lateral.
+- `Page::theme`: el tema de toda la ventana mientras la página está en
+  pantalla (Catálogo vivo); la raíz generada lo pide a la página actual
+  en `App::theme`. Los `test_id` del catálogo pasan al inglés
+  (`catalog.field.*`, `catalog.choice`, `catalog.layers`).
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

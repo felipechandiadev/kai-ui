@@ -395,6 +395,12 @@ pub trait Page: Sized + 'static {
         None
     }
 
+    /// The theme of the whole window while the page is on screen, as
+    /// [`App::theme`]. Default: the app's.
+    fn theme(&self, _state: &Self::State) -> Option<crate::theme::Theme> {
+        None
+    }
+
     /// The page's commands, with
     /// [`CommandRegistry::page_action`](crate::commands::CommandRegistry::page_action).
     /// The root calls it once, from its own `App::commands`.
