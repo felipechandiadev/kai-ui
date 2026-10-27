@@ -182,7 +182,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Campos (`/fields`) | ✅ | `the_fields_take_what_is_typed_and_their_ids_reach_the_controls`, `the_eye_shows_and_hides_each_secret_on_its_own` |
 | Selección (`/selection`) | ✅ | `the_all_checkbox_is_mixed_and_sets_every_permission` |
 | Contenedores (`/containers`) | ✅ | `the_card_counts_its_actions_and_the_tabs_show_one_panel_at_a_time` |
-| Badges y alertas, Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Badges y alertas (`/badges`) | ✅ | `every_badge_variant_and_both_alerts_are_shown` |
+| Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
