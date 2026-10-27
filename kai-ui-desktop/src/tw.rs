@@ -768,6 +768,11 @@ impl Parser<'_> {
             "size-check" => Decl::SizeBySize(controls.check_size),
             "h-field-square" => Decl::HeightBySize(controls.field_square_height),
             "rounded-control" => Decl::RadiusBySize(controls.radius),
+            // A segment inside a `rounded-control p-0.5` track: concentric
+            // with it, the track's radius minus its 2 pt padding.
+            "rounded-control-inner" => {
+                Decl::RadiusBySize(controls.radius.map(|radius| (radius - 2.0).max(2.0)))
+            }
             "rounded-field" => Decl::RadiusBySize(controls.field_radius),
             "rounded-field-square" => Decl::RadiusBySize(controls.field_square_radius),
             "px-control" => Decl::PaddingXBySize(controls.padding_x),
@@ -1449,6 +1454,35 @@ mod tests {
         let list = ClassList::parse(classes, &Theme::kai(Density::Comfortable));
         assert!(list.unknown.is_empty(), "unknown: {:?}", list.unknown);
         list
+    }
+
+    /// A segment's corners follow its track's: on Glass, where large
+    /// controls are almost capsules, the selected end segment is as round.
+    #[test]
+    fn rounded_control_inner_is_concentric_with_the_track() {
+        let glass = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
+        let list = ClassList::parse("rounded-[4px] glass:rounded-control-inner", &glass);
+        assert!(list.unknown.is_empty(), "{:?}", list.unknown);
+        let track = ClassList::parse("rounded-control", &glass);
+        for size in ControlSize::ALL {
+            let state = State {
+                control_size: size,
+                ..State::default()
+            };
+            let outer = track.resolve(state).radius;
+            assert_eq!(
+                list.resolve(state).radius,
+                (outer - 2.0).max(2.0),
+                "{size:?}"
+            );
+        }
+        let aqua = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        let list = ClassList::parse("rounded-[4px] glass:rounded-control-inner", &aqua);
+        assert_eq!(
+            list.resolve(State::default()).radius,
+            4.0,
+            "Aqua keeps 4 pt"
+        );
     }
 
     /// `text-center` and its siblings set the inherited alignment;

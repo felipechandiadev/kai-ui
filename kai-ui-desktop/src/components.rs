@@ -2206,9 +2206,9 @@ pub fn segmented_with_options<Msg>(
          contrast-more:focus-visible:ring-primary disabled:opacity-50 \
          disabled:cursor-not-allowed",
         "flex items-center justify-center px-control border border-transparent rounded-[4px] \
-         text-control whitespace-nowrap text-control-text cursor-default hover:bg-fill-3 \
-         selected:border-choice selected:bg-choice/20 keyboard-focus:ring-focus \
-         window-inactive:ring-0 disabled:text-disabled-control-text",
+         glass:rounded-control-inner text-control whitespace-nowrap text-control-text \
+         cursor-default hover:bg-fill-3 selected:border-choice selected:bg-choice/20 \
+         keyboard-focus:ring-focus window-inactive:ring-0 disabled:text-disabled-control-text",
     );
     div()
         .class(&themed(

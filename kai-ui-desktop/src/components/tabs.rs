@@ -46,7 +46,8 @@ impl<Msg: 'static> Tabs<Msg> {
              focus-visible:ring-2 focus-visible:ring-primary/40 \
              contrast-more:focus-visible:ring-primary",
             "flex items-center justify-center px-control border border-transparent \
-             rounded-[4px] text-control whitespace-nowrap text-control-text cursor-default \
+             rounded-[4px] glass:rounded-control-inner text-control whitespace-nowrap \
+             text-control-text cursor-default \
              hover:bg-fill-3 selected:border-choice selected:bg-choice/20 \
              keyboard-focus:ring-focus window-inactive:ring-0",
         );
