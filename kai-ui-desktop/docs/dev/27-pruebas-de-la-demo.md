@@ -227,9 +227,11 @@ Diferencias con `demo.rs`:
   tiene barra de herramientas. La prueba de detalle ya no comprueba las
   columnas del Excel (leía `TableView` por dentro); eso lo cubre
   `components/table/view.rs`.
-- **Hueco del framework:** `tw.rs` no reconoce `text-center` (lo usan
-  `EmptyState` y los gráficos) ni `focus-visible:ring-inset` (`Table`).
-  `demo.rs` no lo veía porque solo comprobaba las clases de Inicio. La
-  prueba de Tabla admite esas dos y ninguna más.
+- ~~**Hueco del framework:** `tw.rs` no reconocía `text-center` (lo usan
+  `EmptyState` y los gráficos) ni `focus-visible:ring-inset` (`Table`)~~ ✅
+  `text-left/center/right` (heredable; la caja de texto alinea cada línea
+  a su ancho final, también sin ajuste de línea) y `ring-inset` (el anillo
+  por dentro del borde). `demo.rs` no lo veía porque solo comprobaba las
+  clases de Inicio.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

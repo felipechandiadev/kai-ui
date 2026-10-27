@@ -62,6 +62,7 @@ impl LabelKind {
             weight,
             wrap: false,
             letter_spacing: 0.0,
+            align: crate::style::TextAlign::Start,
         }
     }
 }

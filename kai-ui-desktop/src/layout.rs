@@ -311,6 +311,7 @@ pub fn text_style(text: &ComputedText) -> TextStyle {
         weight: text.weight,
         wrap: !text.nowrap,
         letter_spacing: text.letter_spacing,
+        align: text.align,
     }
 }
 
@@ -1025,8 +1026,9 @@ fn place(
                 node.text_box = Some(node.padding_box);
             }
             Content::Text(content) => {
-                // Re-wrap at the final width so the buffer is ready to draw.
-                if !node.text.nowrap {
+                // Re-wrap (or re-align) at the final width so the buffer is
+                // ready to draw.
+                if !node.text.nowrap || node.text.align != crate::style::TextAlign::Start {
                     text.measure(
                         TextId::content(node.id),
                         content,

@@ -278,7 +278,18 @@ impl Painter<'_> {
             });
         }
         let ring = style.ring;
-        if ring.width > 0.0 {
+        if ring.width > 0.0 && ring.inset {
+            // `ring-inset`: the band inside the border box, `offset` in.
+            self.list.quad(Quad {
+                rect: grow(bounds, -ring.offset),
+                fill: TRANSPARENT,
+                border: faded(ring.color.unwrap_or(semantic.focus_ring), opacity),
+                border_width: ring.width,
+                radius: (style.radius - ring.offset).max(0.0),
+                blur: 0.0,
+                mask: None,
+            });
+        } else if ring.width > 0.0 {
             let spread = ring.offset + ring.width;
             self.list.quad(Quad {
                 rect: grow(bounds, spread),
@@ -668,6 +679,29 @@ mod tests {
             .filter(|op| matches!(op, DrawOp::PopClip))
             .count();
         assert_eq!(pushes, pops);
+    }
+
+    #[test]
+    fn an_inset_ring_is_drawn_inside_the_border_box() {
+        let mut cell: Element<Msg> = div()
+            .class("p-4")
+            .child(div().class("w-20 h-10 rounded-md ring-2 ring-inset ring-offset-1"));
+        cell.assign_ids();
+        let list = draw(&cell, WINDOW, &Interaction::default(), &[]);
+        let ring = *quads(&list)
+            .iter()
+            .find(|q| q.fill.a == 0 && q.border_width == 2.0)
+            .unwrap();
+        assert_eq!(
+            ring.rect,
+            Rect {
+                x: 17.0,
+                y: 17.0,
+                width: 78.0,
+                height: 38.0
+            }
+        );
+        assert_eq!(ring.radius, 6.0 - 1.0);
     }
 
     #[test]

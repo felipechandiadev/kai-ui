@@ -42,14 +42,7 @@ fn name(app: &App, test_id: &str) -> String {
 #[test]
 fn the_search_filters_and_the_headers_sort_the_table() {
     let mut app = table();
-    // Classes of Kai's own Table and EmptyState that tw.rs does not know
-    // yet (docs/dev/27); the demo adds none.
-    let known_gaps = ["kai:focus-visible:ring-inset", "text-center"];
-    let unknown = app.unknown_classes();
-    assert!(
-        unknown.iter().all(|class| known_gaps.contains(class)),
-        "{unknown:?}"
-    );
+    assert_eq!(app.unknown_classes(), Vec::<&str>::new());
     app.type_text(By::test_id("table.find"), "temuco");
     let temuco = (1..=CLIENT_COUNT)
         .map(client)

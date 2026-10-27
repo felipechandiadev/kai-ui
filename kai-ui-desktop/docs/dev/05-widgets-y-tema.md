@@ -63,8 +63,8 @@ Consultar `kai-ui-web/src/theme/tokens.css`, los README de componentes y `kai-ui
 | Posición y overflow | `relative` `absolute` `sticky` `z-N` `overflow-visible/hidden/clip/auto/scroll` y por eje `overflow-x-*` `overflow-y-*` `grid-cols-N` |
 | Color | `bg-*` `text-*` `border-*` `ring-*` `placeholder-*` con nombre del tema (incluye `field-muted`), alfa `/N` o `[#hex]`; `bg-current` (fondo del color del texto, como `currentColor`) |
 | Borde y radio | `border` `border-N` `border-t/b/l/r/x/y` `rounded-*` (`sm` 2, `md` 6, `lg` 8, `xl` 12, `2xl`, `3xl`, `full`) |
-| Efectos | `shadow-sm/md/lg/xl/none` `ring` `ring-N` `ring-offset-N` `outline-none` `opacity-N` |
-| Texto | `text-xs`…`3xl` `text-[Npx]` `font-normal/medium/semibold/bold` `leading-*` `whitespace-nowrap` `truncate` |
+| Efectos | `shadow-sm/md/lg/xl/none` `ring` `ring-N` `ring-offset-N` `ring-inset` (el anillo por dentro del borde) `outline-none` `opacity-N` |
+| Texto | `text-xs`…`3xl` `text-[Npx]` `font-normal/medium/semibold/bold` `leading-*` `whitespace-nowrap` `truncate` `text-left/center/right` (`text-start/end`; heredable, cada línea en su caja) |
 | Iconos | `stroke-N` `stroke-[N]` (ancho de trazo heredable) |
 | Interacción | `cursor-default/pointer/text/not-allowed/wait` `pointer-events-none/auto` `group` |
 

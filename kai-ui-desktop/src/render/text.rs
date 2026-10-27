@@ -2,12 +2,13 @@
 
 use std::collections::HashMap;
 
-use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, Weight, Wrap};
+use cosmic_text::{Align, Attrs, Buffer, FontSystem, Metrics, Shaping, Weight, Wrap};
 
 use super::TextId;
 use crate::fonts::ui_font_family;
 use crate::geometry::Size;
 use crate::layout::TextMeasure;
+use crate::style::TextAlign;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextStyle {
@@ -17,6 +18,7 @@ pub struct TextStyle {
     pub wrap: bool,
     /// Letter spacing in em; 0 leaves cosmic-text's default.
     pub letter_spacing: f32,
+    pub align: TextAlign,
 }
 
 impl TextStyle {
@@ -66,6 +68,14 @@ impl TextStore {
         // CSS `overflow-wrap: normal`: break between words only.
         buffer.set_wrap(if style.wrap { Wrap::Word } else { Wrap::None });
         buffer.set_text(text, &style.attrs(), Shaping::Advanced, None);
+        let align = match style.align {
+            TextAlign::Start => None,
+            TextAlign::Center => Some(Align::Center),
+            TextAlign::End => Some(Align::End),
+        };
+        for line in &mut buffer.lines {
+            line.set_align(align);
+        }
         buffer.shape_until_scroll(&mut self.font_system, false);
         self.entries.insert(
             id,
@@ -101,14 +111,15 @@ impl TextStore {
 }
 
 impl TextStore {
-    /// Lays the buffer out at `max_width` (wrapping styles only) and returns
-    /// its size. The buffer keeps that width, so measuring again at the final
-    /// layout width leaves it ready to draw.
+    /// Lays the buffer out at `max_width` (wrapping or aligned styles) and
+    /// returns its size: that of its longest line, whatever the alignment.
+    /// The buffer keeps that width, so measuring again at the final layout
+    /// width leaves it ready to draw.
     fn measure_buffer(&mut self, id: TextId, max_width: Option<f32>) -> Size {
         let Some(entry) = self.entries.get_mut(&id) else {
             return Size::default();
         };
-        let width = if entry.style.wrap {
+        let width = if entry.style.wrap || entry.style.align != TextAlign::Start {
             max_width.map(|width| width.max(1.0))
         } else {
             None
@@ -163,6 +174,7 @@ mod tests {
     use crate::element::WidgetId;
     use crate::layout::TextMeasure;
     use crate::render::TextId;
+    use crate::style::TextAlign;
 
     const BODY: TextStyle = TextStyle {
         font_size: 15.0,
@@ -170,6 +182,7 @@ mod tests {
         weight: Weight::NORMAL,
         wrap: true,
         letter_spacing: 0.0,
+        align: TextAlign::Start,
     };
     const TEXT: TextId = TextId::content(WidgetId(1));
 
@@ -218,6 +231,28 @@ mod tests {
         assert_eq!(buffer.layout_runs().count(), 1);
         assert_eq!(buffer.metrics().line_height, 22.0);
         assert!(store.sync_text(TEXT, "placeholder", BODY), "style change");
+    }
+
+    /// A centered line keeps its measured width and sits in the middle of
+    /// the width it is laid out at, wrapping or not.
+    #[test]
+    fn centered_text_sits_in_the_middle_of_its_box() {
+        let mut store = TextStore::new(FontSystem::new());
+        for wrap in [true, false] {
+            let centered = TextStyle {
+                wrap,
+                align: TextAlign::Center,
+                ..BODY
+            };
+            let size = store.measure(TEXT, "Hola", centered, Some(300.0));
+            let run = store.buffer(TEXT).unwrap().layout_runs().next().unwrap();
+            let left = run.glyphs.first().unwrap().x;
+            assert!(size.width < 100.0, "the line's width, not the box's");
+            assert!(
+                (left - (300.0 - size.width) / 2.0).abs() < 1.0,
+                "wrap {wrap}: starts at {left}"
+            );
+        }
     }
 
     #[test]

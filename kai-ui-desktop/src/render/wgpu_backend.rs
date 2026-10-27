@@ -2293,6 +2293,7 @@ mod tests {
             weight: cosmic_text::Weight(700),
             wrap: false,
             letter_spacing: 0.0,
+            align: crate::style::TextAlign::Start,
         };
         text.sync_text(id, "H", style);
         let mut list = crate::render::DrawList::new(Color::hex(0xffffff));

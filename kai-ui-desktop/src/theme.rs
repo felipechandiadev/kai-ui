@@ -563,6 +563,7 @@ impl Theme {
                 // Tracking only through `text-<style>` and `tracking-*`:
                 // inherited, the 13 pt value would be wrong for other sizes.
                 letter_spacing: 0.0,
+                align: crate::style::TextAlign::Start,
             };
         }
         ComputedText {
@@ -573,6 +574,7 @@ impl Theme {
             nowrap: false,
             stroke_width: crate::icons::DEFAULT_STROKE_WIDTH,
             letter_spacing: 0.0,
+            align: crate::style::TextAlign::Start,
         }
     }
 

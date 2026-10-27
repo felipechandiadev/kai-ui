@@ -141,12 +141,24 @@ pub struct Shadow {
     pub color: Color,
 }
 
-/// Tailwind `ring`: a solid band outside the border box, after `offset`.
+/// Tailwind `ring`: a solid band outside the border box, after `offset`;
+/// with `ring-inset`, inside it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ring {
     pub width: f32,
     pub offset: f32,
     pub color: Option<Color>,
+    pub inset: bool,
+}
+
+/// `text-left`, `text-center`, `text-right`: where each line sits in the
+/// text's box. Inherited, as in CSS.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    #[default]
+    Start,
+    Center,
+    End,
 }
 
 /// Inherited text properties; `None` inherits.
@@ -161,6 +173,7 @@ pub struct TextProps {
     pub stroke_width: Option<f32>,
     /// Letter spacing in em (`tracking-*`, macOS text styles).
     pub letter_spacing: Option<f32>,
+    pub align: Option<TextAlign>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -274,6 +287,7 @@ pub struct ComputedText {
     pub stroke_width: f32,
     /// Letter spacing in em.
     pub letter_spacing: f32,
+    pub align: TextAlign,
 }
 
 impl ComputedText {
@@ -294,6 +308,7 @@ impl ComputedText {
             nowrap: own.nowrap.unwrap_or(self.nowrap),
             stroke_width: own.stroke_width.unwrap_or(self.stroke_width),
             letter_spacing: own.letter_spacing.unwrap_or(self.letter_spacing),
+            align: own.align.unwrap_or(self.align),
         }
     }
 }
@@ -464,6 +479,7 @@ mod tests {
         nowrap: false,
         stroke_width: 2.0,
         letter_spacing: 0.0,
+        align: super::TextAlign::Start,
     };
 
     #[test]

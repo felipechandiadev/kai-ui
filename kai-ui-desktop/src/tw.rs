@@ -53,7 +53,7 @@ use crate::color::Color;
 use crate::element::ControlSize;
 use crate::style::{
     Align, Cursor, Display, Edges, FlexDirection, Justify, Length, LineHeight, ObjectFit, Overflow,
-    Position, Shadow, Style,
+    Position, Shadow, Style, TextAlign,
 };
 use crate::theme::{
     AppKitGeneration, Appearance, BySize, FieldLabels, MixStyle, REM, Theme, ThemeKind,
@@ -345,6 +345,8 @@ enum Decl {
     RingWidth(f32),
     RingOffset(f32),
     RingColor(Color),
+    RingInset,
+    TextAlign(TextAlign),
     Opacity(f32),
     Cursor(Cursor),
     PointerEvents(bool),
@@ -529,6 +531,8 @@ fn apply(style: &mut Style, decl: &Decl, state: &State) {
         Decl::RingWidth(width) => style.ring.width = width,
         Decl::RingOffset(offset) => style.ring.offset = offset,
         Decl::RingColor(color) => style.ring.color = Some(color),
+        Decl::RingInset => style.ring.inset = true,
+        Decl::TextAlign(align) => style.text.align = Some(align),
         Decl::Opacity(opacity) => style.opacity = opacity,
         Decl::Cursor(cursor) => style.cursor = Some(cursor),
         Decl::PointerEvents(enabled) => style.pointer_events = enabled,
@@ -734,6 +738,10 @@ impl Parser<'_> {
             "shadow" => Decl::Shadow(shadow("DEFAULT").flatten()),
             "ring" => Decl::RingWidth(3.0),
             "outline-none" => Decl::RingWidth(0.0),
+            "ring-inset" => Decl::RingInset,
+            "text-left" | "text-start" => Decl::TextAlign(TextAlign::Start),
+            "text-center" => Decl::TextAlign(TextAlign::Center),
+            "text-right" | "text-end" => Decl::TextAlign(TextAlign::End),
             "cursor-default" => Decl::Cursor(Cursor::Default),
             "cursor-pointer" => Decl::Cursor(Cursor::Pointer),
             "cursor-text" => Decl::Cursor(Cursor::Text),
@@ -1441,6 +1449,26 @@ mod tests {
         let list = ClassList::parse(classes, &Theme::kai(Density::Comfortable));
         assert!(list.unknown.is_empty(), "unknown: {:?}", list.unknown);
         list
+    }
+
+    /// `text-center` and its siblings set the inherited alignment;
+    /// `ring-inset` moves the ring inside, only where its variant applies.
+    #[test]
+    fn text_alignment_and_inset_rings_parse() {
+        use crate::style::TextAlign;
+        let align = |class: &str| parse(class).resolve(State::default()).text.align;
+        assert_eq!(align("text-center"), Some(TextAlign::Center));
+        assert_eq!(align("text-left"), Some(TextAlign::Start));
+        assert_eq!(align("text-right"), Some(TextAlign::End));
+        assert_eq!(align("text-sm"), None, "a size, not an alignment");
+
+        let list = parse("ring-2 focus-visible:ring-inset");
+        assert!(!list.resolve(State::default()).ring.inset);
+        let focused = State {
+            focus_visible: true,
+            ..State::default()
+        };
+        assert!(list.resolve(focused).ring.inset);
     }
 
     #[test]
