@@ -41,7 +41,8 @@ ruta) ✅ · R3 `Page`/`Context`/`SectionMeta` ✅ · R4 `kai-build` +
 `kai::include_app!()` + `kai new section` ✅ · R5 ✅ la demo es el crate
 `demo/` (una carpeta por sección en `demo/src/sections/`, raíz generada
 por `kai-build`; `cargo run` o `kai dev` desde `demo/`); `src/demo.rs` ya no
-existe (docs/dev/27). Falta el anuncio de cambio de vista a VoiceOver.
+existe (docs/dev/27). El cambio de vista se anuncia con `kai::router::announcer`
+(región viva que `kai-build` añade a la raíz); falta oírlo con VoiceOver.
 
 Convenciones de `kai-build`: cada `page.rs` define `pub struct Screen`
 (implementa `kai::router::Page`); cada `section.rs`,

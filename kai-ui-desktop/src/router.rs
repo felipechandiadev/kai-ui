@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::{Action, Availability, CommandError, Safety};
 use crate::components::{SidebarGroup, SidebarItem, Toast};
-use crate::element::Element;
+use crate::element::{Element, Role, text};
 use crate::icons::Icon;
 use crate::runtime::{App, Effects};
 use crate::store::Stored;
@@ -492,6 +492,17 @@ impl<'a, S> Context<'a, S> {
     }
 }
 
+/// A live region, invisible and out of the way of the pointer, that
+/// announces the title of the page on screen: when the title changes
+/// (the route changed) VoiceOver reads it. The root draws it once, next
+/// to the page.
+pub fn announcer<Msg>(title: &str) -> Element<Msg> {
+    text(title)
+        .role(Role::Status)
+        .test_id("announcer")
+        .class("absolute w-[1px] h-[1px] overflow-hidden pointer-events-none")
+}
+
 /// How a section shows in the sidebar. A `const` in each section's
 /// `section.rs`; `title` and `group` are user-visible text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -560,6 +571,13 @@ impl SectionSidebar {
 mod tests {
     use super::{HISTORY_LIMIT, Navigate, Route, Router, SectionMeta, SectionSidebar};
     use crate::icons::Icon;
+
+    #[test]
+    fn announcer_is_a_live_status_with_the_title() {
+        let el = super::announcer::<()>("Clientes");
+        assert_eq!(el.role, Some(crate::element::Role::Status));
+        assert_eq!(el.text_content(), "Clientes");
+    }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum Page {

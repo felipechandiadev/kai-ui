@@ -518,6 +518,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str(
         "                div().class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
     );
+    w.push_str("                kai::router::announcer(&self.title()),\n");
     w.push_str(
         "                kai::components::toast_stack(&self.toasts, RootMsg::CloseToast),\n",
     );
