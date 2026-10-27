@@ -189,7 +189,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Gráficos (`/charts`) | ✅ | `clicking_a_bar_shows_its_month_and_the_sparkline_is_there` |
 | Documento (`/document`) | ✅ | `a_saved_docx_opens_again_and_names_the_window`, `the_pdf_export_writes_a_pdf_and_keeps_the_docx_name`, `command_f_shows_the_find_bar_and_the_comment_button_asks_for_text` |
 | Diálogos y avisos (`/dialogs`) | ✅ | `a_dialog_covers_the_window_traps_the_focus_and_its_answer_shows_a_toast`, `toasts_close_on_their_own_but_an_error_waits_with_its_retry`, `the_palette_button_opens_the_palette` |
-| Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Lista + detalle (`/template-list`), Formulario (`/template-form`), Vista de datos (`/template-data`) | ✅ | `the_list_shows_the_chosen_client_in_the_detail`, `the_form_saves_and_clears_its_fields`, `the_data_view_shows_its_metrics_and_orders` |
+| Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
@@ -262,5 +263,11 @@ Diferencias con `demo.rs`:
   de `kai` no podía escribir .docx ni PDF; ahora `ExportDoc` es público con
   `docx_bytes()` y `pdf_bytes()`. El ribbon usaba `bg-card`, que no es un
   color del tema de Kai: ahora `bg-background`, como `card()`.
+- Las plantillas: `kai-build` cambia `_` por `-` en la ruta
+  (`template_list/` → `/template-list`). Usaban `bg-card` y
+  `appkit:bg-selected-content`, que no son colores del tema; ahora
+  `bg-background` y `appkit:bg-selection`. Sus botones muestran un aviso en
+  vez de tocar el contador de Inicio. Diálogos y avisos pasa al orden 600
+  para que «Superposiciones» quede al final de la barra lateral.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

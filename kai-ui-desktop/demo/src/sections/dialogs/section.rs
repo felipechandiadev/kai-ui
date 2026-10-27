@@ -4,6 +4,6 @@ use kai::router::SectionMeta;
 pub const SECTION: SectionMeta = SectionMeta {
     title: "Diálogos y avisos",
     icon: Icon::MessageSquare,
-    order: 300,
+    order: 600,
     group: Some("Superposiciones"),
 };
