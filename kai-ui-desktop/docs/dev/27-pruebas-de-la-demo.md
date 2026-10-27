@@ -186,7 +186,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Multimedia (`/media`) | ✅ | `image_fields_take_picked_and_dropped_files_and_refuse_others`, `load_url_puts_a_downloaded_image_in_the_avatar` |
 | Tabla (`/table`) | ✅ | `the_search_filters_and_the_headers_sort_the_table`, `exporting_saves_the_rows_the_table_shows_where_the_person_says`, `the_columns_button_hides_a_column_and_the_search_still_looks_in_it`, `a_client_row_opens_its_detail_and_its_button_shows_a_toast`, `the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause`, `the_table_shows_an_avatar_by_each_name` |
 | Mapa (`/map`) | ✅ (sin conservar el sector en `kai dev`) | `the_map_follows_gestures_and_agents`, `sectors_are_chosen_from_the_list_the_map_and_agents`, `the_selected_sector_changes_color_with_the_color_field`, `a_sector_is_edited_on_the_map_and_kept_only_on_finish`, `crossing_edges_block_finish_until_fixed`, `agents_replace_a_sector_outline_with_a_valid_ring` |
-| Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Gráficos (`/charts`) | ✅ | `clicking_a_bar_shows_its_month_and_the_sparkline_is_there` |
+| Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
