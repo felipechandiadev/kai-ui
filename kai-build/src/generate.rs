@@ -319,10 +319,9 @@ pub fn generate(tree: &AppTree) -> String {
     );
 
     w.push_str("        /// Add a page's toast with the next id; its timer closes it.\n");
-    w.push_str("        fn show_toast(&mut self, toast: kai::components::Toast<std::convert::Infallible>) -> Effects<RootMsg> {\n");
+    w.push_str("        fn show_toast(&mut self, mut shown: kai::components::Toast<RootMsg>) -> Effects<RootMsg> {\n");
     w.push_str("            let id = self.next_toast;\n            self.next_toast += 1;\n");
-    w.push_str("            let mut shown = kai::components::Toast::new(id, toast.variant, toast.title);\n");
-    w.push_str("            shown.message = toast.message;\n");
+    w.push_str("            shown.id = id;\n");
     w.push_str(
         "            let timer = kai::components::toast_timer(&shown, RootMsg::CloseToast(id));\n",
     );
@@ -415,6 +414,9 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            }\n            .unwrap_or_default()\n        }\n\n");
 
     w.push_str("        fn update(&mut self, msg: RootMsg) -> Effects<RootMsg> {\n");
+    w.push_str(
+        "            let mut action_toasts: Vec<kai::components::Toast<RootMsg>> = Vec::new();\n",
+    );
     w.push_str("            let mut cx = Context::new(&mut self.state);\n");
     w.push_str("            let effects = match msg {\n");
     w.push_str("                RootMsg::Navigate(request) => {\n                    drop(cx);\n                    return self.navigate(vec![request]);\n                }\n");
@@ -427,14 +429,16 @@ pub fn generate(tree: &AppTree) -> String {
         };
         writeln!(
             w,
-            "                RootMsg::{v}(msg) => match &mut self.{f} {{\n                    Some({get}) => page.update(msg, &mut cx).map(RootMsg::{v}),\n                    None => Effects::none(),\n                }},",
+            "                RootMsg::{v}(msg) => match &mut self.{f} {{\n                    Some({get}) => {{\n                        let effects = page.update(msg, &mut cx).map(RootMsg::{v});\n                        let taken = cx.take_action_toasts::<<{s} as Page>::Msg>();\n                        action_toasts.extend(taken.into_iter().map(|toast| toast.map(RootMsg::{v})));\n                        effects\n                    }}\n                    None => Effects::none(),\n                }},",
             v = variant(page),
-            f = slot(page)
+            f = slot(page),
+            s = screen(page)
         )
         .unwrap();
     }
     w.push_str("            };\n            let (requests, toasts) = cx.into_parts();\n");
-    w.push_str("            let shown: Vec<Effects<RootMsg>> = toasts.into_iter().map(|toast| self.show_toast(toast)).collect();\n");
+    w.push_str("            let plain = toasts.into_iter().map(|toast| toast.map(|never| match never {}));\n");
+    w.push_str("            let shown: Vec<Effects<RootMsg>> = plain.chain(action_toasts).map(|toast| self.show_toast(toast)).collect();\n");
     w.push_str("            Effects::batch([effects, self.navigate(requests), Effects::batch(shown)])\n        }\n\n");
 
     w.push_str("        fn view(&self) -> Element<RootMsg> {\n            let page = match self.router.current() {\n");
@@ -454,6 +458,23 @@ pub fn generate(tree: &AppTree) -> String {
         .unwrap();
     }
     w.push_str("            }\n            .unwrap_or_else(div);\n");
+    w.push_str("            let overlay = match self.router.current() {\n");
+    for (_, page) in &all {
+        let get = if page.is_section_root() {
+            "page"
+        } else {
+            "(_, page)"
+        };
+        writeln!(
+            w,
+            "                {} => self.{}.as_ref().and_then(|{get}| page.overlay(&self.state)).map(|layer| layer.map(RootMsg::{})),",
+            pattern(page, "_"),
+            slot(page),
+            variant(page)
+        )
+        .unwrap();
+    }
+    w.push_str("            };\n");
     w.push_str("            let selected = self.sidebar.row_of(self.router.current().section()).unwrap_or(0);\n");
     w.push_str("            div().class(\"relative flex flex-row w-full h-full\").children([\n");
     w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
@@ -464,7 +485,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str(
         "                kai::components::toast_stack(&self.toasts, RootMsg::CloseToast),\n",
     );
-    w.push_str("            ])\n        }\n    }\n\n");
+    w.push_str("            ])\n            .children(overlay)\n        }\n    }\n\n");
 
     for (_, page) in &all {
         let get = if page.is_section_root() {

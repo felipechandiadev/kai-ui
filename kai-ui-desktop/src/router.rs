@@ -23,6 +23,7 @@
 //! Msg::Navigate(to) => { self.router.apply(to); }
 //! ```
 
+use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
@@ -386,6 +387,14 @@ pub trait Page: Sized + 'static {
     /// User-visible title (window title, breadcrumbs); may be Spanish.
     fn title(&self, state: &Self::State) -> String;
 
+    /// What the page shows over the whole window while it is on screen,
+    /// such as a modal [`Dialog`](crate::components::Dialog): the root
+    /// draws it as its last layer. A page's own view covers only the
+    /// page's area. Default: nothing.
+    fn overlay(&self, _state: &Self::State) -> Option<Element<Self::Msg>> {
+        None
+    }
+
     /// The page's commands, with
     /// [`CommandRegistry::page_action`](crate::commands::CommandRegistry::page_action).
     /// The root calls it once, from its own `App::commands`.
@@ -410,6 +419,9 @@ pub struct Context<'a, S> {
     state: &'a mut S,
     requests: Vec<Navigate>,
     toasts: Vec<Toast<Infallible>>,
+    /// Toasts with an action button, whose message is the page's: the
+    /// root takes them with [`Context::take_action_toasts`].
+    action_toasts: Vec<Box<dyn Any>>,
 }
 
 impl<'a, S> Context<'a, S> {
@@ -418,6 +430,7 @@ impl<'a, S> Context<'a, S> {
             state,
             requests: Vec::new(),
             toasts: Vec::new(),
+            action_toasts: Vec::new(),
         }
     }
 
@@ -439,6 +452,21 @@ impl<'a, S> Context<'a, S> {
     /// to choose, and it has no action button (`Infallible`).
     pub fn toast(&mut self, toast: Toast<Infallible>) {
         self.toasts.push(toast);
+    }
+
+    /// [`Context::toast`] with an action button («Reintentar»): its
+    /// message, of type `M`, goes to the page that showed it.
+    pub fn toast_with_action<M: 'static>(&mut self, toast: Toast<M>) {
+        self.action_toasts.push(Box::new(toast));
+    }
+
+    /// The toasts with an action that a page with messages `M` asked for;
+    /// the root calls it right after that page's `update`.
+    pub fn take_action_toasts<M: 'static>(&mut self) -> Vec<Toast<M>> {
+        std::mem::take(&mut self.action_toasts)
+            .into_iter()
+            .filter_map(|toast| toast.downcast::<Toast<M>>().ok().map(|toast| *toast))
+            .collect()
     }
 
     /// The navigation the page asked for, in order.

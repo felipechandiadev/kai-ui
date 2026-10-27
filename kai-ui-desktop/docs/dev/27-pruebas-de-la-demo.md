@@ -188,7 +188,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Mapa (`/map`) | ✅ (sin conservar el sector en `kai dev`) | `the_map_follows_gestures_and_agents`, `sectors_are_chosen_from_the_list_the_map_and_agents`, `the_selected_sector_changes_color_with_the_color_field`, `a_sector_is_edited_on_the_map_and_kept_only_on_finish`, `crossing_edges_block_finish_until_fixed`, `agents_replace_a_sector_outline_with_a_valid_ring` |
 | Gráficos (`/charts`) | ✅ | `clicking_a_bar_shows_its_month_and_the_sparkline_is_there` |
 | Documento (`/document`) | ✅ | `a_saved_docx_opens_again_and_names_the_window`, `the_pdf_export_writes_a_pdf_and_keeps_the_docx_name`, `command_f_shows_the_find_bar_and_the_comment_button_asks_for_text` |
-| Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Diálogos y avisos (`/dialogs`) | ✅ | `a_dialog_covers_the_window_traps_the_focus_and_its_answer_shows_a_toast`, `toasts_close_on_their_own_but_an_error_waits_with_its_retry`, `the_palette_button_opens_the_palette` |
+| Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
@@ -226,6 +227,14 @@ Diferencias con `demo.rs`:
   generada guarda la pila, les da id y temporizador y los cierra. Sin botón
   de acción por ahora (el tipo lo impide): «Reintentar» de Diálogos y
   avisos lo necesitará.
+- Toasts con acción: `Context::toast_with_action(Toast<M>)`; la raíz
+  generada los recoge tras el `update` de cada página con
+  `take_action_toasts::<Msg de la página>()` y `Toast::map`, así
+  «Reintentar» vuelve a la página que lo mostró.
+- `Page::overlay`: lo que una página muestra sobre toda la ventana (un
+  diálogo). El layout de Kai coloca un hijo `absolute` respecto de su padre,
+  no del ancestro `relative` como CSS, así que desde su vista una página
+  solo cubre su área; la raíz generada pone el overlay como última capa.
 - Tabla tiene su propio campo de búsqueda (`table.find`): la demo nueva no
   tiene barra de herramientas. La prueba de detalle ya no comprueba las
   columnas del Excel (leía `TableView` por dentro); eso lo cubre

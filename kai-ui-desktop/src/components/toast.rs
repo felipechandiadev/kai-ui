@@ -49,6 +49,18 @@ impl<Msg> Toast<Msg> {
         self.action = Some((label.into(), msg));
         self
     }
+
+    /// The same toast with its action's message converted, as a root does
+    /// with a page's toast.
+    pub fn map<To>(self, f: impl FnOnce(Msg) -> To) -> Toast<To> {
+        Toast {
+            id: self.id,
+            variant: self.variant,
+            title: self.title,
+            message: self.message,
+            action: self.action.map(|(label, msg)| (label, f(msg))),
+        }
+    }
 }
 
 /// Timer key of toast `id`, to cancel its timer with [`Effects::cancel`].
