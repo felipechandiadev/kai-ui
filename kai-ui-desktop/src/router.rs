@@ -401,6 +401,12 @@ pub trait Page: Sized + 'static {
         None
     }
 
+    /// The window's background effect while the page is on screen, as
+    /// [`App::background`]. Default: none.
+    fn background(&self, _state: &Self::State) -> crate::background::BackgroundEffect {
+        crate::background::BackgroundEffect::NONE
+    }
+
     /// The page's commands, with
     /// [`CommandRegistry::page_action`](crate::commands::CommandRegistry::page_action).
     /// The root calls it once, from its own `App::commands`.

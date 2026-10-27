@@ -1,13 +1,14 @@
 //! /home: a counter and a controlled form, with their commands for the
 //! menu, the palette, scripts and agents.
 
+use kai::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
 use kai::commands::{
     Availability, CommandError, CommandRegistry, Key, PageAction, PageQuery, Safety, Shortcut,
 };
 use kai::components::{
     AlertVariant, ButtonVariant, FieldKind, SwitchDensity, TextField, alert, button, caption,
     card, card_actions, card_content, card_header, checkbox, page, page_body, page_grid,
-    page_grid_item, paragraph, select, stat, switch_labeled,
+    page_grid_item, paragraph, segmented, select, stat, switch_labeled,
 };
 use kai::element::{ControlState, Element, Role, div, text};
 use kai::router::{Context, HasPage, Page};
@@ -29,6 +30,9 @@ pub struct Screen {
     notifications: bool,
     /// Names sent, oldest first.
     submissions: Vec<String>,
+    /// The window's background effect while Inicio is on screen.
+    background: BackgroundKind,
+    motion: BackgroundMotion,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +47,8 @@ pub enum Msg {
     ToggleNotifications,
     Submit,
     Clear,
+    Background(BackgroundKind),
+    ToggleMotion,
 }
 
 impl Screen {
@@ -84,12 +90,20 @@ impl Page for Screen {
                 }
             }
             Msg::Clear => self.clear_form(),
+            Msg::Background(kind) => self.background = kind,
+            Msg::ToggleMotion => {
+                self.motion = match self.motion {
+                    BackgroundMotion::Static => BackgroundMotion::Animated,
+                    BackgroundMotion::Animated => BackgroundMotion::Static,
+                };
+            }
         }
         Effects::none()
     }
 
     fn view(&self, _: &State) -> Element<Msg> {
         page().child(page_body().children([
+            self.background_panel(),
             div().class("w-full max-w-3xl").child(alert(
                 AlertVariant::Info,
                 "Componentes sincronizados con la biblioteca web de Kai (React/TypeScript)",
@@ -102,6 +116,10 @@ impl Page for Screen {
 
     fn title(&self, _: &State) -> String {
         "Inicio".into()
+    }
+
+    fn background(&self, _: &State) -> BackgroundEffect {
+        BackgroundEffect::new(self.background).with_motion(self.motion)
     }
 
     fn commands<A: HasPage<Self>>(registry: &mut CommandRegistry<A>) {
@@ -127,6 +145,48 @@ impl Page for Screen {
 }
 
 impl Screen {
+    /// The effect under the content, static or animated.
+    fn background_panel(&self) -> Element<Msg> {
+        let options = [
+            (BackgroundKind::None, "Ninguno"),
+            (BackgroundKind::Mesh, "Mesh"),
+            (BackgroundKind::Aurora, "Aurora"),
+            (BackgroundKind::Glow, "Glow"),
+        ];
+        let selected = options
+            .iter()
+            .position(|(kind, _)| *kind == self.background)
+            .unwrap_or(0);
+        card()
+            .class("w-full max-w-3xl")
+            .test_id("background")
+            .children([
+                card_header(
+                    "Fondo de ventana",
+                    Some("Efecto bajo el contenido; estático o animado"),
+                ),
+                card_content().child(
+                    div()
+                        .class("flex flex-wrap items-center justify-between gap-3")
+                        .children([
+                            segmented(&options.map(|(_, label)| label), selected, |index| {
+                                Msg::Background(options[index].0)
+                            })
+                            .label("Efecto")
+                            .test_id("background.effect"),
+                            switch_labeled(
+                                "Animado",
+                                self.motion == BackgroundMotion::Animated,
+                                Msg::ToggleMotion,
+                                self.background == BackgroundKind::None,
+                                SwitchDensity::Default,
+                            )
+                            .test_id("background.animated"),
+                        ]),
+                ),
+            ])
+    }
+
     fn counter(&self) -> Element<Msg> {
         card()
             .class("w-full max-w-3xl")

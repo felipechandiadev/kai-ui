@@ -393,6 +393,24 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        /// A path an older build saved and this one lacks is ignored.\n");
     w.push_str("        fn restore_dev_state(&mut self, state: kai::serde_json::Value) {\n            if let Some(route) = state\n                .get(\"path\")\n                .and_then(|path| path.as_str())\n                .and_then(<Route as kai::router::Route>::parse)\n            {\n                self.router = Router::new(route);\n            }\n            if let Some(collapsed) = state.get(\"sidebar_collapsed\").and_then(|c| c.as_bool()) {\n                self.sidebar_collapsed = collapsed;\n                // The first window size must not undo it.\n                self.sized = true;\n            }\n        }\n\n");
 
+    w.push_str("        /// The background effect of the page on screen.\n");
+    w.push_str("        fn background(&self) -> kai::background::BackgroundEffect {\n            match self.router.current() {\n");
+    for (_, page) in &all {
+        let get = if page.is_section_root() {
+            "page"
+        } else {
+            "(_, page)"
+        };
+        writeln!(
+            w,
+            "                {} => self.{}.as_ref().map(|{get}| page.background(&self.state)),",
+            pattern(page, "_"),
+            slot(page)
+        )
+        .unwrap();
+    }
+    w.push_str("            }\n            .unwrap_or(kai::background::BackgroundEffect::NONE)\n        }\n\n");
+
     w.push_str("        /// The theme the page on screen asks for, if any.\n");
     w.push_str("        fn theme(&self) -> Option<kai::theme::Theme> {\n            match self.router.current() {\n");
     for (_, page) in &all {

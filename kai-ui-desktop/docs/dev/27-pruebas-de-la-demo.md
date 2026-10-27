@@ -178,7 +178,7 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Sección | Estado | Pruebas |
 |---|---|---|
 | Botones (`/buttons`) | ✅ | `the_buttons_count_clicks_and_danger_resets_them`, `a_waiting_button_says_when_its_task_ends`, `the_section_command_runs_from_its_button_and_from_agents` |
-| Inicio (`/home`) | ✅ (sin el fondo) | `the_counter_follows_its_button_shortcut_and_commands`, `typing_a_name_enables_send_and_the_click_submits_it`, `the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them` |
+| Inicio (`/home`) | ✅ | `the_counter_follows_its_button_shortcut_and_commands`, `typing_a_name_enables_send_and_the_click_submits_it`, `the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them`, `the_background_card_drives_the_window_background_on_home` |
 | Campos (`/fields`) | ✅ | `the_fields_take_what_is_typed_and_their_ids_reach_the_controls`, `the_eye_shows_and_hides_each_secret_on_its_own` |
 | Selección (`/selection`) | ✅ | `the_all_checkbox_is_mixed_and_sets_every_permission` |
 | Contenedores (`/containers`) | ✅ | `the_card_counts_its_actions_and_the_tabs_show_one_panel_at_a_time` |
@@ -213,8 +213,6 @@ Diferencias con `demo.rs`:
   `form.last_submission`). `kai::commands::Key` se reexporta para que las
   apps declaren atajos.
 - Inicio queda **sin** lo que la raíz generada todavía no permite:
-  - la tarjeta «Fondo de ventana» (`App::background` es de la raíz; una
-    página no puede cambiarlo);
   - la cuenta de envíos en la fila de la barra lateral (`SectionMeta` es
     constante, sin badge);
   - la barra de herramientas (`bar.add`, `bar.find`) y los clics en el
@@ -283,8 +281,15 @@ Diferencias con `demo.rs`:
     Los nombres pasan al inglés (`demo-map`, `demo-toasts`…).
   - `scripts/snapshot-baseline.sh` genera la línea base desde la demo nueva
     (más las dos capturas del renderer) y `--check` la regenera y compara.
-  - **Pendientes:** `snapshots_mix`, `snapshots_renders`,
-    `snapshots_backgrounds` y los benchmarks `bench_element_map`,
-    `bench_layout_and_paint` y `bench_map_pan` siguen en `demo.rs`.
+  - `review.rs`: `snapshots_mix`, `snapshots_renders` y
+    `snapshots_backgrounds` (PNG para revisión, con `TestApp`).
+    `TestApp::capture_window_at(segundos)` fotografía un fondo animado.
+  - `benches.rs`: `bench_element_map`, `bench_layout_and_paint` y
+    `bench_map_pan`, con `TestApp`: `TestAppBuilder::real_text()` (medir con
+    las fuentes), `TestApp::resize`, `press_pointer` y `release_pointer`.
+- **`Page::background`**: el fondo de la ventana mientras la página está en
+  pantalla. Inicio recupera la tarjeta «Fondo de ventana», pero su fondo
+  solo se ve en Inicio (en `demo.rs` era de toda la app) y ya no se lee
+  `KAI_BG`/`KAI_BG_ANIM`.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

@@ -89,3 +89,32 @@ fn the_form_picks_a_role_and_accepts_the_terms_and_clear_resets_them() {
     app.click(By::test_id("form.clear"));
     app.screen().get(By::text("Elegir rol"));
 }
+
+/// The «Fondo de ventana» card drives the window's background while
+/// Inicio is on screen; other sections keep none.
+#[test]
+fn the_background_card_drives_the_window_background_on_home() {
+    use kai::background::{BackgroundEffect, BackgroundKind};
+    use kai::runtime::App as _;
+
+    let mut app = home();
+    assert_eq!(app.app().background(), BackgroundEffect::NONE);
+    let animated = By::role(Role::Switch).name("Animado");
+    assert!(
+        !app.is_enabled(animated.clone()),
+        "no effect, nothing to animate"
+    );
+    app.click(By::test_id("background.effect.2"));
+    assert_eq!(app.app().background().kind, BackgroundKind::Aurora);
+    assert!(!app.app().background().is_animated());
+    app.click(animated);
+    assert!(app.app().background().is_animated());
+
+    app.navigate("/fields");
+    assert_eq!(app.app().background(), BackgroundEffect::NONE);
+    app.navigate("/home");
+    assert!(
+        app.app().background().is_animated(),
+        "Inicio keeps its choice"
+    );
+}

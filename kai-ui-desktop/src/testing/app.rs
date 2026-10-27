@@ -107,9 +107,17 @@ pub struct TestAppBuilder<A: App> {
     theme: Theme,
     clipboard: MemoryClipboard,
     images: Arc<dyn ImageLoader>,
+    measure: Measure,
 }
 
 impl<A: App> TestAppBuilder<A> {
+    /// Measure text with the fonts, as on screen, instead of the fixed
+    /// metrics tests use: for benchmarks of real frames.
+    pub fn real_text(mut self) -> Self {
+        self.measure = Measure::Real;
+        self
+    }
+
     /// Where images come from (default: an empty [`FakeImageLoader`], which
     /// reads files and fails every URL, never touching the network).
     pub fn images(mut self, loader: impl ImageLoader + 'static) -> Self {
@@ -140,7 +148,7 @@ impl<A: App> TestAppBuilder<A> {
             self.app,
             self.theme,
             self.viewport,
-            Measure::Fixed,
+            self.measure,
             Box::new(self.clipboard.clone()),
         );
         session.record_messages();
@@ -263,6 +271,7 @@ impl<A: App> TestApp<A> {
             theme: Theme::kai(Density::Comfortable),
             clipboard: MemoryClipboard::new(),
             images: Arc::new(FakeImageLoader::new()),
+            measure: Measure::Fixed,
         }
     }
 
@@ -745,9 +754,22 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
-    /// Let go of the pointer after [`Self::drag_steps`].
-    #[cfg(test)]
-    pub(crate) fn release_pointer(&mut self) {
+    /// Resize the window's content to `width` × `height` points, as the
+    /// person does: the view is built and laid out again.
+    pub fn resize(&mut self, width: f32, height: f32) {
+        self.session.set_viewport(Size { width, height });
+        self.frame();
+    }
+
+    /// Press the primary button where the pointer is
+    /// ([`Self::move_pointer`]) and keep it pressed: moves drag from here.
+    pub fn press_pointer(&mut self) {
+        self.session.pointer_clicks(true, 1);
+        self.frame();
+    }
+
+    /// Let go of the pointer after [`Self::press_pointer`] or a drag.
+    pub fn release_pointer(&mut self) {
         self.session.pointer_button(false);
         self.frame();
     }
@@ -990,6 +1012,12 @@ impl<A: App> TestApp<A> {
     /// app's background effect (2x backing scale): what the runtime would
     /// draw. For visual review and reference captures.
     pub fn capture_window(&self) -> Result<Image, String> {
+        self.capture_window_at(0.0)
+    }
+
+    /// [`TestApp::capture_window`] with an animated background effect at
+    /// `seconds` of its animation.
+    pub fn capture_window_at(&self, seconds: f32) -> Result<Image, String> {
         let interaction = self.session.interaction();
         snapshot::render_with_background(
             &Shot {
@@ -1001,7 +1029,7 @@ impl<A: App> TestApp<A> {
                 scroll: self.session.scroll(),
             },
             self.session.background(),
-            0.0,
+            seconds,
         )
     }
 
