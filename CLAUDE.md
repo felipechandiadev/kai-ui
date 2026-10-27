@@ -27,9 +27,11 @@ Guías de diseño en `kai-ui-desktop/docs/dev/`; componentes en
   `kai-cli`; muestra una línea por paso y solo el detalle de lo que falla.
   Mientras se itera: `scripts/check.sh quick` (solo fmt, clippy y tests con
   `document`).
-- Capturas: `cargo test --features document -- --ignored snapshot_demo`
-  (tema Kai) o `snapshots_appkit` (incluye Glass 27); salen en
-  `target/snapshots/`.
+- Capturas de la demo: `cargo +1.95 test --manifest-path demo/Cargo.toml
+  --target-dir target --test snapshots -- --ignored snapshot_demo` (tema
+  Kai) o `snapshots_appkit` (incluye Glass 27); salen en
+  `target/snapshots/`. Línea base: `scripts/snapshot-baseline.sh`
+  (`--check` para comparar).
 
 ## Estado del router (docs/dev/26-router-y-kai-build.md)
 

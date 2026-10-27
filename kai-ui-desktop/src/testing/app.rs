@@ -986,6 +986,25 @@ impl<A: App> TestApp<A> {
         *self.session.ui().focus_visible.get()
     }
 
+    /// GPU render of the whole window as it is now, with real text and the
+    /// app's background effect (2x backing scale): what the runtime would
+    /// draw. For visual review and reference captures.
+    pub fn capture_window(&self) -> Result<Image, String> {
+        let interaction = self.session.interaction();
+        snapshot::render_with_background(
+            &Shot {
+                tree: self.session.tree(),
+                theme: self.session.theme(),
+                logical: self.session.viewport(),
+                scale: 2.0,
+                interaction: &interaction,
+                scroll: self.session.scroll(),
+            },
+            self.session.background(),
+            0.0,
+        )
+    }
+
     /// GPU render of the current state with real text, cropped to the
     /// element (2x backing scale).
     #[track_caller]

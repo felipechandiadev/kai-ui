@@ -273,5 +273,18 @@ Diferencias con `demo.rs`:
   pantalla (Catálogo vivo); la raíz generada lo pide a la página actual
   en `App::theme`. Los `test_id` del catálogo pasan al inglés
   (`catalog.field.*`, `catalog.choice`, `catalog.layers`).
+- **Capturas y esquema MCP** (en `demo/tests/`):
+  - `mcp_schema.rs`: `demo/mcp-schema.json`, lo que la demo publica a los
+    agentes, ahora con los comandos `kai.*` del framework.
+  - `snapshots.rs`: `snapshot_demo` (BMP, tema Kai) y `snapshots_appkit`
+    (PNG, Aqua 11 y Glass 27, claro y oscuro), 27 capturas por tema hechas
+    con `TestApp` navegando e interactuando como una persona. Para eso
+    `TestApp::capture_window()` captura la ventana entera con su fondo.
+    Los nombres pasan al inglés (`demo-map`, `demo-toasts`…).
+  - `scripts/snapshot-baseline.sh` genera la línea base desde la demo nueva
+    (más las dos capturas del renderer) y `--check` la regenera y compara.
+  - **Pendientes:** `snapshots_mix`, `snapshots_renders`,
+    `snapshots_backgrounds` y los benchmarks `bench_element_map`,
+    `bench_layout_and_paint` y `bench_map_pan` siguen en `demo.rs`.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.

@@ -1,0 +1,591 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "commands": [
+    {
+      "description": "Vuelve a la vista anterior",
+      "exposed": true,
+      "id": "kai.back",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Atrás"
+    },
+    {
+      "description": "Vuelve a la vista que se dejó con Atrás",
+      "exposed": true,
+      "id": "kai.forward",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Adelante"
+    },
+    {
+      "description": "Va a la vista que contiene a la actual (del detalle a la lista)",
+      "exposed": true,
+      "id": "kai.up",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Subir"
+    },
+    {
+      "description": "Muestra la vista de una ruta, como /customers/42",
+      "exposed": true,
+      "id": "kai.navigate",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Path of the route, as `/customers/42`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Ir a…"
+    },
+    {
+      "description": "Colapsa la barra lateral a un riel de íconos o la expande",
+      "exposed": true,
+      "id": "kai.toggle_sidebar",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mostrar u ocultar barra lateral"
+    },
+    {
+      "description": "Espera 1,5 s, como los botones de «Acciones con espera»",
+      "exposed": true,
+      "id": "buttons.simulate_wait",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Simular espera"
+    },
+    {
+      "description": "Muestra un aviso (toast) que se cierra solo a los 4 segundos",
+      "exposed": true,
+      "id": "toasts.show",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Variante del aviso",
+            "enum": [
+              "success",
+              "error",
+              "warning",
+              "info"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mostrar aviso"
+    },
+    {
+      "description": "Aplica o quita negrita en la selección",
+      "exposed": true,
+      "id": "format.bold",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Negrita"
+    },
+    {
+      "description": "Aplica o quita cursiva en la selección",
+      "exposed": true,
+      "id": "format.italic",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Cursiva"
+    },
+    {
+      "description": "Convierte el párrafo en una lista con viñetas",
+      "exposed": true,
+      "id": "para.bullets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Lista con viñetas"
+    },
+    {
+      "description": "Inserta una tabla en el documento",
+      "exposed": true,
+      "id": "insert.table",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Insertar tabla"
+    },
+    {
+      "description": "Inserta una imagen de demostración en el documento",
+      "exposed": true,
+      "id": "insert.picture",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Insertar imagen"
+    },
+    {
+      "description": "Abre un archivo .docx en el editor",
+      "exposed": true,
+      "id": "document.open",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Abrir documento"
+    },
+    {
+      "description": "Guarda el documento como .docx donde elija la persona",
+      "exposed": true,
+      "id": "document.save",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Guardar documento"
+    },
+    {
+      "description": "Exporta el documento a PDF donde elija la persona",
+      "exposed": true,
+      "id": "document.export_pdf",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Exportar PDF"
+    },
+    {
+      "description": "Muestra u oculta la barra Buscar y reemplazar del documento",
+      "exposed": true,
+      "id": "document.find",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Buscar y reemplazar"
+    },
+    {
+      "description": "Deshace el último cambio del documento",
+      "exposed": true,
+      "id": "edit.undo",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Deshacer"
+    },
+    {
+      "description": "Rehace el último cambio deshecho del documento",
+      "exposed": true,
+      "id": "edit.redo",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Rehacer"
+    },
+    {
+      "description": "Suma un clic al contador",
+      "exposed": true,
+      "id": "counter.increment",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Incrementar"
+    },
+    {
+      "description": "Suma varios clics al contador",
+      "exposed": true,
+      "id": "counter.add",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Clics que se suman",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Sumar"
+    },
+    {
+      "description": "Vuelve el contador a cero",
+      "exposed": true,
+      "id": "counter.reset",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "destructive",
+      "title": "Reiniciar"
+    },
+    {
+      "description": "Registra el nombre y limpia el formulario",
+      "exposed": true,
+      "id": "form.submit",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "outputSchema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "safety": "mutating",
+      "title": "Enviar"
+    },
+    {
+      "description": "Borra el nombre, el correo, el rol y los términos",
+      "exposed": true,
+      "id": "form.clear",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Limpiar"
+    },
+    {
+      "exposed": true,
+      "id": "form.last_submission",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": "Último envío"
+    },
+    {
+      "description": "Centra el mapa de la sección Mapa en un punto, con el zoom dado",
+      "exposed": true,
+      "id": "map.set_view",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "animate": {
+            "default": null,
+            "description": "Deslizarse hasta la vista (por omisión) o saltar",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "center": {
+            "description": "Centro del mapa (grados)",
+            "properties": {
+              "lat": {
+                "description": "Latitude, −90 (south) to 90 (north).",
+                "format": "double",
+                "type": "number"
+              },
+              "lon": {
+                "description": "Longitude, −180 (west) to 180 (east).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          },
+          "zoom": {
+            "description": "Zoom de 0 (el mundo entero) a 20 (una calle)",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center",
+          "zoom"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Mover el mapa"
+    },
+    {
+      "description": "Mueve el mapa de la sección Mapa hasta mostrar entera una caja de latitud y longitud",
+      "exposed": true,
+      "id": "map.fit_bounds",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "description": "Caja a mostrar entera (grados)",
+            "properties": {
+              "east": {
+                "description": "Eastern edge, longitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "north": {
+                "description": "Northern edge, latitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "south": {
+                "description": "Southern edge, latitude in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "west": {
+                "description": "Western edge, longitude in degrees.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "south",
+              "west",
+              "north",
+              "east"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "bounds"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Encuadrar el mapa"
+    },
+    {
+      "description": "Selecciona un sector de DSP en el mapa de la sección Mapa y lo encuadra con un 20 % de margen; un código desconocido, o un sector en edición, no cambia nada",
+      "exposed": true,
+      "id": "areas.select",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Código del sector: AOP26000001 (Plaza de Armas), AOP26000002 (Catillo), AOP26000003 (Villa San Pedro), AOP26000004 (Palma Rosa) o AOP26000005 (Terminal de Buses)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Seleccionar sector"
+    },
+    {
+      "description": "Reemplaza el polígono de un sector de DSP en el mapa de la sección Mapa, lo selecciona y lo encuadra; una geometría inválida es un error y no cambia nada",
+      "exposed": true,
+      "id": "areas.edit_geometry",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Código del sector, como en areas.select",
+            "type": "string"
+          },
+          "coordinates": {
+            "description": "Anillo exterior del polígono como en GeoJSON: [longitud, latitud] por vértice, al menos 3, sin bordes que se crucen; el primero puede repetirse al final",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "coordinates"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Editar la geometría de un sector"
+    },
+    {
+      "exposed": true,
+      "id": "map.get_view",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "properties": {
+          "center": {
+            "description": "A place on Earth, in degrees (WGS 84).",
+            "properties": {
+              "lat": {
+                "description": "Latitude, −90 (south) to 90 (north).",
+                "format": "double",
+                "type": "number"
+              },
+              "lon": {
+                "description": "Longitude, −180 (west) to 180 (east).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "lat",
+              "lon"
+            ],
+            "type": "object"
+          },
+          "zoom": {
+            "description": "0 (the whole world in one 256-point tile) to 20.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center",
+          "zoom"
+        ],
+        "type": "object"
+      },
+      "title": "Vista del mapa"
+    },
+    {
+      "description": "Descarga una imagen y la muestra en el avatar de la sección Multimedia",
+      "exposed": true,
+      "id": "media.load_url",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "Dirección http(s) de una imagen png, jpg o webp; vacía, vuelve al ícono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Cargar imagen desde URL"
+    },
+    {
+      "description": "Guarda en un Excel las filas que muestra la tabla de clientes, con su búsqueda, filtros y orden",
+      "exposed": true,
+      "id": "table.export",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Exportar a Excel"
+    }
+  ],
+  "format": 1
+}

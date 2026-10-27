@@ -14,6 +14,10 @@ kai = { package = "kai-ui-desktop-prototype", path = "..", features = ["document
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 
+[dev-dependencies]
+# The captures write PNG (tests/snapshots.rs).
+kai = { package = "kai-ui-desktop-prototype", path = "..", features = ["document", "snapshots"] }
+
 [build-dependencies]
 kai-build = { path = "../../kai-build" }
 
