@@ -183,7 +183,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Selección (`/selection`) | ✅ | `the_all_checkbox_is_mixed_and_sets_every_permission` |
 | Contenedores (`/containers`) | ✅ | `the_card_counts_its_actions_and_the_tabs_show_one_panel_at_a_time` |
 | Badges y alertas (`/badges`) | ✅ | `every_badge_variant_and_both_alerts_are_shown` |
-| Multimedia, Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Multimedia (`/media`) | ✅ | `image_fields_take_picked_and_dropped_files_and_refuse_others`, `load_url_puts_a_downloaded_image_in_the_avatar` |
+| Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
