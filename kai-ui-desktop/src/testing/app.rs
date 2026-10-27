@@ -570,20 +570,24 @@ impl<A: App> TestApp<A> {
     }
 
     /// Move the pointer to `point`, without pressing.
-    #[cfg(test)]
-    pub(crate) fn move_pointer(&mut self, point: crate::geometry::Point) {
+    pub fn move_pointer(&mut self, point: crate::geometry::Point) {
         self.session.pointer_moved(Some(point));
         self.frame();
     }
 
     /// Press and release the primary button at `point`, whatever is there.
-    #[cfg(test)]
-    pub(crate) fn click_point(&mut self, point: crate::geometry::Point) {
+    pub fn click_point(&mut self, point: crate::geometry::Point) {
         self.session.pointer_moved(Some(point));
         self.frame();
         self.session.pointer_button(true);
         self.session.pointer_button(false);
         self.frame();
+    }
+
+    /// Whether something still moves on its own (a map gliding, labels
+    /// fading in, a blinking caret): the window would ask for frames.
+    pub fn animating(&self) -> bool {
+        self.session.animating()
     }
 
     /// The pointer's shape, as the window shows it (`Pointer` over links,
