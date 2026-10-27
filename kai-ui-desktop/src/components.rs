@@ -179,10 +179,11 @@ pub fn appkit_button_classes(bezel: BezelStyle, accent: bool, destructive: bool)
         BezelStyle::Bordered => APPKIT_BORDERED,
         BezelStyle::Borderless => APPKIT_BORDERLESS,
     };
-    let destructive = if destructive && !accent {
-        APPKIT_DESTRUCTIVE_TEXT
-    } else {
-        ""
+    // A destructive push button is solid red in mix C, as Danger.
+    let destructive = match bezel {
+        _ if !destructive || accent => "",
+        BezelStyle::Push => &format!("{APPKIT_DESTRUCTIVE_TEXT} {MIX_DANGER}"),
+        _ => APPKIT_DESTRUCTIVE_TEXT,
     };
     format!("{APPKIT_BUTTON_BASE} {look} {destructive}")
 }
@@ -197,7 +198,8 @@ const MIX_SECONDARY: &str = "mix-a:bg-mix-secondary/25 mix-a:hover:bg-mix-second
      mix-b:bg-mix-secondary/60 mix-b:border-0 mix-b:shadow-none \
      mix-b:hover:bg-mix-secondary/75 mix-b:active:bg-mix-secondary/90 \
      mix-c:bg-mix-secondary mix-c:text-mix-on-secondary mix-c:border-0 mix-c:shadow-none \
-     mix-c:hover:bg-mix-secondary/80 mix-c:active:bg-mix-secondary/70";
+     mix-c:hover:bg-mix-secondary/80 mix-c:active:bg-mix-secondary/70 \
+     mix-c:disabled:opacity-50 mix-c:disabled:text-mix-on-secondary";
 /// Outlined button of the candidates: transparent with a 1 pt border of
 /// `separator` (A, α .098), `tertiary-label` (B, α .26) or `control-text`
 /// (C, as Kai's `border-foreground`; hover fills with the accent like
@@ -208,11 +210,19 @@ const MIX_OUTLINED: &str = "mix-a:bg-transparent mix-a:border mix-a:border-separ
      mix-b:hover:bg-fill-2 mix-b:active:bg-fill \
      mix-c:bg-transparent mix-c:border mix-c:border-control-text mix-c:shadow-none \
      mix-c:hover:bg-control-accent mix-c:hover:border-control-accent \
-     mix-c:hover:text-on-accent mix-c:active:bg-accent-pressed";
+     mix-c:hover:text-on-accent mix-c:active:bg-accent-pressed mix-c:disabled:opacity-50";
+/// Danger button of the candidates: A and B keep AppKit's push button with
+/// a red title; C is Kai's solid red with a white title (hover/pressed
+/// 80/70 %, as Kai). Disabled C fades like Kai.
+const MIX_DANGER: &str = "mix-c:bg-system-red mix-c:text-white mix-c:border-0 \
+     mix-c:shadow-none mix-c:hover:bg-system-red/80 mix-c:active:bg-system-red/70 \
+     mix-c:disabled:opacity-50 mix-c:disabled:text-white";
 
 /// AppKit model of a Kai variant: Primary is an accent push button, Text is
-/// borderless, Danger a push button with a red title. Secondary and
-/// Outlined are push buttons in strict AppKit and change per candidate.
+/// borderless. Secondary and Outlined are push buttons in strict AppKit,
+/// Danger a push button with a red title; all three change per candidate.
+/// Theme variants apply in string order, so `mix-*:` (last) beats the push
+/// bezel's `glass:`.
 fn appkit_variant(variant: ButtonVariant) -> String {
     let push = || appkit_button_classes(BezelStyle::Push, false, false);
     match variant {
@@ -2243,9 +2253,9 @@ mod tests {
         AlertVariant, BUTTON_BUSY, BadgeVariant, BezelStyle, Button, ButtonSize, ButtonVariant,
         CHOICE_ACTIVE, CHOICE_HOVER, FieldBezel, FieldDensity, FieldVariant, IconButtonSize,
         IconButtonVariant, LabelLayout, MenuFrame, SidebarGroup, SidebarItem, SwitchDensity,
-        TextField, alert, badge, badge_classes, button, button_classes, card, card_actions,
-        card_content, card_header, checkbox, checkbox_with_options, dialog, group_box,
-        icon_button_sized, segmented, segmented_with_options, select, select_menu,
+        TextField, alert, appkit_button_classes, badge, badge_classes, button, button_classes,
+        card, card_actions, card_content, card_header, checkbox, checkbox_with_options, dialog,
+        group_box, icon_button_sized, segmented, segmented_with_options, select, select_menu,
         select_with_options, sidebar, stat, switch_labeled, switch_with_options,
     };
     use crate::element::{
@@ -2290,6 +2300,49 @@ mod tests {
             let list = ClassList::parse(classes, &theme);
             assert!(list.unknown.is_empty(), "{classes}: {:?}", list.unknown);
         }
+    }
+
+    /// On Glass with mix C (the demo's default), Secondary, Outlined and
+    /// Danger keep their Kai look over the flat Glass bezel: the `mix-c:`
+    /// classes come after the push bezel's `glass:` ones and win.
+    #[test]
+    fn glass_mix_c_buttons_keep_their_kai_look() {
+        use crate::theme::MixStyle;
+        let theme = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
+            .with_mix(MixStyle::C);
+        let style = |classes: &str| ClassList::parse(classes, &theme).resolve(State::default());
+        let color = |name: &str| theme.color(name);
+        let secondary = style(&button_classes(ButtonVariant::Secondary, ButtonSize::Md));
+        assert_eq!(secondary.background, color("mix-secondary"));
+        let outlined = style(&button_classes(ButtonVariant::Outlined, ButtonSize::Md));
+        assert_eq!(outlined.border_width.top, 1.0);
+        assert_eq!(outlined.border_color, color("control-text"));
+        let danger = style(&button_classes(ButtonVariant::Danger, ButtonSize::Md));
+        assert_eq!(danger.background, color("system-red"));
+        let destructive = style(&appkit_button_classes(BezelStyle::Push, false, true));
+        assert_eq!(
+            destructive.background,
+            color("system-red"),
+            "Button::new too"
+        );
+        let disabled = ClassList::parse(
+            &button_classes(ButtonVariant::Danger, ButtonSize::Md),
+            &theme,
+        )
+        .resolve(State {
+            disabled: true,
+            ..State::default()
+        });
+        assert_eq!(disabled.opacity, 0.5);
+
+        // Strict AppKit keeps the push button with a red title.
+        let strict = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
+        let danger = ClassList::parse(
+            &button_classes(ButtonVariant::Danger, ButtonSize::Md),
+            &strict,
+        )
+        .resolve(State::default());
+        assert_ne!(danger.background, strict.color("system-red"));
     }
 
     fn appkit_style(classes: &str, state: State) -> crate::style::Style {
