@@ -182,7 +182,7 @@ pub fn appkit_button_classes(bezel: BezelStyle, accent: bool, destructive: bool)
     // A destructive push button is solid red in mix C, as Danger.
     let destructive = match bezel {
         _ if !destructive || accent => "",
-        BezelStyle::Push => &format!("{APPKIT_DESTRUCTIVE_TEXT} {MIX_DANGER}"),
+        BezelStyle::Push => &format!("{APPKIT_DESTRUCTIVE_TEXT} {GLASS_DANGER} {MIX_DANGER}"),
         _ => APPKIT_DESTRUCTIVE_TEXT,
     };
     format!("{APPKIT_BUTTON_BASE} {look} {destructive}")
@@ -211,6 +211,16 @@ const MIX_OUTLINED: &str = "mix-a:bg-transparent mix-a:border mix-a:border-separ
      mix-c:bg-transparent mix-c:border mix-c:border-control-text mix-c:shadow-none \
      mix-c:hover:bg-control-accent mix-c:hover:border-control-accent \
      mix-c:hover:text-on-accent mix-c:active:bg-accent-pressed mix-c:disabled:opacity-50";
+/// Glass (26+) colors of Secondary, Outlined and Danger, in every mix:
+/// only colors and the outline, so the button keeps Glass's height, radius
+/// and flat bezel. Strict Aqua keeps AppKit's push buttons.
+const GLASS_SECONDARY: &str = "glass:bg-mix-secondary glass:text-mix-on-secondary \
+     glass:hover:bg-mix-secondary/80 glass:active:bg-mix-secondary/70 \
+     glass:disabled:opacity-50 glass:disabled:text-mix-on-secondary";
+const GLASS_OUTLINED: &str = "glass:bg-transparent glass:border glass:border-control-text \
+     glass:hover:bg-fill-3 glass:active:bg-fill-2 glass:disabled:opacity-50";
+const GLASS_DANGER: &str = "glass:bg-system-red glass:text-white glass:hover:bg-system-red/80 \
+     glass:active:bg-system-red/70 glass:disabled:opacity-50 glass:disabled:text-white";
 /// Danger button of the candidates: A and B keep AppKit's push button with
 /// a red title; C is Kai's solid red with a white title (hover/pressed
 /// 80/70 %, as Kai). Disabled C fades like Kai.
@@ -227,8 +237,8 @@ fn appkit_variant(variant: ButtonVariant) -> String {
     let push = || appkit_button_classes(BezelStyle::Push, false, false);
     match variant {
         ButtonVariant::Primary => appkit_button_classes(BezelStyle::Push, true, false),
-        ButtonVariant::Secondary => format!("{} {MIX_SECONDARY}", push()),
-        ButtonVariant::Outlined => format!("{} {MIX_OUTLINED}", push()),
+        ButtonVariant::Secondary => format!("{} {GLASS_SECONDARY} {MIX_SECONDARY}", push()),
+        ButtonVariant::Outlined => format!("{} {GLASS_OUTLINED} {MIX_OUTLINED}", push()),
         ButtonVariant::Text => appkit_button_classes(BezelStyle::Borderless, false, false),
         ButtonVariant::Danger => appkit_button_classes(BezelStyle::Push, false, true),
     }
@@ -2302,11 +2312,10 @@ mod tests {
         }
     }
 
-    /// On Glass with mix C (the demo's default), Secondary, Outlined and
-    /// Danger keep their Kai look over the flat Glass bezel: the `mix-c:`
-    /// classes come after the push bezel's `glass:` ones and win.
+    /// On Glass, Secondary, Outlined and Danger keep their colors (and the
+    /// outline) over the flat bezel, strict or mixed; the shape is Glass's.
     #[test]
-    fn glass_mix_c_buttons_keep_their_kai_look() {
+    fn glass_buttons_keep_their_colors_and_glass_shape() {
         use crate::theme::MixStyle;
         let theme = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
             .with_mix(MixStyle::C);
@@ -2335,14 +2344,40 @@ mod tests {
         });
         assert_eq!(disabled.opacity, 0.5);
 
-        // Strict AppKit keeps the push button with a red title.
+        // Strict Glass: the same colors, with Glass's own radius.
         let strict = Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light);
-        let danger = ClassList::parse(
-            &button_classes(ButtonVariant::Danger, ButtonSize::Md),
+        let style = |variant| {
+            ClassList::parse(&button_classes(variant, ButtonSize::Md), &strict)
+                .resolve(State::default())
+        };
+        assert_eq!(
+            style(ButtonVariant::Secondary).background,
+            strict.color("mix-secondary")
+        );
+        assert_eq!(style(ButtonVariant::Outlined).border_width.top, 1.0);
+        assert_eq!(
+            style(ButtonVariant::Danger).background,
+            strict.color("system-red")
+        );
+        let push = ClassList::parse(
+            &appkit_button_classes(BezelStyle::Push, false, false),
             &strict,
         )
         .resolve(State::default());
-        assert_ne!(danger.background, strict.color("system-red"));
+        assert_eq!(
+            style(ButtonVariant::Danger).radius,
+            push.radius,
+            "Glass's shape"
+        );
+
+        // Strict Aqua keeps the push button with a red title.
+        let aqua = Theme::appkit_static(AppKitGeneration::Aqua11, Appearance::Light);
+        let danger = ClassList::parse(
+            &button_classes(ButtonVariant::Danger, ButtonSize::Md),
+            &aqua,
+        )
+        .resolve(State::default());
+        assert_ne!(danger.background, aqua.color("system-red"));
     }
 
     fn appkit_style(classes: &str, state: State) -> crate::style::Style {
@@ -3202,8 +3237,21 @@ mod tests {
                 let transparent = Some(Color::rgba(0, 0, 0, 0));
                 let primary_icon = icon(IconButtonVariant::Primary);
                 if mix == MixStyle::AppKit {
-                    assert_eq!(secondary, push);
-                    assert_eq!(outlined, push);
+                    // Strict Aqua: plain push buttons. Strict Glass keeps
+                    // their colors over its flat bezel (GLASS_SECONDARY…).
+                    if matches!(
+                        strict.kind,
+                        crate::theme::ThemeKind::AppKit(
+                            AppKitGeneration::Glass26 | AppKitGeneration::Glass27
+                        )
+                    ) {
+                        assert_eq!(secondary.radius, push.radius, "Glass's shape");
+                        assert_ne!(secondary.background, push.background);
+                        assert_eq!(outlined.border_width.top, 1.0);
+                    } else {
+                        assert_eq!(secondary, push);
+                        assert_eq!(outlined, push);
+                    }
                     assert_eq!(primary_icon.background, transparent);
                     assert_eq!(shell.border_width.top, 0.5);
                     continue;

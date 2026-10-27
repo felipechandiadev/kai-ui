@@ -11,7 +11,7 @@ use kai::components::{
 use kai::element::{ControlSize, ControlState, Element, div, text};
 use kai::router::{Context, Page};
 use kai::runtime::Effects;
-use kai::theme::{AppKitGeneration, Appearance, Density, MixStyle, Theme};
+use kai::theme::{AppKitGeneration, Appearance, Density, Theme};
 
 use crate::state::State;
 
@@ -159,15 +159,7 @@ impl Page for Screen {
             }
             CatalogPreset::Kai => Theme::kai(self.density),
         };
-        // Density moves apart from size, to explore them. AppKit presets
-        // use mix C, as the rest of the demo does (`KAI_MIX`, default c):
-        // strict AppKit makes Secondary, Outlined and Danger plain push
-        // buttons.
-        let base = if base.is_appkit() {
-            base.with_mix(MixStyle::C)
-        } else {
-            base
-        };
+        // Density moves apart from size, to explore them.
         Some(Theme {
             control_size: self.size,
             density: self.density,
