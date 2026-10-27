@@ -259,6 +259,8 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        /// Where the last section is kept between runs; none in tests.\n");
     w.push_str("        store: Option<kai::store::Store>,\n");
     w.push_str("        sidebar_collapsed: bool,\n");
+    w.push_str("        /// The toasts pages asked for, oldest first.\n");
+    w.push_str("        toasts: Vec<kai::components::Toast<RootMsg>>,\n        next_toast: u64,\n");
     w.push_str("        /// The first window size has set `sidebar_collapsed`.\n");
     w.push_str("        sized: bool,\n");
     for (_, page) in &all {
@@ -279,7 +281,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("    #[derive(Clone, Debug)]\n    pub enum RootMsg {\n");
     w.push_str("        Navigate(Navigate),\n        Sidebar(usize),\n");
     w.push_str("        LastSectionSaved(Result<(), kai::store::StoreError>),\n");
-    w.push_str("        ToggleSidebar,\n        InitialWidth { narrow: bool },\n");
+    w.push_str("        ToggleSidebar,\n        InitialWidth { narrow: bool },\n        CloseToast(u64),\n");
     for (_, page) in &all {
         writeln!(
             w,
@@ -300,7 +302,7 @@ pub fn generate(tree: &AppTree) -> String {
         "            let start = <Route as kai::router::Route>::parse(SECTION_PATHS[first])\n",
     );
     w.push_str("                .expect(\"the path of a section parses\");\n");
-    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n                store: None,\n                sidebar_collapsed: false,\n                sized: false,\n");
+    w.push_str("            Self {\n                router: Router::new(start),\n                state,\n                sidebar,\n                store: None,\n                sidebar_collapsed: false,\n                toasts: Vec::new(),\n                next_toast: 1,\n                sized: false,\n");
     for (_, page) in &all {
         writeln!(w, "                {}: None,", slot(page)).unwrap();
     }
@@ -316,6 +318,15 @@ pub fn generate(tree: &AppTree) -> String {
         "            }\n            self.store = Some(store);\n            self\n        }\n\n",
     );
 
+    w.push_str("        /// Add a page's toast with the next id; its timer closes it.\n");
+    w.push_str("        fn show_toast(&mut self, toast: kai::components::Toast<std::convert::Infallible>) -> Effects<RootMsg> {\n");
+    w.push_str("            let id = self.next_toast;\n            self.next_toast += 1;\n");
+    w.push_str("            let mut shown = kai::components::Toast::new(id, toast.variant, toast.title);\n");
+    w.push_str("            shown.message = toast.message;\n");
+    w.push_str(
+        "            let timer = kai::components::toast_timer(&shown, RootMsg::CloseToast(id));\n",
+    );
+    w.push_str("            self.toasts.push(shown);\n            timer\n        }\n\n");
     w.push_str("        /// Make sure the page of the current route is alive.\n");
     w.push_str("        fn open_current(&mut self) -> Effects<RootMsg> {\n");
     w.push_str("            match self.router.current().clone() {\n");
@@ -407,7 +418,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            let mut cx = Context::new(&mut self.state);\n");
     w.push_str("            let effects = match msg {\n");
     w.push_str("                RootMsg::Navigate(request) => {\n                    drop(cx);\n                    return self.navigate(vec![request]);\n                }\n");
-    w.push_str("                RootMsg::LastSectionSaved(result) => {\n                    if let Err(error) = result {\n                        eprintln!(\"No se pudo guardar la última sección: {error}\");\n                    }\n                    Effects::none()\n                }\n                RootMsg::ToggleSidebar => {\n                    self.sidebar_collapsed = !self.sidebar_collapsed;\n                    Effects::none()\n                }\n                RootMsg::InitialWidth { narrow } => {\n                    self.sidebar_collapsed = narrow;\n                    self.sized = true;\n                    Effects::none()\n                }\n                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
+    w.push_str("                RootMsg::LastSectionSaved(result) => {\n                    if let Err(error) = result {\n                        eprintln!(\"No se pudo guardar la última sección: {error}\");\n                    }\n                    Effects::none()\n                }\n                RootMsg::CloseToast(id) => {\n                    self.toasts.retain(|toast| toast.id != id);\n                    Effects::cancel(kai::components::toast_key(id))\n                }\n                RootMsg::ToggleSidebar => {\n                    self.sidebar_collapsed = !self.sidebar_collapsed;\n                    Effects::none()\n                }\n                RootMsg::InitialWidth { narrow } => {\n                    self.sidebar_collapsed = narrow;\n                    self.sized = true;\n                    Effects::none()\n                }\n                RootMsg::Sidebar(row) => {\n                    drop(cx);\n                    let section = self.sidebar.section_at(row).unwrap_or(0);\n                    return self.navigate(vec![Navigate::To(SECTION_PATHS[section].into())]);\n                }\n");
     for (_, page) in &all {
         let get = if page.is_section_root() {
             "page"
@@ -422,8 +433,9 @@ pub fn generate(tree: &AppTree) -> String {
         )
         .unwrap();
     }
-    w.push_str("            };\n            let requests = cx.into_requests();\n");
-    w.push_str("            Effects::batch([effects, self.navigate(requests)])\n        }\n\n");
+    w.push_str("            };\n            let (requests, toasts) = cx.into_parts();\n");
+    w.push_str("            let shown: Vec<Effects<RootMsg>> = toasts.into_iter().map(|toast| self.show_toast(toast)).collect();\n");
+    w.push_str("            Effects::batch([effects, self.navigate(requests), Effects::batch(shown)])\n        }\n\n");
 
     w.push_str("        fn view(&self) -> Element<RootMsg> {\n            let page = match self.router.current() {\n");
     for (_, page) in &all {
@@ -443,11 +455,14 @@ pub fn generate(tree: &AppTree) -> String {
     }
     w.push_str("            }\n            .unwrap_or_else(div);\n");
     w.push_str("            let selected = self.sidebar.row_of(self.router.current().section()).unwrap_or(0);\n");
-    w.push_str("            div().class(\"flex flex-row w-full h-full\").children([\n");
+    w.push_str("            div().class(\"relative flex flex-row w-full h-full\").children([\n");
     w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
     w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" }),\n");
     w.push_str(
         "                div().class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
+    );
+    w.push_str(
+        "                kai::components::toast_stack(&self.toasts, RootMsg::CloseToast),\n",
     );
     w.push_str("            ])\n        }\n    }\n\n");
 

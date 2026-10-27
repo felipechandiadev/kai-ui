@@ -23,6 +23,7 @@
 //! Msg::Navigate(to) => { self.router.apply(to); }
 //! ```
 
+use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -30,7 +31,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{Action, Availability, CommandError, Safety};
-use crate::components::{SidebarGroup, SidebarItem};
+use crate::components::{SidebarGroup, SidebarItem, Toast};
 use crate::element::Element;
 use crate::icons::Icon;
 use crate::runtime::{App, Effects};
@@ -402,11 +403,13 @@ pub trait HasPage<P: Page>: App {
     fn page_msg(msg: P::Msg) -> Self::Msg;
 }
 
-/// What a page can do beyond its own model: change the shared state and
-/// ask to navigate. The root carries out the requests after `update`.
+/// What a page can do beyond its own model: change the shared state, ask
+/// to navigate and show toasts. The root carries out the requests after
+/// `update`.
 pub struct Context<'a, S> {
     state: &'a mut S,
     requests: Vec<Navigate>,
+    toasts: Vec<Toast<Infallible>>,
 }
 
 impl<'a, S> Context<'a, S> {
@@ -414,6 +417,7 @@ impl<'a, S> Context<'a, S> {
         Self {
             state,
             requests: Vec::new(),
+            toasts: Vec::new(),
         }
     }
 
@@ -430,9 +434,21 @@ impl<'a, S> Context<'a, S> {
         self.requests.push(Navigate::Back);
     }
 
+    /// Show `toast` in the root's stack, over the bottom right corner;
+    /// it closes on its own unless it is an error. Its `id` is the root's
+    /// to choose, and it has no action button (`Infallible`).
+    pub fn toast(&mut self, toast: Toast<Infallible>) {
+        self.toasts.push(toast);
+    }
+
     /// The navigation the page asked for, in order.
     pub fn into_requests(self) -> Vec<Navigate> {
         self.requests
+    }
+
+    /// The navigation and the toasts the page asked for, in order.
+    pub fn into_parts(self) -> (Vec<Navigate>, Vec<Toast<Infallible>>) {
+        (self.requests, self.toasts)
     }
 }
 

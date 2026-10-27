@@ -184,7 +184,8 @@ sigue funcionando hasta que todas las secciones estén aquí.
 | Contenedores (`/containers`) | ✅ | `the_card_counts_its_actions_and_the_tabs_show_one_panel_at_a_time` |
 | Badges y alertas (`/badges`) | ✅ | `every_badge_variant_and_both_alerts_are_shown` |
 | Multimedia (`/media`) | ✅ | `image_fields_take_picked_and_dropped_files_and_refuse_others`, `load_url_puts_a_downloaded_image_in_the_avatar` |
-| Tabla, Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
+| Tabla (`/table`) | ✅ | `the_search_filters_and_the_headers_sort_the_table`, `exporting_saves_the_rows_the_table_shows_where_the_person_says`, `the_columns_button_hides_a_column_and_the_search_still_looks_in_it`, `a_client_row_opens_its_detail_and_its_button_shows_a_toast`, `the_filter_button_shows_a_field_per_column_and_typing_waits_for_a_pause`, `the_table_shows_an_avatar_by_each_name` |
+| Mapa, Gráficos, Documento, Diálogos y avisos, Lista + detalle, Formulario, Vista de datos, Catálogo vivo | pendiente | |
 
 Diferencias con `demo.rs`:
 
@@ -218,5 +219,17 @@ Diferencias con `demo.rs`:
 - Las estadísticas de Contenedores cuentan lo de la propia sección
   (aceptadas, descartadas, pestaña abierta); en `demo.rs` leían la tabla y
   los avisos de otras secciones.
+- Toasts desde una página: `Context::toast(Toast<Infallible>)`; la raíz
+  generada guarda la pila, les da id y temporizador y los cierra. Sin botón
+  de acción por ahora (el tipo lo impide): «Reintentar» de Diálogos y
+  avisos lo necesitará.
+- Tabla tiene su propio campo de búsqueda (`table.find`): la demo nueva no
+  tiene barra de herramientas. La prueba de detalle ya no comprueba las
+  columnas del Excel (leía `TableView` por dentro); eso lo cubre
+  `components/table/view.rs`.
+- **Hueco del framework:** `tw.rs` no reconoce `text-center` (lo usan
+  `EmptyState` y los gráficos) ni `focus-visible:ring-inset` (`Table`).
+  `demo.rs` no lo veía porque solo comprobaba las clases de Inicio. La
+  prueba de Tabla admite esas dos y ninguna más.
 - `TestApp::unknown_classes()` es pública para que las apps externas
   comprueben sus clases.
