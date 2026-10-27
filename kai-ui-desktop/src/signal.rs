@@ -19,6 +19,7 @@ impl<T> Signal<T> {
         &self.value
     }
 
+    #[allow(dead_code)] // read by tests and by change detection to come
     pub fn revision(&self) -> u64 {
         self.revision
     }

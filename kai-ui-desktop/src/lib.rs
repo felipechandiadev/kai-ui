@@ -12,10 +12,9 @@
 //!
 //! Tests find elements by role, accessible name or `test_id` and drive
 //! whole apps (clicks, typing, keys) with [`testing`]. Modules marked
-//! `#[doc(hidden)]` stay `pub` only so in-crate captures, examples and
-//! older paths still compile; prefer the stable surface below. Closing
-//! them to `pub(crate)` needs moving remaining types into [`testing`]
-//! (see TODOs on each hidden `pub mod`).
+//! `#[doc(hidden)]` stay `pub` only so the demo's tests, the examples and
+//! older paths still compile; prefer the stable surface below. The other
+//! internals are already `pub(crate)`.
 
 pub mod background;
 pub mod cache;
@@ -60,37 +59,32 @@ macro_rules! include_app {
 pub use serde_json;
 
 // --- Hidden internals ----------------------------------------------------
-// TODO(frontera): pass each of these to `pub(crate)` once captures/tests
-// only touch them through `kai::testing` (or a dedicated feature). Apps
-// outside this repo must not rely on these paths; `kai::render::Color`
-// is the known leak that DSP desktop still uses — migrate to [`Color`].
+// Still `pub` because the demo's tests, `examples/gallery.rs` and the
+// public signatures use them: `geometry` (`Size`, `Point`, in
+// `App::resized`), `layout` (`Interaction`, `ScrollOffsets`), `style`
+// (`Cursor`), `gallery` and `render`. TODO(frontera): move what is API
+// (geometry, `Cursor`) to a stable path and close the rest. Apps outside
+// this repo must not rely on these paths; use [`Color`], not
+// `kai::render::Color`.
 
-#[doc(hidden)]
-pub mod a11y;
-#[doc(hidden)]
-pub mod devtools;
+pub(crate) mod a11y;
+pub(crate) mod devtools;
 #[doc(hidden)]
 pub mod gallery;
 #[doc(hidden)]
 pub mod geometry;
-#[doc(hidden)]
-pub mod grid_layout;
+pub(crate) mod grid_layout;
 #[doc(hidden)]
 pub mod layout;
 #[doc(hidden)]
 pub mod render;
-#[doc(hidden)]
-pub mod responder;
-#[doc(hidden)]
-pub mod signal;
+pub(crate) mod responder;
+pub(crate) mod signal;
 #[doc(hidden)]
 pub mod style;
-#[doc(hidden)]
-pub mod text_field;
-#[doc(hidden)]
-pub mod tw;
-#[doc(hidden)]
-pub mod ui_engine;
+pub(crate) mod text_field;
+pub(crate) mod tw;
+pub(crate) mod ui_engine;
 
 pub(crate) mod dev_state;
 pub(crate) mod effects;

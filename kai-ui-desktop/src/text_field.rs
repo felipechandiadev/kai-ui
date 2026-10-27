@@ -39,6 +39,7 @@ const BULLET: char = '•';
 /// Plain text is required. Optional HTML / RTF let Document (and hosts) round-trip
 /// rich runs: WordCraft `edit.copy` emits HTML; `edit.paste` accepts `html` / `rtf`.
 /// Defaults are no-ops so TextField and simple mocks stay text-only.
+#[allow(dead_code)] // rich-clipboard methods are used with the `document` feature
 pub trait ClipboardPort {
     fn get_text(&mut self) -> Result<String, String>;
     fn set_text(&mut self, text: String) -> Result<(), String>;
@@ -80,6 +81,7 @@ pub trait ClipboardPort {
 }
 
 /// RGBA8 bitmap for [`ClipboardPort`] image get/set.
+#[allow(dead_code)] // used with the `document` feature
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClipboardImage {
     pub width: u32,
@@ -343,6 +345,7 @@ impl TextFieldState {
         }
     }
 
+    #[allow(dead_code)] // used with the `document` feature
     pub fn editor(&self) -> &Editor<'static> {
         &self.editor
     }
@@ -723,10 +726,12 @@ impl TextFieldState {
         self.preedit.as_ref()
     }
 
+    #[allow(dead_code)] // used with the `document` feature
     pub fn scroll_x(&self) -> f32 {
         self.scroll_x
     }
 
+    #[allow(dead_code)] // used with the `document` feature
     pub fn scroll_y(&self) -> f32 {
         self.scroll_y
     }

@@ -103,6 +103,7 @@ pub enum ImeIntent {
         cursor: Option<Range<usize>>,
     },
     Commit(String),
+    #[allow(dead_code)] // handled by the editors; no platform path sends it yet
     Cancel,
     Disabled,
 }

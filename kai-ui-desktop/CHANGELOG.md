@@ -6,6 +6,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`](docs/dev/13-hoja-de-ruta-plataforma.md) (Etapas 0 a 3 cerradas, Etapa 4 en curso).
 
+### Changed
+
+- **Frontera pública (Fase 2, parte 1):** `a11y`, `devtools`, `grid_layout`, `responder`, `signal`, `text_field`, `tw` y `ui_engine` pasan a `pub(crate)` (nadie fuera de la librería los usaba). Siguen `pub` y ocultos `geometry`, `layout`, `style`, `render` y `gallery`, que usan los tests de la demo y un ejemplo; `geometry` y `style::Cursor` son API de hecho y quedan para moverlos a una ruta estable.
+
 ### Added
 
 - **Anuncio de cambio de vista:** `kai::router::announcer(title)` es una región viva (`Role::Status`) invisible con el título de la página; la raíz que genera `kai-build` la dibuja junto a la página para que VoiceOver lea el cambio de ruta. Test en `demo/tests/announcer.rs`. Falta comprobarlo a mano con VoiceOver.

@@ -4,6 +4,8 @@
 //! helper and its tests pin the Grid behavior (`fr` tracks, gaps, auto
 //! placement) that a future `Grid` widget will rely on.
 
+#![allow(dead_code)] // pinned by its tests until a `Grid` widget uses it
+
 use crate::geometry::Rect;
 use taffy::prelude::{AvailableSpace, Dimension, Display, Size, Style, TaffyTree, fr, length};
 

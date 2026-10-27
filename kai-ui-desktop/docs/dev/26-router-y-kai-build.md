@@ -1,6 +1,6 @@
 # 26 — Router y `kai-build`: apps como árbol de carpetas
 
-**Estado:** propuesta (24-oct-2026), no implementada. Reemplaza el diseño de
+**Estado:** implementada hasta R5 (27-oct-2026); el diseño sigue siendo la referencia. Pendiente: probar el anuncio de vista con VoiceOver. Reemplaza el diseño de
 rutas de [09 §7](09-framework-y-plataforma.md#7-rutas-y-ventanas) y concreta
 el Paso 22 de [13](13-hoja-de-ruta-plataforma.md). Plugins (Paso 25) quedan
 fuera: se retoman después.

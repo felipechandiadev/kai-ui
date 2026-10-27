@@ -36,7 +36,9 @@
 - **Orden resultante**: librería usable → identificación y pruebas → comandos → MCP mínimo → app guía DSP desktop (async, persistencia, widgets, mapas) → manifiesto y CLI → distribución → escala (router, ventanas, MCP completo, plugins) → ergonomía (`rsx!`, derives) → multiplataforma.
 - **Dónde estamos**: Etapas 0 a 3 cerradas; la Etapa 4 (app guía) en curso. Detalle en §1.1 y, por paso, en las líneas **Estado** de §10 y en la checklist (§17).
 
-### 1.1 Estado al 20 de octubre de 2026
+### 1.1 Estado al 27 de octubre de 2026
+
+> Actualización del 27-oct: el router, `Page`/`Context`, `kai-build` y la demo por secciones (R0–R5 de [26](26-router-y-kai-build.md)) ya están hechos, y el cambio de vista se anuncia con una región viva (`kai::router::announcer`). Las filas de abajo conservan el texto del 20-oct salvo las marcadas.
 
 | Etapa | Estado | Lo que falta |
 |---|---|---|
@@ -47,8 +49,8 @@
 | 4 — App guía (P14–P16, mapas M0–M2) | 🟡 En curso | Ver abajo |
 | 5 — Manifiesto y CLI (P17–P19) | 🟡 Corte A1: `kai.toml` + `doctor`/`test`/`new`/`dev` | `commands`/`mcp` CLI; P19 verificar clon; P20 bundle |
 | 6 — Distribución (P20–P21) | ⬜ Pendiente | Todo |
-| 7 — Escala (P22–P25) | ⬜ Pendiente, salvo mapas M3 adelantado | Router, varias ventanas, MCP completo, plugins |
-| 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` |
+| 7 — Escala (P22–P25) | 🟡 P22 router hecho (R0–R5); mapas M3 adelantado | Varias ventanas, MCP completo, plugins |
+| 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` (la raíz generada por `kai-build` ya cubre parte) |
 | 9 — Multiplataforma (P27) | ⬜ Pendiente | Windows y Linux |
 
 **La Etapa 4 por partes:**

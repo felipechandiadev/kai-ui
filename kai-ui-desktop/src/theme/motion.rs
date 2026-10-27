@@ -13,7 +13,7 @@
 use std::time::Duration;
 
 /// Caret blink half-period (AppKit-style). Must match
-/// [`crate::text_field::CARET_BLINK_PERIOD`].
+/// `text_field::CARET_BLINK_PERIOD` (internal).
 pub const CARET_BLINK: Duration = Duration::from_millis(530);
 
 /// Toast auto-dismiss. Must match [`crate::components::TOAST_DURATION`].
