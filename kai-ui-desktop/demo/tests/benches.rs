@@ -55,6 +55,70 @@ fn bench_element_map() {
     }
 }
 
+/// Cost of a layout around a view of the demo (docs/dev/28): the layout's
+/// toolbar built, mapped and its outlet filled with the page, against
+/// building the page.
+#[test]
+#[ignore = "benchmark; run explicitly in release mode"]
+fn bench_layout_fold() {
+    use kai::components::{toolbar, toolbar_item, toolbar_spacer, toolbar_title};
+    use kai::icons::Icon;
+    use kai::router::outlet;
+
+    #[derive(Clone, Debug)]
+    enum LayoutMsg {
+        Back,
+        Forward,
+        New,
+    }
+    #[derive(Clone, Debug)]
+    enum Wrapped {
+        Page(#[allow(dead_code)] RootMsg),
+        Layout(#[allow(dead_code)] LayoutMsg),
+    }
+
+    fn frame(title: &str) -> Element<LayoutMsg> {
+        kai::element::div()
+            .class("flex flex-col w-full h-full")
+            .children([
+                toolbar([
+                    toolbar_item(Icon::ArrowUp, "Atrás").on_click(LayoutMsg::Back),
+                    toolbar_item(Icon::ChevronRight, "Adelante").on_click(LayoutMsg::Forward),
+                    toolbar_title(title, None),
+                    toolbar_spacer(),
+                    toolbar_item(Icon::Plus, "Nuevo").on_click(LayoutMsg::New),
+                ]),
+                outlet(),
+            ])
+    }
+
+    const ITERATIONS: usize = 300;
+    for path in ["/home", "/fields", "/table", "/map", "/catalog"] {
+        let mut app = TestApp::new(app::app(State::default()));
+        app.navigate(path);
+        let root: &AppRoot = app.app();
+        let mut build = Vec::with_capacity(ITERATIONS);
+        let mut folded = Vec::with_capacity(ITERATIONS);
+        for _ in 0..ITERATIONS {
+            let start = Instant::now();
+            let page = root.view();
+            build.push(start.elapsed());
+            let page = page.map(Wrapped::Page);
+            let start = Instant::now();
+            let tree = frame("Título").map(Wrapped::Layout).fill_outlet(page);
+            folded.push(start.elapsed());
+            std::hint::black_box(&tree);
+        }
+        let (b50, f50) = (percentile(&mut build, 0.5), percentile(&mut folded, 0.5));
+        let (b95, f95) = (percentile(&mut build, 0.95), percentile(&mut folded, 0.95));
+        println!(
+            "{path}: view p50 {b50:?} p95 {b95:?} · layout (build + map + fill) p50 {f50:?} \
+             p95 {f95:?} ({:.1} % de view)",
+            100.0 * f50.as_secs_f64() / b50.as_secs_f64()
+        );
+    }
+}
+
 /// Inicio resized to another width each frame: view, layout with real
 /// text and paint.
 #[test]
