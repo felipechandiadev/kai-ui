@@ -8,7 +8,7 @@ Avance hacia la plataforma descrita en [`docs/dev/13-hoja-de-ruta-plataforma.md`
 
 ### Changed
 
-- **Frontera pública (Fase 2, parte 1):** `a11y`, `devtools`, `grid_layout`, `responder`, `signal`, `text_field`, `tw` y `ui_engine` pasan a `pub(crate)` (nadie fuera de la librería los usaba). Siguen `pub` y ocultos `geometry`, `layout`, `style`, `render` y `gallery`, que usan los tests de la demo y un ejemplo; `geometry` y `style::Cursor` son API de hecho y quedan para moverlos a una ruta estable.
+- **Frontera pública (Fase 2, parte 1):** `a11y`, `devtools`, `grid_layout`, `responder`, `signal`, `text_field`, `tw` y `ui_engine` pasan a `pub(crate)` (nadie fuera de la librería los usaba). Segunda parte: `layout` y `style` también se cierran; `geometry` pasa a ser API estable documentada, `Cursor` se exporta desde `kai::testing` e `Interaction`/`ScrollOffsets` desde `kai::snapshot`. Siguen `pub` y ocultos `render` (DSP desktop aún usa `kai::render::Color`) y `gallery` (un ejemplo).
 
 ### Added
 

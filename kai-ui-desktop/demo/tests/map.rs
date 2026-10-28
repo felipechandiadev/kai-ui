@@ -8,7 +8,7 @@ use kai::element::{ControlState, Role};
 use kai::geo::{Camera, LatLon, LatLonBounds, MapView};
 use kai::geometry::{Point, Size};
 use kai::serde_json::{Value, json};
-use kai::style::Cursor;
+use kai::testing::Cursor;
 use kai::testing::{By, Key, Modifiers, TestApp};
 use kai_demo::app::{self, RootMsg};
 use kai_demo::sections::map::page::{INITIAL_VIEW, MAIN_SQUARE, Msg, SECTORS};

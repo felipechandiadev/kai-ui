@@ -34,6 +34,7 @@ pub use mcp::{MCP_CLIENT, McpClient};
 pub use query::{By, Found, Screen};
 
 pub use crate::devtools::MsgSource;
+pub use crate::style::Cursor;
 pub use crate::ui_engine::{Key, Modifiers};
 
 use crate::element::Element;

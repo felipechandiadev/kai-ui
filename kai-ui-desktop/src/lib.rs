@@ -25,6 +25,7 @@ pub mod components;
 pub mod document;
 pub mod element;
 pub mod geo;
+pub mod geometry;
 pub mod icons;
 pub mod maps;
 #[cfg(feature = "mcp")]
@@ -59,29 +60,22 @@ macro_rules! include_app {
 pub use serde_json;
 
 // --- Hidden internals ----------------------------------------------------
-// Still `pub` because the demo's tests, `examples/gallery.rs` and the
-// public signatures use them: `geometry` (`Size`, `Point`, in
-// `App::resized`), `layout` (`Interaction`, `ScrollOffsets`), `style`
-// (`Cursor`), `gallery` and `render`. TODO(frontera): move what is API
-// (geometry, `Cursor`) to a stable path and close the rest. Apps outside
-// this repo must not rely on these paths; use [`Color`], not
-// `kai::render::Color`.
+// Still `pub` and hidden: `gallery` (used by `examples/gallery.rs`) and
+// `render`, which DSP desktop still reaches for `kai::render::Color`
+// (migrate it to [`Color`], then close both). Apps outside this repo must
+// not rely on these paths.
 
 pub(crate) mod a11y;
 pub(crate) mod devtools;
 #[doc(hidden)]
 pub mod gallery;
-#[doc(hidden)]
-pub mod geometry;
 pub(crate) mod grid_layout;
-#[doc(hidden)]
-pub mod layout;
+pub(crate) mod layout;
 #[doc(hidden)]
 pub mod render;
 pub(crate) mod responder;
 pub(crate) mod signal;
-#[doc(hidden)]
-pub mod style;
+pub(crate) mod style;
 pub(crate) mod text_field;
 pub(crate) mod tw;
 pub(crate) mod ui_engine;

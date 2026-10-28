@@ -348,7 +348,7 @@ impl<'a> Found<'a> {
         self.node().id
     }
 
-    /// Position in [`Layout::nodes`] (document order).
+    /// Position in the layout's nodes (document order).
     pub fn index(&self) -> usize {
         self.index
     }
