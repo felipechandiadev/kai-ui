@@ -37,6 +37,17 @@ pub struct App {
     pub id: String,
     #[serde(default)]
     pub icon: Option<String>,
+    /// `CFBundleShortVersionString` de `kai bundle`; por defecto `0.1.0`.
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub copyright: Option<String>,
+    /// `LSApplicationCategoryType`, p. ej. `public.app-category.business`.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// `LSMinimumSystemVersion`; por defecto `13.0`.
+    #[serde(default, rename = "min-macos")]
+    pub min_macos: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

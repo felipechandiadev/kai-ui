@@ -91,7 +91,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     loop {
         eprintln!("kai dev: compilando…");
         let home_view = Instant::now();
-        match cargo::build(bin.as_deref(), &features) {
+        match cargo::build(bin.as_deref(), &features, false) {
             Ok(binary) => {
                 let restart = app.is_some();
                 if let Some(anterior) = app.take() {

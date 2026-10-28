@@ -72,9 +72,12 @@ pub enum Failure {
 
 /// Build the package in the current folder and return its binary: `bin`,
 /// or the only one it has. `features` are passed as `--features a,b`.
-pub fn build(bin: Option<&str>, features: &[String]) -> Result<PathBuf, Failure> {
+pub fn build(bin: Option<&str>, features: &[String], release: bool) -> Result<PathBuf, Failure> {
     let mut command = Command::new(cargo());
     command.args(["build", "--message-format=json-render-diagnostics"]);
+    if release {
+        command.arg("--release");
+    }
     if let Some(bin) = bin {
         command.args(["--bin", bin]);
     }

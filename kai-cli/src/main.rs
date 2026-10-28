@@ -1,8 +1,10 @@
 //! `kai`: herramientas de desarrollo de apps Kai (13, Pasos 17–18).
 //!
 //! Lee `kai.toml` cuando existe. Comandos: `dev`, `doctor`, `test`, `new`,
-//! `icons add` (Paso 19). Firma/bundle (Paso 20) y `commands`/`mcp` quedan fuera.
+//! `icons add` (Paso 19), `bundle` (Paso 20, sin firmar). Firma, notarización y
+//! `commands`/`mcp` quedan fuera.
 
+mod bundle;
 mod cargo;
 mod dev;
 mod doctor;
@@ -29,6 +31,8 @@ Comandos:
   kai icons add <nombre> [--from RUTA]
   kai icons add <archivo.svg> --name <nombre>
                           Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
+  kai bundle [--bin NOMBRE] [--debug]
+                          Genera target/kai/<Nombre>.app (sin firmar) desde kai.toml
   kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]
                           Compila, abre y reinicia conservando estado
 
@@ -38,6 +42,7 @@ Si hay kai.toml, `kai dev` usa [dev].bin y observa el manifiesto.";
 
 #[derive(Debug, PartialEq)]
 enum Command {
+    Bundle(bundle::Options),
     Dev(dev::Options),
     Doctor,
     Test(test_cmd::Options),
@@ -54,6 +59,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
         None | Some("-h" | "--help" | "help") => Ok(Command::Help),
         Some("-V" | "--version") => Ok(Command::Version),
         Some("dev") => parse_dev(args).map(Command::Dev),
+        Some("bundle") => parse_bundle(args).map(Command::Bundle),
         Some("doctor") => {
             if args.next().is_some() {
                 return Err("kai doctor no acepta argumentos".into());
@@ -85,6 +91,21 @@ fn parse_dev(mut args: impl Iterator<Item = String>) -> Result<dev::Options, Str
             }
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("argumento desconocido para kai dev: {other}")),
+        }
+    }
+    Ok(options)
+}
+
+fn parse_bundle(mut args: impl Iterator<Item = String>) -> Result<bundle::Options, String> {
+    let mut options = bundle::Options::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--bin" => {
+                options.bin = Some(args.next().ok_or("--bin necesita un nombre")?);
+            }
+            "--debug" => options.debug = true,
+            "-h" | "--help" => return Err(String::new()),
+            other => return Err(format!("argumento desconocido para kai bundle: {other}")),
         }
     }
     Ok(options)
@@ -181,6 +202,13 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(Command::Bundle(options)) => match bundle::run(&options) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai bundle: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Ok(Command::Doctor) => match doctor::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -251,6 +279,22 @@ mod tests {
                 args: vec!["--mcp".into(), "--bin".into()],
             }))
         );
+    }
+
+    #[test]
+    fn bundle_takes_a_bin_and_debug() {
+        assert_eq!(
+            parse_str(&["bundle"]),
+            Ok(Command::Bundle(bundle::Options::default()))
+        );
+        assert_eq!(
+            parse_str(&["bundle", "--bin", "demo", "--debug"]),
+            Ok(Command::Bundle(bundle::Options {
+                bin: Some("demo".into()),
+                debug: true,
+            }))
+        );
+        assert!(parse_str(&["bundle", "--release"]).is_err());
     }
 
     #[test]
