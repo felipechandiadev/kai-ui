@@ -28,6 +28,33 @@ pub struct Manifest {
     /// Opciones de la CLI (`kai dev` / `kai test`). No las lee el runtime aún.
     #[serde(default)]
     pub dev: Dev,
+    #[serde(default)]
+    pub macos: Macos,
+}
+
+/// Lo que `kai sign` necesita saber de la app. Ningún secreto: la identidad
+/// y el perfil de notarización se piden por línea de comandos o al llavero.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Macos {
+    /// Plist de entitlements, relativo al manifiesto.
+    #[serde(default)]
+    pub entitlements: Option<String>,
+    #[serde(default = "default_hardened_runtime", rename = "hardened-runtime")]
+    pub hardened_runtime: bool,
+}
+
+fn default_hardened_runtime() -> bool {
+    true
+}
+
+impl Default for Macos {
+    fn default() -> Self {
+        Self {
+            entitlements: None,
+            hardened_runtime: default_hardened_runtime(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -248,6 +275,15 @@ pub fn validate(manifest: &Manifest, root: &Path) -> Result<(), String> {
             ));
         }
     }
+    if let Some(entitlements) = &manifest.macos.entitlements {
+        let path = root.join(entitlements);
+        if !path.is_file() {
+            return Err(format!(
+                "[macos].entitlements = \"{entitlements}\" no existe en {}",
+                path.display()
+            ));
+        }
+    }
     match manifest.theme.kind.as_str() {
         "kai" | "appkit" | "system" => {}
         other => {
@@ -337,6 +373,19 @@ mod tests {
 name = "Demo"
 id = "dev.kai.demo"
 "#;
+
+    #[test]
+    fn macos_defaults_to_the_hardened_runtime_and_checks_entitlements() {
+        let m = parse(MINIMUM).unwrap();
+        assert!(m.macos.hardened_runtime);
+        assert_eq!(m.macos.entitlements, None);
+        let m = parse(&format!(
+            "{MINIMUM}\n[macos]\nentitlements = \"nada.plist\"\nhardened-runtime = false\n"
+        ))
+        .unwrap();
+        assert!(!m.macos.hardened_runtime);
+        assert!(validate(&m, Path::new("/no/existe")).is_err());
+    }
 
     #[test]
     fn parses_defaults() {

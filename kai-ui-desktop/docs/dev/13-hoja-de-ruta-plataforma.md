@@ -48,7 +48,7 @@
 | 3 — Agentes (P11–P13) | ✅ Hecha | Probar a mano con Cursor o Claude Desktop ([14](14-mcp.md)) |
 | 4 — App guía (P14–P16, mapas M0–M2) | 🟡 En curso | Ver abajo |
 | 5 — Manifiesto y CLI (P17–P19) | 🟡 Corte A1: `kai.toml` + `doctor`/`test`/`new`/`dev` | `commands`/`mcp` CLI; P19 verificar clon; P20 bundle |
-| 6 — Distribución (P20–P21) | 🟡 `kai bundle` (`.app` sin firmar, 27-oct) | Firma, notarización (`kai sign`/`notarize`), `.dmg`, P21 |
+| 6 — Distribución (P20–P21) | 🟡 `kai bundle`, `kai sign` (probado ad hoc) y `kai notarize` (28-oct) | Probar con Developer ID y el servicio de Apple (necesita cuenta), `.dmg`, P21 |
 | 7 — Escala (P22–P25) | 🟡 P22 router hecho (R0–R5); mapas M3 adelantado | Varias ventanas, MCP completo, plugins |
 | 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` (la raíz generada por `kai-build` ya cubre parte) |
 | 9 — Multiplataforma (P27) | ⬜ Pendiente | Windows y Linux |

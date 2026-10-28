@@ -35,13 +35,20 @@ pub fn run(options: &Options) -> Result<PathBuf, String> {
         Failure::Build => "el código no compila".to_string(),
         Failure::Other(message) => message,
     })?;
-    let project = cargo::project()?;
-    let out = project.target_directory.join("kai");
-    let bundle = out.join(format!("{}.app", folder_name(&app.name)));
+    let bundle = bundle_path(app)?;
     let icon = app.icon.as_ref().map(|icon| loaded.root.join(icon));
     assemble(&bundle, &binary, app, icon.as_deref())?;
     eprintln!("kai bundle: {}", bundle.display());
     Ok(bundle)
+}
+
+/// Where `kai bundle` leaves the app: `target/kai/<Name>.app`.
+pub fn bundle_path(app: &App) -> Result<PathBuf, String> {
+    let project = cargo::project()?;
+    Ok(project
+        .target_directory
+        .join("kai")
+        .join(format!("{}.app", folder_name(&app.name))))
 }
 
 /// Build `bundle` from `binary`, replacing what was there.

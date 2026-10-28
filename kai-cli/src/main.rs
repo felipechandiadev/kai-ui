@@ -1,7 +1,7 @@
 //! `kai`: herramientas de desarrollo de apps Kai (13, Pasos 17–18).
 //!
 //! Lee `kai.toml` cuando existe. Comandos: `dev`, `doctor`, `test`, `new`,
-//! `icons add` (Paso 19), `bundle` (Paso 20, sin firmar). Firma, notarización y
+//! `icons add` (Paso 19), `bundle`, `sign` y `notarize` (Paso 20).
 //! `commands`/`mcp` quedan fuera.
 
 mod bundle;
@@ -11,6 +11,8 @@ mod doctor;
 mod icons_cmd;
 mod manifest;
 mod new_cmd;
+mod notarize;
+mod sign;
 mod test_cmd;
 mod watch;
 
@@ -33,6 +35,10 @@ Comandos:
                           Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
   kai bundle [--bin NOMBRE] [--debug]
                           Genera target/kai/<Nombre>.app (sin firmar) desde kai.toml
+  kai sign [--identity 'Developer ID Application: …'] [--bundle RUTA]
+                          codesign del .app; sin --identity firma ad hoc (solo este Mac)
+  kai notarize --profile NOMBRE [--bundle RUTA]
+                          Envía a Apple, espera y grapa (perfil de notarytool en el llavero)
   kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]
                           Compila, abre y reinicia conservando estado
 
@@ -43,6 +49,8 @@ Si hay kai.toml, `kai dev` usa [dev].bin y observa el manifiesto.";
 #[derive(Debug, PartialEq)]
 enum Command {
     Bundle(bundle::Options),
+    Sign(sign::Options),
+    Notarize(notarize::Options),
     Dev(dev::Options),
     Doctor,
     Test(test_cmd::Options),
@@ -60,6 +68,8 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
         Some("-V" | "--version") => Ok(Command::Version),
         Some("dev") => parse_dev(args).map(Command::Dev),
         Some("bundle") => parse_bundle(args).map(Command::Bundle),
+        Some("sign") => parse_sign(args).map(Command::Sign),
+        Some("notarize") => parse_notarize(args).map(Command::Notarize),
         Some("doctor") => {
             if args.next().is_some() {
                 return Err("kai doctor no acepta argumentos".into());
@@ -106,6 +116,40 @@ fn parse_bundle(mut args: impl Iterator<Item = String>) -> Result<bundle::Option
             "--debug" => options.debug = true,
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("argumento desconocido para kai bundle: {other}")),
+        }
+    }
+    Ok(options)
+}
+
+fn parse_sign(mut args: impl Iterator<Item = String>) -> Result<sign::Options, String> {
+    let mut options = sign::Options::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--identity" => {
+                options.identity = Some(args.next().ok_or("--identity necesita un nombre")?);
+            }
+            "--bundle" => {
+                options.bundle = Some(args.next().ok_or("--bundle necesita una ruta")?.into());
+            }
+            "-h" | "--help" => return Err(String::new()),
+            other => return Err(format!("argumento desconocido para kai sign: {other}")),
+        }
+    }
+    Ok(options)
+}
+
+fn parse_notarize(mut args: impl Iterator<Item = String>) -> Result<notarize::Options, String> {
+    let mut options = notarize::Options::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--profile" => {
+                options.profile = Some(args.next().ok_or("--profile necesita un nombre")?);
+            }
+            "--bundle" => {
+                options.bundle = Some(args.next().ok_or("--bundle necesita una ruta")?.into());
+            }
+            "-h" | "--help" => return Err(String::new()),
+            other => return Err(format!("argumento desconocido para kai notarize: {other}")),
         }
     }
     Ok(options)
@@ -209,6 +253,20 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(Command::Sign(options)) => match sign::run(&options) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai sign: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Command::Notarize(options)) => match notarize::run(&options) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai notarize: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Ok(Command::Doctor) => match doctor::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -295,6 +353,30 @@ mod tests {
             }))
         );
         assert!(parse_str(&["bundle", "--release"]).is_err());
+    }
+
+    #[test]
+    fn sign_and_notarize_take_their_options() {
+        assert_eq!(
+            parse_str(&["sign"]),
+            Ok(Command::Sign(sign::Options::default()))
+        );
+        assert_eq!(
+            parse_str(&["sign", "--identity", "Developer ID Application: Kai"]),
+            Ok(Command::Sign(sign::Options {
+                identity: Some("Developer ID Application: Kai".into()),
+                bundle: None,
+            }))
+        );
+        assert_eq!(
+            parse_str(&["notarize", "--profile", "kai-notary"]),
+            Ok(Command::Notarize(notarize::Options {
+                profile: Some("kai-notary".into()),
+                bundle: None,
+            }))
+        );
+        assert!(parse_str(&["sign", "--password", "x"]).is_err());
+        assert!(parse_str(&["notarize", "--profile"]).is_err());
     }
 
     #[test]
