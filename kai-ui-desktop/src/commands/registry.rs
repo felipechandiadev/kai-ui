@@ -823,6 +823,20 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_exposed_to_agents_unless_asked() {
+        let registry = registry(|r| {
+            r.action::<Add>();
+            r.action::<Reset>();
+            r.query::<Total>();
+        });
+        let states = registry.states(&Counter(0));
+        assert!(
+            states.iter().all(|state| !state.exposed),
+            "a read-only query is exposed only with `.expose()` too"
+        );
+    }
+
+    #[test]
     fn exposed_actions_can_answer_with_a_query() {
         let mut registry = registry(|r| {
             r.action::<Add>().expose().returns::<Total>();
