@@ -1179,6 +1179,11 @@ impl<Msg> Element<Msg> {
     /// for commands the app has no [`Action`](crate::commands::Action)
     /// for, such as the palette (`kai.paleta`). Availability, name and
     /// default `test_id` follow the command as with [`Element::on_command`].
+    ///
+    /// Also for a layout, whose view has a message of its own and so cannot
+    /// use `on_command` (which ties the element to the app's message): its
+    /// toolbar buttons run `"kai.back"`, `"kai.forward"` or
+    /// `"kai.toggle_sidebar"` this way.
     pub fn run_command(mut self, id: &'static str) -> Self {
         self.command = Some(id);
         self

@@ -1,6 +1,6 @@
 # 28 — Layouts: marcos por carpeta
 
-**Estado:** propuesta (28-oct-2026). L0 y L1 implementados (29-oct); L2–L3 pendientes. Extiende
+**Estado:** propuesta (28-oct-2026). L0, L1 y L2 implementados (29-oct); L3 pendiente. Extiende
 [26](26-router-y-kai-build.md) (router y `kai-build`).
 
 **Norma:** igual que en 26: todo concepto de código va en inglés; solo el
@@ -108,9 +108,10 @@ pub struct RouteInfo<'a> {
 - Misma forma que `Page` a propósito: `init`, `update`, `view`, `Context`.
   Un layout puede navegar (`cx.navigate`), mostrar toasts y cambiar el estado
   compartido, igual que una página.
-- Sus botones suelen disparar **comandos** (`toolbar_item(..).on_command(..)`:
-  `kai.back`, `kai.forward`, `kai.toggle_sidebar`), que ya existen; no necesitan
-  `Msg` propio. Por eso `Msg = Infallible` es lo habitual.
+- Sus botones suelen disparar **comandos** con `Element::run_command("kai.back")`
+  (también `kai.forward`, `kai.toggle_sidebar`), que ya existen; no necesitan
+  `Msg` propio. No sirve `on_command`: ata el mensaje del elemento al de la app,
+  y la vista de un layout tiene el suyo. Por eso `Msg = Infallible` es lo habitual.
 - Convención de `kai-build`: cada `layout.rs` define `pub struct Frame`
   (implementa `kai::router::Layout`), igual que `Screen` para las páginas.
 
@@ -183,7 +184,7 @@ adelante y plegado de la barra lateral, y nada propio de la página.
 |---|---|---|
 | L0 ✅ | `outlet()`, `Element::fill_outlet`, `Layout`, `RouteInfo`, con una raíz escrita a mano en un test (`src/router/frame.rs`). | Tests de `kai`; `bench_layout_fold`: unos 5,6 µs por layout con barra de 5 elementos, 2–13 % de construir la vista de la demo (release). |
 | L1 ✅ | `kai-build`: escaneo, ranuras, entrada y salida, plegado. `kai new layout`. | Fixture `sections-app` con layout raíz, de sección y anidado; el estado del layout de `customers` sobrevive `/customers` → `/customers/1`. |
-| L2 | La demo recupera su barra como `demo/src/layout.rs` (título, atrás/adelante, plegar barra lateral) y una sección con layout propio. | Tests de la demo; capturas de revisión; abrir el bundle. |
+| L2 ✅ | La demo recupera su barra como `demo/src/layout.rs` (título, atrás/adelante, plegar barra lateral) y una sección con layout propio. | Tests de la demo; capturas de revisión; abrir el bundle. |
 | L3 | `slot(name)` y `Page::slot`; el buscador de Tabla vuelve a la barra. | Test de la demo: escribir en la barra filtra la tabla. |
 
 Tras cada corte: `scripts/check.sh` completo y actualizar 26, `CLAUDE.md`,
@@ -215,6 +216,14 @@ necesita «Atrás»; hay que añadirlo con `scripts/gen-icons.mjs`.
 - Un mensaje para un layout que ya salió se ignora, igual que ya hacen las
   páginas (comprobado en el código generado: `None => Effects::none()`).
 - Los layouts todavía no registran comandos propios (pregunta 3 de §8).
+
+**Al implementar L2:** `run_command` ya existía (lo usa la paleta); solo se
+amplió su documentación. `RouteInfo::can_back` y `can_forward` quedan sin uso en
+la demo, porque los comandos se deshabilitan solos según su disponibilidad; se
+mantienen para layouts que dibujen algo propio con ellos. Se añadió el icono
+`chevron-left` al catálogo (`scripts/gen-icons.mjs`). La línea base de capturas
+(`snapshots/baseline`, local) quedó vieja: toda captura de la demo lleva ahora la
+barra; hay que regenerarla con `scripts/snapshot-baseline.sh` cuando se acepte.
 
 ## 7. Alternativas descartadas
 

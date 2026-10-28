@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::{Action, Availability, CommandError, Safety};
 use crate::components::{SidebarGroup, SidebarItem, Toast};
-use crate::element::{Element, Role, text};
+use crate::element::{Element, Role, div, text};
 use crate::icons::Icon;
 use crate::runtime::{App, Effects};
 use crate::store::Stored;
@@ -501,10 +501,13 @@ impl<'a, S> Context<'a, S> {
 /// (the route changed) VoiceOver reads it. The root draws it once, next
 /// to the page.
 pub fn announcer<Msg>(title: &str) -> Element<Msg> {
-    text(title)
+    // The text lives in a clipping box: text alone is drawn past its 1 pt box.
+    div()
         .role(Role::Status)
+        .label(title)
         .test_id("announcer")
         .class("absolute w-[1px] h-[1px] overflow-hidden pointer-events-none")
+        .child(text(title))
 }
 
 /// How a section shows in the sidebar. A `const` in each section's

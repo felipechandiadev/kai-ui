@@ -86,6 +86,7 @@ const ICONS = [
   "funnel-x",
   // Table: expandable rows.
   "chevron-right",
+  "chevron-left",
   // Document ribbon (WordCraft / AppKit toolbar density).
   "bold",
   "italic",
