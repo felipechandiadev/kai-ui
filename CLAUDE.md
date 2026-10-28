@@ -45,9 +45,11 @@ existe (docs/dev/27). El cambio de vista se anuncia con `kai::router::announcer`
 (región viva que `kai-build` añade a la raíz); falta oírlo con VoiceOver.
 
 Layouts (docs/dev/28): L0 ✅ (`outlet`, `Layout`, `RouteInfo` en
-`kai::router`); L1 (`kai-build` genera `layout.rs`), L2 (la demo recupera su
+`kai::router`) · L1 ✅ (`kai-build` genera `src/layout.rs` y `layout.rs` por
+carpeta; `kai new layout`; no en carpetas `[param]`) · L2 (la demo recupera su
 barra) y L3 (`slot`) pendientes.
 
 Convenciones de `kai-build`: cada `page.rs` define `pub struct Screen`
-(implementa `kai::router::Page`); cada `section.rs`,
+(implementa `kai::router::Page`), cada `layout.rs` `pub struct Frame`
+(implementa `kai::router::Layout`); cada `section.rs`,
 `pub const SECTION: SectionMeta`; un parámetro por ruta (`[id]`).

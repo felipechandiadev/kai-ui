@@ -100,9 +100,8 @@ impl App {
             None => env("OUT_DIR")?,
         };
         // Cargo scans these for changes (a folder: everything inside).
-        for watched in ["src/sections", "src/state.rs"] {
-            println!("cargo:rerun-if-changed={}", root.join(watched).display());
-        }
+        // `src/layout.rs` may not exist yet: watching `src` sees it appear.
+        println!("cargo:rerun-if-changed={}", root.join("src").display());
         let tree = scan::scan(&root).map_err(Error::Scan)?;
         let code = generate::generate(&tree);
         let out = out_dir.join("kai_app.rs");

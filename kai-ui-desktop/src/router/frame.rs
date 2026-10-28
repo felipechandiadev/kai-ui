@@ -10,13 +10,13 @@ use crate::runtime::Effects;
 
 use super::Context;
 
-/// Key of the element [`outlet`] returns; the root replaces it before the
-/// tree reaches a session.
+/// Key of the element [`outlet`] returns; [`Element::fill_outlet`] clears it.
 const OUTLET_KEY: &str = "kai.outlet";
 
 /// The place in a layout's view where its content goes: exactly one per
-/// layout. The root replaces it with the page, or with the next layout
-/// inside, through [`Element::fill_outlet`].
+/// layout. It is a flexible column (`flex-1 min-w-0 min-h-0 flex flex-col`,
+/// the same box the root gives a page) and the root puts the page, or the
+/// next layout inside, in it through [`Element::fill_outlet`].
 pub fn outlet<Msg>() -> Element<Msg> {
     div()
         .key(OUTLET_KEY)
@@ -24,9 +24,10 @@ pub fn outlet<Msg>() -> Element<Msg> {
 }
 
 impl<Msg> Element<Msg> {
-    /// Replace the first [`outlet`] of this tree with `content`. Without
-    /// one, the tree is returned as it was and debug builds panic: a
-    /// layout that forgot its outlet would hide its page.
+    /// Put `content` in the first [`outlet`] of this tree, which stays as
+    /// its container. Without one, the tree is returned as it was and
+    /// debug builds panic: a layout that forgot its outlet would hide its
+    /// page.
     pub fn fill_outlet(mut self, content: Element<Msg>) -> Element<Msg> {
         let mut content = Some(content);
         let filled = fill(&mut self, &mut content);
@@ -49,7 +50,8 @@ fn fill<Msg>(element: &mut Element<Msg>, content: &mut Option<Element<Msg>>) -> 
     if element.key.as_deref() == Some(OUTLET_KEY) {
         return match content.take() {
             Some(content) => {
-                *element = content;
+                element.key = None;
+                element.children.push(content);
                 true
             }
             None => false,
@@ -108,13 +110,16 @@ mod tests {
     use crate::testing::{By, TestApp};
 
     #[test]
-    fn an_outlet_is_replaced_by_the_content() {
+    fn an_outlet_becomes_the_container_of_the_content() {
         let view: Element<()> =
             div().children([text("encabezado"), div().child(outlet()), text("pie")]);
         assert_eq!(view.outlet_count(), 1);
         let filled = view.fill_outlet(text("contenido"));
         assert_eq!(filled.outlet_count(), 0);
         assert_eq!(filled.text_content(), "encabezado contenido pie");
+        let container = &filled.children[1].children[0];
+        assert_eq!(container.children.len(), 1);
+        assert_eq!(container.children[0].text_content(), "contenido");
     }
 
     #[test]

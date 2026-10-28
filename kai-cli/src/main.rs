@@ -30,6 +30,8 @@ Comandos:
                           Andamiaje mínimo con kai.toml y tests/
   kai new section <nombre>
                           Crea src/sections/<nombre>/ con section.rs y page.rs
+  kai new layout [<sección>[/<carpeta>]]
+                          Crea layout.rs (sin argumento, el de toda la app) con su outlet()
   kai icons add <nombre> [--from RUTA]
   kai icons add <archivo.svg> --name <nombre>
                           Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
@@ -56,6 +58,7 @@ enum Command {
     Test(test_cmd::Options),
     New(new_cmd::Options),
     NewSection(String),
+    NewLayout(Option<String>),
     IconsAdd(icons_cmd::Options),
     Help,
     Version,
@@ -192,6 +195,15 @@ fn parse_new(mut args: impl Iterator<Item = String>) -> Result<Command, String> 
         }
         return Ok(Command::NewSection(section));
     }
+    if name == "layout" {
+        let folder = args.next();
+        if let Some(extra) = args.next() {
+            return Err(format!(
+                "argumento desconocido para kai new layout: {extra}"
+            ));
+        }
+        return Ok(Command::NewLayout(folder));
+    }
     if name.starts_with('-') {
         return Err(format!("nombre inválido: {name}"));
     }
@@ -295,6 +307,15 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(Command::NewLayout(folder)) => {
+            match new_cmd::layout(std::path::Path::new("."), folder.as_deref()) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("kai new layout: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Ok(Command::IconsAdd(options)) => match icons_cmd::run(&options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -404,6 +425,12 @@ mod tests {
             Ok(Command::NewSection("customers".into()))
         );
         assert!(parse_str(&["new", "section"]).is_err());
+        assert_eq!(parse_str(&["new", "layout"]), Ok(Command::NewLayout(None)));
+        assert_eq!(
+            parse_str(&["new", "layout", "customers/new"]),
+            Ok(Command::NewLayout(Some("customers/new".into())))
+        );
+        assert!(parse_str(&["new", "layout", "a", "b"]).is_err());
         assert_eq!(
             parse_str(&["icons", "add", "search"]),
             Ok(Command::IconsAdd(icons_cmd::Options {

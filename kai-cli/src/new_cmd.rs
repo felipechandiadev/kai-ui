@@ -178,6 +178,92 @@ pub fn section(root: &std::path::Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `kai new layout [<section>[/<folder>…]]`: `layout.rs` in `src/` (around
+/// every page) or in that folder of `src/sections/` (around its pages and
+/// the ones below). The folder must exist.
+pub fn layout(root: &std::path::Path, folder: Option<&str>) -> Result<(), String> {
+    let (dir, root_layout) = match folder {
+        None => (root.join("src"), true),
+        Some(path) => {
+            let mut dir = root.join("src/sections");
+            for name in path.split('/') {
+                if !kai_build::scan::is_valid_name(name) {
+                    return Err(format!(
+                        "nombre inválido: {name} (snake_case en inglés, como customers o sales_report)"
+                    ));
+                }
+                dir.push(name);
+            }
+            if !dir.is_dir() {
+                return Err(format!(
+                    "{} no existe: crea antes la sección con `kai new section`",
+                    dir.display()
+                ));
+            }
+            (dir, false)
+        }
+    };
+    let file = dir.join("layout.rs");
+    if file.exists() {
+        return Err(format!("{} ya existe", file.display()));
+    }
+    fs::write(&file, layout_rs(root_layout)).map_err(|e| e.to_string())?;
+    eprintln!("kai new layout: creado {}", file.display());
+    Ok(())
+}
+
+fn layout_rs(root_layout: bool) -> String {
+    let (about, bar) = if root_layout {
+        (
+            "The frame around every page, to the right of the sidebar.",
+            r#"
+            div()
+                .class("flex items-center h-[52px] shrink-0 px-4 border-b border-border/70")
+                .child(text(route.title).class("text-lg font-semibold")),"#,
+        )
+    } else {
+        (
+            "The frame around the pages of this folder and the ones below it.\n/// It lives while the route stays in the folder.",
+            "",
+        )
+    };
+    let uses = if root_layout {
+        "use kai::element::{Element, div, text};"
+    } else {
+        "use kai::element::{Element, div};"
+    };
+    let route = if root_layout { "route" } else { "_" };
+    format!(
+        r#"use std::convert::Infallible;
+
+{uses}
+use kai::router::{{Layout, RouteInfo, outlet}};
+use kai::runtime::Effects;
+
+use crate::state::State;
+
+/// {about}
+pub struct Frame;
+
+impl Layout for Frame {{
+    type Msg = Infallible;
+    type State = State;
+
+    fn init(_: &State) -> (Self, Effects<Infallible>) {{
+        (Self, Effects::none())
+    }}
+
+    /// `outlet()` is where the content goes: exactly one.
+    fn view(&self, _: &State, {route}: &RouteInfo<'_>) -> Element<Infallible> {{
+        div().class("flex flex-col flex-1 min-h-0").children([{bar}
+            outlet(),
+        ])
+    }}
+}}
+"#
+    )
+}
+
 /// `sales_report` → `Sales report`: the visible title until someone writes
 /// the real one.
 fn title_of(name: &str) -> String {
@@ -248,6 +334,35 @@ const STATE_RS: &str =
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_new_layout_goes_in_the_root_or_in_an_existing_folder() {
+        let root = std::env::temp_dir().join(format!("kai-new-layout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        super::section(&root, "sales").unwrap();
+        std::fs::create_dir_all(root.join("src/sections/sales/detail")).unwrap();
+        std::fs::write(root.join("src/sections/sales/detail/page.rs"), "").unwrap();
+
+        super::layout(&root, None).unwrap();
+        super::layout(&root, Some("sales")).unwrap();
+        super::layout(&root, Some("sales/detail")).unwrap();
+        let tree = kai_build::scan::scan(&root).expect("valid folders and outlets");
+        assert!(tree.root_layout.is_some());
+        assert_eq!(tree.sections[0].layouts.len(), 2);
+        let code = std::fs::read_to_string(root.join("src/layout.rs")).unwrap();
+        assert!(code.contains("route.title") && code.contains("outlet()"));
+
+        assert!(super::layout(&root, None).is_err(), "it already exists");
+        assert!(
+            super::layout(&root, Some("nada")).is_err(),
+            "no such folder"
+        );
+        assert!(
+            super::layout(&root, Some("Ventas")).is_err(),
+            "not snake_case"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn a_new_section_follows_the_folder_conventions() {

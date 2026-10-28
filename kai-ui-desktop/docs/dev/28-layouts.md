@@ -1,6 +1,6 @@
 # 28 — Layouts: marcos por carpeta
 
-**Estado:** propuesta (28-oct-2026). L0 implementado (29-oct); L1–L3 pendientes. Extiende
+**Estado:** propuesta (28-oct-2026). L0 y L1 implementados (29-oct); L2–L3 pendientes. Extiende
 [26](26-router-y-kai-build.md) (router y `kai-build`).
 
 **Norma:** igual que en 26: todo concepto de código va en inglés; solo el
@@ -54,11 +54,12 @@ El obstáculo de tipos: la página es un `Element<PageMsg>` y el layout, un
 con `children`; aquí, con un **hueco** que la raíz rellena después de mapear:
 
 ```rust
-/// Placeholder where the layout's content goes. Exactly one per layout.
+/// Where the layout's content goes. Exactly one per layout. A flexible
+/// column, the same box the root gives a page today.
 pub fn outlet<Msg>() -> Element<Msg>;
 
 impl<Msg: 'static> Element<Msg> {
-    /// Replaces the first `outlet()` with `content`.
+    /// Puts `content` inside the first `outlet()`, which stays as its container.
     pub fn fill_outlet(self, content: Element<Msg>) -> Element<Msg>;
 }
 ```
@@ -127,8 +128,10 @@ para recuperar lo que tenía la demo.
 
 ### 3.4 Accesibilidad
 
-El contenedor del hueco lo dibuja la raíz con `Role::Main`; un layout no
-tiene que acordarse de él. La barra superior ya declara `Role::Toolbar`
+El hueco no declara ningún rol. Hoy tampoco lo declara la página: ningún
+componente pone `Role::Main` (solo un árbol de prueba), así que falta el punto de
+referencia «contenido principal» con o sin layouts; queda como pendiente de
+accesibilidad, a resolver una vez en la raíz y no en cada layout anidado. La barra superior ya declara `Role::Toolbar`
 (`toolbar()`), con ←/→ entre sus botones. El anunciador de cambio de vista
 (`kai::router::announcer`) sigue siendo de la raíz.
 
@@ -148,8 +151,9 @@ alcance (las rutas que cuelgan de ella). Para cada layout la raíz gana:
 - un `update` que reenvía `RootMsg::Layout*` a su ranura (se ignora si el
   layout ya salió; falta comprobar que hoy las páginas se comporten igual).
 
-`kai new layout [<sección>]` crea el `layout.rs` con un esqueleto que ya
-compila (barra con título y botones atrás/adelante). `kai doctor` valida la
+`kai new layout [<sección>[/<carpeta>]]` crea el `layout.rs` con un esqueleto
+que ya compila (sin argumento, el de toda la app, con una barra con el título;
+los botones atrás/adelante llegan en L2). `kai doctor` valida la
 convención con la misma función que `kai-build`.
 
 ## 5. Lo que cada página puede aportar a su marco
@@ -178,7 +182,7 @@ adelante y plegado de la barra lateral, y nada propio de la página.
 | Corte | Contenido | Verificación |
 |---|---|---|
 | L0 ✅ | `outlet()`, `Element::fill_outlet`, `Layout`, `RouteInfo`, con una raíz escrita a mano en un test (`src/router/frame.rs`). | Tests de `kai`; `bench_layout_fold`: unos 5,6 µs por layout con barra de 5 elementos, 2–13 % de construir la vista de la demo (release). |
-| L1 | `kai-build`: escaneo, ranuras, entrada y salida, plegado. `kai new layout`. | Fixture `sections-app` con layout raíz, de sección y anidado; el estado del layout de `customers` sobrevive `/customers` → `/customers/1`. |
+| L1 ✅ | `kai-build`: escaneo, ranuras, entrada y salida, plegado. `kai new layout`. | Fixture `sections-app` con layout raíz, de sección y anidado; el estado del layout de `customers` sobrevive `/customers` → `/customers/1`. |
 | L2 | La demo recupera su barra como `demo/src/layout.rs` (título, atrás/adelante, plegar barra lateral) y una sección con layout propio. | Tests de la demo; capturas de revisión; abrir el bundle. |
 | L3 | `slot(name)` y `Page::slot`; el buscador de Tabla vuelve a la barra. | Test de la demo: escribir en la barra filtra la tabla. |
 
@@ -192,6 +196,25 @@ los tests; el hueco es un `div` con la clave reservada `kai.outlet`, así que
 no hizo falta una variante nueva de `Kind`. **Para L2:** el catálogo de iconos
 no tiene flecha o chevron a la izquierda (solo `ChevronRight`), y la barra
 necesita «Atrás»; hay que añadirlo con `scripts/gen-icons.mjs`.
+
+**Cambios respecto al diseño, al implementar L1:**
+
+- `fill_outlet` ya no *reemplaza* el hueco: lo deja como contenedor del contenido
+  y le quita la clave. Su clase (`flex-1 min-w-0 min-h-0 flex flex-col`) es la del
+  envoltorio que la raíz da hoy a la página, así que una app sin layouts se ve
+  igual y una con layouts no cambia el tamaño de sus páginas.
+- **Un `layout.rs` dentro de una carpeta `[parámetro]` aún no se admite**:
+  `kai-build` lo rechaza con un mensaje que pide ponerlo en la carpeta de arriba.
+  Un layout persistente ahí tendría que reiniciarse al cambiar el valor del
+  parámetro, y su tipo saldría de la página; queda para una vuelta posterior.
+- `kai-build` vigila ahora toda `src/` (antes solo `src/sections` y
+  `src/state.rs`), para ver aparecer un `src/layout.rs` nuevo.
+- `layout` pasa a ser nombre reservado: no puede haber una sección o carpeta
+  llamada así (chocaría con el módulo del layout).
+- `kai doctor` valida los layouts sin cambios: usa el mismo `scan`.
+- Un mensaje para un layout que ya salió se ignora, igual que ya hacen las
+  páginas (comprobado en el código generado: `None => Effects::none()`).
+- Los layouts todavía no registran comandos propios (pregunta 3 de §8).
 
 ## 7. Alternativas descartadas
 

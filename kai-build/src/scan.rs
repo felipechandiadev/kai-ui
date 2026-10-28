@@ -45,6 +45,14 @@ impl PageNode {
     }
 }
 
+/// A `layout.rs`: the frame around the pages of its folder and below.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LayoutNode {
+    /// From the section folder down: `[customers]`, `[customers, new]`.
+    pub segments: Vec<Segment>,
+    pub file: PathBuf,
+}
+
 /// A folder of `src/sections/`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Section {
@@ -52,12 +60,16 @@ pub struct Section {
     pub section_file: PathBuf,
     /// Its pages, the section's own first, then by path.
     pub pages: Vec<PageNode>,
+    /// Its layouts, the outermost first (docs/dev/28).
+    pub layouts: Vec<LayoutNode>,
 }
 
 /// What `kai-build` generates the app from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppTree {
     pub state_file: PathBuf,
+    /// `src/layout.rs`, around everything to the right of the sidebar.
+    pub root_layout: Option<PathBuf>,
     /// By folder name.
     pub sections: Vec<Section>,
 }
@@ -98,7 +110,7 @@ const RESERVED: &[&str] = &[
     "as", "break", "const", "crate", "else", "enum", "fn", "for", "if", "impl", "in", "let",
     "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "self", "static", "struct",
     "super", "trait", "type", "use", "where", "while", "async", "await", "dyn", "page", "section",
-    "state", "app",
+    "layout", "state", "app",
 ];
 
 /// Read the app whose `Cargo.toml` is in `app_root`.
@@ -112,6 +124,10 @@ pub fn scan(app_root: &Path) -> Result<AppTree, Vec<ScanError>> {
             &state_file,
             "falta: define ahí `pub struct State`, el estado que comparten las páginas",
         ));
+    }
+    let root_layout = Some(src.join("layout.rs")).filter(|file| file.is_file());
+    if let Some(file) = &root_layout {
+        check_outlet(file, &mut errors);
     }
     let mut sections = Vec::new();
     match sorted_dirs(&sections_dir) {
@@ -134,6 +150,7 @@ pub fn scan(app_root: &Path) -> Result<AppTree, Vec<ScanError>> {
     if errors.is_empty() {
         Ok(AppTree {
             state_file,
+            root_layout,
             sections,
         })
     } else {
@@ -164,12 +181,21 @@ fn scan_section(dir: &Path, errors: &mut Vec<ScanError>) -> Option<Section> {
         ));
     }
     let mut pages = Vec::new();
-    collect_pages(dir, vec![Segment::Static(name.clone())], &mut pages, errors);
+    let mut layouts = Vec::new();
+    collect_pages(
+        dir,
+        vec![Segment::Static(name.clone())],
+        &mut pages,
+        &mut layouts,
+        errors,
+    );
     pages.sort_by_key(|page| (page.segments.len(), path_key(&page.segments)));
+    layouts.sort_by_key(|layout| (layout.segments.len(), path_key(&layout.segments)));
     Some(Section {
         name,
         section_file,
         pages,
+        layouts,
     })
 }
 
@@ -185,6 +211,7 @@ fn collect_pages(
     dir: &Path,
     segments: Vec<Segment>,
     pages: &mut Vec<PageNode>,
+    layouts: &mut Vec<LayoutNode>,
     errors: &mut Vec<ScanError>,
 ) {
     let page = dir.join("page.rs");
@@ -193,6 +220,21 @@ fn collect_pages(
             segments: segments.clone(),
             file: page,
         });
+    }
+    let layout = dir.join("layout.rs");
+    if layout.is_file() {
+        if segments.iter().any(|s| matches!(s, Segment::Param(_))) {
+            errors.push(error(
+                &layout,
+                "un layout dentro de una carpeta [parámetro] aún no se admite: ponlo en la carpeta de arriba",
+            ));
+        } else {
+            check_outlet(&layout, errors);
+            layouts.push(LayoutNode {
+                segments: segments.clone(),
+                file: layout,
+            });
+        }
     }
     let Ok(children) = sorted_dirs(dir) else {
         return;
@@ -236,13 +278,24 @@ fn collect_pages(
         let mut below = segments.clone();
         below.push(segment);
         let before = pages.len();
-        collect_pages(child, below, pages, errors);
+        collect_pages(child, below, pages, layouts, errors);
         if pages.len() == before {
             errors.push(error(
                 child,
                 "no tiene ninguna page.rs: borra la carpeta o agrega su página",
             ));
         }
+    }
+}
+
+/// A layout without `outlet()` would hide its pages.
+fn check_outlet(file: &Path, errors: &mut Vec<ScanError>) {
+    let has_outlet = fs::read_to_string(file).is_ok_and(|code| code.contains("outlet("));
+    if !has_outlet {
+        errors.push(error(
+            file,
+            "falta `outlet()` en su vista: es el hueco donde va el contenido (docs/dev/28)",
+        ));
     }
 }
 
@@ -384,6 +437,66 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    fn write(root: &Path, file: &str, code: &str) {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, code).unwrap();
+    }
+
+    const FRAME: &str = "fn view() { outlet() }";
+
+    #[test]
+    fn reads_the_root_layout_and_the_layouts_of_each_folder() {
+        let root = temp_app(
+            "layouts",
+            &[
+                "src/state.rs",
+                "src/sections/customers/section.rs",
+                "src/sections/customers/page.rs",
+                "src/sections/customers/new/page.rs",
+                "src/sections/sales/section.rs",
+                "src/sections/sales/page.rs",
+            ],
+        );
+        write(&root, "src/layout.rs", FRAME);
+        write(&root, "src/sections/customers/layout.rs", FRAME);
+        write(&root, "src/sections/customers/new/layout.rs", FRAME);
+        let tree = scan(&root).unwrap();
+        assert_eq!(tree.root_layout, Some(root.join("src/layout.rs")));
+        let layouts: Vec<Vec<String>> = tree.sections[0]
+            .layouts
+            .iter()
+            .map(|l| l.segments.iter().map(|s| s.name().to_owned()).collect())
+            .collect();
+        assert_eq!(layouts, [vec!["customers"], vec!["customers", "new"]]);
+        assert!(tree.sections[1].layouts.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_layout_needs_its_outlet_and_cannot_sit_in_a_parameter_folder() {
+        let root = temp_app(
+            "layout-errors",
+            &[
+                "src/state.rs",
+                "src/sections/customers/section.rs",
+                "src/sections/customers/page.rs",
+                "src/sections/customers/[id]/page.rs",
+            ],
+        );
+        write(&root, "src/layout.rs", "fn view() {}");
+        write(&root, "src/sections/customers/layout.rs", FRAME);
+        write(&root, "src/sections/customers/[id]/layout.rs", FRAME);
+        assert_eq!(
+            messages(&root),
+            [
+                "src/layout.rs: falta `outlet()` en su vista",
+                "src/sections/customers/[id]/layout.rs: un layout dentro de una carpeta [parámetro] aún no se admite",
+            ]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn names_are_snake_case_english_and_not_reserved() {
         assert!(is_valid_name("customers"));
@@ -396,6 +509,7 @@ mod tests {
             "a__b",
             "año",
             "page",
+            "layout",
             "fn",
             "",
         ] {
