@@ -284,6 +284,8 @@ impl Page for Screen {
         registry.page_action::<Bold>().menu("Documento").expose();
         registry.page_action::<Italic>().menu("Documento").expose();
         registry.page_action::<Bullets>().menu("Documento").expose();
+        registry.page_action::<TypeText>().expose();
+        registry.page_action::<ClearDocument>().menu("Documento").expose();
         registry.page_action::<InsertTable>().menu("Documento").expose();
         registry.page_action::<InsertPicture>().menu("Documento").expose();
         registry.page_action::<Open>().menu("Documento").expose();
@@ -472,5 +474,42 @@ impl PageAction for Find {
     }
     fn into_msg(self) -> Msg {
         Msg::ToggleFind
+    }
+}
+
+/// `document.type_text`: writes at the caret, as if typed. Meant for agents.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TypeText {
+    /// What to write; `\n` starts a new paragraph.
+    text: String,
+}
+
+impl PageAction for TypeText {
+    type Page = Screen;
+    const ID: &'static str = "document.type_text";
+    const TITLE: &'static str = "Escribir texto";
+    fn description() -> &'static str {
+        "Escribe un texto en el documento, en la posición del cursor"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Cmd(DocumentCmd::InsertText { text: self.text })
+    }
+}
+
+/// `document.clear`: removes all the content of the document.
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClearDocument;
+
+impl PageAction for ClearDocument {
+    type Page = Screen;
+    const ID: &'static str = "document.clear";
+    const TITLE: &'static str = "Borrar todo el contenido";
+    fn description() -> &'static str {
+        "Borra todo el contenido del documento"
+    }
+    fn into_msg(self) -> Msg {
+        Msg::Cmd(DocumentCmd::Clear)
     }
 }

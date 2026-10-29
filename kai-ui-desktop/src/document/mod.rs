@@ -90,6 +90,12 @@ pub enum DocumentCmd {
     NewComment {
         text: String,
     },
+    /// Escribe `text` en el caret, como si se tecleara (`\n` abre un párrafo).
+    InsertText {
+        text: String,
+    },
+    /// Borra todo el contenido del documento (`select.all` y `text.delete`).
+    Clear,
     /// Paste Special: texto plano (`edit.pasteText`).
     PastePlain,
     /// Paste Special: combinar formato (`edit.pasteMerge`).
@@ -125,6 +131,8 @@ impl DocumentCmd {
             Self::Replace { .. } => "edit.replace",
             Self::ReplaceAll { .. } => "edit.replaceAll",
             Self::NewComment { .. } => "review.newComment",
+            Self::InsertText { .. } => "text.insert",
+            Self::Clear => "select.all",
             Self::PastePlain => "edit.pasteText",
             Self::PasteMerge => "edit.pasteMerge",
             Self::PasteKeepSource => "edit.paste",

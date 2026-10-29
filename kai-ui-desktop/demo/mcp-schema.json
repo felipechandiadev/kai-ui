@@ -150,6 +150,40 @@
       "title": "Lista con viñetas"
     },
     {
+      "description": "Escribe un texto en el documento, en la posición del cursor",
+      "exposed": true,
+      "id": "document.type_text",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "What to write; `\\n` starts a new paragraph.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Escribir texto"
+    },
+    {
+      "description": "Borra todo el contenido del documento",
+      "exposed": true,
+      "id": "document.clear",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "mutating",
+      "title": "Borrar todo el contenido"
+    },
+    {
       "description": "Inserta una tabla en el documento",
       "exposed": true,
       "id": "insert.table",

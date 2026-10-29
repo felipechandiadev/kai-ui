@@ -65,7 +65,8 @@ buscar, comentar, revisar), `find_match_count`.
 
 `Bold`, `Italic`, `Bullets`, `Undo`, `Redo`, `InsertTable`, `InsertPicture`,
 `Find { text }`, `FindNext`, `FindPrevious`, `Replace { text, with }`,
-`ReplaceAll { text, with }`, `NewComment { text }`, `PastePlain`,
+`ReplaceAll { text, with }`, `NewComment { text }`, `InsertText { text }`
+(escribe en el caret), `Clear` (borra todo el contenido), `PastePlain`,
 `PasteMerge`, `PasteKeepSource`, `Wrap { mode }`, `TableStyle { style }`,
 `TakeDocument` (clona el modelo para guardar o exportar fuera del hilo de
 UI) y `Raw(id)` para cualquier id de WordCraft (`format.underline`…).

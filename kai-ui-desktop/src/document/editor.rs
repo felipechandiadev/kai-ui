@@ -719,6 +719,8 @@ impl DocumentEditor {
                     }
                 }
             }
+            DocumentCmd::InsertText { text } => self.insert_str(text),
+            DocumentCmd::Clear => self.run("select.all") & self.run("text.delete"),
             DocumentCmd::NewComment { text } => {
                 match self
                     .session
@@ -2479,6 +2481,23 @@ mod tests {
         assert!(!ed.session.doc.comments.is_empty(), "comment inserted");
         let change = ed.change();
         assert!(!change.status.is_empty() || change.find_match_count <= 2);
+    }
+
+    #[test]
+    fn insert_text_types_at_the_caret() {
+        let mut ed = DocumentEditor::new("");
+        assert!(ed.run_cmd(&DocumentCmd::InsertText {
+            text: "Hola soy Lira".into()
+        }));
+        let plain = ed.plain_text();
+        assert!(plain.contains("Hola soy Lira"), "{plain:?}");
+    }
+
+    #[test]
+    fn clear_removes_all_the_content() {
+        let mut ed = DocumentEditor::new("uno\n\ndos");
+        assert!(ed.run_cmd(&DocumentCmd::Clear));
+        assert!(ed.plain_text().trim().is_empty(), "{:?}", ed.plain_text());
     }
 
     #[test]
