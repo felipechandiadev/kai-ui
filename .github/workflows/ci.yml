@@ -101,3 +101,24 @@ jobs:
         with:
           workspaces: kai-ui-desktop
       - run: cargo check --locked --all-targets
+
+  # Windows probe (#10): the crate keeps compiling for MSVC. Check only:
+  # no tests, no window, no GPU. A native runner rather than cargo-xwin on
+  # Linux: `ring` (ureq → rustls, default `net` feature) builds its C code
+  # with MSVC, which windows-latest already has.
+  desktop-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: kai-ui-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kai-ui-desktop
+      - run: cargo check --locked --target x86_64-pc-windows-msvc --all-targets --no-default-features
+      # Default features: `net` (images by URL over HTTPS).
+      - run: cargo check --locked --target x86_64-pc-windows-msvc --all-targets

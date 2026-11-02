@@ -46,8 +46,9 @@ existe (docs/dev/27). El cambio de vista se anuncia con `kai::router::announcer`
 
 Layouts (docs/dev/28): L0 ✅ (`outlet`, `Layout`, `RouteInfo` en
 `kai::router`) · L1 ✅ (`kai-build` genera `src/layout.rs` y `layout.rs` por
-carpeta; `kai new layout`; no en carpetas `[param]`) · L2 ✅ (la demo tiene su
-barra en `demo/src/layout.rs`) · L3 (`slot`) pendiente.
+carpeta; `kai new layout`; también en carpetas `[param]`) · L2 ✅ (la demo tiene su
+barra en `demo/src/layout.rs`) · L3 ✅ (`slot(nombre)` en el layout y
+`Page::slot` en la página).
 
 Convenciones de `kai-build`: cada `page.rs` define `pub struct Screen`
 (implementa `kai::router::Page`), cada `layout.rs` `pub struct Frame`
