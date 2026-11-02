@@ -9,11 +9,13 @@ Sección demo **Catálogo → Catálogo vivo**: matriz filtrable de controles cl
 | Tema | AppKit / AppKit Dark / Glass / Glass Dark / Kai | `App::theme()` mientras la sección está abierta |
 | Densidad | Comfortable / Compact | `Theme.density` + `FieldDensity` / `SwitchDensity` |
 | Tamaño | Mini … XL | `Theme.control_size` + `.control_size` donde aplica |
+| Fondo | Ninguno / Mesh / Aurora / Glow (+ paleta, desenfoque, intensidad, animado, velocidad) | `App::background()` mientras la sección está abierta |
 
 Al salir de la sección, el tema vuelve al de `KAI_THEME` / `demo_theme()`.
 
 ## Qué muestra
 
+0. **Fondo de ventana** — un único efecto vivo bajo toda la ventana (`BackgroundEffect`, `src/background.rs`), con selector y descripción de cuándo usar cada uno: *Ninguno* (herramientas densas, tablas, formularios), *Mesh* (bienvenida, paneles con poco texto), *Aurora* (portadas, onboarding, estados vacíos; el más llamativo), *Glow* (foco central tras un hero). Controles: paleta, desenfoque 40/80/140, intensidad 40/70/100 %, animado y velocidad (lenta/normal/rápida). Claro/oscuro lo da el filtro Tema. Es un solo efecto y no mosaicos: el renderer dibuja una capa de fondo por ventana, en coordenadas de ventana (no por tarjeta).
 1. **Button** — Primary / Secondary / Outlined / Danger / disabled / loading.
 2. **TextField** — default (editable), required, helper, error.
 3. **Checkbox · Switch · Select** — checkbox On/Mixed/disabled; switch on/disabled (densidad); select elegido/disabled.

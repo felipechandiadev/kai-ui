@@ -2,6 +2,9 @@
 //! density and control size chosen at the top, which apply to the whole
 //! window while the section is open.
 
+use kai::background::{
+    BackgroundEffect, BackgroundKind, BackgroundMotion, BackgroundPalette, BackgroundSpeed,
+};
 use kai::components::{
     AlertVariant, BadgeVariant, Button, ButtonVariant, DotProgress, DotSize, EmptyState,
     FieldDensity, FieldKind, SwitchDensity, Tabs, TextField, alert, badge, button, caption, card,
@@ -67,7 +70,38 @@ pub struct Screen {
     switch: bool,
     select: Option<usize>,
     tab: usize,
+    /// Window background shown while the catalog is open (one live
+    /// effect: the renderer draws a single full-window layer).
+    background: BackgroundKind,
+    motion: BackgroundMotion,
+    palette: BackgroundPalette,
+    speed: BackgroundSpeed,
+    /// Index into [`BACKGROUND_BLURS`].
+    blur: usize,
+    /// Index into [`BACKGROUND_INTENSITIES`].
+    intensity: usize,
 }
+
+/// Effects with their label and when to use them.
+const BACKGROUND_KINDS: [(BackgroundKind, &str, &str); 4] = [
+    (BackgroundKind::None, "Ninguno", "Color sólido de ventana: la opción por defecto para herramientas densas, tablas y formularios largos."),
+    (BackgroundKind::Mesh, "Mesh", "Cuatro orbes difusos: ambiente cálido y neutro para pantallas de bienvenida o paneles con poco texto."),
+    (BackgroundKind::Aurora, "Aurora", "Gradiente cónico que gira: el más llamativo; resérvalo para portadas, onboarding o estados vacíos."),
+    (BackgroundKind::Glow, "Glow", "Resplandor central y dos orbes: foco suave en el centro, útil tras un contenido principal o un hero."),
+];
+const BACKGROUND_PALETTES: [(BackgroundPalette, &str); 4] = [
+    (BackgroundPalette::Sunset, "Atardecer"),
+    (BackgroundPalette::Mint, "Menta"),
+    (BackgroundPalette::Lavender, "Lavanda"),
+    (BackgroundPalette::Pastel, "Pastel"),
+];
+const BACKGROUND_SPEEDS: [(BackgroundSpeed, &str); 3] = [
+    (BackgroundSpeed::Slow, "Lenta"),
+    (BackgroundSpeed::Normal, "Normal"),
+    (BackgroundSpeed::Fast, "Rápida"),
+];
+const BACKGROUND_BLURS: [(f32, &str); 3] = [(40.0, "40"), (80.0, "80"), (140.0, "140")];
+const BACKGROUND_INTENSITIES: [(f32, &str); 3] = [(0.4, "40 %"), (0.7, "70 %"), (1.0, "100 %")];
 
 #[derive(Clone, Debug)]
 pub enum Msg {
@@ -80,6 +114,12 @@ pub enum Msg {
     ToggleSwitch,
     Select(usize),
     Tab(usize),
+    Background(usize),
+    ToggleMotion,
+    Palette(usize),
+    Speed(usize),
+    Blur(usize),
+    Intensity(usize),
     /// A button that only shows itself.
     Pressed,
 }
@@ -99,6 +139,12 @@ impl Page for Screen {
             switch: true,
             select: Some(0),
             tab: 0,
+            background: BackgroundKind::None,
+            motion: BackgroundMotion::Static,
+            palette: BackgroundPalette::Sunset,
+            speed: BackgroundSpeed::Normal,
+            blur: 1,
+            intensity: 2,
         };
         (screen, Effects::none())
     }
@@ -130,6 +176,31 @@ impl Page for Screen {
             Msg::ToggleSwitch => self.switch = !self.switch,
             Msg::Select(index) => self.select = Some(index),
             Msg::Tab(index) => self.tab = index,
+            Msg::Background(index) => {
+                if let Some((kind, _, _)) = BACKGROUND_KINDS.get(index) {
+                    self.background = *kind;
+                }
+            }
+            Msg::ToggleMotion => {
+                self.motion = match self.motion {
+                    BackgroundMotion::Static => BackgroundMotion::Animated,
+                    BackgroundMotion::Animated => BackgroundMotion::Static,
+                };
+            }
+            Msg::Palette(index) => {
+                if let Some((palette, _)) = BACKGROUND_PALETTES.get(index) {
+                    self.palette = *palette;
+                }
+            }
+            Msg::Speed(index) => {
+                if let Some((speed, _)) = BACKGROUND_SPEEDS.get(index) {
+                    self.speed = *speed;
+                }
+            }
+            Msg::Blur(index) => self.blur = index.min(BACKGROUND_BLURS.len() - 1),
+            Msg::Intensity(index) => {
+                self.intensity = index.min(BACKGROUND_INTENSITIES.len() - 1);
+            }
             Msg::Pressed => {}
         }
         Effects::none()
@@ -141,6 +212,15 @@ impl Page for Screen {
 
     fn title(&self, _: &State) -> String {
         "Catálogo vivo".into()
+    }
+
+    fn background(&self, _: &State) -> BackgroundEffect {
+        BackgroundEffect::new(self.background)
+            .with_motion(self.motion)
+            .with_palette(self.palette)
+            .with_speed(self.speed)
+            .with_blur(BACKGROUND_BLURS[self.blur].0)
+            .with_intensity(BACKGROUND_INTENSITIES[self.intensity].0)
     }
 
     fn theme(&self, _: &State) -> Option<Theme> {
@@ -169,6 +249,112 @@ impl Page for Screen {
 }
 
 impl Screen {
+    /// One live effect under the whole window, with every control of
+    /// [`BackgroundEffect`]; light/dark comes from the theme filter.
+    fn backgrounds(&self) -> Element<Msg> {
+        let kind = BACKGROUND_KINDS
+            .iter()
+            .position(|(kind, _, _)| *kind == self.background)
+            .unwrap_or(0);
+        let palette = BACKGROUND_PALETTES
+            .iter()
+            .position(|(p, _)| *p == self.palette)
+            .unwrap_or(0);
+        let speed = BACKGROUND_SPEEDS
+            .iter()
+            .position(|(s, _)| *s == self.speed)
+            .unwrap_or(1);
+        let off = self.background == BackgroundKind::None;
+        let control = |name: &str, child: Element<Msg>| {
+            div()
+                .class("flex flex-col gap-1.5")
+                .children([caption(name), child])
+        };
+        card()
+            .class("w-full max-w-4xl")
+            .test_id("catalog.background")
+            .children([
+                card_header(
+                    "Fondo de ventana",
+                    Some("App::background mientras esta sección está abierta; claro/oscuro sigue al Tema"),
+                ),
+                card_content().class("gap-4").children([
+                    control(
+                        "Efecto",
+                        segmented_with_options(
+                            &BACKGROUND_KINDS.map(|(_, label, _)| label),
+                            kind,
+                            Msg::Background,
+                            false,
+                        )
+                        .label("Efecto")
+                        .test_id("catalog.background.effect"),
+                    ),
+                    paragraph(BACKGROUND_KINDS[kind].2).test_id("catalog.background.usage"),
+                    div()
+                        .class("flex flex-wrap items-end gap-4")
+                        .children([
+                            control(
+                                "Paleta",
+                                segmented_with_options(
+                                    &BACKGROUND_PALETTES.map(|(_, label)| label),
+                                    palette,
+                                    Msg::Palette,
+                                    off,
+                                )
+                                .label("Paleta")
+                                .test_id("catalog.background.palette"),
+                            ),
+                            control(
+                                "Desenfoque",
+                                segmented_with_options(
+                                    &BACKGROUND_BLURS.map(|(_, label)| label),
+                                    self.blur,
+                                    Msg::Blur,
+                                    off,
+                                )
+                                .label("Desenfoque")
+                                .test_id("catalog.background.blur"),
+                            ),
+                            control(
+                                "Intensidad",
+                                segmented_with_options(
+                                    &BACKGROUND_INTENSITIES.map(|(_, label)| label),
+                                    self.intensity,
+                                    Msg::Intensity,
+                                    off,
+                                )
+                                .label("Intensidad")
+                                .test_id("catalog.background.intensity"),
+                            ),
+                        ]),
+                    div()
+                        .class("flex flex-wrap items-end gap-4")
+                        .children([
+                            switch_labeled(
+                                "Animado",
+                                self.motion == BackgroundMotion::Animated,
+                                Msg::ToggleMotion,
+                                off,
+                                SwitchDensity::Default,
+                            )
+                            .test_id("catalog.background.animated"),
+                            control(
+                                "Velocidad",
+                                segmented_with_options(
+                                    &BACKGROUND_SPEEDS.map(|(_, label)| label),
+                                    speed,
+                                    Msg::Speed,
+                                    off || self.motion == BackgroundMotion::Static,
+                                )
+                                .label("Velocidad")
+                                .test_id("catalog.background.speed"),
+                            ),
+                        ]),
+                ]),
+            ])
+    }
+
     fn catalog(&self) -> Element<Msg> {
         let size = self.size;
         let field_density = match self.density {
@@ -556,7 +742,10 @@ impl Screen {
             .class("flex flex-col gap-5 w-full")
             .test_id("catalog")
             .children([
-                filters, buttons, fields, choices, badges, feedback, empties, layers,
+                filters,
+                self.backgrounds(),
+                buttons,
+                fields, choices, badges, feedback, empties, layers,
             ])
     }
 }

@@ -21,6 +21,13 @@ mcp = ["kai/mcp"]
 [dev-dependencies]
 # The captures write PNG (tests/snapshots.rs).
 kai = { package = "kai-ui-desktop-prototype", path = "..", features = ["document", "snapshots"] }
+# Frame benchmarks (benches/frames.rs, docs/dev/30): statistics and
+# baselines; without rayon or plots, to keep the build small.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "frames"
+harness = false
 
 [build-dependencies]
 kai-build = { path = "../../kai-build" }

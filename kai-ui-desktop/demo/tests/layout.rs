@@ -64,3 +64,43 @@ fn the_sidebar_button_collapses_it_to_a_rail() {
     app.click(By::test_id("bar.sidebar"));
     assert!(width(&app) > 48.0);
 }
+
+#[test]
+fn a_page_brings_its_own_actions_to_the_bar_through_the_slot() {
+    let mut app = demo();
+    // The home page has nothing for the slot: the bar keeps its slot empty.
+    app.screen().get(By::test_id("bar.actions"));
+    assert!(app.screen().query(By::test_id("table.find")).is_none());
+
+    app.navigate("/table");
+    let bar = app.screen().get(By::test_id("bar.actions")).bounds();
+    let find = app.screen().get(By::test_id("table.find")).bounds();
+    let table = app.screen().get(By::test_id("table.clients")).bounds();
+    assert!(
+        find.y >= bar.y && find.y + find.height <= bar.y + bar.height,
+        "the search {find:?} sits in the bar's slot {bar:?}"
+    );
+    assert!(
+        find.y + find.height <= table.y,
+        "the search {find:?} is above the table {table:?}"
+    );
+
+    // Typing in the bar filters the table, and the search is gone with the page.
+    let all = app
+        .screen()
+        .get(By::test_id("table.clients"))
+        .node()
+        .row_count;
+    app.type_text(By::test_id("table.find"), "temuco");
+    let filtered = app
+        .screen()
+        .get(By::test_id("table.clients"))
+        .node()
+        .row_count;
+    assert!(
+        filtered < all,
+        "{filtered:?} rows after the search, {all:?} before"
+    );
+    app.navigate("/catalog");
+    assert!(app.screen().query(By::test_id("table.find")).is_none());
+}

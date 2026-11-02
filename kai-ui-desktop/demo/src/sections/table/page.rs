@@ -264,6 +264,18 @@ impl Page for Screen {
         page().child(page_body().children([self.table(), simple_list(), patterns()]))
     }
 
+    /// The search lives in the top bar, which draws the slot `actions`.
+    fn slot(&self, name: &str, _: &State) -> Option<Element<Msg>> {
+        (name == "actions").then(|| {
+            search_field(&self.query, Msg::Query)
+                .placeholder("Buscar clientes")
+                .label("Buscar clientes")
+                .test_id("table.find")
+                .build()
+                .class("w-64")
+        })
+    }
+
     fn title(&self, _: &State) -> String {
         "Tabla".into()
     }
@@ -328,11 +340,6 @@ impl Screen {
                 Some("10 000 filas; solo se construyen las visibles"),
             ),
             card_content().class("gap-3").children([
-                search_field(&self.query, Msg::Query)
-                    .placeholder("Buscar clientes")
-                    .label("Buscar clientes")
-                    .test_id("table.find")
-                    .build(),
                 div()
                     .class("flex items-center justify-between gap-3")
                     .children([

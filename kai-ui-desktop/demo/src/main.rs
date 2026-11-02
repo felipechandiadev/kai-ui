@@ -2,12 +2,12 @@
 //!
 //! - `KAI_THEME=kai|appkit|appkit-dark|aqua11|aqua11-dark|glass27|glass27-dark`
 //!   (default: Glass 27 light, large controls), `KAI_MIX=appkit|a|b|c`,
-//!   `KAI_LABEL=near|appkit|top|tab` and `KAI_HOVER=0`.
+//!   `KAI_LABEL=near|appkit|top|tab` and `KAI_HOVER=0`. `KAI_THEME` wins
+//!   over the theme saved in the bar's settings until one is picked there.
 //! - `--describe-commands` prints what the demo publishes to agents.
 //! - `--mcp` (with `--features mcp`) serves its commands over stdio.
 
 use kai::commands::describe_json;
-use kai::element::ControlSize;
 use kai::store::Store;
 use kai::theme::{
     AppKitGeneration, Appearance, Density, FieldLabels, MacVersion, MixStyle, SystemInfo, Theme,
@@ -26,11 +26,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("--mcp necesita compilar con --features mcp".into());
     }
     let theme = theme_from_env();
-    // As `app::run` does: the last section, kept in the data folder.
-    let mut root = app::app(State::default());
-    match Store::for_app(env!("CARGO_PKG_NAME")) {
-        Ok(store) => root = root.with_store(store),
-        Err(error) => eprintln!("Sin carpeta de datos: {error}"),
+    // As `app::run` does: the last section, kept in the data folder, and
+    // the settings of the bar with it (docs/dev/31).
+    let store = Store::for_app(env!("CARGO_PKG_NAME"))
+        .map_err(|error| eprintln!("Sin carpeta de datos: {error}"))
+        .ok();
+    let mut state = store.clone().map_or_else(State::default, State::with_store);
+    state.initial_theme = theme;
+    state.env_theme = std::env::var("KAI_THEME").is_ok_and(|name| !name.is_empty());
+    let mut root = app::app(state);
+    if let Some(store) = store {
+        root = root.with_store(store);
     }
     #[cfg(feature = "mcp")]
     if mcp {
@@ -44,11 +50,7 @@ fn theme_from_env() -> Theme {
     let forced = |generation, appearance| Theme::appkit_static(generation, appearance);
     let theme = match std::env::var("KAI_THEME").as_deref() {
         // Por defecto: Glass claro, controles grandes y densidad cómoda.
-        Ok("") | Err(_) => Theme {
-            control_size: ControlSize::Large,
-            density: Density::Comfortable,
-            ..forced(AppKitGeneration::Glass27, Appearance::Light)
-        },
+        Ok("") | Err(_) => Theme::glass(),
         Ok("appkit" | "appkit-light") => Theme::appkit_current(Appearance::Light),
         Ok("appkit-dark") => Theme::appkit_current(Appearance::Dark),
         Ok("aqua11") => forced(AppKitGeneration::Aqua11, Appearance::Light),

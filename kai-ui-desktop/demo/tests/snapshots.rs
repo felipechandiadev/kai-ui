@@ -124,6 +124,10 @@ fn render_demo_shots(out: &Out) {
         ("demo-template-list", "/template-list"),
         ("demo-template-form", "/template-form"),
         ("demo-template-data", "/template-data"),
+        ("demo-real-app", "/real-app"),
+        ("demo-real-app-clients", "/real-app/clients"),
+        ("demo-real-app-client", "/real-app/clients/4"),
+        ("demo-real-app-form", "/real-app/clients/new"),
     ] {
         out.shot(name, &out.wide(path));
     }
@@ -145,6 +149,11 @@ fn render_demo_shots(out: &Out) {
     selected.click(By::test_id("map.edit"));
     selected.advance(std::time::Duration::from_secs(1));
     out.shot("demo-map-editing", &selected);
+
+    let mut real_map = out.wide("/real-app/map");
+    real_map.click(By::test_id("real_app.map.client.4"));
+    real_map.advance(std::time::Duration::from_secs(1));
+    out.shot("demo-real-app-map", &real_map);
 
     let mut media = out.wide("/media");
     media.drop_files(By::test_id("media.logo.preview"), ["/no/existe/logo.gif"]);

@@ -619,6 +619,185 @@
       "kind": "action",
       "safety": "mutating",
       "title": "Exportar a Excel"
+    },
+    {
+      "description": "Escribe un valor en un campo del formulario; contesta con los errores",
+      "exposed": true,
+      "id": "client.set_field",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Nombre del campo, por ejemplo `rut`",
+            "type": "string"
+          },
+          "value": {
+            "description": "Valor; se normaliza con el formato del campo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "outputSchema": {
+        "items": {
+          "description": "Error de un campo.",
+          "properties": {
+            "field": {
+              "description": "Nombre del campo (`rut`).",
+              "type": "string"
+            },
+            "message": {
+              "description": "Mensaje para mostrar (`RUT no válido`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "safety": "mutating",
+      "title": "Completar campo"
+    },
+    {
+      "description": "Errores actuales por campo, en orden ({field, message})",
+      "exposed": true,
+      "id": "client.errors",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "items": {
+          "description": "Error de un campo.",
+          "properties": {
+            "field": {
+              "description": "Nombre del campo (`rut`).",
+              "type": "string"
+            },
+            "message": {
+              "description": "Mensaje para mostrar (`RUT no válido`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "title": "Errores del formulario"
+    },
+    {
+      "description": "Valores normalizados por campo",
+      "exposed": true,
+      "id": "client.values",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Valores del formulario"
+    },
+    {
+      "description": "Errores del último envío: [] si se envió, null si nunca se intentó",
+      "exposed": true,
+      "id": "client.last_submit",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "query",
+      "outputSchema": {
+        "items": {
+          "description": "Error de un campo.",
+          "properties": {
+            "field": {
+              "description": "Nombre del campo (`rut`).",
+              "type": "string"
+            },
+            "message": {
+              "description": "Mensaje para mostrar (`RUT no válido`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
+      },
+      "title": "Último envío del formulario"
+    },
+    {
+      "description": "Envía el formulario; contesta con los errores del envío ([] si se envió)",
+      "exposed": true,
+      "id": "client.submit",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "outputSchema": {
+        "items": {
+          "description": "Error de un campo.",
+          "properties": {
+            "field": {
+              "description": "Nombre del campo (`rut`).",
+              "type": "string"
+            },
+            "message": {
+              "description": "Mensaje para mostrar (`RUT no válido`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
+      },
+      "safety": "mutating",
+      "title": "Enviar formulario"
+    },
+    {
+      "description": "Vuelve el formulario a sus valores iniciales",
+      "exposed": true,
+      "id": "client.reset",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "safety": "destructive",
+      "title": "Restablecer formulario"
     }
   ],
   "format": 1
