@@ -97,10 +97,12 @@ const MAIN_RS: &str = r#"//! App mínima generada por `kai new`.
 
 use kai::element::{div, text, Element};
 use kai::runtime::{App, Effects};
-use kai::theme::{Density, Theme};
+use kai::theme::Theme;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    kai::runtime::run(Demo, Theme::kai(Density::Comfortable))
+    // Tema por defecto: Glass claro. Para el aspecto web usa
+    // `Theme::kai(kai::theme::Density::Comfortable)`.
+    kai::runtime::run(Demo, Theme::default())
 }
 
 struct Demo;

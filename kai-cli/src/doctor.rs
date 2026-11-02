@@ -47,6 +47,8 @@ pub fn run() -> Result<(), String> {
     {
         eprintln!("  —   Xcode CLT: no aplica fuera de macOS");
     }
+    #[cfg(target_os = "macos")]
+    check_distribution(&mut warnings_found);
 
     match manifest::load_from_cwd() {
         Ok(loaded) => {
@@ -95,6 +97,115 @@ fn check_manifest(loaded: &Loaded, failures: &mut u32, warnings_found: &mut u32)
 
     if let Some(bin) = &loaded.manifest.dev.bin {
         eprintln!("  ok  [dev].bin = {bin}");
+    }
+
+    if let Some(icon) = &loaded.manifest.app.icon {
+        check_icon(&loaded.root.join(icon), icon, failures, warnings_found);
+    }
+}
+
+/// The icon `kai bundle` turns into `AppIcon.icns`: it must exist and be a
+/// square image of at least 1024 px.
+fn check_icon(path: &std::path::Path, shown: &str, failures: &mut u32, warnings_found: &mut u32) {
+    if !path.is_file() {
+        eprintln!("  ERR [app].icon = {shown}: el archivo no existe");
+        *failures += 1;
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("sips")
+            .args(["-g", "pixelWidth", "-g", "pixelHeight"])
+            .arg(path)
+            .output();
+        let size = output
+            .ok()
+            .and_then(|output| parse_sips_size(&String::from_utf8_lossy(&output.stdout)));
+        match size {
+            Some((width, height)) => match icon_problem(width, height) {
+                None => eprintln!("  ok  [app].icon = {shown} ({width}×{height})"),
+                Some(problem) => {
+                    eprintln!("  avs [app].icon = {shown}: {problem}");
+                    *warnings_found += 1;
+                }
+            },
+            None => {
+                eprintln!("  avs [app].icon = {shown}: sips no pudo leer el tamaño de la imagen");
+                *warnings_found += 1;
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = warnings_found;
+        eprintln!("  ok  [app].icon = {shown}");
+    }
+}
+
+/// `pixelWidth: 1024` and `pixelHeight: 1024` from `sips -g`.
+fn parse_sips_size(output: &str) -> Option<(u32, u32)> {
+    let value = |key: &str| {
+        output
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(key))
+            .and_then(|rest| rest.trim_start_matches(':').trim().parse().ok())
+    };
+    Some((value("pixelWidth")?, value("pixelHeight")?))
+}
+
+/// Why an icon of this size will not make a good `.icns`, if it will not.
+fn icon_problem(width: u32, height: u32) -> Option<String> {
+    if width != height {
+        return Some(format!("no es cuadrado ({width}×{height})"));
+    }
+    (width < 1024).then(|| format!("mide {width} px; se necesitan 1024 px o más"))
+}
+
+/// Names of the Developer ID Application identities in `security
+/// find-identity -v -p codesigning`.
+fn parse_developer_ids(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let start = line.find('"')? + 1;
+            let end = line.rfind('"')?;
+            let name = line.get(start..end)?;
+            name.starts_with("Developer ID Application")
+                .then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// Signing and notarizing, which `kai sign` and `kai notarize` need.
+#[cfg(target_os = "macos")]
+fn check_distribution(warnings_found: &mut u32) {
+    let identities = Command::new("security")
+        .args(["find-identity", "-v", "-p", "codesigning"])
+        .output()
+        .map(|output| parse_developer_ids(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default();
+    if identities.is_empty() {
+        eprintln!(
+            "  avs sin identidad «Developer ID Application» en el llavero: `kai sign` solo \
+             podrá firmar ad hoc (este Mac)"
+        );
+        *warnings_found += 1;
+    } else {
+        for name in identities {
+            eprintln!("  ok  firma: {name}");
+        }
+    }
+    let notary = Command::new("xcrun")
+        .args(["--find", "notarytool"])
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if notary {
+        eprintln!(
+            "  ok  xcrun notarytool (el perfil se guarda con `xcrun notarytool store-credentials`)"
+        );
+    } else {
+        eprintln!("  avs xcrun notarytool no está disponible: `kai notarize` no funcionará");
+        *warnings_found += 1;
     }
 }
 
@@ -192,6 +303,31 @@ fn check_sections(failures: &mut u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_icon_must_be_square_and_at_least_1024() {
+        let sips = "/x/icon.png\n  pixelWidth: 1024\n  pixelHeight: 1024\n";
+        assert_eq!(parse_sips_size(sips), Some((1024, 1024)));
+        assert_eq!(parse_sips_size("nada"), None);
+        assert_eq!(icon_problem(1024, 1024), None);
+        assert_eq!(icon_problem(2048, 2048), None);
+        assert!(icon_problem(1024, 512).unwrap().contains("cuadrado"));
+        assert!(icon_problem(512, 512).unwrap().contains("1024"));
+    }
+
+    #[test]
+    fn only_developer_id_application_identities_count() {
+        let output = r#"  1) AAAA "Apple Development: Ana (X1)"
+  2) BBBB "Developer ID Application: Acme SA (T1)"
+  3) CCCC "Developer ID Installer: Acme SA (T1)"
+     3 valid identities found
+"#;
+        assert_eq!(
+            parse_developer_ids(output),
+            ["Developer ID Application: Acme SA (T1)"]
+        );
+        assert!(parse_developer_ids("     0 valid identities found").is_empty());
+    }
 
     #[test]
     fn msrv_comparison() {

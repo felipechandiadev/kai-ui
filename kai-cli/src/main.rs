@@ -1,12 +1,14 @@
 //! `kai`: herramientas de desarrollo de apps Kai (13, Pasos 17–18).
 //!
 //! Lee `kai.toml` cuando existe. Comandos: `dev`, `doctor`, `test`, `new`,
-//! `icons add` (Paso 19), `bundle`, `sign` y `notarize` (Paso 20).
-//! `commands`/`mcp` quedan fuera.
+//! `icons add` (Paso 19), `bundle`, `dmg`, `sign` y `notarize` (Paso 20).
+//! `commands list` y `mcp list` leen el registro de la app.
 
 mod bundle;
 mod cargo;
+mod commands_cmd;
 mod dev;
+mod dmg;
 mod doctor;
 mod icons_cmd;
 mod manifest;
@@ -37,10 +39,16 @@ Comandos:
                           Copia un SVG a assets/icons/ (Lucide del crate kai o --from)
   kai bundle [--bin NOMBRE] [--debug]
                           Genera target/kai/<Nombre>.app (sin firmar) desde kai.toml
+  kai dmg [--bundle RUTA]
+                          Imagen .dmg del .app con un acceso a /Applications (firma el .app antes)
   kai sign [--identity 'Developer ID Application: …'] [--bundle RUTA]
                           codesign del .app; sin --identity firma ad hoc (solo este Mac)
   kai notarize --profile NOMBRE [--bundle RUTA]
                           Envía a Apple, espera y grapa (perfil de notarytool en el llavero)
+  kai commands list [--bin NOMBRE] [--exposed]
+                          Los comandos de la app (los lee de su binario con --describe-commands)
+  kai mcp list [--bin NOMBRE]
+                          Solo los que un agente puede llamar
   kai dev [--bin NOMBRE] [--watch CARPETA]... [-- ARGUMENTOS]
                           Compila, abre y reinicia conservando estado
 
@@ -52,8 +60,10 @@ Si hay kai.toml, `kai dev` usa [dev].bin y observa el manifiesto.";
 enum Command {
     Bundle(bundle::Options),
     Sign(sign::Options),
+    Dmg(dmg::Options),
     Notarize(notarize::Options),
     Dev(dev::Options),
+    Commands(commands_cmd::Options),
     Doctor,
     Test(test_cmd::Options),
     New(new_cmd::Options),
@@ -72,6 +82,7 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
         Some("dev") => parse_dev(args).map(Command::Dev),
         Some("bundle") => parse_bundle(args).map(Command::Bundle),
         Some("sign") => parse_sign(args).map(Command::Sign),
+        Some("dmg") => parse_dmg(args).map(Command::Dmg),
         Some("notarize") => parse_notarize(args).map(Command::Notarize),
         Some("doctor") => {
             if args.next().is_some() {
@@ -82,6 +93,20 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
         Some("test") => parse_test(args).map(Command::Test),
         Some("new") => parse_new(args),
         Some("icons") => parse_icons(args).map(Command::IconsAdd),
+        Some("commands") => match args.next().as_deref() {
+            Some("list") => commands_cmd::parse_args(args, false).map(Command::Commands),
+            Some(other) => Err(format!(
+                "subcomando desconocido para kai commands: {other} (list)"
+            )),
+            None => Err("kai commands necesita un subcomando (list)".into()),
+        },
+        Some("mcp") => match args.next().as_deref() {
+            Some("list") => commands_cmd::parse_args(args, true).map(Command::Commands),
+            Some(other) => Err(format!(
+                "subcomando desconocido para kai mcp: {other} (list)"
+            )),
+            None => Err("kai mcp necesita un subcomando (list)".into()),
+        },
         Some(other) => Err(format!("comando desconocido: {other}")),
     }
 }
@@ -119,6 +144,20 @@ fn parse_bundle(mut args: impl Iterator<Item = String>) -> Result<bundle::Option
             "--debug" => options.debug = true,
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("argumento desconocido para kai bundle: {other}")),
+        }
+    }
+    Ok(options)
+}
+
+fn parse_dmg(mut args: impl Iterator<Item = String>) -> Result<dmg::Options, String> {
+    let mut options = dmg::Options::default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--bundle" => {
+                options.bundle = Some(args.next().ok_or("--bundle necesita una ruta")?.into());
+            }
+            "-h" | "--help" => return Err(String::new()),
+            other => return Err(format!("argumento desconocido para kai dmg: {other}")),
         }
     }
     Ok(options)
@@ -258,10 +297,24 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(Command::Commands(options)) => match commands_cmd::run(&options) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai commands: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Ok(Command::Bundle(options)) => match bundle::run(&options) {
             Ok(_) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("kai bundle: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Command::Dmg(options)) => match dmg::run(&options) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("kai dmg: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -374,6 +427,33 @@ mod tests {
             }))
         );
         assert!(parse_str(&["bundle", "--release"]).is_err());
+    }
+
+    #[test]
+    fn dmg_commands_and_mcp_take_their_options() {
+        assert_eq!(
+            parse_str(&["dmg", "--bundle", "x/App.app"]),
+            Ok(Command::Dmg(dmg::Options {
+                bundle: Some("x/App.app".into())
+            }))
+        );
+        assert!(parse_str(&["dmg", "--mas"]).is_err());
+        assert_eq!(
+            parse_str(&["commands", "list", "--exposed"]),
+            Ok(Command::Commands(commands_cmd::Options {
+                bin: None,
+                exposed_only: true
+            }))
+        );
+        assert_eq!(
+            parse_str(&["mcp", "list", "--bin", "demo"]),
+            Ok(Command::Commands(commands_cmd::Options {
+                bin: Some("demo".into()),
+                exposed_only: true
+            }))
+        );
+        assert!(parse_str(&["commands"]).is_err());
+        assert!(parse_str(&["mcp", "run"]).is_err());
     }
 
     #[test]
