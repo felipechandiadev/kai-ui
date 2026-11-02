@@ -30,6 +30,11 @@ Esta documentación describe la implementación gradual de un framework de inter
 24. [Spacing, densidad y do/don't](23-spacing-density.md)
 25. [Layering AppKit](24-layering.md)
 26. [Catálogo vivo](25-catalogo-vivo.md)
+27. [Errores fatales: informe, estado y aviso](29-errores-fatales.md)
+28. [Ajustes globales de la demo: tema y fondo desde el layout](31-ajustes-globales.md)
+29. [Capa flotante: popovers anclados](32-capa-flotante.md)
+30. [Demo «App real»: panel, CRM y mapa](33-app-real.md)
+31. [Páginas de componente: `/components` con controles en vivo](34-paginas-de-componente.md)
 
 ## Dónde estamos
 
@@ -98,6 +103,7 @@ kai-ui-desktop/
 │   ├── runtime.rs         App v2 y SimpleApp; ventana: winit → Session, Outbox → ventana, render
 │   ├── session.rs         runtime sin ventana: árbol, layout, foco, inputs, eventos → mensajes
 │   ├── session/calls.rs   llamadas por JSON: scripts y agentes, confirmación, cola, indicador
+│   ├── session/floating.rs capa flotante: flotantes abiertos, foco y descarte (docs/dev/32)
 │   ├── element.rs         árbol tipo DOM Element<Msg>, ids, test_id, validate_ids, FocusOrder
 │   ├── components.rs      Button, TextField, Card, Select, Switch, paleta… con clases Kai web y
 │   │                      AppKit; constantes del vidrio de elección (CHOICE_ACTIVE, CHOICE_HOVER)
@@ -120,6 +126,7 @@ kai-ui-desktop/
 │   ├── mcp/               servidor MCP por stdio con rmcp (feature `mcp`): Tools, Invocation,
 │   │                      Event, serve; plazo de 30 s y cancelación
 │   ├── menu.rs            barra de menús desde el registro (menu_model; muda en macOS)
+│   ├── overlay.rs         capa flotante: Element::floating, Floating, position (flip/shift)
 │   ├── tw.rs              parser de clases tipo Tailwind → Style
 │   ├── style.rs           Style tipo CSS → taffy::Style, texto heredable
 │   ├── theme.rs, theme/   tema Kai (tokens.css) y AppKit (appkit.rs, generation.rs)

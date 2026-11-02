@@ -52,6 +52,7 @@
 | 7 — Escala (P22–P25) | 🟡 P22 router hecho (R0–R5); mapas M3 adelantado | Varias ventanas, MCP completo, plugins |
 | 8 — Ergonomía (P26) | ⬜ Pendiente | `tw!`, derives, `rsx!` (la raíz generada por `kai-build` ya cubre parte) |
 | 9 — Multiplataforma (P27) | ⬜ Pendiente | Windows y Linux |
+| i18n / locale es-CL | ⬜ Pendiente | Hoy los mensajes están fijos en español. Meta: catálogo de mensajes y formatos es-CL de número, fecha y moneda para validadores, DatePicker y tablas. Postergado a propósito por Felipe el 2026-10-31 |
 
 **La Etapa 4 por partes:**
 
@@ -1263,6 +1264,7 @@ Reglas de la pista C:
 - [ ] P15c Editor de geometrías Punto · Línea · Área (mapas M1b). Parcial: edición de polígonos existentes (`polygon_editor`).
 - [ ] P15d Comandos `mapa.*` y de dominio con geometría (mapas M2). Empezado: `map.set_view/get_view/fit_bounds`, `areas.select` y `areas.edit_geometry`.
 - [ ] P16 `Store` con migración y guardado atómico.
+- [ ] i18n / locale es-CL (⬜ Pendiente, postergado por Felipe el 2026-10-31): hoy los mensajes están fijos en español; falta un catálogo de mensajes y formatos es-CL de número, fecha y moneda que usen los validadores, el DatePicker y las tablas.
 
 **Etapa 5 — Manifiesto y CLI**
 - [x] P17 `kai.toml` mínimo (corte A1): parseo en `kai-cli` (`manifest.rs`), ejemplo en `kai-ui-desktop/kai.toml`; `[theme] kind` y `[mcp]` seguro por defecto. El runtime aún no lo carga.
