@@ -257,6 +257,15 @@ pub enum Role {
     /// Plain list of items.
     List,
     ListItem,
+    /// Text input that offers a list to pick from as one types
+    /// ([`crate::components::autocomplete`]); it keeps the focus and its
+    /// [`Element::expanded`] says whether the list is open.
+    ComboBox,
+    /// The list of a [`Role::ComboBox`]: its [`Role::ListBoxOption`]s are
+    /// picked with the arrows from the field, never focused.
+    ListBox,
+    /// Option of a [`Role::ListBox`]: On while it is the active one.
+    ListBoxOption,
     /// Short description shown next to the element under the pointer.
     Tooltip,
     Image,
@@ -286,6 +295,8 @@ pub enum Kind {
         select_on_focus: bool,
         /// Several wrapped lines ([`Element::multiline`]).
         rows: Option<Rows>,
+        /// Formato aplicado al escribir o pegar ([`Element::format`]).
+        format: Option<crate::forms::Format>,
     },
     /// Raster image ([`fn@image`]): sized by its classes, or by its natural
     /// size and aspect ratio; fitted by `object-*`.
@@ -319,6 +330,10 @@ pub struct Handlers<Msg> {
     pub on_click: Option<Msg>,
     pub on_input: Option<Rc<dyn Fn(String) -> Msg>>,
     pub on_submit: Option<Msg>,
+    /// Sent when the element gains focus ([`Element::on_focus`]).
+    pub on_focus: Option<Msg>,
+    /// Sent when the element loses focus ([`Element::on_blur`]).
+    pub on_blur: Option<Msg>,
     /// Standard actions this element handles when they travel the
     /// responder chain (`None` = handles none).
     pub on_action: Option<Rc<dyn Fn(Action) -> Option<Msg>>>,
@@ -344,6 +359,8 @@ impl<Msg> Default for Handlers<Msg> {
             on_click: None,
             on_input: None,
             on_submit: None,
+            on_focus: None,
+            on_blur: None,
             on_action: None,
             on_select: None,
             on_drop_files: None,
@@ -361,6 +378,8 @@ impl<Msg: Clone> Clone for Handlers<Msg> {
             on_click: self.on_click.clone(),
             on_input: self.on_input.clone(),
             on_submit: self.on_submit.clone(),
+            on_focus: self.on_focus.clone(),
+            on_blur: self.on_blur.clone(),
             on_action: self.on_action.clone(),
             on_select: self.on_select.clone(),
             on_drop_files: self.on_drop_files.clone(),
@@ -378,6 +397,8 @@ impl<Msg: fmt::Debug> fmt::Debug for Handlers<Msg> {
             .field("on_click", &self.on_click)
             .field("on_input", &self.on_input.is_some())
             .field("on_submit", &self.on_submit)
+            .field("on_focus", &self.on_focus)
+            .field("on_blur", &self.on_blur)
             .field("on_action", &self.on_action.is_some())
             .field("on_select", &self.on_select.is_some())
             .field("on_drop_files", &self.on_drop_files.is_some())
@@ -647,6 +668,9 @@ pub struct Element<Msg> {
     /// Whether the session marks this control busy while a task it
     /// started runs (on by default).
     pub busy_feedback: bool,
+    /// Drawn in the floating layer, hanging from its parent
+    /// ([`Element::floating`](crate::overlay)).
+    pub floating: Option<Box<crate::overlay::Floating<Msg>>>,
 }
 
 pub fn div<Msg>() -> Element<Msg> {
@@ -694,6 +718,7 @@ pub fn input<Msg>(value: impl Into<String>, placeholder: impl Into<String>) -> E
         read_only: false,
         select_on_focus: false,
         rows: None,
+        format: None,
     })
 }
 
@@ -751,6 +776,7 @@ impl<Msg: 'static> Element<Msg> {
             motion,
             busy,
             busy_feedback,
+            floating,
         } = self;
         Element {
             id,
@@ -791,6 +817,7 @@ impl<Msg: 'static> Element<Msg> {
             motion,
             busy,
             busy_feedback,
+            floating: floating.map(|floating| Box::new(floating.map_with(f))),
         }
     }
 }
@@ -813,6 +840,8 @@ impl<Msg: 'static> Handlers<Msg> {
             on_click: self.on_click.map(|msg| f(msg)),
             on_input: then(self.on_input, f),
             on_submit: self.on_submit.map(|msg| f(msg)),
+            on_focus: self.on_focus.map(|msg| f(msg)),
+            on_blur: self.on_blur.map(|msg| f(msg)),
             on_action,
             on_select: then(self.on_select, f),
             on_drop_files: then(self.on_drop_files, f),
@@ -876,6 +905,7 @@ impl<Msg> Element<Msg> {
             motion: None,
             busy: false,
             busy_feedback: true,
+            floating: None,
         }
     }
 
@@ -1126,6 +1156,16 @@ impl<Msg> Element<Msg> {
         self
     }
 
+    /// Inputs only: reformatea el texto en cada edición (escribir, pegar)
+    /// manteniendo el cursor tras el mismo carácter significativo; el
+    /// `on_input` recibe el valor normalizado ([`crate::forms::Formatted`]).
+    pub fn format(mut self, on: Option<crate::forms::Format>) -> Self {
+        if let Kind::Input { format, .. } = &mut self.kind {
+            *format = on;
+        }
+        self
+    }
+
     /// Inputs only: wrapped lines where Return breaks the line and ⌘Return
     /// submits; the input is `min` to `max` lines tall, following its text.
     pub fn multiline(mut self, min: u16, max: u16) -> Self {
@@ -1146,6 +1186,18 @@ impl<Msg> Element<Msg> {
 
     pub fn on_input(mut self, handler: impl Fn(String) -> Msg + 'static) -> Self {
         self.handlers.on_input = Some(Rc::new(handler));
+        self
+    }
+
+    /// Message sent when this element gains focus (click, Tab, program).
+    pub fn on_focus(mut self, msg: Msg) -> Self {
+        self.handlers.on_focus = Some(msg);
+        self
+    }
+
+    /// Message sent when this element loses focus.
+    pub fn on_blur(mut self, msg: Msg) -> Self {
+        self.handlers.on_blur = Some(msg);
         self
     }
 
@@ -1583,6 +1635,8 @@ impl<Msg: Clone> Element<Msg> {
             if h.on_click.is_some()
                 || h.on_input.is_some()
                 || h.on_submit.is_some()
+                || h.on_focus.is_some()
+                || h.on_blur.is_some()
                 || h.on_action.is_some()
                 || h.on_select.is_some()
                 || h.on_drop_files.is_some()

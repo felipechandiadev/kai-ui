@@ -16,7 +16,7 @@ Bordes: `border-separator` (AppKit) / `border-border` (Kai). Texto: `text-label`
 
 ## Popover / overlay
 
-Diálogos y toasts viven como capas encima del shell (`Role::Dialog`, toast stack). No hay todavía un material “popover glass” tipado aparte: usar `bg-control` + `border-separator` + sombra del tema si hace falta. Liquid Glass real (desenfoque) queda fuera hasta que el renderer lo soporte.
+Diálogos y toasts viven como capas encima del shell (`Role::Dialog`, toast stack). Los popovers anclados (menús, calendarios, listas de combobox) usan la capa flotante (`Element::floating`, [32](32-capa-flotante.md)). No hay todavía un material “popover glass” tipado aparte: usar `bg-control` + `border-separator` + sombra del tema si hace falta. Liquid Glass real (desenfoque) queda fuera hasta que el renderer lo soporte.
 
 ## Demo
 

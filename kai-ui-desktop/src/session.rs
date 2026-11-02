@@ -17,6 +17,9 @@ mod commands_tests;
 mod devtools_tests;
 #[cfg(all(test, feature = "document"))]
 mod document_tests;
+mod floating;
+#[cfg(test)]
+mod floating_tests;
 #[cfg(test)]
 mod focus_tests;
 #[cfg(test)]
@@ -127,6 +130,14 @@ pub(crate) struct Outbox {
 }
 
 /// What tells a control apart beyond its positional [`WidgetId`].
+/// Key of an input in `Session::touched_fields` (`forms::field_key`).
+fn input_key<Msg>(element: &Element<Msg>) -> String {
+    match &element.test_id {
+        Some(id) => id.clone(),
+        None => element.label.clone().unwrap_or_default(),
+    }
+}
+
 type ControlSignature = (Option<Role>, Option<String>, Option<String>);
 
 fn control_signature<Msg>(element: &Element<Msg>) -> ControlSignature {
@@ -155,6 +166,9 @@ pub(crate) struct Session<A: App> {
     styles: StyleCache,
     text: TextStore,
     text_fields: BTreeMap<WidgetId, TextFieldState>,
+    /// Inputs that lost focus (`forms::field_key`): their errors show
+    /// ([`crate::forms::ValidateOn::Blur`]) until the app replaces the value.
+    touched_fields: std::collections::HashSet<String>,
     /// Field decorations of the last prepared frame, for `paint_list`.
     decorations: Vec<(WidgetId, TextFieldDecorations)>,
     layout: Layout,
@@ -196,6 +210,8 @@ pub(crate) struct Session<A: App> {
     palette: Option<Palette>,
     /// The open list of a pop-up button.
     popup: Option<Popup>,
+    /// The app's floating elements ([`Element::floating`]).
+    floats: Vec<floating::OpenFloat>,
     /// Agent calls, their confirmation dialog and the audit log.
     agents: calls::Agents,
     /// The app's open [`Element::modal`] panel.
@@ -645,6 +661,7 @@ impl<A: App> Session<A> {
             styles: StyleCache::default(),
             text: TextStore::new(FontSystem::new()),
             text_fields: BTreeMap::new(),
+            touched_fields: Default::default(),
             decorations: Vec::new(),
             layout: Layout::default(),
             scroll: ScrollOffsets::new(),
@@ -674,6 +691,7 @@ impl<A: App> Session<A> {
             commands,
             palette: None,
             popup: None,
+            floats: Vec::new(),
             agents: calls::Agents::default(),
             modal: None,
             modal_focus: None,
@@ -804,6 +822,11 @@ impl<A: App> Session<A> {
                     self.file_pick = Some(done);
                     self.outbox.pick_file = None;
                     self.outbox.save_file = Some(request);
+                }
+                Effect::CopyText(text) => {
+                    if let Err(error) = self.clipboard.set_text(text) {
+                        eprintln!("kai: no se pudo copiar al portapapeles: {error}");
+                    }
                 }
             }
         }
@@ -1396,7 +1419,9 @@ impl<A: App> Session<A> {
             self.commands = commands;
         }
         let pin = self.row_pin.take().or_else(|| self.focused_row());
-        self.tree = build_view_with(&self.app, &self.commands);
+        let touched = std::rc::Rc::new(self.touched_fields.clone());
+        self.tree =
+            crate::forms::with_touched(touched, || build_view_with(&self.app, &self.commands));
         self.build_rows(pin);
         self.mark_busy_widgets();
         self.images.resolve(&mut self.tree);
@@ -1413,6 +1438,7 @@ impl<A: App> Session<A> {
             self.tooltip = None;
         }
         self.track_modal();
+        self.track_floats();
         self.add_agent_status();
         self.add_inspector();
         self.add_tooltip();
@@ -1442,6 +1468,7 @@ impl<A: App> Session<A> {
                         .iter()
                         .find(|child| child.id == popup.root)
                 })
+                .or_else(|| floating::contained(&self.tree, &self.floats))
                 .or_else(|| modal.and_then(|panel| self.tree.find(panel)))
         };
         self.focus_order = FocusOrder::from_tree(overlay.unwrap_or(&self.tree));
@@ -1462,6 +1489,8 @@ impl<A: App> Session<A> {
 
         let font_system = &mut self.text.font_system;
         let fields = &mut self.text_fields;
+        let touched = &mut self.touched_fields;
+        let mut forgot = false;
         let mut live = Vec::new();
         self.tree.walk(&mut |element| {
             if let Kind::Input {
@@ -1478,13 +1507,21 @@ impl<A: App> Session<A> {
                 field.set_multiline(font_system, rows.is_some());
                 field.set_masked(font_system, *masked);
                 field.set_read_only(font_system, *read_only);
-                if field.preedit().is_none() {
-                    field.set_text(font_system, value);
+                if field.preedit().is_none()
+                    && field.set_text(font_system, value)
+                    && !touched.is_empty()
+                {
+                    // The app replaced the value (a cleared form): the
+                    // field is no longer touched.
+                    forgot |= touched.remove(&input_key(element));
                 }
                 live.push(element.id);
             }
         });
         fields.retain(|id, _| live.contains(id));
+        if forgot {
+            self.invalidate();
+        }
         // `live` is Input-only. Document editors also use `dragging` for
         // pointer selection — do not clear them just because they are not
         // TextFields (regression: every prepare_frame dropped Document drags).
@@ -2378,10 +2415,14 @@ impl<A: App> Session<A> {
             window_title: &self.title,
             field_values: &field_values,
             field_descriptions: &field_descriptions,
-            active_descendant: self.palette.as_ref().and_then(|palette| {
-                let row = palette.rows.get(palette.selected)?.0;
-                Some((palette.search, row))
-            }),
+            active_descendant: self
+                .palette
+                .as_ref()
+                .and_then(|palette| {
+                    let row = palette.rows.get(palette.selected)?.0;
+                    Some((palette.search, row))
+                })
+                .or_else(|| self.combobox_active_option()),
         })
     }
 
@@ -2503,6 +2544,7 @@ impl<A: App> Session<A> {
         }
         if self.palette_key(&intent)
             || self.popup_key(&intent)
+            || self.float_key(&intent)
             || self.row_key(&intent)
             || self.map_key(&intent)
             || self.vertex_key(&intent)
@@ -2514,6 +2556,20 @@ impl<A: App> Session<A> {
         let result = dispatch(&mut self.ui, &self.focus_order, intent);
         let current_focus = *self.ui.focused.get();
         if previous_focus != current_focus {
+            let blur = previous_focus
+                .and_then(|id| self.handler(id))
+                .and_then(|handlers| handlers.on_blur.clone());
+            let focus = current_focus
+                .and_then(|id| self.handler(id))
+                .and_then(|handlers| handlers.on_focus.clone());
+            if let Some(left) = previous_focus.and_then(|id| self.tree.find(id))
+                && matches!(left.kind, Kind::Input { .. })
+            {
+                self.touched_fields.insert(input_key(left));
+            }
+            for msg in blur.into_iter().chain(focus) {
+                self.send(msg);
+            }
             self.update_held_timers();
             if let Some(id) = current_focus {
                 self.layout
@@ -2672,8 +2728,52 @@ impl<A: App> Session<A> {
             } if modifiers.command || !field.is_multiline()
         );
         let before = field.text();
-        let effect = field.apply(intent, &mut self.text.font_system, &mut *self.clipboard);
-        let after = field.text();
+        // Formatted inputs (`Element::format`): reformat right away, the
+        // caret after the same significant character, and report the
+        // normalized value.
+        let (format, read_only) = match self.tree.find(id).map(|element| &element.kind) {
+            Some(Kind::Input {
+                format, read_only, ..
+            }) => (*format, *read_only),
+            _ => (None, false),
+        };
+        // ↑/↓ step a complete date or time (`Format::step`).
+        let stepped = match (&intent, format) {
+            (
+                TextIntent::KeyDown {
+                    key: key @ (Key::ArrowUp | Key::ArrowDown),
+                    modifiers,
+                    ..
+                },
+                Some(format),
+            ) if !read_only && *modifiers == Modifiers::NONE => {
+                let delta = if *key == Key::ArrowUp { 1 } else { -1 };
+                format.step(&before, field.caret_offset(), delta)
+            }
+            _ => None,
+        };
+        let effect = match stepped {
+            Some(text) => {
+                let caret = field.caret_offset().min(text.len());
+                field.reformat(&mut self.text.font_system, &text, caret);
+                crate::text_field::TextFieldEffect {
+                    changed: true,
+                    status: None,
+                }
+            }
+            None => field.apply(intent, &mut self.text.font_system, &mut *self.clipboard),
+        };
+        let mut after = field.text();
+        let mut reported = None;
+        if after != before
+            && field.preedit().is_none()
+            && let Some(format) = format
+        {
+            let (formatted, caret) = format.reformat(&after, field.caret_offset());
+            field.reformat(&mut self.text.font_system, &formatted.display, caret);
+            after = field.text();
+            reported = Some(formatted.value);
+        }
         if let Some(status) = effect.status {
             eprintln!("{status}");
         }
@@ -2694,7 +2794,7 @@ impl<A: App> Session<A> {
         if after != before
             && let Some(on_input) = handlers.on_input
         {
-            self.send(on_input(after));
+            self.send(on_input(reported.unwrap_or(after)));
         }
         if submit && let Some(msg) = handlers.on_submit {
             self.send(msg);
@@ -3415,6 +3515,9 @@ impl<A: App> Session<A> {
             && let Some(modal) = &self.modal
             && !self.hover_path.contains(&modal.panel)
         {
+            return;
+        }
+        if pressed && self.dismiss_floats_outside() {
             return;
         }
         if pressed {

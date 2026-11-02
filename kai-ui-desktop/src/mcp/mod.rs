@@ -158,6 +158,9 @@ pub enum Event {
     /// The agent stopped waiting for this call (time limit or
     /// `notifications/cancelled`); if it did not run yet, it must not.
     Cancel(InvocationId),
+    /// A client of a socket server went away; the server waits for the next
+    /// ([`serve_socket`]).
+    Disconnected,
     /// The client went away; the server thread is done.
     Closed,
 }
@@ -312,6 +315,63 @@ pub fn serve_stdio(tools: Tools, send: impl Fn(Event) + Send + Sync + 'static) -
     serve(tools, rmcp::transport::io::stdio, send)
 }
 
+/// Create the socket `path` for [`serve_socket`]: only its owner may
+/// connect, and one left by an earlier run is replaced (but not a file that
+/// is not a socket).
+#[cfg(unix)]
+pub fn bind_socket(path: &std::path::Path) -> std::io::Result<std::os::unix::net::UnixListener> {
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+    if let Ok(meta) = std::fs::symlink_metadata(path) {
+        if !meta.file_type().is_socket() {
+            return Err(std::io::Error::other(format!(
+                "{} existe y no es un socket",
+                path.display()
+            )));
+        }
+        std::fs::remove_file(path)?;
+    }
+    let listener = std::os::unix::net::UnixListener::bind(path)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    Ok(listener)
+}
+
+/// Serve `tools` to one client at a time over `listener`, on a thread of its
+/// own. Each client is a whole MCP session; when it leaves, the app gets
+/// [`Event::Disconnected`] (never [`Event::Closed`]) and the next may connect.
+#[cfg(unix)]
+pub fn serve_socket(
+    tools: Tools,
+    listener: std::os::unix::net::UnixListener,
+    send: impl Fn(Event) + Send + Sync + 'static,
+) -> JoinHandle<()> {
+    let send: Notify = Arc::new(send);
+    std::thread::Builder::new()
+        .name("kai-mcp-socket".into())
+        .spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let once = Arc::clone(&send);
+                let session = serve(
+                    tools.clone(),
+                    move || {
+                        let _ = stream.set_nonblocking(true);
+                        let stream = tokio::net::UnixStream::from_std(stream)
+                            .expect("el socket debe poder usarse con tokio");
+                        stream.into_split()
+                    },
+                    move |event| {
+                        once(match event {
+                            Event::Closed => Event::Disconnected,
+                            other => other,
+                        });
+                    },
+                );
+                let _ = session.join();
+            }
+        })
+        .expect("no se pudo crear el hilo del socket MCP")
+}
+
 #[cfg(test)]
 mod tests {
     /// Stdout carries the protocol, so the code that runs while serving
@@ -333,6 +393,78 @@ mod tests {
                 let to_stdout = !before.is_some_and(|c| c.is_alphanumeric() || c == '_');
                 assert!(!(is_macro && to_stdout), "{file} escribe en stdout");
             }
+        }
+    }
+
+    #[cfg(unix)]
+    mod socket {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        use std::sync::mpsc;
+
+        use super::super::*;
+
+        fn path(tag: &str) -> std::path::PathBuf {
+            std::env::temp_dir().join(format!("kai-mcp-{tag}-{}.sock", std::process::id()))
+        }
+
+        fn ask(stream: &mut UnixStream, reader: &mut BufReader<UnixStream>, line: &str) -> Value {
+            writeln!(stream, "{line}").unwrap();
+            let mut answer = String::new();
+            reader.read_line(&mut answer).unwrap();
+            serde_json::from_str(&answer).unwrap()
+        }
+
+        const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"prueba","version":"0"}}}"#;
+
+        #[test]
+        fn a_socket_serves_one_client_after_another_without_closing_the_app() {
+            // Any app will do: the tools list is what matters.
+            type A = crate::testing::sample_app::Sample;
+            let path = path("sequence");
+            let listener = bind_socket(&path).unwrap();
+            let (events, seen) = mpsc::channel();
+            let events = std::sync::Mutex::new(events);
+            serve_socket(Tools::of::<A>("socket"), listener, move |event| {
+                let _ = events.lock().unwrap().send(format!("{event:?}"));
+            });
+            for client in 0..2 {
+                let mut stream = UnixStream::connect(&path).unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let hello = ask(&mut stream, &mut reader, INITIALIZE);
+                assert_eq!(hello["result"]["serverInfo"]["name"], "socket", "client {client}");
+                writeln!(stream, r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#).unwrap();
+                let tools = ask(&mut stream, &mut reader, r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#);
+                assert!(tools["result"]["tools"].is_array());
+                drop(reader);
+                drop(stream);
+            }
+            let log: Vec<String> = seen
+                .recv_timeout(Duration::from_secs(5))
+                .into_iter()
+                .chain(seen.try_iter())
+                .collect();
+            let disconnected = (0..2)
+                .filter(|_| {
+                    seen.recv_timeout(Duration::from_secs(5))
+                        .is_ok_and(|event| event == "Disconnected")
+                })
+                .count();
+            assert!(!log.iter().any(|event| event == "Closed"), "{log:?}");
+            assert!(disconnected >= 1, "{log:?}");
+            let _ = std::fs::remove_file(&path);
+        }
+
+        #[test]
+        fn binding_replaces_an_old_socket_but_not_other_files() {
+            let socket = path("replace");
+            drop(bind_socket(&socket).unwrap());
+            drop(bind_socket(&socket).unwrap());
+            let _ = std::fs::remove_file(&socket);
+            let file = path("file");
+            std::fs::write(&file, "x").unwrap();
+            assert!(bind_socket(&file).is_err());
+            let _ = std::fs::remove_file(&file);
         }
     }
 }

@@ -429,7 +429,27 @@ pub const UNMAPPED_TOKENS: &[(&str, &str)] = &[
     ),
 ];
 
+/// The framework default: [`Theme::glass`].
+impl Default for Theme {
+    fn default() -> Self {
+        Self::glass()
+    }
+}
+
 impl Theme {
+    /// Default theme of the framework (and of `kai new`): AppKit Glass 27
+    /// light on every OS, large controls, comfortable density and the default
+    /// mixed-theme candidate ([`MixStyle::C`]). [`Theme::kai`] stays
+    /// available for the web look.
+    pub fn glass() -> Self {
+        Self {
+            control_size: ControlSize::Large,
+            density: Density::Comfortable,
+            ..Self::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
+        }
+        .with_mix(MixStyle::default())
+    }
+
     pub fn kai(density: Density) -> Self {
         let colors = kai_tokens::color_tokens();
         let (space, typography, controls) = match density {

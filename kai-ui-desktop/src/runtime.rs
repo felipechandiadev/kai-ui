@@ -86,8 +86,9 @@ pub(crate) fn with_current_invocation<R>(id: Option<InvocationId>, f: impl FnOnc
 /// What `update` asks the runtime to do, as a value (a subset of 13,
 /// Paso 15): [`Effects::after`] sends a message later,
 /// [`Effects::perform`] / [`Effects::perform_async`] run work off the UI
-/// thread, and [`Effects::pick_file`] and [`Effects::save_file`] ask for a
-/// file. Continuous input uses [`App::subscriptions`] instead of effects.
+/// thread, [`Effects::pick_file`] and [`Effects::save_file`] ask for a
+/// file and [`Effects::copy_text`] puts text on the clipboard. Continuous
+/// input uses [`App::subscriptions`] instead of effects.
 #[must_use]
 pub struct Effects<Msg>(Vec<Effect<Msg>>);
 
@@ -126,6 +127,9 @@ pub(crate) enum Effect<Msg> {
         request: SaveFile,
         done: FilePicked<Msg>,
     },
+    /// Put this text on the system clipboard (the session's
+    /// `ClipboardPort`; `TestApp`'s `MemoryClipboard` in tests).
+    CopyText(String),
 }
 
 /// Turns the file chosen in the open or save panel (`None`: cancelled)
@@ -252,6 +256,7 @@ impl<Msg> Effects<Msg> {
                             done: Box::new(move |path| f(done(path))),
                         }
                     }
+                    Effect::CopyText(text) => Effect::CopyText(text),
                 })
                 .collect(),
         )
@@ -337,6 +342,15 @@ impl<Msg> Effects<Msg> {
         }])
     }
 
+    /// Put `text` on the system clipboard as plain text, as ⌘C does in a
+    /// field: a «Copiar» button returns it from `update`. It sends no
+    /// message; the app shows its own confirmation («Copiado»). If the
+    /// clipboard refuses, the session writes the error to stderr. Tests
+    /// read it with `TestApp::clipboard`.
+    pub fn copy_text(text: impl Into<String>) -> Self {
+        Self(vec![Effect::CopyText(text.into())])
+    }
+
     /// Give these timers and tasks `key`: a new one with the same key
     /// replaces the pending one, and [`Effects::cancel`] drops it.
     ///
@@ -351,7 +365,10 @@ impl<Msg> Effects<Msg> {
                 Effect::After { key: slot, .. } | Effect::Perform { key: slot, .. } => {
                     *slot = Some(key.clone());
                 }
-                Effect::Cancel(_) | Effect::PickFile { .. } | Effect::SaveFile { .. } => {}
+                Effect::Cancel(_)
+                | Effect::PickFile { .. }
+                | Effect::SaveFile { .. }
+                | Effect::CopyText(_) => {}
             }
         }
         self
@@ -404,6 +421,7 @@ impl<Msg: Debug> fmt::Debug for Effects<Msg> {
                 Effect::SaveFile { request, .. } => {
                     list.entry(&format_args!("save_file({:?})", request.name))
                 }
+                Effect::CopyText(text) => list.entry(&format_args!("copy_text({text:?})")),
             };
         }
         list.finish()
@@ -539,7 +557,8 @@ pub trait App: 'static {
 
     /// What `kai dev` keeps when it restarts the app after a rebuild
     /// (debug builds only), such as the section on screen. Default: none,
-    /// only the window's frame is kept.
+    /// only the window's frame is kept. With [`crate::crash::install`] it
+    /// is also saved when the app panics, and restored on the next launch.
     fn dev_state(&self) -> Option<serde_json::Value> {
         None
     }
@@ -707,13 +726,38 @@ pub fn run_with_mcp<A: App>(app: A, theme: Theme) -> Result<(), Box<dyn Error>> 
     })
 }
 
+/// Like [`run_with_mcp`], but the commands are served on a Unix socket at
+/// `path` ([`crate::mcp::serve_socket`]): the window stays open when a client
+/// leaves, and the next one can connect. `kai mcp connect PATH` joins the
+/// socket to the stdio a client launches.
+#[cfg(all(feature = "mcp", unix))]
+pub fn run_with_mcp_socket<A: App>(
+    app: A,
+    theme: Theme,
+    path: impl Into<std::path::PathBuf>,
+) -> Result<(), Box<dyn Error>> {
+    let tools = crate::mcp::Tools::of::<A>(app.title());
+    let path = path.into();
+    let listener = crate::mcp::bind_socket(&path)?;
+    eprintln!("MCP: escuchando en {}", path.display());
+    run_with(app, theme, move |proxy| {
+        let proxy = proxy.clone();
+        crate::mcp::serve_socket(tools, listener, move |event| {
+            let _ = proxy.send_event(UserEvent::Mcp(event));
+        });
+    })
+}
+
 fn run_with<A: App>(
     app: A,
     theme: Theme,
     start: impl FnOnce(&EventLoopProxy<UserEvent>),
 ) -> Result<(), Box<dyn Error>> {
     let dev_state = dev_state::path();
-    let saved = dev_state.as_deref().and_then(dev_state::read);
+    let saved = dev_state
+        .as_deref()
+        .and_then(dev_state::read)
+        .or_else(crate::crash::take_saved_state);
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = EventLoop::<UserEvent>::with_user_event();
     // A restart after saving a file should not take focus from the editor.
@@ -743,8 +787,24 @@ fn run_with<A: App>(
         #[cfg(feature = "mcp")]
         pending: Vec::new(),
     };
-    event_loop.run_app(&mut runner)?;
-    Ok(())
+    // winit hands a panic in a handler back here, after its loop stops:
+    // with `crash::install` the state is saved before it goes on.
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        event_loop.run_app(&mut runner)
+    }));
+    match run {
+        Ok(result) => {
+            crate::crash::clean_exit();
+            result?;
+            Ok(())
+        }
+        Err(panic) => {
+            if let Some(state) = runner.state.as_ref() {
+                crate::crash::save_state(|| state.dev_state());
+            }
+            std::panic::resume_unwind(panic)
+        }
+    }
 }
 
 /// Build the tree for the current model with ids assigned, its controls
@@ -825,17 +885,23 @@ pub(crate) fn report_once(context: &str, problems: Vec<String>) {
 }
 
 /// Nearest control (clickable or editable element, enabled or not) on a
-/// hit-test path, or the input an outline delegates focus to. Disabled
-/// controls still capture the pointer.
+/// hit-test path, or the input an outline delegates focus to, up to the
+/// nearest floating element. Disabled controls still capture the pointer.
 pub fn pointer_target(layout: &Layout, path: &[WidgetId]) -> Option<WidgetId> {
-    path.iter().rev().find_map(|id| {
-        let node = layout.node(*id)?;
+    for node in path.iter().rev().filter_map(|id| layout.node(*id)) {
         if node.control {
-            Some(node.id)
-        } else {
-            node.focus_delegate
+            return Some(node.id);
         }
-    })
+        if node.focus_delegate.is_some() {
+            return node.focus_delegate;
+        }
+        // A press on a floating element's background is not one on its
+        // anchor (docs/dev/32).
+        if node.floating.is_some() {
+            return None;
+        }
+    }
+    None
 }
 
 /// Message for a standard action that the focused element did not consume:
@@ -1067,6 +1133,7 @@ impl<A: App> WindowState<A> {
             Event::Connected(client) => self.session.agent_connected(&client),
             Event::Call(invocation) => self.session.agent_call(invocation.into_agent_call()),
             Event::Cancel(id) => self.session.cancel_agent_call(id.0),
+            Event::Disconnected => self.session.agent_disconnected(),
             Event::Closed => {}
         }
     }

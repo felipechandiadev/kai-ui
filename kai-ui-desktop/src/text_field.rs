@@ -695,6 +695,29 @@ impl TextFieldState {
         true
     }
 
+    /// Byte offset of the caret in [`TextFieldState::text`].
+    pub fn caret_offset(&self) -> usize {
+        self.offset(self.editor.cursor())
+    }
+
+    /// Replace the text just edited by its formatted version
+    /// ([`crate::forms::Format`]) with the caret at byte `caret`. Unlike
+    /// [`Self::set_text`] it keeps the undo history: it is still the
+    /// person's edit.
+    pub fn reformat(&mut self, font_system: &mut FontSystem, text: &str, caret: usize) {
+        let text = self.normalize(text);
+        if text == self.text() {
+            return;
+        }
+        self.editor.with_buffer_mut(|buffer| {
+            buffer.set_text(&text, &ui_font_attrs(), Shaping::Advanced, None);
+        });
+        self.editor
+            .set_cursor(cursor_at(&text, caret.min(text.len())));
+        self.editor.set_selection(Selection::None);
+        self.after_edit(font_system);
+    }
+
     /// Byte offset of `cursor` in [`TextFieldState::text`].
     fn offset(&self, cursor: Cursor) -> usize {
         self.editor.with_buffer(|buffer| {

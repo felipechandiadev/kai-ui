@@ -260,6 +260,7 @@ impl<A: App> McpClient<'_, A> {
             mcp::Event::Connected(client) => self.app.agent_connected(&client),
             mcp::Event::Call(invocation) => self.app.run_agent_call(invocation.into_agent_call()),
             mcp::Event::Cancel(id) => self.app.cancel_agent_call(id.0),
+            mcp::Event::Disconnected => self.app.agent_disconnected(),
             mcp::Event::Closed => {}
         }
     }

@@ -68,7 +68,9 @@ pub enum StoreError {
     FutureVersion { found: u32, known: u32 },
     /// [`Stored::migrate`] no pudo convertir los datos.
     Migration(String),
-    /// No se encontró la carpeta de datos (sin `HOME`).
+    /// No se encontró la carpeta de datos. [`Store::for_app`] ya no lo
+    /// devuelve (usa la carpeta temporal); queda para las apps que lo
+    /// comparan.
     NoDataDir,
 }
 
@@ -97,20 +99,24 @@ pub struct Store {
 
 impl Store {
     /// La carpeta de datos de la app `id` (como `dev.kai.ui-desktop`):
-    /// `~/Library/Application Support/<id>` en macOS,
-    /// `$XDG_DATA_HOME/<id>` (o `~/.local/share/<id>`) en otros sistemas.
-    /// No crea la carpeta hasta el primer guardado.
+    /// `~/Library/Application Support/<id>` en macOS, `%APPDATA%\<id>` en
+    /// Windows, `$XDG_DATA_HOME/<id>` (o `~/.local/share/<id>`) en otros
+    /// sistemas. Sin esas variables (un proceso lanzado sin `HOME`) usa
+    /// `<temp>/<id>`: no persiste entre reinicios del sistema, pero la app
+    /// arranca y guarda igual. Hoy nunca devuelve error; el `Result` se
+    /// mantiene por compatibilidad. No crea la carpeta hasta el primer
+    /// guardado.
     pub fn for_app(id: &str) -> Result<Self, StoreError> {
-        let home = std::env::var_os("HOME").ok_or(StoreError::NoDataDir)?;
-        let home = PathBuf::from(home);
-        let base = if cfg!(target_os = "macos") {
-            home.join("Library/Application Support")
+        let os = if cfg!(target_os = "macos") {
+            DataOs::Mac
+        } else if cfg!(windows) {
+            DataOs::Windows
         } else {
-            std::env::var_os("XDG_DATA_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".local/share"))
+            DataOs::Other
         };
-        Ok(Self::at(base.join(id)))
+        Ok(Self::at(data_dir_from(id, os, |name| {
+            std::env::var_os(name)
+        })))
     }
 
     /// Una carpeta elegida por la app (o un directorio temporal en tests).
@@ -183,6 +189,35 @@ impl Store {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DataOs {
+    Mac,
+    Windows,
+    Other,
+}
+
+/// [`Store::for_app`] with the OS and the environment as parameters, so
+/// tests cover every platform. Empty variables count as missing.
+fn data_dir_from(
+    id: &str,
+    os: DataOs,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> PathBuf {
+    let var = |name: &str| {
+        var(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    };
+    let found = match os {
+        DataOs::Mac => var("HOME").map(|home| home.join("Library/Application Support")),
+        DataOs::Windows => var("APPDATA").or_else(|| var("LOCALAPPDATA")),
+        DataOs::Other => {
+            var("XDG_DATA_HOME").or_else(|| var("HOME").map(|home| home.join(".local/share")))
+        }
+    };
+    found.unwrap_or_else(std::env::temp_dir).join(id)
+}
+
 /// `{"version": N, "data": …}`.
 fn encode<T: Stored>(value: &T) -> Result<String, StoreError> {
     let data = serde_json::to_value(value).map_err(|e| StoreError::Corrupt(e.to_string()))?;
@@ -236,7 +271,68 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
 
-    use super::{Store, StoreError, Stored};
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    use super::{DataOs, Store, StoreError, Stored, data_dir_from};
+
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
+
+    #[test]
+    fn the_data_folder_follows_each_platform() {
+        let id = "dev.kai.prueba";
+        assert_eq!(
+            data_dir_from(id, DataOs::Mac, env(&[("HOME", "/Users/ana")])),
+            PathBuf::from("/Users/ana/Library/Application Support").join(id)
+        );
+        assert_eq!(
+            data_dir_from(
+                id,
+                DataOs::Windows,
+                env(&[("APPDATA", "C:/Users/ana/AppData/Roaming")])
+            ),
+            PathBuf::from("C:/Users/ana/AppData/Roaming").join(id)
+        );
+        assert_eq!(
+            data_dir_from(id, DataOs::Windows, env(&[("LOCALAPPDATA", "C:/Local")])),
+            PathBuf::from("C:/Local").join(id)
+        );
+        assert_eq!(
+            data_dir_from(id, DataOs::Other, env(&[("HOME", "/home/ana")])),
+            PathBuf::from("/home/ana/.local/share").join(id)
+        );
+        assert_eq!(
+            data_dir_from(
+                id,
+                DataOs::Other,
+                env(&[("XDG_DATA_HOME", "/datos"), ("HOME", "/home/ana")])
+            ),
+            PathBuf::from("/datos").join(id)
+        );
+    }
+
+    #[test]
+    fn without_home_the_data_folder_is_in_temp() {
+        let id = "dev.kai.prueba";
+        for os in [DataOs::Mac, DataOs::Windows, DataOs::Other] {
+            assert_eq!(
+                data_dir_from(id, os, env(&[("HOME", "")])),
+                std::env::temp_dir().join(id),
+                "{os:?}"
+            );
+        }
+    }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Prefs {

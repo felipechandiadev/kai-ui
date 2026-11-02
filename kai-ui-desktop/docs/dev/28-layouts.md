@@ -1,6 +1,6 @@
 # 28 — Layouts: marcos por carpeta
 
-**Estado:** propuesta (28-oct-2026). L0, L1 y L2 implementados (29-oct); L3 pendiente. Extiende
+**Estado:** propuesta (28-oct-2026). L0 a L3 implementados (29-30 oct). Extiende
 [26](26-router-y-kai-build.md) (router y `kai-build`).
 
 **Norma:** igual que en 26: todo concepto de código va en inglés; solo el
@@ -175,7 +175,7 @@ trait Page {
 
 Los nombres son texto por simplicidad; el layout dice `slot("actions")` y la
 página responde a `"actions"`. Si no responde, el hueco queda vacío. No entra
-en la primera entrega (§6, L3): sin esto, la barra lleva título, atrás,
+en la primera entrega (§6, L3, ya hecho): sin esto, la barra lleva título, atrás,
 adelante y plegado de la barra lateral, y nada propio de la página.
 
 ## 6. Plan
@@ -185,7 +185,7 @@ adelante y plegado de la barra lateral, y nada propio de la página.
 | L0 ✅ | `outlet()`, `Element::fill_outlet`, `Layout`, `RouteInfo`, con una raíz escrita a mano en un test (`src/router/frame.rs`). | Tests de `kai`; `bench_layout_fold`: unos 5,6 µs por layout con barra de 5 elementos, 2–13 % de construir la vista de la demo (release). |
 | L1 ✅ | `kai-build`: escaneo, ranuras, entrada y salida, plegado. `kai new layout`. | Fixture `sections-app` con layout raíz, de sección y anidado; el estado del layout de `customers` sobrevive `/customers` → `/customers/1`. |
 | L2 ✅ | La demo recupera su barra como `demo/src/layout.rs` (título, atrás/adelante, plegar barra lateral) y una sección con layout propio. | Tests de la demo; capturas de revisión; abrir el bundle. |
-| L3 | `slot(name)` y `Page::slot`; el buscador de Tabla vuelve a la barra. | Test de la demo: escribir en la barra filtra la tabla. |
+| L3 ✅ | `slot(name)`, `Element::fill_slots` y `Page::slot`; el buscador de Tabla vuelve a la barra. | Test de la demo: escribir en la barra filtra la tabla. |
 
 Tras cada corte: `scripts/check.sh` completo y actualizar 26, `CLAUDE.md`,
 el CHANGELOG y la página de `docs/componentes/` de `outlet`.
@@ -204,10 +204,7 @@ necesita «Atrás»; hay que añadirlo con `scripts/gen-icons.mjs`.
   y le quita la clave. Su clase (`flex-1 min-w-0 min-h-0 flex flex-col`) es la del
   envoltorio que la raíz da hoy a la página, así que una app sin layouts se ve
   igual y una con layouts no cambia el tamaño de sus páginas.
-- **Un `layout.rs` dentro de una carpeta `[parámetro]` aún no se admite**:
-  `kai-build` lo rechaza con un mensaje que pide ponerlo en la carpeta de arriba.
-  Un layout persistente ahí tendría que reiniciarse al cambiar el valor del
-  parámetro, y su tipo saldría de la página; queda para una vuelta posterior.
+- **Un `layout.rs` dentro de una carpeta `[parámetro]`** se rechazó en L1 y se admite desde L3 (ver abajo).
 - `kai-build` vigila ahora toda `src/` (antes solo `src/sections` y
   `src/state.rs`), para ver aparecer un `src/layout.rs` nuevo.
 - `layout` pasa a ser nombre reservado: no puede haber una sección o carpeta
@@ -247,3 +244,24 @@ barra; hay que regenerarla con `scripts/snapshot-baseline.sh` cuando se acepte.
 3. **Comandos del layout.** Hoy `Page::commands` registra los de la página.
    Un layout que quiera comandos propios (un atajo para su filtro) necesitaría
    lo mismo; propongo esperar a necesitarlo.
+
+**Cambios respecto al diseño, al implementar L3 (30-oct):**
+
+- `slot(name)` devuelve un `div` con la clave reservada `kai.slot.<nombre>` y
+  `flex flex-row items-center`. `Element::fill_slots(&mut |name| …)` rellena todos
+  los huecos de un árbol con la respuesta de la página; el hueco sin respuesta
+  queda vacío. La raíz generada lo llama en la vista de cada layout, antes de
+  `fill_outlet`, con una clausura `slot_of` que pregunta a `Page::slot` de la
+  página de la ruta actual (su `Msg` se mapea a `RootMsg` como el de la vista).
+- Como los nombres son texto, un layout puede pedir un hueco que ninguna página
+  responde, y una página responder a un nombre que ningún layout dibuja: no hay
+  error en ninguno de los dos casos.
+- **Layouts en carpetas `[parámetro]`.** El layout vive mientras la ruta tenga el
+  mismo valor del parámetro: otro valor lo descarta y crea uno nuevo, y salir de
+  la carpeta lo descarta. La clave es el valor formateado con `{:?}` (el `Params`
+  de cada página ya es `Debug` por `Route`). Limitación: `Layout::init` no recibe
+  el parámetro; si el layout lo necesita, lo lee de `RouteInfo::path`.
+- `RouteInfo::can_back` y `can_forward` ya no quedan sin uso: la fixture
+  `sections-app` los muestra y un test comprueba lo que genera `kai-build`.
+- El contenido principal (`Role::Main`) lo marca ahora `kai-build` en la columna
+  que envuelve a la página (y a los layouts), con un test de la fixture.

@@ -8,10 +8,16 @@
 
 use std::rc::Rc;
 
+use crate::forms::{FormMsg, FormState, Format, ValidateOn, Validator};
+
+mod autocomplete;
 mod color;
+mod date;
 mod dialog;
 mod empty_state;
 mod field_icons;
+#[cfg(test)]
+mod forms_tests;
 mod media;
 mod page;
 mod page_templates;
@@ -24,9 +30,14 @@ mod text_area;
 mod toast;
 mod toolbar;
 
+pub use autocomplete::{
+    AUTOCOMPLETE_DEBOUNCE, AUTOCOMPLETE_LIMIT, Autocomplete, AutocompleteItem, AutocompleteMsg,
+    AutocompleteState, AutocompleteStatus, autocomplete,
+};
 pub use crate::charts::{ChartKind, ChartSpec, chart};
 pub use crate::color::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
+pub use date::{Calendar, DateField, date_calendar, date_field, time_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
 pub use empty_state::{EmptyKind, EmptyState, loading_placeholder};
 pub use field_icons::{FIELD_ICON_MAP, FieldKind, field_icon_for};
@@ -552,6 +563,15 @@ pub struct TextField<Msg> {
     rows: Option<(u16, u16)>,
     /// Character count shown under the field ([`TextArea::counter`]).
     counter: Option<String>,
+    format: Option<Format>,
+    validator: Option<Validator>,
+    validate_on: ValidateOn,
+    touched: bool,
+    /// Sumar los campos tocados que recuerda la sesión.
+    remember_touched: bool,
+    submitted: bool,
+    on_focus: Option<Msg>,
+    on_blur: Option<Msg>,
 }
 
 impl<Msg> TextField<Msg> {
@@ -582,6 +602,14 @@ impl<Msg> TextField<Msg> {
             test_id: None,
             rows: None,
             counter: None,
+            format: None,
+            validator: None,
+            validate_on: ValidateOn::Blur,
+            touched: false,
+            remember_touched: true,
+            submitted: false,
+            on_focus: None,
+            on_blur: None,
         }
     }
 
@@ -739,7 +767,98 @@ impl<Msg> TextField<Msg> {
         self
     }
 
+    /// Formato de entrada ([`Format`]): el campo muestra el texto
+    /// formateado (`12.345.678-5`) y `on_input` recibe el valor normalizado
+    /// (`12345678-5`). La app puede guardar cualquiera de los dos: el campo
+    /// vuelve a formatear lo que recibe.
+    pub fn format(mut self, format: Format) -> Self {
+        self.format = Some(format);
+        self
+    }
+
+    /// Reglas del valor ([`crate::forms::Validators`]); se agregan a las anteriores.
+    /// Con un error visible el campo toma el estado [`Self::error`] y el
+    /// mensaje reemplaza al texto de ayuda. Se valida el valor normalizado.
+    pub fn validate(mut self, validator: Validator) -> Self {
+        self.validator = Some(match self.validator.take() {
+            Some(previous) => previous.and(validator),
+            None => validator,
+        });
+        self
+    }
+
+    /// Cuándo se muestra el error (por defecto [`ValidateOn::Blur`]).
+    pub fn validate_on(mut self, when: ValidateOn) -> Self {
+        self.validate_on = when;
+        self
+    }
+
+    /// Marca el campo como tocado. No hace falta para [`ValidateOn::Blur`]:
+    /// la sesión recuerda los campos que perdieron el foco (por `test_id`, o
+    /// por etiqueta sin él) y lo olvida cuando la app cambia el valor por su
+    /// cuenta (al limpiar el formulario). Esto solo lo fuerza.
+    pub fn touched(mut self, touched: bool) -> Self {
+        self.touched = touched;
+        self
+    }
+
+    /// `false`: solo cuenta [`Self::touched`], no lo que recuerda la
+    /// sesión (los campos de un [`FormState`] llevan su propio estado).
+    pub fn remember_touched(mut self, remember: bool) -> Self {
+        self.remember_touched = remember;
+        self
+    }
+
+    /// Se intentó enviar el formulario: muestra los errores en cualquier
+    /// modo.
+    pub fn submitted(mut self, submitted: bool) -> Self {
+        self.submitted = submitted;
+        self
+    }
+
+    /// Mensaje al recibir el foco.
+    pub fn on_focus(mut self, msg: Msg) -> Self {
+        self.on_focus = Some(msg);
+        self
+    }
+
+    /// Mensaje al perder el foco (clic fuera, Tab).
+    pub fn on_blur(mut self, msg: Msg) -> Self {
+        self.on_blur = Some(msg);
+        self
+    }
+
+    /// Error visible del valor actual según [`Self::validate_on`], o `None`.
+    pub fn validation_error(&self) -> Option<String> {
+        let validator = self.validator.as_ref()?;
+        let value = match self.format {
+            Some(format) => format.format(&self.value).value,
+            None => self.value.clone(),
+        };
+        let touched = self.touched
+            || self.remember_touched
+                && crate::forms::remembered_touched(&crate::forms::field_key(
+                    self.test_id.as_deref(),
+                    &self.label,
+                ));
+        if !self
+            .validate_on
+            .shows_error(&value, touched, self.submitted)
+        {
+            return None;
+        }
+        validator.validate(&value).err()
+    }
+
     pub fn build(mut self) -> Element<Msg> {
+        if let Some(message) = self.validation_error() {
+            self.error = true;
+            self.helper_text = Some(message);
+        }
+        if let Some(format) = self.format {
+            // The session sends `on_input` the normalized value.
+            self.value = format.format(&self.value).display;
+        }
         let compact = self.density == FieldDensity::Compact;
         let inline = compact && self.label_layout == LabelLayout::Inline;
         let muted = self.disabled
@@ -1171,6 +1290,9 @@ impl<Msg> TextField<Msg> {
         }
         field.handlers.on_input = self.on_input.take();
         field.handlers.on_submit = self.on_submit.take();
+        field.handlers.on_focus = self.on_focus.take();
+        field.handlers.on_blur = self.on_blur.take();
+        field = field.format(self.format);
 
         let align = if self.rows.is_some() {
             "items-stretch"
@@ -2255,6 +2377,48 @@ pub fn segmented_with_options<Msg>(
                 .on_click(on_select(index))
                 .child(text(*label))
         }))
+}
+
+/// Campos de texto atados a un [`FormState`].
+impl FormState {
+    /// [`TextField`] del campo `name` con su etiqueta, valor formateado,
+    /// formato, reglas, tocado/enviado del formulario, `test_id` = `name`, y
+    /// `on_input`/`on_blur` que envían `wrap(FormMsg::Set / Blur)`. La app
+    /// puede seguir encadenando (`.helper_text`, `.required`, …).
+    ///
+    /// ```ignore
+    /// self.form.text_field("rut", "RUT", Msg::Form).build()
+    /// ```
+    pub fn text_field<Msg: 'static>(
+        &self,
+        name: &str,
+        label: impl Into<String>,
+        wrap: fn(FormMsg) -> Msg,
+    ) -> TextField<Msg> {
+        let owned = name.to_owned();
+        let mut field = TextField::new(label, self.display(name).unwrap_or_default())
+            .touched(self.is_touched(name))
+            .submitted(self.is_submitted())
+            .remember_touched(false)
+            .on_input(move |value| {
+                wrap(FormMsg::Set {
+                    name: owned.clone(),
+                    value,
+                })
+            })
+            .on_blur(wrap(FormMsg::Blur(name.to_owned())))
+            .test_id(name);
+        if let Some(format) = self.format_of(name) {
+            field = field.format(format);
+        }
+        if let Some(validator) = self.validator_of(name) {
+            field = field.validate(validator.clone());
+        }
+        if let Some(when) = self.validate_on_of(name) {
+            field = field.validate_on(when);
+        }
+        field
+    }
 }
 
 #[cfg(test)]

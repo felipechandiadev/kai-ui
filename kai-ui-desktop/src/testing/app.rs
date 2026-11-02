@@ -542,6 +542,14 @@ impl<A: App> TestApp<A> {
         self.frame();
     }
 
+    /// The connected agent left (an MCP socket client): the indicator
+    /// `kai.agente` goes away.
+    #[cfg(feature = "mcp")]
+    pub fn agent_disconnected(&mut self) {
+        self.session.agent_disconnected();
+        self.frame();
+    }
+
     /// Actions run through JSON so far, by scripts and agents.
     pub fn audit_log(&self) -> &AuditLog {
         self.session.audit_log()

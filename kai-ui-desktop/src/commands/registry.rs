@@ -230,6 +230,15 @@ impl<A: App> CommandRegistry<A> {
             .expose();
     }
 
+    /// Publish already registered commands (`forms::commands`).
+    pub(crate) fn expose_ids(&mut self, ids: &[&str]) {
+        for entry in &mut self.entries {
+            if ids.contains(&entry.id) {
+                entry.exposed = true;
+            }
+        }
+    }
+
     fn push(&mut self, entry: Entry<A>) -> CommandBuilder<'_, A> {
         self.entries.push(entry);
         let entry = self.entries.last_mut().expect("just pushed");

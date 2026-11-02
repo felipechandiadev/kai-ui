@@ -27,6 +27,7 @@ use crate::geometry::{ClipRect, Insets, Point, Rect, Size};
 use crate::icons::Icon;
 use crate::maps::{MapSpec, Marker};
 use crate::media::LoadedImage;
+use crate::overlay::Placement;
 use crate::render::TextId;
 use crate::render::text::TextStyle;
 use crate::style::{ComputedText, Display, Length, Overflow, Position, Style};
@@ -260,6 +261,9 @@ pub struct LayoutNode {
     pub motion: Option<Motion>,
     /// See [`Element::busy`].
     pub busy: bool,
+    /// In the floating layer ([`Element::floating`]), hanging from its
+    /// parent; `side` is the one it ended up on.
+    pub floating: Option<Placement>,
 }
 
 impl LayoutNode {
@@ -285,8 +289,13 @@ pub struct Layout {
     /// Pre-order (document order).
     nodes: Vec<LayoutNode>,
     index: HashMap<WidgetId, usize>,
-    /// Back-to-front: document order with siblings stably sorted by z-index.
+    /// Back-to-front: document order with siblings stably sorted by
+    /// z-index, floating elements after the root children of their level
+    /// ([`Layout::floats_after`]).
     paint_order: Vec<usize>,
+    /// Floating elements in document order, each with its top-level layer
+    /// (the root child that contains it).
+    floats: Vec<(usize, usize)>,
 }
 
 pub struct LayoutInput<'a> {
@@ -325,6 +334,12 @@ struct Builder<'a> {
     taffy: TaffyTree<Leaf>,
     nodes: Vec<LayoutNode>,
     handles: Vec<Option<NodeId>>,
+    /// Floating elements and their own Taffy roots, out of their parent's
+    /// flow.
+    floats: Vec<(usize, NodeId)>,
+    /// What the root's children inherit, which floating elements start
+    /// from instead of their anchor's.
+    top: Option<Inherited>,
 }
 
 #[derive(Clone, Copy)]
@@ -465,6 +480,7 @@ impl Builder<'_> {
             marker: element.marker,
             motion: element.motion,
             busy: element.busy,
+            floating: element.floating.as_ref().map(|floating| floating.placement),
         };
         let child_inherited = Inherited {
             text,
@@ -489,6 +505,12 @@ impl Builder<'_> {
             control_size,
             parent_align_items: node.style.align_items,
         };
+        if parent.is_none() {
+            self.top = Some(Inherited {
+                parent_align_items: None,
+                ..child_inherited
+            });
+        }
         let mut taffy_style = node.style.to_taffy();
         // `Style::to_taffy` aligns auto-width inline elements to the start
         // so they keep their content width; an explicit `items-*` on the
@@ -518,6 +540,19 @@ impl Builder<'_> {
             Kind::Div | Kind::Map(_) | Kind::Chart(_) | Kind::Document(_) => {
                 let mut children = Vec::with_capacity(element.children.len());
                 for child in &element.children {
+                    if child.floating.is_some() {
+                        // Out of the flow, with the window's text and
+                        // opacity; hidden and sized as its anchor.
+                        let at = self.nodes.len();
+                        let inherited = Inherited {
+                            hidden: child_inherited.hidden,
+                            control_size: child_inherited.control_size,
+                            ..self.top.unwrap_or(child_inherited)
+                        };
+                        let handle = self.build(child, Some(index), inherited)?;
+                        self.floats.push((at, handle));
+                        continue;
+                    }
                     children.push(self.build(child, Some(index), child_inherited)?);
                 }
                 self.taffy.new_with_children(taffy_style, &children)?
@@ -676,6 +711,8 @@ impl Layout {
             taffy: TaffyTree::new(),
             nodes: Vec::new(),
             handles: Vec::new(),
+            floats: Vec::new(),
+            top: None,
         };
         let inherited = Inherited {
             text: input.theme.base_text(),
@@ -695,6 +732,7 @@ impl Layout {
             mut taffy,
             mut nodes,
             handles,
+            mut floats,
             ..
         } = builder;
 
@@ -748,11 +786,28 @@ impl Layout {
             input.scroll,
             text,
         );
+        // Outer floating elements first: an inner one hangs from them.
+        floats.sort_by_key(|(index, _)| *index);
+        for &(index, handle) in &floats {
+            place_floating(
+                &mut nodes,
+                &handles,
+                &mut taffy,
+                (index, handle),
+                viewport,
+                input.scroll,
+                text,
+            );
+        }
         place_markers(&mut nodes);
         place_sticky(&mut nodes);
 
+        let floats: Vec<(usize, usize)> = floats
+            .iter()
+            .map(|&(index, _)| (top_level(&nodes, index), index))
+            .collect();
         let mut paint_order = Vec::with_capacity(nodes.len());
-        push_paint_order(&nodes, 0, &mut paint_order);
+        push_layers(&nodes, &floats, &mut paint_order);
         let index = nodes
             .iter()
             .enumerate()
@@ -763,7 +818,19 @@ impl Layout {
             nodes,
             index,
             paint_order,
+            floats,
         }
+    }
+
+    /// Floating elements that paint right after root child `layers[at]`
+    /// (`layers`: the root's children in paint order), in document order,
+    /// an inner one after its outer one: those that hang inside any root
+    /// child with its `z-index`, once the last of them has painted. So a
+    /// popover in the sidebar goes over the content next to it, and under
+    /// an app dialog or the session's overlays (a root child with a higher
+    /// `z-*`).
+    pub(crate) fn floats_after(&self, layers: &[usize], at: usize) -> Vec<usize> {
+        floats_after(&self.nodes, &self.floats, layers, at)
     }
 
     pub fn nodes(&self) -> &[LayoutNode] {
@@ -870,6 +937,10 @@ impl Layout {
         let mut pinned = node.style.position == Position::Sticky;
         let mut inner = node;
         for ancestor in self.ancestors(id) {
+            // Scrolling outside a floating element does not move it.
+            if inner.floating.is_some() {
+                break;
+            }
             for &sibling in &ancestor.children {
                 let sibling = &self.nodes[sibling];
                 if sibling.id == inner.id
@@ -921,23 +992,36 @@ impl Layout {
     }
 
     /// Innermost scroll container on `path` (root first) that can move by
-    /// `delta` along `axis` (positive = toward the end of the content).
+    /// `delta` along `axis` (positive = toward the end of the content),
+    /// up to the nearest floating element.
     pub fn scroll_target(
         &self,
         path: &[WidgetId],
         axis: Axis,
         delta: f32,
     ) -> Option<(WidgetId, ScrollState)> {
-        path.iter().rev().find_map(|id| {
-            let scroll = self.node(*id)?.scroll?;
-            let offset = scroll.offset_on(axis);
-            let can_move = if delta > 0.0 {
-                offset < scroll.max_on(axis)
-            } else {
-                offset > 0.0
+        for id in path.iter().rev() {
+            let Some(node) = self.node(*id) else {
+                continue;
             };
-            can_move.then_some((*id, scroll))
-        })
+            if let Some(scroll) = node.scroll {
+                let offset = scroll.offset_on(axis);
+                let can_move = if delta > 0.0 {
+                    offset < scroll.max_on(axis)
+                } else {
+                    offset > 0.0
+                };
+                if can_move {
+                    return Some((*id, scroll));
+                }
+            }
+            // The wheel over a floating element does not scroll what is
+            // under its anchor.
+            if node.floating.is_some() {
+                return None;
+            }
+        }
+        None
     }
 }
 
@@ -1083,10 +1167,114 @@ fn place(
     };
     let children = node.children.clone();
     for child in children {
-        place(
-            nodes, handles, taffy, child, origin, child_clip, offsets, text,
-        );
+        // Floating children are placed after their anchor
+        // (`place_floating`).
+        if nodes[child].floating.is_none() {
+            place(
+                nodes, handles, taffy, child, origin, child_clip, offsets, text,
+            );
+        }
     }
+}
+
+/// Size the floating element at `index` (its own Taffy root `handle`) as a
+/// `position: fixed` box in the window, then place it and its subtree next
+/// to its parent's border box ([`crate::overlay::position`]), clipped by
+/// nothing outside it.
+fn place_floating(
+    nodes: &mut [LayoutNode],
+    handles: &[Option<NodeId>],
+    taffy: &mut TaffyTree<Leaf>,
+    (index, handle): (usize, NodeId),
+    viewport: Size,
+    offsets: &ScrollOffsets,
+    text: &mut dyn TextMeasure,
+) {
+    let (Some(parent), Some(mut placement)) = (nodes[index].parent, nodes[index].floating) else {
+        return;
+    };
+    let anchor = nodes[parent].bounds;
+    let Ok(mut style) = taffy.style(handle).cloned() else {
+        return;
+    };
+    style.position = taffy::Position::Absolute;
+    style.inset = taffy::Rect {
+        left: taffy::style_helpers::length(0.0),
+        top: taffy::style_helpers::length(0.0),
+        right: taffy::LengthPercentageAuto::auto(),
+        bottom: taffy::LengthPercentageAuto::auto(),
+    };
+    style.margin = taffy::Rect::zero();
+    // An explicit `min-w-*` (`min-h-*` on the sides) wins.
+    if placement.match_width {
+        let (min, length) = if placement.side.vertical() {
+            (&mut style.min_size.width, anchor.width)
+        } else {
+            (&mut style.min_size.height, anchor.height)
+        };
+        if min.is_auto() {
+            *min = taffy::prelude::length(length);
+        }
+    }
+    let window = taffy::Style {
+        size: TaffySize {
+            width: taffy::prelude::length(viewport.width),
+            height: taffy::prelude::length(viewport.height),
+        },
+        ..taffy::Style::default()
+    };
+    let laid_out = taffy.set_style(handle, style).is_ok()
+        && taffy
+            .new_with_children(window, &[handle])
+            .and_then(|window| {
+                let nodes_ref = &*nodes;
+                taffy.compute_layout_with_measure(
+                    window,
+                    TaffySize {
+                        width: AvailableSpace::Definite(viewport.width),
+                        height: AvailableSpace::Definite(viewport.height),
+                    },
+                    |inputs, _node, context, style| {
+                        let leaf = context.map(|leaf| *leaf);
+                        taffy::compute_leaf_layout(
+                            inputs,
+                            style,
+                            |_, _| 0.0,
+                            |known, available| {
+                                measure_leaf(leaf, known, available, nodes_ref, text)
+                            },
+                        )
+                    },
+                )
+            })
+            .is_ok();
+    let Some(layout) = laid_out.then(|| taffy.layout(handle).ok()).flatten() else {
+        return;
+    };
+    let size = Size {
+        width: layout.size.width,
+        height: layout.size.height,
+    };
+    let location = layout.location;
+    let (at, side) = crate::overlay::position(anchor, size, viewport, placement);
+    placement.side = side;
+    nodes[index].floating = Some(placement);
+    let origin = Point {
+        x: at.x - location.x,
+        y: at.y - location.y,
+    };
+    place(nodes, handles, taffy, index, origin, None, offsets, text);
+}
+
+/// The root child that contains node `index` (itself when it is one).
+fn top_level(nodes: &[LayoutNode], mut index: usize) -> usize {
+    while let Some(parent) = nodes[index].parent {
+        if parent == 0 {
+            break;
+        }
+        index = parent;
+    }
+    index
 }
 
 /// Move every marker (and its subtree) so its anchor point lands on the
@@ -1150,6 +1338,10 @@ fn place_sticky(nodes: &mut [LayoutNode]) {
             if nodes[ancestor].style.overflow_x == Overflow::Auto {
                 break Some(ancestor);
             }
+            // The scrollers around a floating element do not hold it.
+            if nodes[ancestor].floating.is_some() {
+                break None;
+            }
             at = nodes[ancestor].parent;
         };
         let Some(scroller) = scroller else {
@@ -1191,6 +1383,44 @@ fn shift_subtree(nodes: &mut [LayoutNode], index: usize, delta: Point, outer: Op
     }
 }
 
+/// Paint order of the whole tree: the root, then its children by z-index,
+/// each level followed by its floating elements ([`Layout::floats_after`]).
+fn push_layers(nodes: &[LayoutNode], floats: &[(usize, usize)], order: &mut Vec<usize>) {
+    order.push(0);
+    let mut layers = nodes[0].children.clone();
+    layers.sort_by_key(|child| {
+        let style = &nodes[*child].style;
+        (style.z_index, style.position == Position::Sticky)
+    });
+    for (at, &layer) in layers.iter().enumerate() {
+        push_paint_order(nodes, layer, order);
+        for index in floats_after(nodes, floats, &layers, at) {
+            push_paint_order(nodes, index, order);
+        }
+    }
+}
+
+/// See [`Layout::floats_after`].
+fn floats_after(
+    nodes: &[LayoutNode],
+    floats: &[(usize, usize)],
+    layers: &[usize],
+    at: usize,
+) -> Vec<usize> {
+    let z = |layer: usize| nodes[layer].style.z_index;
+    let level = z(layers[at]);
+    if layers.get(at + 1).is_some_and(|next| z(*next) == level) {
+        return Vec::new();
+    }
+    floats
+        .iter()
+        .filter(|&&(top, index)| index != top && z(top) == level)
+        .map(|&(_, index)| index)
+        .collect()
+}
+
+/// `index` and its subtree back-to-front, without floating descendants
+/// (they go after their layer, [`push_layers`]).
 fn push_paint_order(nodes: &[LayoutNode], index: usize, order: &mut Vec<usize>) {
     let node = &nodes[index];
     if node.hidden {
@@ -1198,6 +1428,7 @@ fn push_paint_order(nodes: &[LayoutNode], index: usize, order: &mut Vec<usize>) 
     }
     order.push(index);
     let mut children = node.children.clone();
+    children.retain(|child| nodes[*child].floating.is_none());
     // Sticky nodes stay over the siblings that scroll under them.
     children.sort_by_key(|child| {
         let style = &nodes[*child].style;

@@ -55,7 +55,9 @@ pub fn menu_model(states: &[CommandState]) -> Vec<MenuGroup> {
     groups
 }
 
-/// Whether `a` and `b` differ only in which items are enabled.
+/// Whether `a` and `b` differ only in which items are enabled. Only the
+/// native menu (macOS) and the tests use it.
+#[cfg(any(target_os = "macos", test))]
 fn same_structure(a: &[MenuGroup], b: &[MenuGroup]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(a, b)| {

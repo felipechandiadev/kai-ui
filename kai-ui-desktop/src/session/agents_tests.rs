@@ -252,3 +252,13 @@ fn the_indicator_shows_the_agent_and_its_last_action() {
     app.screen()
         .get(By::role(Role::Status).name("Agente: Cursor · Reiniciar"));
 }
+
+#[cfg(feature = "mcp")]
+#[test]
+fn the_indicator_goes_away_when_the_agent_disconnects() {
+    let mut app = TestApp::new(Sample::default());
+    app.agent_connected("Cursor");
+    assert!(app.screen().query(By::test_id("kai.agente")).is_some());
+    app.agent_disconnected();
+    assert!(app.screen().query(By::test_id("kai.agente")).is_none());
+}

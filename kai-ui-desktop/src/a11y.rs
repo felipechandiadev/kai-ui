@@ -122,6 +122,7 @@ pub fn accessible_name(layout: &Layout, index: usize) -> Option<String> {
                     | KaiRole::Cell
                     | KaiRole::ColumnHeader
                     | KaiRole::ListItem
+                    | KaiRole::ListBoxOption
                     | KaiRole::Tooltip
                     | KaiRole::Alert
             )
@@ -177,6 +178,9 @@ fn role_of(node: &LayoutNode) -> Role {
         KaiRole::ColumnHeader => Role::ColumnHeader,
         KaiRole::List => Role::List,
         KaiRole::ListItem => Role::ListItem,
+        KaiRole::ComboBox => Role::EditableComboBox,
+        KaiRole::ListBox => Role::ListBox,
+        KaiRole::ListBoxOption => Role::ListBoxOption,
         KaiRole::Tooltip => Role::Tooltip,
         KaiRole::Image => Role::Image,
         KaiRole::Dialog => Role::Dialog,
@@ -223,9 +227,11 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
             | Role::RadioButton
             | Role::ComboBox
             | Role::MenuListOption
+            | Role::ListBoxOption
             | Role::MenuItemCheckBox
             | Role::TreeItem
             | Role::Tab
+            | Role::EditableComboBox
             | Role::TextInput
             | Role::SearchInput
             | Role::MultilineTextInput
@@ -308,7 +314,7 @@ fn emit(snapshot: &A11ySnapshot<'_>, index: usize, nodes: &mut Vec<(NodeId, Node
     }
     if matches!(
         role,
-        Role::MenuListOption | Role::TreeItem | Role::Row | Role::Tab
+        Role::MenuListOption | Role::ListBoxOption | Role::TreeItem | Role::Row | Role::Tab
     ) {
         node.set_selected(source.control_state == Some(ControlState::On));
     }

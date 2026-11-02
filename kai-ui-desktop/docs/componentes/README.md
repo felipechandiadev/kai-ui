@@ -25,7 +25,9 @@ partes, foco y menús contextuales valen para todos.
 | [TextField](text-field.md) | Campo de una línea, con adornos, contraseña y errores |
 | [TextArea](text-area.md) | Campo de varias líneas con contador |
 | [SearchField](search-field.md) | Búsqueda con lupa y botón de borrar |
+| [Autocomplete](autocomplete.md) | Combobox: opciones al escribir, de una lista o una búsqueda asíncrona |
 | [ColorField](color-field.md) | Color en hex con muestra y paleta |
+| [DateField y TimeField](date-field.md) | Fecha `dd/mm/aaaa` con calendario y hora `HH:MM` |
 | [Select](select.md) | Desplegable de una opción (`NSPopUpButton`) |
 | [Segmented](segmented.md) | Control segmentado |
 | [Switch](switch.md) | Interruptor sí/no |

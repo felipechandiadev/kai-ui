@@ -1,7 +1,8 @@
 //! Pure paint pass: computed layout -> [`DrawList`].
 //!
 //! Nodes paint in tree order with siblings stably sorted by `z-index`
-//! (painter's algorithm), each one as CSS would: shadow, ring (Tailwind
+//! (painter's algorithm), floating elements after the root children of
+//! their level (docs/dev/32), each one as CSS would: shadow, ring (Tailwind
 //! rings are box shadows, so they sit outside the border box and under the
 //! node), background and border, content, children, and finally the overlay
 //! scrollbar of `overflow-auto` nodes. Every op is clipped to the node's
@@ -251,10 +252,21 @@ impl Painter<'_> {
                 );
             }
         }
+        let is_root = layout.root().is_some_and(|root| root.id == node.id);
         let mut children = node.children.clone();
+        // Floating elements paint after the root children of their
+        // `z-index` level, over everything in them.
+        if !is_root {
+            children.retain(|child| layout.get(*child).floating.is_none());
+        }
         children.sort_by_key(|child| layout.get(*child).style.z_index);
-        for child in children {
+        for (at, &child) in children.iter().enumerate() {
             self.node(child);
+            if is_root {
+                for float in layout.floats_after(&children, at) {
+                    self.node(float);
+                }
+            }
         }
         self.scrollbar(node);
     }

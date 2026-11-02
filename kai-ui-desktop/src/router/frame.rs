@@ -13,6 +13,9 @@ use super::Context;
 /// Key of the element [`outlet`] returns; [`Element::fill_outlet`] clears it.
 const OUTLET_KEY: &str = "kai.outlet";
 
+/// Prefix of the key of an element [`slot`] returns.
+const SLOT_PREFIX: &str = "kai.slot.";
+
 /// The place in a layout's view where its content goes: exactly one per
 /// layout. It is a flexible column (`flex-1 min-w-0 min-h-0 flex flex-col`,
 /// the same box the root gives a page) and the root puts the page, or the
@@ -23,7 +26,29 @@ pub fn outlet<Msg>() -> Element<Msg> {
         .class("flex-1 min-w-0 min-h-0 flex flex-col")
 }
 
+/// A place in a layout's view for something the page brings, such as its
+/// actions in the top bar: `slot("actions")` here, and the page answers to
+/// `"actions"` in [`Page::slot`](super::Page::slot). It is a row that
+/// centers its content (`flex flex-row items-center`); give it more with
+/// `.class(…)`. Without an answer it stays empty.
+pub fn slot<Msg>(name: &str) -> Element<Msg> {
+    div()
+        .key(format!("{SLOT_PREFIX}{name}"))
+        .class("flex flex-row items-center")
+}
+
 impl<Msg> Element<Msg> {
+    /// Fill every [`slot`] of this tree with what `content` returns for its
+    /// name; a slot it has nothing for stays empty. The root calls this on
+    /// each layout's view, with the page's answer.
+    pub fn fill_slots(
+        mut self,
+        content: &mut impl FnMut(&str) -> Option<Element<Msg>>,
+    ) -> Element<Msg> {
+        fill_slots(&mut self, content);
+        self
+    }
+
     /// Put `content` in the first [`outlet`] of this tree, which stays as
     /// its container. Without one, the tree is returned as it was and
     /// debug builds panic: a layout that forgot its outlet would hide its
@@ -43,6 +68,25 @@ impl<Msg> Element<Msg> {
                 .iter()
                 .map(Element::outlet_count)
                 .sum::<usize>()
+    }
+}
+
+fn fill_slots<Msg>(
+    element: &mut Element<Msg>,
+    content: &mut impl FnMut(&str) -> Option<Element<Msg>>,
+) {
+    let name = element
+        .key
+        .as_deref()
+        .and_then(|key| key.strip_prefix(SLOT_PREFIX))
+        .map(str::to_owned);
+    if let Some(name) = name {
+        element.key = None;
+        element.children.extend(content(&name));
+        return;
+    }
+    for child in &mut element.children {
+        fill_slots(child, content);
     }
 }
 
@@ -96,6 +140,25 @@ pub trait Layout: Sized + 'static {
 
     /// Must contain exactly one [`outlet`].
     fn view(&self, state: &Self::State, route: &RouteInfo<'_>) -> Element<Self::Msg>;
+
+    /// The window's theme for the routes it frames, such as a theme chosen
+    /// in the app's settings. A page's own [`Page::theme`] wins over it,
+    /// and an inner layout over an outer one (docs/dev/31). Default:
+    /// none, the app's.
+    ///
+    /// [`Page::theme`]: crate::router::Page::theme
+    fn theme(&self, _state: &Self::State) -> Option<crate::theme::Theme> {
+        None
+    }
+
+    /// The window's background effect for the routes it frames. A page's
+    /// own visible [`Page::background`] wins over it, and an inner layout
+    /// over an outer one. Default: none.
+    ///
+    /// [`Page::background`]: crate::router::Page::background
+    fn background(&self, _state: &Self::State) -> Option<crate::background::BackgroundEffect> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -287,5 +350,26 @@ mod tests {
         // Both texts are on screen (`get_by_text` panics when one is not).
         app.screen().get_by_text("barra Página 2");
         app.screen().get_by_text("página 1");
+    }
+
+    #[test]
+    fn a_slot_takes_what_the_page_answers_and_stays_empty_otherwise() {
+        let layout: Element<RootMsg> = div().children([
+            text("barra"),
+            slot("actions"),
+            slot("filter"),
+            outlet(),
+        ]);
+        let mut asked = Vec::new();
+        let filled = layout.fill_slots(&mut |name| {
+            asked.push(name.to_owned());
+            (name == "actions").then(|| text("Nuevo"))
+        });
+        assert_eq!(asked, ["actions", "filter"]);
+        assert_eq!(filled.text_content(), "barra Nuevo");
+        // The slots are plain rows once filled; the outlet is untouched.
+        assert_eq!(filled.outlet_count(), 1);
+        let again = filled.fill_slots(&mut |_| panic!("no slot is left to fill"));
+        assert_eq!(again.text_content(), "barra Nuevo");
     }
 }

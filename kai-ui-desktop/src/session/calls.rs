@@ -164,6 +164,14 @@ impl<A: App> Session<A> {
         self.invalidate();
     }
 
+    /// The agent that was connected left (a socket client; the process
+    /// goes on): hide the indicator. Only MCP reports disconnections.
+    #[cfg(feature = "mcp")]
+    pub fn agent_disconnected(&mut self) {
+        self.agents.status = None;
+        self.invalidate();
+    }
+
     pub fn audit_log(&self) -> &AuditLog {
         &self.agents.log
     }
