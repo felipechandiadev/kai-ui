@@ -22,7 +22,10 @@ fn every_route_round_trips_and_fixed_paths_win_over_parameters() {
     }
     assert_eq!(Route::parse("/customers/new"), Some(Route::CustomersNew));
     assert_eq!(Route::parse("/customers/ana"), None);
-    assert_eq!(Route::CustomersId { id: 4 }.parent(), Some(Route::Customers));
+    assert_eq!(
+        Route::CustomersId { id: 4 }.parent(),
+        Some(Route::Customers)
+    );
 }
 
 #[test]
@@ -50,7 +53,10 @@ fn a_section_keeps_its_state_and_the_sidebar_switches_sections() {
     assert_eq!(app.route(), Some("/sales"));
     app.run_until_idle();
     assert_eq!(
-        app.screen().get(By::test_id("sales.total")).name().as_deref(),
+        app.screen()
+            .get(By::test_id("sales.total"))
+            .name()
+            .as_deref(),
         Some("Total 1250")
     );
     assert!(app.perform("kai.back"));
@@ -122,9 +128,8 @@ fn the_sidebar_collapses_to_a_rail() {
     use kai::runtime::App as _;
     use kai::testing::{Key, Modifiers};
 
-    let width = |app: &TestApp<app::AppRoot>| {
-        app.screen().get(By::test_id("sections")).bounds().width
-    };
+    let width =
+        |app: &TestApp<app::AppRoot>| app.screen().get(By::test_id("sections")).bounds().width;
     let mut app = crm();
     assert!(width(&app) > 48.0);
     let ctrl_cmd = Modifiers {
@@ -149,8 +154,6 @@ fn the_sidebar_collapses_to_a_rail() {
     let state = app.app().dev_state().unwrap();
     let mut restarted = app::app(State::sample());
     restarted.restore_dev_state(state);
-    let restarted = TestApp::builder(restarted)
-        .viewport(1024.0, 700.0)
-        .build();
+    let restarted = TestApp::builder(restarted).viewport(1024.0, 700.0).build();
     assert_eq!(width(&restarted), 48.0);
 }

@@ -104,6 +104,10 @@ struct LayoutPlan {
     scope: Option<String>,
     /// Folders down from `src/sections`; the root layout is 0.
     depth: usize,
+    /// For a layout in a `[param]` folder, one `match` arm per page it
+    /// frames that turns the route's parameter into the key the layout
+    /// lives by: another value, another layout.
+    key_arms: Option<Vec<String>>,
 }
 
 impl LayoutPlan {
@@ -131,24 +135,41 @@ fn layouts(tree: &AppTree) -> Vec<LayoutPlan> {
             frame: "crate::layout::Frame".into(),
             scope: None,
             depth: 0,
+            key_arms: None,
         });
     }
     for section in &tree.sections {
         for layout in &section.layouts {
             let names: Vec<&str> = layout.segments.iter().map(Segment::name).collect();
             let modules: Vec<String> = layout.segments.iter().map(module).collect();
-            let scope: Vec<String> = section
+            let framed: Vec<&PageNode> = section
                 .pages
                 .iter()
                 .filter(|page| page.segments.starts_with(&layout.segments))
-                .map(|page| pattern(page, "_"))
                 .collect();
+            let scope: Vec<String> = framed.iter().map(|page| pattern(page, "_")).collect();
+            let has_param = layout
+                .segments
+                .iter()
+                .any(|segment| matches!(segment, Segment::Param(_)));
+            let key_arms = has_param.then(|| {
+                framed
+                    .iter()
+                    .map(|page| {
+                        format!(
+                            "{} => Some(format!(\"{{value:?}}\"))",
+                            pattern(page, "value")
+                        )
+                    })
+                    .collect()
+            });
             plans.push(LayoutPlan {
                 name: names.join("_"),
                 variant: layout.segments.iter().map(|s| camel(s.name())).collect(),
                 frame: format!("crate::sections::{}::layout::Frame", modules.join("::")),
                 scope: Some(scope.join(" | ")),
                 depth: layout.segments.len(),
+                key_arms,
             });
         }
     }
@@ -348,7 +369,17 @@ pub fn generate(tree: &AppTree) -> String {
         }
     }
     for plan in &plans {
-        writeln!(w, "        {}: Option<{}>,", plan.slot(), plan.frame).unwrap();
+        if plan.key_arms.is_some() {
+            writeln!(
+                w,
+                "        {}: Option<(String, {})>,",
+                plan.slot(),
+                plan.frame
+            )
+            .unwrap();
+        } else {
+            writeln!(w, "        {}: Option<{}>,", plan.slot(), plan.frame).unwrap();
+        }
     }
     w.push_str("    }\n\n");
 
@@ -420,6 +451,19 @@ pub fn generate(tree: &AppTree) -> String {
         w.push_str("        /// Make sure the layouts around the current route are alive.\n");
         w.push_str("        fn open_layouts(&mut self) -> Effects<RootMsg> {\n            let mut opened = Vec::new();\n");
         for plan in &plans {
+            if let Some(arms) = &plan.key_arms {
+                // Another value of the parameter is another layout.
+                writeln!(
+                    w,
+                    "            let key = match self.router.current() {{\n                {arms},\n                _ => None,\n            }};\n            if let Some(key) = key\n                && self.{slot}.as_ref().map(|(at, _)| at) != Some(&key)\n            {{\n                let (layout, effects) = <{frame} as Layout>::init(&self.state);\n                self.{slot} = Some((key, layout));\n                opened.push(effects.map(RootMsg::Layout{v}));\n            }}",
+                    arms = arms.join(",\n                "),
+                    slot = plan.slot(),
+                    frame = plan.frame,
+                    v = plan.variant
+                )
+                .unwrap();
+                continue;
+            }
             writeln!(
                 w,
                 "            if {cond}self.{slot}.is_none() {{\n                let (layout, effects) = <{frame} as Layout>::init(&self.state);\n                self.{slot} = Some(layout);\n                opened.push(effects.map(RootMsg::Layout{v}));\n            }}",
@@ -533,7 +577,18 @@ pub fn generate(tree: &AppTree) -> String {
         )
         .unwrap();
     }
-    w.push_str("            }\n            .unwrap_or(kai::background::BackgroundEffect::NONE)\n        }\n\n");
+    if plans.is_empty() {
+        w.push_str("            }\n            .unwrap_or(kai::background::BackgroundEffect::NONE)\n        }\n\n");
+    } else {
+        // docs/dev/31: a visible page effect, else the layouts' (innermost first).
+        w.push_str(
+            "            }\n            .filter(kai::background::BackgroundEffect::is_visible)\n",
+        );
+        write_layout_fallbacks(w, &plans, "background");
+        w.push_str(
+            "            .unwrap_or(kai::background::BackgroundEffect::NONE)\n        }\n\n",
+        );
+    }
 
     w.push_str("        /// The theme the page on screen asks for, if any.\n");
     w.push_str("        fn theme(&self) -> Option<kai::theme::Theme> {\n            match self.router.current() {\n");
@@ -551,7 +606,10 @@ pub fn generate(tree: &AppTree) -> String {
         )
         .unwrap();
     }
-    w.push_str("            }\n        }\n\n");
+    w.push_str("            }\n");
+    // docs/dev/31: the page's theme, else the layouts' (innermost first).
+    write_layout_fallbacks(w, &plans, "theme");
+    w.push_str("        }\n\n");
 
     w.push_str("        /// A narrow window starts with the sidebar as a rail.\n");
     w.push_str("        fn resized(&self, size: kai::geometry::Size) -> Option<RootMsg> {\n            (!self.sized).then_some(RootMsg::InitialWidth { narrow: size.width < 640.0 })\n        }\n\n");
@@ -597,12 +655,18 @@ pub fn generate(tree: &AppTree) -> String {
         .unwrap();
     }
     for plan in &plans {
+        let some = if plan.key_arms.is_some() {
+            "Some((_, layout))"
+        } else {
+            "Some(layout)"
+        };
         writeln!(
             w,
-            "                RootMsg::Layout{v}(msg) => match &mut self.{f} {{\n                    Some(layout) => {{\n                        let effects = layout.update(msg, &mut cx).map(RootMsg::Layout{v});\n                        let taken = cx.take_action_toasts::<<{frame} as Layout>::Msg>();\n                        action_toasts.extend(taken.into_iter().map(|toast| toast.map(RootMsg::Layout{v})));\n                        effects\n                    }}\n                    None => Effects::none(),\n                }},",
+            "                RootMsg::Layout{v}(msg) => match &mut self.{f} {{\n                    {some} => {{\n                        let effects = layout.update(msg, &mut cx).map(RootMsg::Layout{v});\n                        let taken = cx.take_action_toasts::<<{frame} as Layout>::Msg>();\n                        action_toasts.extend(taken.into_iter().map(|toast| toast.map(RootMsg::Layout{v})));\n                        effects\n                    }}\n                    None => Effects::none(),\n                }},",
             v = plan.variant,
             f = plan.slot(),
-            frame = plan.frame
+            frame = plan.frame,
+            some = some
         )
         .unwrap();
     }
@@ -652,16 +716,40 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("            };\n");
     if !plans.is_empty() {
         w.push_str("            let path = <Route as kai::router::Route>::path(self.router.current());\n            let title = self.title();\n            let info = RouteInfo {\n                path: &path,\n                title: &title,\n                can_back: self.router.can_go_back(),\n                can_forward: self.router.can_go_forward(),\n                sidebar_collapsed: self.sidebar_collapsed,\n            };\n");
+        w.push_str("            // What the page answers to the slots of the layouts around it.\n");
+        w.push_str("            let mut slot_of = |name: &str| -> Option<Element<RootMsg>> {\n                match self.router.current() {\n");
+        for (_, page) in &all {
+            let get = if page.is_section_root() {
+                "page"
+            } else {
+                "(_, page)"
+            };
+            writeln!(
+                w,
+                "                    {} => self.{}.as_ref().and_then(|{get}| page.slot(name, &self.state)).map(|content| content.map(RootMsg::{})),",
+                pattern(page, "_"),
+                slot(page),
+                variant(page)
+            )
+            .unwrap();
+        }
+        w.push_str("                }\n            };\n");
         w.push_str("            // Innermost layout first: each one wraps what is inside it.\n");
         let mut inner_first: Vec<&LayoutPlan> = plans.iter().collect();
         inner_first.sort_by_key(|plan| std::cmp::Reverse(plan.depth));
         for plan in inner_first {
+            let some = if plan.key_arms.is_some() {
+                "Some((_, layout))"
+            } else {
+                "Some(layout)"
+            };
             writeln!(
                 w,
-                "            if {cond}let Some(layout) = &self.{slot} {{\n                page = layout\n                    .view(&self.state, &info)\n                    .map(RootMsg::Layout{v})\n                    .fill_outlet(page);\n            }}",
+                "            if {cond}let {some} = &self.{slot} {{\n                page = layout\n                    .view(&self.state, &info)\n                    .map(RootMsg::Layout{v})\n                    .fill_slots(&mut slot_of)\n                    .fill_outlet(page);\n            }}",
                 cond = plan.condition(),
                 slot = plan.slot(),
-                v = plan.variant
+                v = plan.variant,
+                some = some
             )
             .unwrap();
         }
@@ -671,7 +759,7 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
     w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" }),\n");
     w.push_str(
-        "                div().class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
+        "                div().role(kai::element::Role::Main).class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
     );
     w.push_str("                kai::router::announcer(&self.title()),\n");
     w.push_str(
@@ -711,6 +799,30 @@ pub fn generate(tree: &AppTree) -> String {
     w.push_str("        kai::runtime::run(root, theme)\n    }\n}\n");
 
     out
+}
+
+/// `.or_else(..)` with the `hook` (`theme` or `background`) of each live
+/// layout that frames the route, innermost first.
+fn write_layout_fallbacks(w: &mut String, plans: &[LayoutPlan], hook: &str) {
+    let mut inner_first: Vec<&LayoutPlan> = plans.iter().collect();
+    inner_first.sort_by_key(|plan| std::cmp::Reverse(plan.depth));
+    for plan in inner_first {
+        let get = if plan.key_arms.is_some() {
+            "(_, layout)"
+        } else {
+            "layout"
+        };
+        let scope = match &plan.scope {
+            Some(pattern) => format!(".filter(|_| matches!(self.router.current(), {pattern}))"),
+            None => String::new(),
+        };
+        writeln!(
+            w,
+            "            .or_else(|| self.{slot}.as_ref(){scope}.and_then(|{get}| layout.{hook}(&self.state)))",
+            slot = plan.slot()
+        )
+        .unwrap();
+    }
 }
 
 /// `pub mod page;` for the section's page and nested folders for the rest.
@@ -819,11 +931,48 @@ mod tests {
         ));
         // Innermost wraps first, so the root layout ends up outside.
         let customers = code
-            .find("RootMsg::LayoutCustomers)\n                    .fill_outlet")
+            .find("RootMsg::LayoutCustomers)\n                    .fill_slots(&mut slot_of)\n                    .fill_outlet")
             .unwrap();
         let root = code
-            .find("RootMsg::LayoutRoot)\n                    .fill_outlet")
+            .find("RootMsg::LayoutRoot)\n                    .fill_slots(&mut slot_of)\n                    .fill_outlet")
             .unwrap();
         assert!(customers < root);
+        // The page answers to the slots of every layout from one place.
+        assert!(code.contains("let mut slot_of = |name: &str| -> Option<Element<RootMsg>>"));
+        assert!(code.contains("page.slot(name, &self.state)"));
+    }
+
+    #[test]
+    fn layouts_back_the_page_theme_and_background_innermost_first() {
+        let code = generate(&tree(true));
+        let theme = &code[code.find("fn theme(&self)").unwrap()..];
+        let theme = &theme[..theme.find("fn resized").unwrap()];
+        // The page's own theme first, then the section's layout (only on
+        // its routes), then the root layout.
+        let page = theme.find("page.theme(&self.state)").unwrap();
+        let customers = theme
+            .find(".or_else(|| self.layout_customers.as_ref().filter(|_| matches!(self.router.current(), Route::Customers | Route::CustomersId { id: _ })).and_then(|layout| layout.theme(&self.state)))")
+            .unwrap();
+        let root = theme
+            .find(".or_else(|| self.layout_root.as_ref().and_then(|layout| layout.theme(&self.state)))")
+            .unwrap();
+        assert!(page < customers && customers < root, "{theme}");
+
+        let background = &code[code.find("fn background(&self)").unwrap()..];
+        let background = &background[..background.find("fn theme(&self)").unwrap()];
+        // A page effect counts only when it shows.
+        assert!(
+            background.contains(".filter(kai::background::BackgroundEffect::is_visible)"),
+            "{background}"
+        );
+        assert!(background.contains("layout.background(&self.state)"));
+        assert!(background.contains(".unwrap_or(kai::background::BackgroundEffect::NONE)"));
+    }
+
+    #[test]
+    fn without_layouts_the_page_alone_picks_theme_and_background() {
+        let code = generate(&tree(false));
+        assert!(!code.contains(".or_else(|| self.layout_"));
+        assert!(!code.contains("is_visible"));
     }
 }

@@ -2,6 +2,7 @@
 //! their state while the route stays in their folder and are dropped when
 //! it leaves.
 
+use kai::element::Role;
 use kai::testing::{By, TestApp};
 use kai_sections_app::app;
 use kai_sections_app::state::State;
@@ -99,4 +100,60 @@ fn nested_layouts_wrap_the_page_from_the_inside_out() {
         .or_else(|| text.find("Ana Pérez"))
         .expect("page");
     assert!(bar < section && section < page, "{text}");
+}
+
+#[test]
+fn the_root_layout_knows_whether_history_has_somewhere_to_go() {
+    let history = |app: &TestApp<app::AppRoot>| {
+        app.screen()
+            .get(By::test_id("frame.history"))
+            .name()
+            .unwrap_or_default()
+    };
+    let mut app = crm();
+    assert_eq!(history(&app), "false/false");
+    app.click(By::test_id("sections.1"));
+    assert_eq!(history(&app), "true/false");
+    assert!(app.perform("kai.back"));
+    assert_eq!(history(&app), "false/true");
+}
+
+#[test]
+fn the_content_column_is_the_main_landmark_and_holds_the_page() {
+    let app = crm();
+    let main = app.screen().get(By::role(Role::Main));
+    assert!(
+        app.screen()
+            .within(main)
+            .query(By::test_id("customers.find"))
+            .is_some(),
+        "the page lives inside the main landmark"
+    );
+}
+
+#[test]
+fn a_layout_in_a_parameter_folder_lives_while_the_parameter_stays() {
+    let visits = |app: &TestApp<app::AppRoot>| {
+        app.screen()
+            .get(By::test_id("customer.visits"))
+            .name()
+            .unwrap_or_default()
+    };
+    let mut app = crm();
+    assert!(app.screen().query(By::test_id("customer.visits")).is_none());
+    app.navigate("/customers/1");
+    app.click(By::test_id("customer.visits"));
+    app.click(By::test_id("customer.visits"));
+    assert_eq!(visits(&app), "Visitas 2");
+
+    // Another customer is another layout, born from zero.
+    app.navigate("/customers/2");
+    assert_eq!(visits(&app), "Visitas 0");
+
+    // Leaving the folder drops it for good: back to the first customer, zero.
+    app.click(By::test_id("customer.visits"));
+    app.navigate("/customers");
+    assert!(app.screen().query(By::test_id("customer.visits")).is_none());
+    app.navigate("/customers/2");
+    assert_eq!(visits(&app), "Visitas 0");
 }

@@ -37,6 +37,7 @@ impl Layout for Frame {
             div().class("flex flex-row gap-2").test_id("frame.bar").children([
                 text(route.title).test_id("frame.title"),
                 text(route.path).test_id("frame.path"),
+                text(format!("{}/{}", route.can_back, route.can_forward)).test_id("frame.history"),
                 button(format!("Pulsado {}", self.presses), ButtonVariant::Secondary)
                     .test_id("frame.press")
                     .on_click(Msg::Press),

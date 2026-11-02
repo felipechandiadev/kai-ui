@@ -223,18 +223,11 @@ fn collect_pages(
     }
     let layout = dir.join("layout.rs");
     if layout.is_file() {
-        if segments.iter().any(|s| matches!(s, Segment::Param(_))) {
-            errors.push(error(
-                &layout,
-                "un layout dentro de una carpeta [parámetro] aún no se admite: ponlo en la carpeta de arriba",
-            ));
-        } else {
-            check_outlet(&layout, errors);
-            layouts.push(LayoutNode {
-                segments: segments.clone(),
-                file: layout,
-            });
-        }
+        check_outlet(&layout, errors);
+        layouts.push(LayoutNode {
+            segments: segments.clone(),
+            file: layout,
+        });
     }
     let Ok(children) = sorted_dirs(dir) else {
         return;
@@ -474,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn a_layout_needs_its_outlet_and_cannot_sit_in_a_parameter_folder() {
+    fn a_layout_needs_its_outlet() {
         let root = temp_app(
             "layout-errors",
             &[
@@ -489,10 +482,7 @@ mod tests {
         write(&root, "src/sections/customers/[id]/layout.rs", FRAME);
         assert_eq!(
             messages(&root),
-            [
-                "src/layout.rs: falta `outlet()` en su vista",
-                "src/sections/customers/[id]/layout.rs: un layout dentro de una carpeta [parámetro] aún no se admite",
-            ]
+            ["src/layout.rs: falta `outlet()` en su vista"]
         );
         let _ = fs::remove_dir_all(root);
     }
