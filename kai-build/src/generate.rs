@@ -717,7 +717,7 @@ pub fn generate(tree: &AppTree) -> String {
     if !plans.is_empty() {
         w.push_str("            let path = <Route as kai::router::Route>::path(self.router.current());\n            let title = self.title();\n            let info = RouteInfo {\n                path: &path,\n                title: &title,\n                can_back: self.router.can_go_back(),\n                can_forward: self.router.can_go_forward(),\n                sidebar_collapsed: self.sidebar_collapsed,\n            };\n");
         w.push_str("            // What the page answers to the slots of the layouts around it.\n");
-        w.push_str("            let mut slot_of = |name: &str| -> Option<Element<RootMsg>> {\n                match self.router.current() {\n");
+        w.push_str("            let mut slot_of = |name: &str| -> Option<Element<RootMsg>> {\n                let answer = match self.router.current() {\n");
         for (_, page) in &all {
             let get = if page.is_section_root() {
                 "page"
@@ -733,11 +733,35 @@ pub fn generate(tree: &AppTree) -> String {
             )
             .unwrap();
         }
-        w.push_str("                }\n            };\n");
-        w.push_str("            // Innermost layout first: each one wraps what is inside it.\n");
+        w.push_str("                };\n                if answer.is_some() {\n                    return answer;\n                }\n");
         let mut inner_first: Vec<&LayoutPlan> = plans.iter().collect();
         inner_first.sort_by_key(|plan| std::cmp::Reverse(plan.depth));
+        w.push_str("                // Then the layouts in scope, innermost first: a section's\n                // layout can fill the bars of the root one.\n");
+        for plan in &inner_first {
+            let some = if plan.key_arms.is_some() {
+                "Some((_, layout))"
+            } else {
+                "Some(layout)"
+            };
+            writeln!(
+                w,
+                "                if {cond}let {some} = &self.{slot} {{\n                    if let Some(content) = layout.slot(name, &self.state, &info) {{\n                        return Some(content.map(RootMsg::Layout{v}));\n                    }}\n                }}",
+                cond = plan.condition(),
+                slot = plan.slot(),
+                v = plan.variant,
+                some = some
+            )
+            .unwrap();
+        }
+        w.push_str("                None\n            };\n");
+        w.push_str("            // Innermost layout first: each one wraps what is inside it.\n");
         for plan in inner_first {
+            if plan.name == "root" {
+                // The root layout wraps the sidebar too when it asks
+                // (`Layout::WRAPS_SIDEBAR`): then it goes around the row below.
+                w.push_str("            if !<crate::layout::Frame as Layout>::WRAPS_SIDEBAR\n                && let Some(layout) = &self.layout_root\n            {\n                page = layout\n                    .view(&self.state, &info)\n                    .map(RootMsg::LayoutRoot)\n                    .fill_slots(&mut slot_of)\n                    .fill_outlet(page);\n            }\n");
+                continue;
+            }
             let some = if plan.key_arms.is_some() {
                 "Some((_, layout))"
             } else {
@@ -754,13 +778,27 @@ pub fn generate(tree: &AppTree) -> String {
             .unwrap();
         }
     }
+    let root_layout = plans.iter().any(|plan| plan.name == "root");
     w.push_str("            let selected = self.sidebar.row_of(self.router.current().section()).unwrap_or(0);\n");
-    w.push_str("            div().class(\"relative flex flex-row w-full h-full\").children([\n");
+    if root_layout {
+        // Sidebar and content in a row; a root layout that wraps the
+        // sidebar puts its bars around it, across the whole window.
+        w.push_str("            let row: Element<RootMsg> = div().class(\"flex flex-row flex-1 min-w-0 min-h-0\").children([\n");
+    } else {
+        w.push_str(
+            "            div().class(\"relative flex flex-row w-full h-full\").children([\n",
+        );
+    }
     w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
     w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" }),\n");
     w.push_str(
         "                div().role(kai::element::Role::Main).class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
     );
+    if root_layout {
+        w.push_str("            ]);\n");
+        w.push_str("            let body = match &self.layout_root {\n                Some(layout) if <crate::layout::Frame as Layout>::WRAPS_SIDEBAR => layout\n                    .view(&self.state, &info)\n                    .map(RootMsg::LayoutRoot)\n                    .fill_slots(&mut slot_of)\n                    .fill_outlet(row),\n                _ => row,\n            };\n");
+        w.push_str("            div().class(\"relative flex flex-col w-full h-full\").children([\n                body,\n");
+    }
     w.push_str("                kai::router::announcer(&self.title()),\n");
     w.push_str(
         "                kai::components::toast_stack(&self.toasts, RootMsg::CloseToast),\n",

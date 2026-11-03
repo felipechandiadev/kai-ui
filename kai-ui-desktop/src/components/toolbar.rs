@@ -15,7 +15,7 @@ pub fn toolbar<Msg>(items: impl IntoIterator<Item = Element<Msg>>) -> Element<Ms
         .class(&themed(
             "flex items-center gap-1 h-[52px] shrink-0 px-3 bg-background \
              border-b border-border/70 shadow-md z-10",
-            "flex items-center gap-1 h-[38px] shrink-0 px-2 bg-window \
+            "flex items-center gap-1 h-[38px] shrink-0 px-2 bg-window glass:bg-window/70 \
              border-b border-separator z-10",
         ))
         .role(Role::Toolbar)
@@ -90,6 +90,73 @@ pub fn toolbar_search<Msg>(field: Element<Msg>) -> Element<Msg> {
         .class(&themed("w-56 shrink min-w-0", "w-48 shrink min-w-0"))
         .focus_group()
         .child(field)
+}
+
+/// The three areas of a top bar that spans the window: `leading` at the
+/// start, `center` centered on the window (both sides grow alike, so it
+/// stays centered whatever the sides hold) and `trailing` at the end. Put
+/// the result in [`toolbar`] as its only item, or pass the areas as
+/// [`slot`](crate::router::slot)s so the layouts inside can fill them.
+pub fn toolbar_areas<Msg>(
+    leading: impl IntoIterator<Item = Element<Msg>>,
+    center: impl IntoIterator<Item = Element<Msg>>,
+    trailing: impl IntoIterator<Item = Element<Msg>>,
+) -> Element<Msg> {
+    div()
+        .class("flex flex-row items-center flex-1 min-w-0 gap-1")
+        .children([
+            div()
+                .class("flex flex-row items-center flex-1 min-w-0 gap-1")
+                .children(leading),
+            div()
+                .class("flex flex-row items-center justify-center shrink-0 gap-1")
+                .children(center),
+            div()
+                .class("flex flex-row items-center justify-end flex-1 min-w-0 gap-1")
+                .children(trailing),
+        ])
+}
+
+/// Thin bar across the bottom of the window (a status bar, as the one of
+/// Xcode or Mail): 24 pt in Kai, 22 pt in AppKit, clearly thinner than
+/// [`toolbar`]. Square corners, a hairline on top and small secondary
+/// text; it does not take focus. Put [`status_text`], [`status_item`] and
+/// [`toolbar_spacer`] in it.
+pub fn status_bar<Msg>(items: impl IntoIterator<Item = Element<Msg>>) -> Element<Msg> {
+    div()
+        .class(&themed(
+            "flex items-center gap-3 h-[24px] shrink-0 px-3 rounded-none bg-background/80 \
+             border-t border-border/70 text-xs text-muted-foreground",
+            "flex items-center gap-2 h-[22px] shrink-0 px-2.5 rounded-none bg-window/70 \
+             border-t border-separator text-caption1 text-secondary-label",
+        ))
+        .role(Role::Status)
+        .children(items)
+}
+
+/// Small status text for [`status_bar`], on one line.
+pub fn status_text<Msg>(value: impl Into<String>) -> Element<Msg> {
+    text(value.into()).class("whitespace-nowrap truncate min-w-0")
+}
+
+/// Small icon and text for [`status_bar`] (the icon alone when `value`
+/// is empty); `label` names it for accessibility and is its tooltip.
+pub fn status_item<Msg>(
+    glyph: Icon,
+    value: impl Into<String>,
+    label: impl Into<String>,
+) -> Element<Msg> {
+    let value = value.into();
+    let label = label.into();
+    let mut children = vec![icon(glyph).class(&themed("size-3.5", "size-3"))];
+    if !value.is_empty() {
+        children.push(text(value).class("whitespace-nowrap"));
+    }
+    div()
+        .class("inline-flex items-center gap-1 shrink-0")
+        .tooltip(label.as_str())
+        .label(label)
+        .children(children)
 }
 
 #[cfg(test)]

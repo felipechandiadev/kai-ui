@@ -31,6 +31,11 @@ toolbar([
 | `toolbar_separator()` | Línea vertical entre grupos. |
 | `toolbar_spacer()` | Espacio flexible: empuja lo siguiente al final. |
 | `toolbar_search(field)` | Hueco de ancho fijo para un campo; es su propia parada de Tab, porque las flechas editan su texto. |
+| `toolbar_areas(leading, center, trailing)` | Tres zonas: inicio, centro (centrado en la ventana, los lados crecen igual) y final. Como único ítem de `toolbar`; las zonas suelen ser `slot`s que llenan los layouts internos (docs/dev/28 §3.3). |
+| `section_tabs(tabs, path, on_select)` | Navegación por ruta entre las partes de una sección, para el centro de la barra: `tabs` son `(etiqueta, ruta)` y se marca la de prefijo más largo de `path` (`section_tab_index`). En Glass es una píldora: pista gris redondeada, la activa con tinte y contorno finos del color *choice* (cian). |
+| `status_bar(items)` | Barra inferior delgada a todo el ancho (24 pt Kai, 22 pt AppKit), esquinas cuadradas, filete arriba y texto secundario pequeño; no toma foco. |
+| `status_text(value)` | Texto de una línea para `status_bar`. |
+| `status_item(icon, value, label)` | Icono pequeño y texto (solo el icono si `value` está vacío) para `status_bar`; `label` es nombre y tooltip. |
 
 ## Estados de `toolbar_item`
 

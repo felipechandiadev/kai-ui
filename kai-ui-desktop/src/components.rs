@@ -23,6 +23,7 @@ mod page;
 mod page_templates;
 mod progress;
 mod search;
+mod section_tabs;
 mod sidebar;
 mod table;
 mod tabs;
@@ -30,12 +31,12 @@ mod text_area;
 mod toast;
 mod toolbar;
 
+pub use crate::charts::{ChartKind, ChartSpec, chart};
+pub use crate::color::Color;
 pub use autocomplete::{
     AUTOCOMPLETE_DEBOUNCE, AUTOCOMPLETE_LIMIT, Autocomplete, AutocompleteItem, AutocompleteMsg,
     AutocompleteState, AutocompleteStatus, autocomplete,
 };
-pub use crate::charts::{ChartKind, ChartSpec, chart};
-pub use crate::color::Color;
 pub use color::{ColorField, INVALID_COLOR, color_field};
 pub use date::{Calendar, DateField, date_calendar, date_field, time_field};
 pub use dialog::{Dialog, DialogWidth, dialog};
@@ -54,6 +55,7 @@ pub use page_templates::{
 };
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, SearchVariant, search_field};
+pub use section_tabs::{section_tab_index, section_tabs};
 pub use sidebar::{Sidebar, SidebarGroup, SidebarItem, sidebar};
 pub use table::{
     Column, ColumnWidth, Date, Pin, Sheet, SortDirection, Table, TableView, Value, ViewChange,
@@ -63,7 +65,8 @@ pub use tabs::Tabs;
 pub use text_area::{TextArea, text_area};
 pub use toast::{TOAST_DURATION, TOAST_STACK, Toast, toast_key, toast_stack, toast_timer};
 pub use toolbar::{
-    toolbar, toolbar_item, toolbar_search, toolbar_separator, toolbar_spacer, toolbar_title,
+    status_bar, status_item, status_text, toolbar, toolbar_areas, toolbar_item, toolbar_search,
+    toolbar_separator, toolbar_spacer, toolbar_title,
 };
 
 use crate::commands::Action;

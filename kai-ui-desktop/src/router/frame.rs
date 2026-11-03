@@ -138,8 +138,30 @@ pub trait Layout: Sized + 'static {
         Effects::none()
     }
 
+    /// Whether this layout, as the root one (`src/layout.rs`), frames the
+    /// whole window: its bars go across the full width and its [`outlet`]
+    /// gets the row of sidebar and content, not only the content column
+    /// (docs/dev/28 §3.3). Ignored for the layouts of a folder, which always
+    /// frame their content. Default: `false`, the frame beside the sidebar.
+    const WRAPS_SIDEBAR: bool = false;
+
     /// Must contain exactly one [`outlet`].
     fn view(&self, state: &Self::State, route: &RouteInfo<'_>) -> Element<Self::Msg>;
+
+    /// What the layout puts in the [`slot`] `name` of the layouts around
+    /// it, as [`Page::slot`] does: a section's layout can fill the top or
+    /// bottom bar of the root one, from the route on screen (`route`). The page answers first, then the
+    /// layouts from the innermost outwards. Default: nothing.
+    ///
+    /// [`Page::slot`]: crate::router::Page::slot
+    fn slot(
+        &self,
+        _name: &str,
+        _state: &Self::State,
+        _route: &RouteInfo<'_>,
+    ) -> Option<Element<Self::Msg>> {
+        None
+    }
 
     /// The window's theme for the routes it frames, such as a theme chosen
     /// in the app's settings. A page's own [`Page::theme`] wins over it,
@@ -354,12 +376,8 @@ mod tests {
 
     #[test]
     fn a_slot_takes_what_the_page_answers_and_stays_empty_otherwise() {
-        let layout: Element<RootMsg> = div().children([
-            text("barra"),
-            slot("actions"),
-            slot("filter"),
-            outlet(),
-        ]);
+        let layout: Element<RootMsg> =
+            div().children([text("barra"), slot("actions"), slot("filter"), outlet()]);
         let mut asked = Vec::new();
         let filled = layout.fill_slots(&mut |name| {
             asked.push(name.to_owned());

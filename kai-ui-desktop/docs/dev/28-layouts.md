@@ -123,9 +123,16 @@ la altura y la barra superior queda sobre el contenido, como Finder, Notas y
 Mail. Esto deja intacta la barra lateral generada y su plegado a riel.
 
 Una barra a todo el ancho de la ventana (sobre la barra lateral) es la otra
-convención de macOS (barra de título unificada). Se deja para una segunda
-vuelta con `const WRAPS_SIDEBAR: bool` en el layout raíz; no se necesita
-para recuperar lo que tenía la demo.
+convención de macOS (barra de título unificada). Hecho con
+`const WRAPS_SIDEBAR: bool = true` en el layout raíz: su `outlet()` recibe
+la fila barra lateral + contenido y sus barras cruzan la ventana. La demo
+lo usa: barra superior con `toolbar_areas` (inicio: plegado, atrás,
+adelante, título; centro y final: `slot`s `top.center`/`top.trailing`) y
+barra inferior `status_bar` (delgada y cuadrada) con `bottom.leading` y
+`bottom.trailing`. «App real» (`sections/real_app/layout.rs`) pone en
+`top.center` sus `section_tabs` (píldora Glass, elegida por ruta), su
+campana en `top.trailing`, su nota abajo y el fondo «Aurora 2» estático.
+Regla HIG: cristal solo en barras y controles; el contenido es sólido.
 
 ### 3.4 Accesibilidad
 
@@ -177,6 +184,11 @@ Los nombres son texto por simplicidad; el layout dice `slot("actions")` y la
 página responde a `"actions"`. Si no responde, el hueco queda vacío. No entra
 en la primera entrega (§6, L3, ya hecho): sin esto, la barra lleva título, atrás,
 adelante y plegado de la barra lateral, y nada propio de la página.
+
+Un layout también responde a los huecos de los layouts que lo rodean, con
+`Layout::slot(name, state, route)`: primero la página, luego los layouts
+del más interno al externo. Así una sección llena la barra del raíz sin que
+cada página lo repita (y con `route` elige su pestaña activa).
 
 ## 6. Plan
 
