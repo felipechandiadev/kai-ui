@@ -637,6 +637,8 @@ pub struct Element<Msg> {
     pub options: Option<Options>,
     /// App-modal panel ([`Element::modal`]).
     pub modal: bool,
+    /// Takes the focus when it appears ([`Element::autofocus`]).
+    pub autofocus: bool,
     /// Rows the session builds as they scroll into view
     /// ([`Element::virtual_rows`]).
     pub virtual_rows: Option<VirtualRows<Msg>>,
@@ -764,6 +766,7 @@ impl<Msg: 'static> Element<Msg> {
             expanded,
             options,
             modal,
+            autofocus,
             virtual_rows,
             row_count,
             row_index,
@@ -805,6 +808,7 @@ impl<Msg: 'static> Element<Msg> {
             expanded,
             options,
             modal,
+            autofocus,
             virtual_rows: virtual_rows.map(|rows| rows.map_with(f)),
             row_count,
             row_index,
@@ -893,6 +897,7 @@ impl<Msg> Element<Msg> {
             expanded: None,
             options: None,
             modal: false,
+            autofocus: false,
             virtual_rows: None,
             row_count: None,
             row_index: None,
@@ -1341,6 +1346,15 @@ impl<Msg> Element<Msg> {
     /// Escape and ⌘. send `on_dismiss` unless a control inside takes them
     /// first (a cancel button, a search field with text). The last modal in
     /// document order wins.
+    /// Take the keyboard focus when this control appears (a search field
+    /// that opens from a button). Only on appearing: while it stays on
+    /// screen the person moves the focus freely. The first one in document
+    /// order wins.
+    pub fn autofocus(mut self) -> Self {
+        self.autofocus = true;
+        self
+    }
+
     pub fn modal(mut self, on_dismiss: Msg) -> Self
     where
         Msg: Clone + 'static,

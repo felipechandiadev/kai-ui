@@ -219,6 +219,10 @@ pub(crate) struct Session<A: App> {
     /// Focus to set once the frame's tree is laid out (a modal appeared or
     /// left).
     modal_focus: Option<ModalFocus>,
+    /// The [`Element::autofocus`] control on screen, and the one to focus
+    /// once the frame is laid out because it just appeared.
+    autofocused: Option<WidgetId>,
+    autofocus_pending: Option<WidgetId>,
     /// The app's route ([`App::route`]) as of the last `update`.
     route: Option<String>,
     /// Scroll and focus of routes left, to restore on coming back.
@@ -695,6 +699,8 @@ impl<A: App> Session<A> {
             agents: calls::Agents::default(),
             modal: None,
             modal_focus: None,
+            autofocused: None,
+            autofocus_pending: None,
             route: None,
             route_memory: HashMap::new(),
             route_focus: None,
@@ -1438,6 +1444,7 @@ impl<A: App> Session<A> {
             self.tooltip = None;
         }
         self.track_modal();
+        self.track_autofocus();
         self.track_floats();
         self.add_agent_status();
         self.add_inspector();
@@ -1723,6 +1730,20 @@ impl<A: App> Session<A> {
             }
             _ => {}
         }
+    }
+
+    /// Focus an [`Element::autofocus`] control the frame it appears.
+    fn track_autofocus(&mut self) {
+        let mut found = None;
+        self.tree.walk(&mut |element| {
+            if found.is_none() && element.autofocus && !element.disabled {
+                found = Some(element.id);
+            }
+        });
+        if found.is_some() && found != self.autofocused {
+            self.autofocus_pending = found;
+        }
+        self.autofocused = found;
     }
 
     /// Whether the app shows an [`Element::modal`] panel.
@@ -3623,6 +3644,13 @@ impl<A: App> Session<A> {
         if let Some(focus) = self.route_focus.take()
             && self.tree.find(focus).is_some()
             && !stays
+        {
+            self.relayout();
+            self.apply_intent(Intent::SetFocus(Some(focus)));
+            self.rebuild();
+        }
+        if let Some(focus) = self.autofocus_pending.take()
+            && self.tree.find(focus).is_some()
         {
             self.relayout();
             self.apply_intent(Intent::SetFocus(Some(focus)));

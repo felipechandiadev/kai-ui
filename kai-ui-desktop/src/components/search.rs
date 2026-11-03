@@ -37,6 +37,8 @@ pub struct SearchField<Msg> {
     variant: SearchVariant,
     size: Option<ControlSize>,
     disabled: bool,
+    autofocus: bool,
+    on_blur: Option<Msg>,
     test_id: Option<String>,
 }
 
@@ -99,6 +101,8 @@ pub fn search_field<Msg>(
         variant: SearchVariant::Toolbar,
         size: None,
         disabled: false,
+        autofocus: false,
+        on_blur: None,
         test_id: None,
     }
 }
@@ -138,6 +142,18 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
         self
     }
 
+    /// Take the focus when the field appears ([`Element::autofocus`]).
+    pub fn autofocus(mut self, on: bool) -> Self {
+        self.autofocus = on;
+        self
+    }
+
+    /// Sent when the field loses the focus.
+    pub fn on_blur(mut self, msg: Msg) -> Self {
+        self.on_blur = Some(msg);
+        self
+    }
+
     pub fn test_id(mut self, test_id: impl Into<String>) -> Self {
         self.test_id = Some(test_id.into());
         self
@@ -167,6 +183,8 @@ impl<Msg: Clone + 'static> SearchField<Msg> {
             .on_action(on_action)
             .claims_escape(!empty)
             .part("input");
+        field.autofocus = self.autofocus;
+        field.handlers.on_blur = self.on_blur.clone();
         field.handlers.on_input = Some(self.on_input.clone());
         field.handlers.on_submit = self.on_submit.clone();
 
