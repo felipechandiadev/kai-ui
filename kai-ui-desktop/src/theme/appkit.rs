@@ -121,6 +121,9 @@ pub(super) const GLASS27_LIGHT: SemanticColors = SemanticColors {
     // The bezel is `secondarySystemFill` (α .078): hover is one fill level
     // up, `systemFill` (.098) [C].
     bezel_hover: k(25),
+    // Kai decision, not measured: a 2 pt cyan ring (the Glass accent, a
+    // deeper tone so it reads on the aurora) instead of the blue halo.
+    focus_ring: Color::rgba(0x00, 0x97, 0xa7, 220),
     ..LIGHT
 };
 
@@ -130,6 +133,8 @@ pub(super) const GLASS27_DARK: SemanticColors = SemanticColors {
     window_background: Color::hex(0x1e1e1e),
     placeholder: w(140),
     bezel_hover: w(25),
+    // Kai decision, see GLASS27_LIGHT.
+    focus_ring: Color::rgba(0x33, 0xd6, 0xe6, 220),
     ..DARK
 };
 
@@ -230,6 +235,8 @@ pub(super) const GLASS27_CONTROLS: ControlTokens = ControlTokens {
     field_radius: [4.0, 5.0, 6.0, 7.0, 9.0],
     field_square_radius: [4.0, 5.0, 6.0, 7.0, 9.0],
     padding_x: [8.0, 10.0, 12.0, 14.0, 18.0],
+    // Kai decision, not measured: a thin 2 pt ring, no 3 pt halo.
+    focus_ring_width: 2.0,
     // `systemFontSize(for:)` unchanged, extra large included.
     ..AQUA11_CONTROLS
 };
@@ -558,7 +565,7 @@ mod tests {
         assert_eq!(c.field_square_radius, c.field_radius);
         assert_eq!(c.padding_x, [8.0, 10.0, 12.0, 14.0, 18.0]);
         assert_eq!(c.font_size, [9.0, 11.0, 13.0, 13.0, 13.0]);
-        assert_eq!((c.focus_ring_width, c.focus_ring_offset), (3.0, 0.0));
+        assert_eq!((c.focus_ring_width, c.focus_ring_offset), (2.0, 0.0));
         assert_eq!(glass(Appearance::Light).typography, light().typography);
     }
 
@@ -585,8 +592,10 @@ mod tests {
             under_page: a.under_page,
             placeholder: a.placeholder,
             bezel_hover: a.bezel_hover,
+            focus_ring: a.focus_ring,
             ..g
         };
+        assert_eq!(l.semantic.focus_ring, Color::rgba(0x00, 0x97, 0xa7, 220));
         assert_eq!(unchanged(l.semantic, LIGHT), LIGHT);
         assert_eq!(unchanged(d.semantic, DARK), DARK);
         assert_eq!(l.color("system-red"), Some(Color::hex(0xff383c)));
