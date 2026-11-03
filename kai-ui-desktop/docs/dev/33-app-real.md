@@ -76,7 +76,17 @@ versión anterior salieron del panel.
 
 ### Patrones de diseño
 
-Base del laboratorio de patrones; cada pieza ilustra uno:
+Base del laboratorio de patrones; cada pieza ilustra uno. Lo que aquí se
+fija pasa a ser regla (numerada en la página de cada componente).
+
+Reglas de la barra de lista (detalle y justificación en
+[list-toolbar.md](../componentes/list-toolbar.md#reglas-normativas)):
+
+- R1 barra 44 pt · R2 iconos 28 pt · R3 campo 28 pt · R4 margen ≥ 8 pt
+  para hover y foco · R5 anillo de foco 2 pt (cian en Glass) · R6 una sola
+  X · R7 info izquierda, acciones derecha · R8 orden Descargar, Ordenar,
+  Filtrar, Añadir, búsqueda · R9 punto de activo · R10 Escape/blur vacío
+  cierran · R11 despliegue animado 180 ms.
 
 - **Lista con chips de estado** (panel izquierdo): fila con iniciales,
   nombre, sector y un chip de color por etapa; pie con el conteo y acciones
@@ -87,8 +97,10 @@ Base del laboratorio de patrones; cada pieza ilustra uno:
   info a la izquierda («8 clientes» / «N de M clientes»), acciones a la
   derecha (Descargar, Ordenar, Filtrar, Añadir) con punto si Ordenar o
   Filtrar están activos, y búsqueda al extremo derecho que se despliega
-  animada sobre las acciones (foco al abrir; Escape o X cierran; filtra
-  por nombre o sector en vivo). Si el cliente elegido queda fuera, el
+  animada sobre las acciones (foco al abrir; una sola X, la del campo;
+  Escape borra y luego cierra; filtra por nombre o sector en vivo).
+  Reglas normativas R1–R11 en
+  [list-toolbar.md](../componentes/list-toolbar.md#reglas-normativas). Si el cliente elegido queda fuera, el
   detalle muestra el primero visible. Overflow a un menú «más»: pendiente.
 - **Confirmación destructiva** (iconos Editar/Eliminar del detalle):
   la papelera abre un `Dialog` con título, qué se pierde, «Eliminar» en

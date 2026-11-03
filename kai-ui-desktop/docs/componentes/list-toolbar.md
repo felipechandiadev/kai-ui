@@ -16,21 +16,39 @@ list_toolbar(format!("{} de {} clientes", visibles, total))
     .build()
 ```
 
-## Reglas del patrón
+## Reglas (normativas)
 
-- **Info a la izquierda**, solo lectura: el total («8 clientes») o, con
-  filtro o búsqueda, «N de M clientes».
-- **Acciones a la derecha**, iconos compactos de 28 pt con tooltip, en
-  barra de 40 pt (44 en Kai): el hover queda dentro.
-- **Búsqueda al extremo derecho**, expandible: al pulsarla el campo crece
-  hacia la izquierda (animado, 180 ms, ease-out) sobre las acciones, que se
-  ocultan; la info sigue visible. Toma el foco al abrir. Escape borra el
-  texto y, vacío, la cierra; también la X. Al perder el foco solo se cierra
-  si está vacía. Cerrar borra el texto.
-- **Indicadores**: Ordenar y Filtrar llevan un punto cuando están activos
-  (y «(activo)» en su nombre accesible).
-- **Overflow** (pendiente): en paneles angostos las acciones secundarias
-  deberían pasar a un menú «más»; falta saber el ancho del panel en `view`.
+Patrón de referencia del laboratorio (demo «App real»). Toda barra de
+lista nueva las cumple; cambiarlas exige cambiar este documento.
+
+- **R1. Barra de 44 pt.** Deja 8 pt arriba y abajo de un control de 28 pt.
+- **R2. Iconos de 28 pt** (`IconButtonSize::Sm`) con tooltip. Blanco
+  táctil/clicable cómodo sin engordar la barra.
+- **R3. Campo de búsqueda de 28 pt.** Misma línea que los iconos: abrir la
+  búsqueda no mueve nada en vertical.
+- **R4. Margen mínimo de 8 pt para hover y foco.** El relleno de hover y el
+  anillo de foco nunca tocan ni se recortan con el borde de la barra.
+- **R5. Anillo de foco de 2 pt** (token `focus_ring_width`, color
+  `focus_ring`: cian en Glass). Fino y con contraste sobre la aurora; un
+  halo de 3 pt pide más margen y ensucia.
+- **R6. Una sola X para borrar:** la del campo. Dos X (borrar y cerrar)
+  confunden; cerrar es Escape o salir.
+- **R7. Info a la izquierda, acciones a la derecha.** Se lee primero el
+  estado («8 clientes», «N de M clientes», solo lectura) y luego qué hacer.
+- **R8. Orden de acciones:** Descargar, Ordenar, Filtrar, Añadir y la
+  búsqueda al extremo derecho. De lo que no cambia la lista a lo que la
+  cambia; la búsqueda crece hacia la izquierda sin saltar.
+- **R9. Indicador de activo:** punto en Ordenar/Filtrar cuando alteran la
+  lista, y «(activo)» en el nombre accesible. Explica por qué faltan filas.
+- **R10. Cerrar la búsqueda:** Escape borra el texto y, vacío, cierra;
+  perder el foco cierra solo si está vacío; cerrar borra el texto. Nunca se
+  pierde texto escrito por un clic accidental.
+- **R11. Despliegue animado** (180 ms, ease-out) desde el botón sobre las
+  acciones, que se ocultan; la info queda visible y el campo toma el foco.
+  Continuidad: el campo sale del icono que se pulsó.
+
+Pendiente: overflow a un menú «más» en paneles angostos (falta el ancho
+del panel en `view`).
 
 ## API
 
@@ -42,8 +60,8 @@ list_toolbar(format!("{} de {} clientes", visibles, total))
 | `.active(bool)` | Punto indicador sobre la acción. |
 | `SearchReveal` | Estado de la animación: `open(tick)`, `close(tick)`, `tick(tick)` devuelven `Effects::after` cada 16 ms hasta reposar; `progress` 0–1, `eased()`. |
 
-Partes: `<id>.info`, `<id>.search`, `<id>.field` (y `.field.input`),
-`<id>.close`.
+Partes: `<id>.info`, `<id>.search`, `<id>.field` (y `.field.input`,
+`.field.clear`).
 
 ## Relacionados
 
