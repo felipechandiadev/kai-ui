@@ -61,6 +61,7 @@ partes, foco y menús contextuales valen para todos.
 |---|---|
 | [Sidebar](sidebar.md) | Lista de secciones, con riel plegado |
 | [Tabs](tabs.md) | Pestañas sobre un panel |
+| [ListToolbar](list-toolbar.md) | Barra de lista: info, acciones y búsqueda expandible |
 | [Paneles](panes.md) | Paneles sólidos lado a lado y sidebar flotante de cristal |
 | [Page y PageGrid](page.md) | Contenedor de sección y grilla 4/8/12 |
 | [Plantillas de página](page-templates.md) | `PageHeader`, lista + detalle, formulario, vista de datos |
