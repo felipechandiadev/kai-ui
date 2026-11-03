@@ -20,7 +20,7 @@ panes([
 |---|---|
 | `panes(children)` | Fila de paneles con separación, ocupa lo que queda. El ancho lo da cada panel (`w-[300px] shrink-0` o `flex-1 min-w-0`). |
 | `pane()` | Panel sólido redondeado: color de ventana opaco, filete y sombra suave (14 pt de radio en Glass). |
-| `pane_footer(children)` | Fila delgada al pie de un panel: un conteo y acciones pequeñas. |
+| `pane_footer(children)` | Fila delgada al pie de un panel: un conteo y acciones pequeñas. Mide 40 pt (44 en Kai) para contener el hover de un `icon_button_sized(.., IconButtonSize::Sm)` (28 pt) con 6 pt de margen. |
 | `app_sidebar(rows, path, on_select)` | Sidebar flotante de cristal, estrecha y redondeada: filas `(icono, etiqueta, ruta)`, la activa elegida por ruta con tinte *choice* (cian); una ruta vacía la muestra deshabilitada. Un layout la devuelve en `Layout::sidebar` para reemplazar la sidebar generada. |
 
 ## Relacionados

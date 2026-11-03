@@ -29,13 +29,16 @@ pub fn pane<Msg>() -> Element<Msg> {
         .role(Role::Group)
 }
 
-/// Thin row at the bottom of a [`pane`]: a count, small actions.
+/// Thin row at the bottom of a [`pane`]: a count, small actions. Its
+/// height (40 pt AppKit, 44 Kai) holds a small icon button (28 pt,
+/// `IconButtonSize::Sm`) with 6 pt above and below, so the hover fill
+/// stays inside the row.
 pub fn pane_footer<Msg>(children: impl IntoIterator<Item = Element<Msg>>) -> Element<Msg> {
     div()
         .class(&themed(
-            "flex items-center gap-1 h-10 shrink-0 px-3 border-t border-border/70 text-xs \
+            "flex items-center gap-1 h-11 shrink-0 px-3 border-t border-border/70 text-xs \
              text-muted-foreground",
-            "flex items-center gap-1 h-[36px] shrink-0 px-3 border-t-[0.5px] border-separator \
+            "flex items-center gap-1 h-[40px] shrink-0 px-2.5 border-t-[0.5px] border-separator \
              text-caption1 text-secondary-label",
         ))
         .children(children)
