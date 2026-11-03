@@ -389,3 +389,54 @@ pub const COMMAND_PALETTE: Component = Component {
     ],
     ..REFERENCE
 };
+
+pub const LIST_TOOLBAR: Component = Component {
+    id: "list-toolbar",
+    name: "ListToolbar",
+    group: Group::Actions,
+    summary: "Barra de lista: info, acciones y búsqueda expandible.",
+    doc: "list-toolbar.md",
+    props: &[toggle("filtered", "Filtro activo", false)],
+    preview: |props, cx| {
+        let filtered = props.on("filtered");
+        let info = if filtered {
+            "2 de 8 clientes"
+        } else {
+            "8 clientes"
+        };
+        kai::element::div().class("w-80").test_id(cx.id).child(
+            kai::components::list_toolbar(info)
+                .action(kai::components::ListAction::button(
+                    kai::icons::Icon::FileDown,
+                    "Descargar",
+                    PreviewMsg::Set("filtered", Value::Bool(filtered)),
+                ))
+                .action(
+                    kai::components::ListAction::button(
+                        kai::icons::Icon::Funnel,
+                        "Filtrar",
+                        PreviewMsg::Set("filtered", Value::Bool(!filtered)),
+                    )
+                    .active(filtered),
+                )
+                .build(),
+        )
+    },
+    code: |props| {
+        let active = props.on("filtered");
+        snippet(
+            &["list_toolbar", "ListAction"],
+            format!(
+                "list_toolbar(info)\n    .action(ListAction::button(Icon::FileDown, \"Descargar\", Msg::Descargar))\n    .action(ListAction::menu(Icon::Funnel, \"Filtrar\", &ETAPAS, Some(self.filtro), Msg::Filtro).active({active}))\n    .search(self.texto.clone(), self.reveal, Msg::Texto, Msg::Abrir, Msg::Cerrar)\n    .build()"
+            ),
+        )
+    },
+    keyboard: &[
+        "Cada acción es un botón; la búsqueda toma el foco al abrirse y Escape la borra y la cierra.",
+    ],
+    accessibility: &[
+        "Las acciones activas dicen «(activo)» en su nombre; la info es texto de solo lectura.",
+    ],
+    demo: Some(("App real", "/real-app")),
+    ..REFERENCE
+};

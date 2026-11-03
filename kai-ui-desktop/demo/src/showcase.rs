@@ -303,6 +303,7 @@ pub static COMPONENTS: &[Component] = &[
     actions::ICON_BUTTON,
     actions::TOOLBAR,
     actions::COMMAND_PALETTE,
+    actions::LIST_TOOLBAR,
     inputs::TEXT_FIELD,
     inputs::TEXT_AREA,
     inputs::SEARCH_FIELD,

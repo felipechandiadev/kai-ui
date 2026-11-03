@@ -451,3 +451,43 @@ fn snapshots_real_app_panel() {
     app.click(By::test_id("real_app.detail.delete"));
     write(dir.join("panel-delete.png"), &app.capture_window().unwrap());
 }
+
+/// The list toolbar of «App real» in Glass: at rest, the search halfway
+/// through unfolding, open with text («N de M»), and the filter menu
+/// (`renders/toolbar-*.png`).
+#[test]
+#[ignore = "needs a GPU; writes images for visual review"]
+fn snapshots_list_toolbar() {
+    let dir = out("renders");
+    let theme = Theme {
+        control_size: ControlSize::Large,
+        ..Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
+    };
+    let mut app = app_at(theme, "/real-app", 1280.0, 800.0);
+    write(
+        dir.join("toolbar-normal.png"),
+        &app.capture_window().unwrap(),
+    );
+    app.click(By::test_id("real_app.list.bar.search"));
+    app.advance(std::time::Duration::from_millis(64));
+    write(
+        dir.join("toolbar-animando.png"),
+        &app.capture_window().unwrap(),
+    );
+    app.advance(std::time::Duration::from_millis(250));
+    app.run_until_idle();
+    app.type_text(By::test_id("real_app.list.bar.field.input"), "terminal");
+    write(
+        dir.join("toolbar-busqueda.png"),
+        &app.capture_window().unwrap(),
+    );
+    app.press(Key::Escape, Modifiers::NONE);
+    app.press(Key::Escape, Modifiers::NONE);
+    app.advance(std::time::Duration::from_millis(250));
+    app.run_until_idle();
+    app.click(By::test_id("real_app.list.filter"));
+    write(
+        dir.join("toolbar-filtro.png"),
+        &app.capture_window().unwrap(),
+    );
+}

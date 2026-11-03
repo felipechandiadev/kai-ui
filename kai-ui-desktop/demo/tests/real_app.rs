@@ -57,7 +57,7 @@ fn the_panel_waits_for_the_server_then_shows_list_detail_and_inspector() {
     let detail = app.screen().get(By::test_id("real_app.detail")).bounds();
     let inspector = app.screen().get(By::test_id("real_app.inspector")).bounds();
     assert!(list.x + list.width <= detail.x && detail.x + detail.width <= inspector.x);
-    assert_eq!(name_of(&app, "real_app.list.count"), "8 clientes");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "8 clientes");
     assert_eq!(
         name_of(&app, "real_app.detail.name"),
         "Ana Pérez",
@@ -98,7 +98,7 @@ fn the_panel_waits_for_the_server_then_shows_list_detail_and_inspector() {
     app.click(By::test_id("real_app.detail.delete"));
     app.click(By::test_id("real_app.delete.confirm"));
     assert!(app.screen().query(By::test_id("real_app.list.4")).is_none());
-    assert_eq!(name_of(&app, "real_app.list.count"), "7 clientes");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "7 clientes");
     assert_eq!(name_of(&app, "real_app.detail.name"), "Ana Pérez");
     assert_eq!(app.unknown_classes(), Vec::<&str>::new());
 
@@ -254,7 +254,7 @@ fn the_form_autocompletes_commune_and_referrer_and_saving_updates_the_list() {
 
     tab(&mut app, "Panel");
     app.run_until_idle();
-    assert_eq!(name_of(&app, "real_app.list.count"), "9 clientes");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "9 clientes");
     assert_eq!(
         name_of(&app, "real_app.detail.name"),
         "Gabriela Torres",
@@ -346,4 +346,67 @@ fn see_on_map_opens_the_map_on_the_client() {
         name_of(&app, "real_app.map.status"),
         "Elige un cliente en la lista o en el mapa"
     );
+}
+
+#[test]
+fn the_list_toolbar_searches_filters_and_sorts() {
+    use kai::testing::{Key, Modifiers};
+    let mut app = open("/real-app");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "8 clientes");
+
+    // The search unfolds from its button over the actions, focused.
+    app.click(By::test_id("real_app.list.bar.search"));
+    app.advance(Duration::from_millis(250));
+    app.run_until_idle();
+    assert!(app.is_focused(By::test_id("real_app.list.bar.field.input")));
+    assert!(
+        app.screen()
+            .query(By::test_id("real_app.list.download"))
+            .is_none()
+    );
+    app.type_text(By::test_id("real_app.list.bar.field.input"), "camila");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "1 de 8 clientes");
+    assert_eq!(name_of(&app, "real_app.detail.name"), "Camila Fuentes");
+    // Escape on text clears it (the field stays open); by sector too.
+    app.press(Key::Escape, Modifiers::NONE);
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "8 clientes");
+    app.type_text(By::test_id("real_app.list.bar.field.input"), "terminal");
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "2 de 8 clientes");
+    app.type_text(By::test_id("real_app.list.bar.field.input"), "zzz");
+    app.screen().get(By::test_id("real_app.none"));
+    assert_eq!(app.unknown_classes(), Vec::<&str>::new());
+
+    // Escape clears the text, then closes it; the actions come back.
+    app.press(Key::Escape, Modifiers::NONE);
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "8 clientes");
+    app.press(Key::Escape, Modifiers::NONE);
+    app.advance(Duration::from_millis(250));
+    app.run_until_idle();
+    app.screen().get(By::test_id("real_app.list.bar.search"));
+    app.screen().get(By::test_id("real_app.list.download"));
+
+    // Filter by stage: «N de M» and a dot on the button.
+    app.click(By::test_id("real_app.list.filter"));
+    app.click(By::test_id("kai.menu.2"));
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "2 de 8 clientes");
+    assert_eq!(name_of(&app, "real_app.list.filter"), "Filtrar (activo)");
+    assert_eq!(
+        name_of(&app, "real_app.detail.name"),
+        "Bruno Díaz",
+        "the chosen client was filtered out: the first shown"
+    );
+    app.click(By::test_id("real_app.list.filter"));
+    app.click(By::test_id("kai.menu.0"));
+    assert_eq!(name_of(&app, "real_app.list.bar.info"), "8 clientes");
+
+    // Sort Z–A: Francisca above Ana.
+    app.click(By::test_id("real_app.list.sort"));
+    app.click(By::test_id("kai.menu.1"));
+    let y = |app: &App, id: &str| app.screen().get(By::test_id(id)).bounds().y;
+    assert!(y(&app, "real_app.list.8") < y(&app, "real_app.list.1"));
+    assert_eq!(name_of(&app, "real_app.list.sort"), "Ordenar (activo)");
+
+    // Añadir opens the new client form.
+    app.click(By::test_id("real_app.list.add"));
+    assert_eq!(app.route(), Some("/real-app/clients/new"));
 }

@@ -10,10 +10,10 @@
 //!
 //! The first visit waits for the «server».
 
+use kai::components::{AlertVariant, ListAction, SearchReveal, Toast, list_toolbar};
 use kai::components::{
     ButtonVariant, Dialog, DialogWidth, IconButtonSize, IconButtonVariant, button, caption,
-    heading, icon_button_sized, loading_placeholder, page, page_body, pane, pane_footer, panes,
-    select, themed,
+    heading, icon_button_sized, loading_placeholder, page, page_body, pane, panes, select, themed,
 };
 use kai::element::{Element, Role, div, icon, text};
 use kai::icons::Icon;
@@ -25,6 +25,11 @@ use crate::state::State;
 
 const STAGES: [Stage; 3] = [Stage::Prospect, Stage::Active, Stage::Inactive];
 
+/// Orders of the list's menu; none chosen keeps the CRM's order.
+const SORTS: [&str; 3] = ["Nombre A–Z", "Nombre Z–A", "Etapa"];
+/// Filters by stage; 0 shows them all.
+const FILTERS: [&str; 4] = ["Todos", "Activo", "Prospecto", "Inactivo"];
+
 #[derive(Default)]
 pub struct Screen {
     loaded: bool,
@@ -33,6 +38,12 @@ pub struct Screen {
     selected: Option<u32>,
     /// The client whose deletion waits for confirmation.
     deleting: Option<u32>,
+    /// Text of the list's search, and how open its field is.
+    query: String,
+    reveal: SearchReveal,
+    /// Chosen order ([`SORTS`]) and stage filter ([`FILTERS`]).
+    sort: Option<usize>,
+    filter: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -41,7 +52,15 @@ pub enum Msg {
     Select(u32),
     Open(u32),
     Stage(u32, usize),
-    Search,
+    Query(String),
+    OpenSearch,
+    CloseSearch,
+    /// A frame of the search's animation.
+    Reveal,
+    Sort(usize),
+    Filter(usize),
+    Download,
+    NewClient,
     AddTag,
     /// Asks to delete the client (opens the confirmation).
     Delete(u32),
@@ -91,15 +110,54 @@ fn section_title<Msg>(title: &str) -> Element<Msg> {
 }
 
 impl Screen {
-    fn chosen<'a>(&self, state: &'a State) -> Option<&'a Client> {
-        let crm = &state.crm;
-        let id = self.selected.or(crm.last_saved).or(crm.focus);
-        id.and_then(|id| crm.clients.iter().find(|c| c.id == id))
-            .or(crm.clients.first())
+    /// The clients the list shows: filtered by stage and by the search
+    /// (name or sector), in the chosen order.
+    pub fn visible<'a>(&self, state: &'a State) -> Vec<&'a Client> {
+        let query = self.query.trim().to_lowercase();
+        let stage = match self.filter {
+            1 => Some(Stage::Active),
+            2 => Some(Stage::Prospect),
+            3 => Some(Stage::Inactive),
+            _ => None,
+        };
+        let mut clients: Vec<&Client> = state
+            .crm
+            .clients
+            .iter()
+            .filter(|c| stage.is_none_or(|stage| c.stage == stage))
+            .filter(|c| {
+                query.is_empty()
+                    || c.name.to_lowercase().contains(&query)
+                    || sector_name(&c.sector).to_lowercase().contains(&query)
+            })
+            .collect();
+        match self.sort {
+            Some(0) => clients.sort_by_key(|c| c.name.to_lowercase()),
+            Some(1) => clients.sort_by_key(|c| std::cmp::Reverse(c.name.to_lowercase())),
+            Some(2) => clients.sort_by_key(|c| STAGES.iter().position(|s| *s == c.stage)),
+            _ => {}
+        }
+        clients
     }
 
-    fn list(&self, state: &State, chosen: Option<u32>) -> Element<Msg> {
-        let rows = state.crm.clients.iter().map(|client| {
+    /// The client in the detail, among those the list shows: when the
+    /// chosen one is filtered out, the first one shown.
+    fn chosen<'a>(&self, state: &'a State, visible: &[&'a Client]) -> Option<&'a Client> {
+        let crm = &state.crm;
+        let id = self.selected.or(crm.last_saved).or(crm.focus);
+        id.and_then(|id| visible.iter().copied().find(|c| c.id == id))
+            .or(visible.first().copied())
+    }
+
+    fn list(&self, state: &State, visible: &[&Client], chosen: Option<u32>) -> Element<Msg> {
+        let total = state.crm.clients.len();
+        let narrowed = self.filter != 0 || !self.query.trim().is_empty();
+        let info = if narrowed {
+            format!("{} de {total} clientes", visible.len())
+        } else {
+            format!("{total} clientes")
+        };
+        let rows = visible.iter().map(|client| {
             let on = Some(client.id) == chosen;
             div()
                 .class(&themed(
@@ -131,29 +189,47 @@ impl Screen {
                 div()
                     .class("flex flex-col gap-0.5 p-2 flex-1 min-h-0 overflow-y-auto")
                     .children(rows),
-                pane_footer([
-                    text(format!("{} clientes", state.crm.clients.len()))
-                        .class("flex-1")
-                        .test_id("real_app.list.count"),
-                    icon_button_sized(
-                        Icon::Search,
-                        "Buscar clientes",
-                        IconButtonVariant::Neutral,
-                        IconButtonSize::Sm,
+                list_toolbar(info)
+                    .action(
+                        ListAction::button(Icon::FileDown, "Descargar", Msg::Download)
+                            .test_id("real_app.list.download"),
                     )
-                    .tooltip("Buscar clientes")
-                    .on_click(Msg::Search)
-                    .test_id("real_app.list.search"),
-                    icon_button_sized(
-                        Icon::Funnel,
-                        "Filtros",
-                        IconButtonVariant::Neutral,
-                        IconButtonSize::Sm,
+                    .action(
+                        ListAction::menu(
+                            Icon::ListOrdered,
+                            "Ordenar",
+                            &SORTS,
+                            self.sort,
+                            Msg::Sort,
+                        )
+                        .active(self.sort.is_some())
+                        .test_id("real_app.list.sort"),
                     )
-                    .tooltip("Filtros")
-                    .on_click(Msg::Search)
-                    .test_id("real_app.list.filters"),
-                ]),
+                    .action(
+                        ListAction::menu(
+                            Icon::Funnel,
+                            "Filtrar",
+                            &FILTERS,
+                            Some(self.filter),
+                            Msg::Filter,
+                        )
+                        .active(self.filter != 0)
+                        .test_id("real_app.list.filter"),
+                    )
+                    .action(
+                        ListAction::button(Icon::Plus, "Añadir cliente", Msg::NewClient)
+                            .test_id("real_app.list.add"),
+                    )
+                    .search(
+                        self.query.clone(),
+                        self.reveal,
+                        Msg::Query,
+                        Msg::OpenSearch,
+                        Msg::CloseSearch,
+                    )
+                    .placeholder("Nombre o sector")
+                    .test_id("real_app.list.bar")
+                    .build(),
             ])
     }
 
@@ -326,7 +402,21 @@ impl Page for Screen {
                     client.stage = *stage;
                 }
             }
-            Msg::Search => cx.navigate("/real-app/clients"),
+            Msg::Query(query) => self.query = query,
+            Msg::OpenSearch => return self.reveal.open(Msg::Reveal),
+            Msg::CloseSearch => {
+                self.query.clear();
+                return self.reveal.close(Msg::Reveal);
+            }
+            Msg::Reveal => return self.reveal.tick(Msg::Reveal),
+            Msg::Sort(index) => self.sort = Some(index),
+            Msg::Filter(index) => self.filter = index,
+            Msg::Download => cx.toast(Toast::new(
+                0,
+                AlertVariant::Info,
+                "Exportación de ejemplo (datos en memoria)",
+            )),
+            Msg::NewClient => cx.navigate("/real-app/clients/new"),
             // Tags are not stored yet (the pattern lab will add them).
             Msg::AddTag => {}
             Msg::Delete(id) => self.deleting = Some(id),
@@ -354,16 +444,23 @@ impl Page for Screen {
         if !self.loaded {
             return page().child(page_body().child(loading_placeholder("Cargando el panel…")));
         }
-        let Some(client) = self.chosen(state) else {
+        if state.crm.clients.is_empty() {
             return page()
                 .child(page_body().child(caption("No quedan clientes").test_id("real_app.empty")));
+        }
+        let visible = self.visible(state);
+        let client = self.chosen(state, &visible);
+        let list = self.list(state, &visible, client.map(|c| c.id));
+        let rest = match client {
+            Some(client) => vec![self.detail(state, client), self.inspector(client)],
+            None => vec![
+                pane()
+                    .class("flex-1 min-w-[320px] items-center justify-center")
+                    .test_id("real_app.detail")
+                    .child(caption("Ningún cliente coincide").test_id("real_app.none")),
+            ],
         };
-        panes([
-            self.list(state, Some(client.id)),
-            self.detail(state, client),
-            self.inspector(client),
-        ])
-        .test_id("real_app.panes")
+        panes(std::iter::once(list).chain(rest)).test_id("real_app.panes")
     }
 
     /// Destructive confirmation: title, what is lost, a red Eliminar and

@@ -83,6 +83,13 @@ Base del laboratorio de patrones; cada pieza ilustra uno:
   rápidas (buscar, filtros).
 - **Maestro-detalle** (panel central): la fila elegida en la lista llena el
   detalle (datos de contacto, actividad reciente, «Editar» abre la ficha).
+- **Barra de herramientas de lista** (pie de la lista, `list_toolbar`):
+  info a la izquierda («8 clientes» / «N de M clientes»), acciones a la
+  derecha (Descargar, Ordenar, Filtrar, Añadir) con punto si Ordenar o
+  Filtrar están activos, y búsqueda al extremo derecho que se despliega
+  animada sobre las acciones (foco al abrir; Escape o X cierran; filtra
+  por nombre o sector en vivo). Si el cliente elegido queda fuera, el
+  detalle muestra el primero visible. Overflow a un menú «más»: pendiente.
 - **Confirmación destructiva** (iconos Editar/Eliminar del detalle):
   la papelera abre un `Dialog` con título, qué se pierde, «Eliminar» en
   rojo (no es el botón por defecto: Return no destruye) y «Cancelar»; al
