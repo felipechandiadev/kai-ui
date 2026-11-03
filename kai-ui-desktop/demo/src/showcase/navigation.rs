@@ -262,3 +262,58 @@ pub const PAGE_TEMPLATES: Component = Component {
     demo: Some(("Plantillas: Lista + detalle", "/template-list")),
     ..REFERENCE
 };
+
+const PANE_COUNTS: &[&str] = &["2", "3"];
+
+pub const PANES: Component = Component {
+    id: "panes",
+    name: "Paneles y sidebar flotante",
+    group: Group::Navigation,
+    summary: "Paneles sólidos lado a lado y sidebar flotante de cristal.",
+    doc: "panes.md",
+    props: &[choice("count", "Paneles", PANE_COUNTS, 1)],
+    preview: |props, cx| {
+        let count = props.choice("count") + 2;
+        let widths = ["w-40 shrink-0", "flex-1 min-w-0", "w-32 shrink-0"];
+        let names = ["Lista", "Detalle", "Inspector"];
+        let mut items = vec![
+            kai::components::app_sidebar(
+                &[
+                    (Icon::LayoutDashboard, "Resumen", "/"),
+                    (Icon::Users, "Clientes", "/c"),
+                ],
+                "/",
+                |_| PreviewMsg::Set("count", Value::Choice(1)),
+            )
+            .label("App"),
+        ];
+        for index in [0, 1, 2].into_iter().filter(|i| *i != 2 || count == 3) {
+            items.push(
+                kai::components::pane()
+                    .class(widths[index])
+                    .child(div().class("p-3").child(label(names[index]))),
+            );
+        }
+        div()
+            .class("flex w-full h-48")
+            .test_id(cx.id)
+            .child(kai::components::panes(items))
+    },
+    code: |props| {
+        let third = if props.choice("count") == 1 {
+            "\n    pane().class(\"w-[240px] shrink-0\").child(inspector),"
+        } else {
+            ""
+        };
+        snippet(
+            &["panes", "pane"],
+            format!(
+                "panes([\n    pane().class(\"w-[300px] shrink-0\").child(lista),\n    pane().class(\"flex-1 min-w-0\").child(detalle),{third}\n])"
+            ),
+        )
+    },
+    keyboard: &["La sidebar flotante es una parada de Tab; las flechas recorren sus filas."],
+    accessibility: &["Cada panel es un Group; las filas de la sidebar son botones con su estado."],
+    demo: Some(("App real", "/real-app")),
+    ..REFERENCE
+};

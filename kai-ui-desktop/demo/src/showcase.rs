@@ -329,6 +329,7 @@ pub static COMPONENTS: &[Component] = &[
     navigation::TABS,
     navigation::PAGE,
     navigation::PAGE_TEMPLATES,
+    navigation::PANES,
     data::TABLE,
     data::VIRTUAL_LIST,
     data::CHART,
