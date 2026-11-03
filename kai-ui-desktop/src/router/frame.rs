@@ -163,6 +163,14 @@ pub trait Layout: Sized + 'static {
         None
     }
 
+    /// A sidebar of its own for the routes it frames, in place of the app's
+    /// generated one (with every section): an app inside a demo, or a
+    /// section with its own navigation. The innermost layout that answers
+    /// wins. Default: none, the generated sidebar.
+    fn sidebar(&self, _state: &Self::State, _route: &RouteInfo<'_>) -> Option<Element<Self::Msg>> {
+        None
+    }
+
     /// The window's theme for the routes it frames, such as a theme chosen
     /// in the app's settings. A page's own [`Page::theme`] wins over it,
     /// and an inner layout over an outer one (docs/dev/31). Default:

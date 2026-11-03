@@ -134,6 +134,10 @@ barra inferior `status_bar` (delgada y cuadrada) con `bottom.leading` y
 campana en `top.trailing`, su nota abajo y el fondo «Aurora 2» estático.
 Regla HIG: cristal solo en barras y controles; el contenido es sólido.
 
+Un layout puede además reemplazar la sidebar generada con
+`Layout::sidebar(state, route)` (gana el más interno que responda):
+«App real» muestra solo las filas de la app en una `app_sidebar` flotante.
+
 ### 3.4 Accesibilidad
 
 El hueco no declara ningún rol. Hoy tampoco lo declara la página: ningún

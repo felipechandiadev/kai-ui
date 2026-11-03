@@ -779,6 +779,32 @@ pub fn generate(tree: &AppTree) -> String {
         }
     }
     let root_layout = plans.iter().any(|plan| plan.name == "root");
+    // A layout in scope can bring its own sidebar (`Layout::sidebar`),
+    // innermost first; otherwise the generated one.
+    if plans.is_empty() {
+        w.push_str("            let own_sidebar: Option<Element<RootMsg>> = None;\n");
+    } else {
+        let mut inner_first: Vec<&LayoutPlan> = plans.iter().collect();
+        inner_first.sort_by_key(|plan| std::cmp::Reverse(plan.depth));
+        w.push_str("            let own_sidebar: Option<Element<RootMsg>> = (|| {\n");
+        for plan in &inner_first {
+            let some = if plan.key_arms.is_some() {
+                "Some((_, layout))"
+            } else {
+                "Some(layout)"
+            };
+            writeln!(
+                w,
+                "                if {cond}let {some} = &self.{slot} {{\n                    if let Some(bar) = layout.sidebar(&self.state, &info) {{\n                        return Some(bar.map(RootMsg::Layout{v}));\n                    }}\n                }}",
+                cond = plan.condition(),
+                slot = plan.slot(),
+                v = plan.variant,
+                some = some
+            )
+            .unwrap();
+        }
+        w.push_str("                None\n            })();\n");
+    }
     w.push_str("            let selected = self.sidebar.row_of(self.router.current().section()).unwrap_or(0);\n");
     if root_layout {
         // Sidebar and content in a row; a root layout that wraps the
@@ -789,8 +815,8 @@ pub fn generate(tree: &AppTree) -> String {
             "            div().class(\"relative flex flex-row w-full h-full\").children([\n",
         );
     }
-    w.push_str("                kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
-    w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" }),\n");
+    w.push_str("                own_sidebar.unwrap_or_else(|| kai::components::Sidebar::new(&self.sidebar.groups, selected, RootMsg::Sidebar)\n");
+    w.push_str("                    .collapsed(self.sidebar_collapsed)\n                    .on_toggle(RootMsg::ToggleSidebar)\n                    .label(\"Secciones\")\n                    .test_id(\"sections\")\n                    .build()\n                    .class(if self.sidebar_collapsed { \"\" } else { \"w-56 shrink-0\" })),\n");
     w.push_str(
         "                div().role(kai::element::Role::Main).class(\"flex-1 min-w-0 min-h-0 flex flex-col\").child(page),\n",
     );

@@ -21,6 +21,7 @@ mod forms_tests;
 mod media;
 mod page;
 mod page_templates;
+mod panes;
 mod progress;
 mod search;
 mod section_tabs;
@@ -53,6 +54,7 @@ pub use page_templates::{
     PageDensity, PageHeader, breadcrumb_trail, form_field_cell, form_full_cell,
     master_detail_span_classes, master_list_span_classes,
 };
+pub use panes::{app_sidebar, pane, pane_footer, panes};
 pub use progress::{DOT_PROGRESS_LABEL, DotProgress, DotSize, dot_progress};
 pub use search::{SearchField, SearchVariant, search_field};
 pub use section_tabs::{section_tab_index, section_tabs};
