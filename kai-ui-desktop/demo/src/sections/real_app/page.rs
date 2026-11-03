@@ -11,8 +11,9 @@
 //! The first visit waits for the «server».
 
 use kai::components::{
-    ButtonVariant, IconButtonVariant, button, caption, heading, icon_button, loading_placeholder,
-    page, page_body, pane, pane_footer, panes, select, themed,
+    ButtonVariant, Dialog, DialogWidth, IconButtonSize, IconButtonVariant, button, caption,
+    heading, icon_button_sized, loading_placeholder, page, page_body, pane, pane_footer, panes,
+    select, themed,
 };
 use kai::element::{Element, Role, div, icon, text};
 use kai::icons::Icon;
@@ -30,6 +31,8 @@ pub struct Screen {
     /// The client in the detail; the last saved, the one of the map or the
     /// first when none was chosen.
     selected: Option<u32>,
+    /// The client whose deletion waits for confirmation.
+    deleting: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +43,10 @@ pub enum Msg {
     Stage(u32, usize),
     Search,
     AddTag,
+    /// Asks to delete the client (opens the confirmation).
+    Delete(u32),
+    ConfirmDelete,
+    CancelDelete,
 }
 
 /// Initials of `name` in a small circle (the client has no photo).
@@ -128,12 +135,24 @@ impl Screen {
                     text(format!("{} clientes", state.crm.clients.len()))
                         .class("flex-1")
                         .test_id("real_app.list.count"),
-                    icon_button(Icon::Search, "Buscar clientes", IconButtonVariant::Text)
-                        .on_click(Msg::Search)
-                        .test_id("real_app.list.search"),
-                    icon_button(Icon::Funnel, "Filtros", IconButtonVariant::Text)
-                        .on_click(Msg::Search)
-                        .test_id("real_app.list.filters"),
+                    icon_button_sized(
+                        Icon::Search,
+                        "Buscar clientes",
+                        IconButtonVariant::Neutral,
+                        IconButtonSize::Sm,
+                    )
+                    .tooltip("Buscar clientes")
+                    .on_click(Msg::Search)
+                    .test_id("real_app.list.search"),
+                    icon_button_sized(
+                        Icon::Funnel,
+                        "Filtros",
+                        IconButtonVariant::Neutral,
+                        IconButtonSize::Sm,
+                    )
+                    .tooltip("Filtros")
+                    .on_click(Msg::Search)
+                    .test_id("real_app.list.filters"),
                 ]),
             ])
     }
@@ -191,9 +210,26 @@ impl Screen {
                                 heading(client.name.as_str()).test_id("real_app.detail.name"),
                                 caption(sector_name(&client.sector)),
                             ]),
-                            button("Editar", ButtonVariant::Outlined)
-                                .on_click(Msg::Open(client.id))
-                                .test_id("real_app.detail.edit"),
+                            icon_button_sized(
+                                Icon::Pencil,
+                                "Editar",
+                                IconButtonVariant::Neutral,
+                                IconButtonSize::Sm,
+                            )
+                            .tooltip("Editar")
+                            .on_click(Msg::Open(client.id))
+                            .test_id("real_app.detail.edit"),
+                            // Destructive, in a subtle danger tone.
+                            icon_button_sized(
+                                Icon::Trash2,
+                                "Eliminar",
+                                IconButtonVariant::Neutral,
+                                IconButtonSize::Sm,
+                            )
+                            .class("text-error hover:bg-error/10")
+                            .tooltip("Eliminar")
+                            .on_click(Msg::Delete(client.id))
+                            .test_id("real_app.detail.delete"),
                         ]),
                         div().class("flex flex-col").children([
                             fact("Correo", client.email.clone(), "email"),
@@ -293,6 +329,23 @@ impl Page for Screen {
             Msg::Search => cx.navigate("/real-app/clients"),
             // Tags are not stored yet (the pattern lab will add them).
             Msg::AddTag => {}
+            Msg::Delete(id) => self.deleting = Some(id),
+            Msg::CancelDelete => self.deleting = None,
+            Msg::ConfirmDelete => {
+                if let Some(id) = self.deleting.take() {
+                    let crm = &mut cx.state().crm;
+                    crm.clients.retain(|c| c.id != id);
+                    crm.activity.retain(|entry| entry.client != Some(id));
+                    if crm.last_saved == Some(id) {
+                        crm.last_saved = None;
+                    }
+                    if crm.focus == Some(id) {
+                        crm.focus = None;
+                    }
+                    // The next one in the list is chosen (the first).
+                    self.selected = None;
+                }
+            }
         }
         Effects::none()
     }
@@ -302,7 +355,8 @@ impl Page for Screen {
             return page().child(page_body().child(loading_placeholder("Cargando el panel…")));
         }
         let Some(client) = self.chosen(state) else {
-            return page().child(page_body().child(caption("Sin clientes")));
+            return page()
+                .child(page_body().child(caption("No quedan clientes").test_id("real_app.empty")));
         };
         panes([
             self.list(state, Some(client.id)),
@@ -310,6 +364,32 @@ impl Page for Screen {
             self.inspector(client),
         ])
         .test_id("real_app.panes")
+    }
+
+    /// Destructive confirmation: title, what is lost, a red Eliminar and
+    /// Cancelar. Eliminar is not the default button (Return does not
+    /// destroy; in AppKit a default button is always the accent color).
+    fn overlay(&self, state: &State) -> Option<Element<Msg>> {
+        let id = self.deleting?;
+        let name = state
+            .crm
+            .clients
+            .iter()
+            .find(|c| c.id == id)
+            .map_or("el cliente", |c| c.name.as_str());
+        Some(
+            Dialog::new(format!("¿Eliminar a {name}?"))
+                .message("Se borrarán el cliente y su actividad. Esta acción no se puede deshacer.")
+                .width(DialogWidth::Sm)
+                .button(
+                    button("Eliminar", ButtonVariant::Danger)
+                        .on_click(Msg::ConfirmDelete)
+                        .test_id("real_app.delete.confirm"),
+                )
+                .cancel_button("Cancelar", Msg::CancelDelete)
+                .test_id("real_app.delete")
+                .build(),
+        )
     }
 
     fn title(&self, _: &State) -> String {

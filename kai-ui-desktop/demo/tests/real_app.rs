@@ -58,12 +58,19 @@ fn the_panel_waits_for_the_server_then_shows_list_detail_and_inspector() {
     let inspector = app.screen().get(By::test_id("real_app.inspector")).bounds();
     assert!(list.x + list.width <= detail.x && detail.x + detail.width <= inspector.x);
     assert_eq!(name_of(&app, "real_app.list.count"), "8 clientes");
-    assert_eq!(name_of(&app, "real_app.detail.name"), "Ana Pérez", "the first");
+    assert_eq!(
+        name_of(&app, "real_app.detail.name"),
+        "Ana Pérez",
+        "the first"
+    );
 
     // The app's own sidebar, not the demo's sections.
     assert!(app.screen().query(By::test_id("sections")).is_none());
     app.screen().get(By::test_id("real_app.sidebar"));
-    assert!(!app.is_enabled(By::test_id("real_app.sidebar.3")), "not there yet");
+    assert!(
+        !app.is_enabled(By::test_id("real_app.sidebar.3")),
+        "not there yet"
+    );
 
     app.click(By::test_id("real_app.list.4"));
     assert_eq!(name_of(&app, "real_app.detail.name"), "Camila Fuentes");
@@ -76,6 +83,24 @@ fn the_panel_waits_for_the_server_then_shows_list_detail_and_inspector() {
         name_of(&app, "real_app.client.facts.name"),
         "Camila Fuentes"
     );
+
+    // Delete asks first; Cancelar keeps the client.
+    app.click(By::test_id("real_app.sidebar.0"));
+    app.run_until_idle();
+    app.click(By::test_id("real_app.list.4"));
+    app.click(By::test_id("real_app.detail.delete"));
+    app.screen()
+        .get(By::role(Role::Dialog).name("¿Eliminar a Camila Fuentes?"));
+    app.click(By::test_id("real_app.delete.cancel"));
+    assert!(app.screen().query(By::role(Role::Dialog)).is_none());
+    assert_eq!(name_of(&app, "real_app.detail.name"), "Camila Fuentes");
+    // Eliminar removes it and the list picks another.
+    app.click(By::test_id("real_app.detail.delete"));
+    app.click(By::test_id("real_app.delete.confirm"));
+    assert!(app.screen().query(By::test_id("real_app.list.4")).is_none());
+    assert_eq!(name_of(&app, "real_app.list.count"), "7 clientes");
+    assert_eq!(name_of(&app, "real_app.detail.name"), "Ana Pérez");
+    assert_eq!(app.unknown_classes(), Vec::<&str>::new());
 
     // Back to the demo from the sidebar.
     app.click(By::test_id("real_app.sidebar.5"));

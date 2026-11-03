@@ -433,3 +433,21 @@ fn snapshots_backgrounds() {
         still.capture_window_at(5.0).unwrap()
     );
 }
+
+/// «App real», Resumen in Glass: the pane footer with the pointer over its
+/// search button (the hover fill must stay inside the row) and the
+/// destructive confirmation (`renders/panel-*.png`).
+#[test]
+#[ignore = "needs a GPU; writes images for visual review"]
+fn snapshots_real_app_panel() {
+    let dir = out("renders");
+    let theme = Theme {
+        control_size: ControlSize::Large,
+        ..Theme::appkit_static(AppKitGeneration::Glass27, Appearance::Light)
+    };
+    let mut app = app_at(theme, "/real-app", 1280.0, 800.0);
+    app.hover(By::test_id("real_app.list.search"));
+    write(dir.join("panel-hover.png"), &app.capture_window().unwrap());
+    app.click(By::test_id("real_app.detail.delete"));
+    write(dir.join("panel-delete.png"), &app.capture_window().unwrap());
+}

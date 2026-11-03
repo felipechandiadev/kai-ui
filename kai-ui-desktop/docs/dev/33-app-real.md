@@ -83,6 +83,11 @@ Base del laboratorio de patrones; cada pieza ilustra uno:
   rápidas (buscar, filtros).
 - **Maestro-detalle** (panel central): la fila elegida en la lista llena el
   detalle (datos de contacto, actividad reciente, «Editar» abre la ficha).
+- **Confirmación destructiva** (iconos Editar/Eliminar del detalle):
+  la papelera abre un `Dialog` con título, qué se pierde, «Eliminar» en
+  rojo (no es el botón por defecto: Return no destruye) y «Cancelar»; al
+  confirmar se borra el cliente en memoria y se elige otro (o «No quedan
+  clientes»).
 - **Inspector** (panel derecho): propiedades editables del elemento elegido
   (estado con selector, responsable, etiquetas como chips, «Añadir
   etiqueta»).
