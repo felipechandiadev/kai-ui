@@ -52,9 +52,7 @@ fn the_catalog_themes_the_window_while_it_is_open() {
 /// catalog is open, with every control; other sections keep their own.
 #[test]
 fn the_catalog_switches_every_background_effect() {
-    use kai::background::{
-        BackgroundEffect, BackgroundKind, BackgroundPalette, BackgroundSpeed,
-    };
+    use kai::background::{BackgroundEffect, BackgroundKind, BackgroundPalette, BackgroundSpeed};
     use kai::element::Role;
 
     let mut app = TestApp::new(app::app(State::default()));
@@ -68,7 +66,8 @@ fn the_catalog_switches_every_background_effect() {
         assert_eq!(app.app().background().kind, kind);
         app.screen().get(By::test_id("catalog.background.usage"));
     }
-    assert_eq!(app.app().background().kind, BackgroundKind::Glow);
+    assert_eq!(app.app().background().kind, BackgroundKind::Aurora2);
+    app.click(By::test_id("catalog.background.effect.3"));
 
     app.click(animated);
     app.click(By::test_id("catalog.background.palette.1"));
@@ -83,7 +82,10 @@ fn the_catalog_switches_every_background_effect() {
     assert_eq!(effect.intensity, 0.4);
 
     app.click(By::test_id("catalog.preset.3"));
-    assert!(app.app().background().is_animated(), "dark keeps the effect");
+    assert!(
+        app.app().background().is_animated(),
+        "dark keeps the effect"
+    );
     assert_eq!(app.unknown_classes(), Vec::<&str>::new());
 
     app.navigate("/home");

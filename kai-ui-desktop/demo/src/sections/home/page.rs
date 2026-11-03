@@ -152,6 +152,7 @@ impl Screen {
             (BackgroundKind::Mesh, "Mesh"),
             (BackgroundKind::Aurora, "Aurora"),
             (BackgroundKind::Glow, "Glow"),
+            (BackgroundKind::Aurora2, "Aurora 2"),
         ];
         let selected = options
             .iter()

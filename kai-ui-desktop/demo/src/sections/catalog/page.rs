@@ -83,11 +83,12 @@ pub struct Screen {
 }
 
 /// Effects with their label and when to use them.
-const BACKGROUND_KINDS: [(BackgroundKind, &str, &str); 4] = [
+const BACKGROUND_KINDS: [(BackgroundKind, &str, &str); 5] = [
     (BackgroundKind::None, "Ninguno", "Color sólido de ventana: la opción por defecto para herramientas densas, tablas y formularios largos."),
     (BackgroundKind::Mesh, "Mesh", "Cuatro orbes difusos: ambiente cálido y neutro para pantallas de bienvenida o paneles con poco texto."),
     (BackgroundKind::Aurora, "Aurora", "Gradiente cónico que gira: el más llamativo; resérvalo para portadas, onboarding o estados vacíos."),
     (BackgroundKind::Glow, "Glow", "Resplandor central y dos orbes: foco suave en el centro, útil tras un contenido principal o un hero."),
+    (BackgroundKind::Aurora2, "Aurora 2", "Lavados pastel azul, cian, lila y rosa, siempre quietos: fondo tranquilo por defecto para apps con cristal en la navegación."),
 ];
 const BACKGROUND_PALETTES: [(BackgroundPalette, &str); 4] = [
     (BackgroundPalette::Sunset, "Atardecer"),

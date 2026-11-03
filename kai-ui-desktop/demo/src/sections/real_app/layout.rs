@@ -1,8 +1,12 @@
-//! Around every page of «App real»: the bar that moves between its panel,
-//! its clients and its map, chosen from the route.
+//! Around every page of «App real»: the navigation between its panel, its
+//! clients and its map ([`section_tabs`], chosen from the route) in the
+//! center of the window's top bar, its actions on the right of it and its
+//! note in the bottom bar; the "Aurora 2" background, still, under it all.
 
-use kai::components::{caption, segmented};
+use kai::background::{BackgroundEffect, BackgroundKind, BackgroundMotion};
+use kai::components::{section_tabs, status_text, toolbar_item};
 use kai::element::{Element, div};
+use kai::icons::Icon;
 use kai::router::{Context, Layout, RouteInfo, outlet};
 use kai::runtime::Effects;
 
@@ -20,15 +24,10 @@ pub struct Frame;
 #[derive(Clone, Debug)]
 pub enum Msg {
     Go(usize),
+    /// The bell of the bar (no notices yet).
+    Notices,
 }
 
-/// The part of the bar `path` is in.
-fn part_of(path: &str) -> usize {
-    PARTS
-        .iter()
-        .rposition(|(_, prefix)| path == *prefix || path.starts_with(&format!("{prefix}/")))
-        .unwrap_or(0)
-}
 
 impl Layout for Frame {
     type Msg = Msg;
@@ -47,22 +46,42 @@ impl Layout for Frame {
                     cx.navigate(*path);
                 }
             }
+            Msg::Notices => {}
         }
         Effects::none()
     }
 
-    fn view(&self, _: &State, route: &RouteInfo<'_>) -> Element<Msg> {
-        let names = PARTS.map(|(name, _)| name);
-        div().class("flex flex-col flex-1 min-h-0").children([
-            div()
-                .class("flex items-center justify-between gap-3 px-6 pt-4")
-                .children([
-                    segmented(&names, part_of(route.path), Msg::Go)
-                        .label("Secciones de App real")
-                        .test_id("real_app.nav"),
-                    caption("Datos de ejemplo en memoria · latencia simulada"),
-                ]),
-            outlet(),
-        ])
+    /// Its tabs in the center of the root's top bar, its bell on the right
+    /// of it and its note in the bottom bar.
+    fn slot(&self, name: &str, _: &State, route: &RouteInfo<'_>) -> Option<Element<Msg>> {
+        use crate::layout::{SLOT_BOTTOM_LEADING, SLOT_TOP_CENTER, SLOT_TOP_TRAILING};
+        match name {
+            SLOT_TOP_CENTER => Some(
+                section_tabs(&PARTS, route.path, Msg::Go)
+                    .label("Secciones de App real")
+                    .test_id("real_app.nav"),
+            ),
+            SLOT_TOP_TRAILING => Some(
+                toolbar_item(Icon::Bell, "Avisos")
+                    .on_click(Msg::Notices)
+                    .test_id("real_app.notices"),
+            ),
+            SLOT_BOTTOM_LEADING => Some(
+                status_text("App real · datos de ejemplo en memoria").test_id("real_app.status"),
+            ),
+            _ => None,
+        }
+    }
+
+    /// "Aurora 2", still: drawn once and cached (glass goes on the bars,
+    /// the content stays solid).
+    fn background(&self, _: &State) -> Option<BackgroundEffect> {
+        Some(
+            BackgroundEffect::new(BackgroundKind::Aurora2).with_motion(BackgroundMotion::Static),
+        )
+    }
+
+    fn view(&self, _: &State, _: &RouteInfo<'_>) -> Element<Msg> {
+        div().class("flex flex-col flex-1 min-h-0").child(outlet())
     }
 }

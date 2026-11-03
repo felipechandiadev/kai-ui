@@ -1,10 +1,15 @@
 //! The bar across the top of the window, around every page: the sidebar
 //! toggle, back and forward, the title of the page on screen and the
-//! global settings (`src/settings.rs`). Navigation buttons run the
+//! global settings (`src/settings.rs`), and the thin status bar across the
+//! bottom. Both bars span the whole window (`WRAPS_SIDEBAR`) and have slots
+//! the layouts and pages inside can fill. Navigation buttons run the
 //! framework's commands; the settings are the layout's own messages.
 
 use kai::background::BackgroundEffect;
-use kai::components::{caption, segmented, toolbar, toolbar_item, toolbar_title};
+use kai::components::{
+    caption, segmented, status_bar, status_item, status_text, toolbar, toolbar_areas,
+    toolbar_item, toolbar_spacer, toolbar_title,
+};
 use kai::element::{Element, div};
 use kai::icons::Icon;
 use kai::router::{Context, Layout, RouteInfo, outlet, slot};
@@ -90,6 +95,9 @@ impl Layout for Frame {
         state.settings.background()
     }
 
+    /// The bars go across the whole window, over and under the sidebar.
+    const WRAPS_SIDEBAR: bool = true;
+
     fn view(&self, state: &State, route: &RouteInfo<'_>) -> Element<Msg> {
         let app = format!("Kai UI Desktop v{}", kai::version::VERSION);
         let sidebar = if route.sidebar_collapsed {
@@ -97,9 +105,8 @@ impl Layout for Frame {
         } else {
             "Ocultar barra lateral"
         };
-        div()
-            .class("flex flex-col flex-1 min-h-0")
-            .children([toolbar([
+        let top = toolbar([toolbar_areas(
+            [
                 toolbar_item(Icon::PanelLeft, sidebar)
                     .run_command("kai.toggle_sidebar")
                     .test_id("bar.sidebar"),
@@ -110,17 +117,55 @@ impl Layout for Frame {
                     .run_command("kai.forward")
                     .test_id("bar.forward"),
                 toolbar_title(route.title, Some(&app)).test_id("bar.title"),
+                slot(SLOT_TOP_LEADING).class("gap-1").test_id("bar.leading"),
+            ],
+            // Later: the tabs of the section.
+            [slot(SLOT_TOP_CENTER).class("gap-1").test_id("bar.center")],
+            [
                 // What the page brings: the search of the table, for one.
-                slot("actions")
-                    .class("ml-auto gap-1")
-                    .test_id("bar.actions"),
+                slot("actions").class("gap-1").test_id("bar.actions"),
+                slot(SLOT_TOP_TRAILING).class("gap-1").test_id("bar.trailing"),
                 toolbar_item(Icon::Settings, "Ajustes")
                     .on_click(Msg::ToggleSettings)
                     .test_id("bar.settings"),
-            ])])
+            ],
+        )])
+        .test_id("bar");
+        div()
+            .class("flex flex-col flex-1 min-w-0 min-h-0")
+            .child(top)
             .children(self.settings_open.then(|| settings_strip(state)))
             .child(outlet())
+            .child(bottom_bar(state))
     }
+}
+
+/// Slots of the top bar a section's layout or a page can fill.
+pub const SLOT_TOP_LEADING: &str = "top.leading";
+pub const SLOT_TOP_CENTER: &str = "top.center";
+pub const SLOT_TOP_TRAILING: &str = "top.trailing";
+/// Slots of the bottom bar, at each end of the status.
+pub const SLOT_BOTTOM_LEADING: &str = "bottom.leading";
+pub const SLOT_BOTTOM_TRAILING: &str = "bottom.trailing";
+
+/// The thin status bar across the bottom of the window.
+fn bottom_bar(state: &State) -> Element<Msg> {
+    let clients = state.crm.clients.len();
+    status_bar([
+        status_item(Icon::CircleCheckBig, "", "Sincronizado"),
+        status_text(format!("Sincronizado hace 2 min · {clients} clientes"))
+            .test_id("bar.status"),
+        slot(SLOT_BOTTOM_LEADING)
+            .class("gap-2")
+            .test_id("bar.bottom.leading"),
+        toolbar_spacer(),
+        slot(SLOT_BOTTOM_TRAILING)
+            .class("gap-2")
+            .test_id("bar.bottom.trailing"),
+        status_item(Icon::Users, "", format!("{clients} clientes")),
+        status_item(Icon::Bell, "", "Sin avisos"),
+    ])
+    .test_id("bar.bottom")
 }
 
 /// The global settings, one segmented control each, under the bar.
