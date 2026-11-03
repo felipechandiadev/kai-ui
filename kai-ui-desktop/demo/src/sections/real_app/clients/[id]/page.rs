@@ -135,7 +135,7 @@ impl Page for Screen {
                 header.build(),
                 page_grid().children(
                     [
-                        page_grid_item(7).child(card().test_id("real_app.client").children([
+                        page_grid_item(7).child(card().class(&kai::components::themed("", "bg-window")).test_id("real_app.client").children([
                             card_header("Ficha", None),
                             card_content().class("gap-4").children([
                                 client_facts(crm, client, "real_app.client.facts"),
@@ -143,7 +143,7 @@ impl Page for Screen {
                             ]),
                         ])),
                         page_grid_item(5).child(
-                            card().test_id("real_app.client.activity").children(
+                            card().class(&kai::components::themed("", "bg-window")).test_id("real_app.client.activity").children(
                                 [
                                     card_header("Actividad", None),
                                     card_content().class("gap-2").children(activity),

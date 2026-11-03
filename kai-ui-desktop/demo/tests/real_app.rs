@@ -43,7 +43,7 @@ fn tab(app: &mut App, name: &str) {
 }
 
 #[test]
-fn the_panel_waits_for_the_server_then_shows_figures_and_activity() {
+fn the_panel_waits_for_the_server_then_shows_list_detail_and_inspector() {
     let mut app = TestApp::builder(app::app(State::default()))
         .viewport(1280.0, 900.0)
         .build();
@@ -51,32 +51,36 @@ fn the_panel_waits_for_the_server_then_shows_figures_and_activity() {
     app.screen().get(By::test_id("pattern.loading"));
     app.run_until_idle();
     assert!(app.screen().query(By::test_id("pattern.loading")).is_none());
-    app.screen()
-        .get(By::test_id("real_app.stat.clients"))
-        .node();
-    assert!(app.screen().query(By::text("5 activos")).is_some());
-    assert!(app.screen().query(By::text("$ 6.290.000")).is_some());
-    let plot = app
-        .screen()
-        .get(By::test_id("real_app.sales.plot"))
-        .bounds();
-    app.click_at(
-        By::test_id("real_app.sales.plot"),
-        plot.width * 0.92,
-        plot.height * 0.6,
-    );
-    assert_eq!(
-        name_of(&app, "real_app.sales.selected"),
-        "Nov: 6.3 millones"
-    );
+
+    // Three panes side by side: list, detail, inspector.
+    let list = app.screen().get(By::test_id("real_app.list")).bounds();
+    let detail = app.screen().get(By::test_id("real_app.detail")).bounds();
+    let inspector = app.screen().get(By::test_id("real_app.inspector")).bounds();
+    assert!(list.x + list.width <= detail.x && detail.x + detail.width <= inspector.x);
+    assert_eq!(name_of(&app, "real_app.list.count"), "8 clientes");
+    assert_eq!(name_of(&app, "real_app.detail.name"), "Ana Pérez", "the first");
+
+    // The app's own sidebar, not the demo's sections.
+    assert!(app.screen().query(By::test_id("sections")).is_none());
+    app.screen().get(By::test_id("real_app.sidebar"));
+    assert!(!app.is_enabled(By::test_id("real_app.sidebar.3")), "not there yet");
+
+    app.click(By::test_id("real_app.list.4"));
+    assert_eq!(name_of(&app, "real_app.detail.name"), "Camila Fuentes");
+    app.screen().get(By::test_id("real_app.detail.activity.0"));
     assert_eq!(app.unknown_classes(), Vec::<&str>::new());
 
-    app.click(By::test_id("real_app.activity.0"));
+    app.click(By::test_id("real_app.detail.edit"));
     assert_eq!(app.route(), Some("/real-app/clients/4"));
     assert_eq!(
         name_of(&app, "real_app.client.facts.name"),
         "Camila Fuentes"
     );
+
+    // Back to the demo from the sidebar.
+    app.click(By::test_id("real_app.sidebar.5"));
+    assert_eq!(app.route(), Some("/home"));
+    app.screen().get(By::test_id("sections"));
 }
 
 #[test]
@@ -224,10 +228,12 @@ fn the_form_autocompletes_commune_and_referrer_and_saving_updates_the_list() {
     );
 
     tab(&mut app, "Panel");
-    assert!(app.screen().query(By::text("9")).is_some());
+    app.run_until_idle();
+    assert_eq!(name_of(&app, "real_app.list.count"), "9 clientes");
     assert_eq!(
-        name_of(&app, "real_app.activity.0"),
-        "Abrir Cliente nuevo: Gabriela Torres"
+        name_of(&app, "real_app.detail.name"),
+        "Gabriela Torres",
+        "the panel shows the client saved"
     );
 }
 

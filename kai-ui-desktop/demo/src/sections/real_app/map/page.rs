@@ -204,7 +204,7 @@ impl Page for Screen {
         });
         page().child(
             page_body().child(
-                card().class("w-full").test_id("real_app.map").children([
+                card().class(&kai::components::themed("", "bg-window")).class("w-full").test_id("real_app.map").children([
                     card_header(
                         "Mapa de clientes",
                         Some("Mapa local (PMTiles) con los sectores DSP de Parral"),

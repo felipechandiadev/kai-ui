@@ -65,14 +65,32 @@ Todo lo que «va al servidor» usa `Effects::perform` con una espera de
 | Guardar | la respuesta de `Crm::save` | botón «Guardando…» deshabilitado |
 | «Referido por» | la búsqueda de clientes | estado «Buscando…» del autocompletar |
 
-## 4. Panel
+## 4. Panel («Resumen»)
 
-`stat` para clientes (con cuántos activos), prospectos, visitas de los
-próximos 7 días y ventas del mes, calculados del CRM en cada `view`: un
-cliente guardado se ve al volver. Un `chart(ChartKind::Bar)` con las
-ventas de los últimos seis meses (el último, la suma de los clientes
-activos) que se puede elegir, y la actividad reciente: cada entrada abre
-la ficha de su cliente.
+Layout Glass de una app: tres paneles sólidos (`panes`, `pane`) sobre el
+fondo «Aurora 2» estático, con la sidebar propia de la app
+(`Layout::sidebar` → `app_sidebar`: Resumen, Clientes, Mapa, Oportunidades
+y Laboratorio aún deshabilitados, y «Volver a la demo» → `/home`) en lugar
+de las secciones de la demo. Las cifras y el gráfico de ventas de la
+versión anterior salieron del panel.
+
+### Patrones de diseño
+
+Base del laboratorio de patrones; cada pieza ilustra uno:
+
+- **Lista con chips de estado** (panel izquierdo): fila con iniciales,
+  nombre, sector y un chip de color por etapa; pie con el conteo y acciones
+  rápidas (buscar, filtros).
+- **Maestro-detalle** (panel central): la fila elegida en la lista llena el
+  detalle (datos de contacto, actividad reciente, «Editar» abre la ficha).
+- **Inspector** (panel derecho): propiedades editables del elemento elegido
+  (estado con selector, responsable, etiquetas como chips, «Añadir
+  etiqueta»).
+- **Navegación por ruta en la barra** (`section_tabs`, píldora centrada) y
+  **sidebar flotante de cristal** (`app_sidebar`): el cristal solo en
+  navegación y controles; el contenido es sólido.
+- **Barra de estado** (`status_bar`): delgada, cuadrada, a todo el ancho:
+  sincronización y conteo.
 
 ## 5. CRM
 
