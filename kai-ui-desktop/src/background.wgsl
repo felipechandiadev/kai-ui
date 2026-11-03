@@ -22,7 +22,7 @@ struct Params {
     c2: vec4<f32>,
     c3: vec4<f32>,
     c4: vec4<f32>,
-    // kind (1 mesh, 2 aurora, 3 glow), dark (0/1), blur (points), intensity
+    // kind (1 mesh, 2 aurora, 3 glow, 4 aurora 2), dark (0/1), blur (points), intensity
     effect: vec4<f32>,
     // low-resolution target size, surface size (physical pixels)
     target_size: vec4<f32>,
@@ -259,6 +259,39 @@ fn glow(p: vec2<f32>) -> vec3<f32> {
     return color;
 }
 
+// "Aurora 2", always still: four soft washes (blue top left, cyan top
+// right, lilac bottom left, pink bottom right) whose Gaussian weights are
+// normalized, so the colors only ever blend into each other: no white
+// veil, no edges. A gentle lift toward the window color in the middle
+// keeps text over it calm. Blur does not apply (it is already smooth).
+fn aurora2(p: vec2<f32>) -> vec3<f32> {
+    let size = max(params.size, vec2<f32>(1.0));
+    let aspect = size.x / size.y;
+    let uv = vec2<f32>(p.x / size.x * aspect, p.y / size.y);
+    var anchors = array<vec2<f32>, 4>(
+        vec2<f32>(0.05 * aspect, 0.0),
+        vec2<f32>(0.95 * aspect, 0.1),
+        vec2<f32>(0.15 * aspect, 1.0),
+        vec2<f32>(0.9 * aspect, 0.95),
+    );
+    var colors = array<vec3<f32>, 4>(params.c1.rgb, params.c2.rgb, params.c3.rgb, params.c4.rgb);
+    let sigma = 0.55;
+    var sum = vec3<f32>(0.0);
+    var total = 0.0;
+    for (var i = 0; i < 4; i++) {
+        let d = uv - anchors[i];
+        let w = exp(-dot(d, d) / (2.0 * sigma * sigma)) + 1e-4;
+        sum += w * colors[i];
+        total += w;
+    }
+    let wash = sum / total;
+    let center = vec2<f32>(0.5 * aspect, 0.5);
+    let dc = uv - center;
+    let lift = 0.25 * exp(-dot(dc, dc) / (2.0 * 0.3 * 0.3));
+    let amount = opacity(0.9) * (1.0 - lift);
+    return mix(params.base.rgb, wash, amount);
+}
+
 @fragment
 fn fs_effect(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let p = position.xy / params.target_size.xy * params.size;
@@ -268,8 +301,10 @@ fn fs_effect(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
         color = mesh(p);
     } else if (kind < 2.5) {
         color = aurora(p);
-    } else {
+    } else if (kind < 3.5) {
         color = glow(p);
+    } else {
+        color = aurora2(p);
     }
     return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

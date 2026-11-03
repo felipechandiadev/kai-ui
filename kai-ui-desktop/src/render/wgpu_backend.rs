@@ -152,6 +152,7 @@ pub fn background_uniforms(
         BackgroundKind::None | BackgroundKind::Mesh => 1.0,
         BackgroundKind::Aurora => 2.0,
         BackgroundKind::Glow => 3.0,
+        BackgroundKind::Aurora2 => 4.0,
     };
     let scale = scale.max(f32::EPSILON);
     BackgroundUniforms {

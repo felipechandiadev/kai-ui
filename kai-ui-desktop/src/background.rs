@@ -30,18 +30,30 @@ pub enum BackgroundKind {
     Aurora,
     /// A large central glow and two floating orbs ("ambient glow").
     Glow,
+    /// "Aurora 2": soft blue, cyan, lilac and pink washes that blend into
+    /// each other with no hard edges. Always still (it has no animation),
+    /// so the renderer draws it once; its own colors, light or deep with
+    /// the appearance ([`aurora2_colors`]), whatever the palette.
+    Aurora2,
 }
 
 impl BackgroundKind {
-    pub const ALL: [Self; 4] = [Self::None, Self::Mesh, Self::Aurora, Self::Glow];
+    pub const ALL: [Self; 5] = [
+        Self::None,
+        Self::Mesh,
+        Self::Aurora,
+        Self::Glow,
+        Self::Aurora2,
+    ];
 
-    /// `none`, `mesh`, `aurora` or `glow` (as in `KAI_BG`).
+    /// `none`, `mesh`, `aurora`, `glow` or `aurora2` (as in `KAI_BG`).
     pub const fn name(self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Mesh => "mesh",
             Self::Aurora => "aurora",
             Self::Glow => "glow",
+            Self::Aurora2 => "aurora2",
         }
     }
 
@@ -197,7 +209,9 @@ impl BackgroundEffect {
 
     /// Whether it needs frames of its own (visible and animated).
     pub fn is_animated(&self) -> bool {
-        self.is_visible() && self.motion == BackgroundMotion::Animated
+        self.is_visible()
+            && self.motion == BackgroundMotion::Animated
+            && self.kind != BackgroundKind::Aurora2
     }
 }
 
@@ -217,6 +231,16 @@ pub const DARK_INTENSITY: f32 = 0.65;
 /// Dark appearances keep the veil only: whitening a dark window would grey
 /// it out.
 pub const AURORA_WHITEN: f32 = 0.40;
+
+/// Colors of [`BackgroundKind::Aurora2`]: blue, cyan, lilac and pink;
+/// pastels in light, deep muted tones of the same hues in dark.
+pub const fn aurora2_colors(appearance: Appearance) -> [Color; 4] {
+    let hex = Color::hex;
+    match appearance {
+        Appearance::Light => [hex(0xc9d8fd), hex(0xc4eef5), hex(0xdcd3fb), hex(0xf8d6e6)],
+        Appearance::Dark => [hex(0x1f3a7a), hex(0x145e6e), hex(0x45357f), hex(0x6e2c55)],
+    }
+}
 
 /// An effect resolved for one window and frame: what the renderer draws.
 /// Paint builds it from the effect, the root's background color and the
@@ -247,11 +271,15 @@ impl BackgroundLayer {
         effect.is_visible().then(|| Self {
             kind: effect.kind,
             base: base.with_alpha(255),
-            colors: effect.palette.colors(appearance),
+            colors: if effect.kind == BackgroundKind::Aurora2 {
+                aurora2_colors(appearance)
+            } else {
+                effect.palette.colors(appearance)
+            },
             dark,
             blur: effect.blur.max(0.0),
             intensity: effect.intensity.clamp(0.0, 2.0) * tone,
-            animated: effect.motion == BackgroundMotion::Animated,
+            animated: effect.is_animated(),
             cycle: effect.speed.cycle_seconds(),
             time: 0.0,
         })
@@ -346,6 +374,25 @@ mod tests {
             ]
             .map(BackgroundSpeed::cycle_seconds),
             [30.0, 16.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn aurora2_is_always_still_and_has_its_own_colors() {
+        let effect =
+            BackgroundEffect::new(BackgroundKind::Aurora2).with_motion(BackgroundMotion::Animated);
+        assert!(effect.is_visible());
+        assert!(!effect.is_animated(), "no frames of its own");
+        let base = Color::hex(0xffffff);
+        let light = BackgroundLayer::new(&effect, base, Appearance::Light).unwrap();
+        assert!(!light.animated);
+        assert_eq!(light.at(5.0), light.at(0.0), "the time does not move it");
+        assert_eq!(light.colors, aurora2_colors(Appearance::Light));
+        let dark = BackgroundLayer::new(&effect, base, Appearance::Dark).unwrap();
+        assert_eq!(dark.colors, aurora2_colors(Appearance::Dark));
+        assert_eq!(
+            BackgroundKind::parse("Aurora2"),
+            Some(BackgroundKind::Aurora2)
         );
     }
 
