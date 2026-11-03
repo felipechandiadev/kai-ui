@@ -178,12 +178,14 @@ impl SearchReveal {
 /// 8 clientes»), the actions on the right and a search button at the
 /// right end. While the search is open ([`SearchReveal`]) the field grows
 /// from that button to the left over the actions, which hide; the info
-/// stays. It takes the focus on opening; Escape (on an empty field) or
-/// its close button close it, and so does leaving it empty.
+/// stays. It takes the focus on opening. A single X (the field's clear)
+/// empties it; Escape first clears the text and then closes, and leaving
+/// it empty closes it too.
 ///
-/// Bar of 40 pt (44 in Kai) with 28 pt buttons, so the hover stays
-/// inside. Parts: `<id>.info`, `<id>.search` (the button), `<id>.field`
-/// and `<id>.close`.
+/// Bar of 44 pt with 28 pt buttons and a 28 pt field, so hover and the
+/// focus ring keep 8 pt of margin inside (rules in
+/// `docs/componentes/list-toolbar.md`). Parts: `<id>.info`,
+/// `<id>.search` (the button) and `<id>.field`.
 pub struct ListToolbar<Msg> {
     info: String,
     actions: Vec<ListAction<Msg>>,
@@ -266,7 +268,9 @@ impl<Msg: Clone + 'static> ListToolbar<Msg> {
         }
         if let Some(search) = self.search {
             if open {
-                let width = BUTTON + (LIST_SEARCH_WIDTH - BUTTON) * search.reveal.eased();
+                // 3 pt of padding (cancelled by the margin) so the clip that
+                // animates the width does not cut the 2 pt focus ring.
+                let width = 6.0 + BUTTON + (LIST_SEARCH_WIDTH - BUTTON) * search.reveal.eased();
                 let close = search.on_close.clone();
                 let empty = search.value.is_empty();
                 let input = search.on_input.clone();
@@ -282,24 +286,19 @@ impl<Msg: Clone + 'static> ListToolbar<Msg> {
                 items.push(
                     div()
                         .class(&format!(
-                            "flex items-center gap-1 shrink-0 overflow-hidden w-[{width:.0}px]"
+                            "flex items-center shrink-0 overflow-hidden p-[3px] -m-[3px] w-[{width:.0}px]"
                         ))
                         .claims_escape(true)
                         .on_action(move |action| {
                             (action == Action::CancelOperation).then(|| close.clone())
                         })
-                        .children([
-                            div().class("flex-1 min-w-0").child(field.build()),
-                            icon_button_sized(
-                                Icon::CircleX,
-                                "Cerrar búsqueda",
-                                IconButtonVariant::Neutral,
-                                IconButtonSize::Sm,
-                            )
-                            .tooltip("Cerrar búsqueda")
-                            .on_click(search.on_close.clone())
-                            .test_id(part("close")),
-                        ]),
+                        // The field's own X clears; Escape on an empty field
+                        // or leaving it empty closes. No second button.
+                        .child(
+                            div()
+                                .class("flex-1 min-w-0")
+                                .child(field.build().class("h-[28px]")),
+                        ),
                 );
             } else {
                 items.push(
@@ -416,6 +415,14 @@ mod tests {
         assert!(app.is_focused(By::test_id("bar.field.input")), "autofocus");
         assert!(app.screen().query(By::test_id("add")).is_none());
         app.screen().get(By::test_id("bar.info"));
+        // A single X: the field's clear; no close button.
+        assert!(app.screen().query(By::test_id("bar.close")).is_none());
+        app.type_text(By::test_id("bar.field.input"), "ana");
+        app.screen().get(By::test_id("bar.field.clear"));
+        // The first Escape clears, the second closes.
+        app.press(Key::Escape, Modifiers::NONE);
+        assert_eq!(app.value(By::test_id("bar.field.input")), "");
+        assert!(app.screen().query(By::test_id("bar.search")).is_none());
         app.press(Key::Escape, Modifiers::NONE);
         app.screen().get(By::test_id("bar.search"));
         app.screen().get(By::test_id("add"));

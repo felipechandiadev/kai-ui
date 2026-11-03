@@ -465,20 +465,20 @@ fn snapshots_list_toolbar() {
     };
     let mut app = app_at(theme, "/real-app", 1280.0, 800.0);
     write(
-        dir.join("toolbar-normal.png"),
+        dir.join("toolbar2-normal.png"),
         &app.capture_window().unwrap(),
     );
     app.click(By::test_id("real_app.list.bar.search"));
     app.advance(std::time::Duration::from_millis(64));
     write(
-        dir.join("toolbar-animando.png"),
+        dir.join("toolbar2-animando.png"),
         &app.capture_window().unwrap(),
     );
     app.advance(std::time::Duration::from_millis(250));
     app.run_until_idle();
     app.type_text(By::test_id("real_app.list.bar.field.input"), "terminal");
     write(
-        dir.join("toolbar-busqueda.png"),
+        dir.join("toolbar2-busqueda.png"),
         &app.capture_window().unwrap(),
     );
     app.press(Key::Escape, Modifiers::NONE);
@@ -487,7 +487,7 @@ fn snapshots_list_toolbar() {
     app.run_until_idle();
     app.click(By::test_id("real_app.list.filter"));
     write(
-        dir.join("toolbar-filtro.png"),
+        dir.join("toolbar2-filtro.png"),
         &app.capture_window().unwrap(),
     );
 }
